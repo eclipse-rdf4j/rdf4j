@@ -64,25 +64,20 @@ public class OrderElem extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		expr.visit(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (expr == current) {
-			setExpr((ValueExpr)replacement);
-		}
-		else {
+			setExpr((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -95,7 +90,7 @@ public class OrderElem extends AbstractQueryModelNode {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof OrderElem) {
-			OrderElem o = (OrderElem)other;
+			OrderElem o = (OrderElem) other;
 			return ascending == o.isAscending() && expr.equals(o.getExpr());
 		}
 		return false;
@@ -112,7 +107,7 @@ public class OrderElem extends AbstractQueryModelNode {
 
 	@Override
 	public OrderElem clone() {
-		OrderElem clone = (OrderElem)super.clone();
+		OrderElem clone = (OrderElem) super.clone();
 		clone.setExpr(getExpr().clone());
 		return clone;
 	}

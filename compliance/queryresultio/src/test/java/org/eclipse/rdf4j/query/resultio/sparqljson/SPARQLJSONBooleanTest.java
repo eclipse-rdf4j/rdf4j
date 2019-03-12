@@ -38,9 +38,7 @@ public class SPARQLJSONBooleanTest extends AbstractQueryResultIOBooleanTest {
 	}
 
 	@Test
-	public void testBoolean1()
-		throws Exception
-	{
+	public void testBoolean1() throws Exception {
 		SPARQLBooleanJSONParser parser = new SPARQLBooleanJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -51,9 +49,7 @@ public class SPARQLJSONBooleanTest extends AbstractQueryResultIOBooleanTest {
 	}
 
 	@Test
-	public void testBoolean2()
-		throws Exception
-	{
+	public void testBoolean2() throws Exception {
 		SPARQLBooleanJSONParser parser = new SPARQLBooleanJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -64,9 +60,7 @@ public class SPARQLJSONBooleanTest extends AbstractQueryResultIOBooleanTest {
 	}
 
 	@Test
-	public void testBoolean3()
-		throws Exception
-	{
+	public void testBoolean3() throws Exception {
 		SPARQLBooleanJSONParser parser = new SPARQLBooleanJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -77,9 +71,7 @@ public class SPARQLJSONBooleanTest extends AbstractQueryResultIOBooleanTest {
 	}
 
 	@Test
-	public void testBoolean4()
-		throws Exception
-	{
+	public void testBoolean4() throws Exception {
 		SPARQLBooleanJSONParser parser = new SPARQLBooleanJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);

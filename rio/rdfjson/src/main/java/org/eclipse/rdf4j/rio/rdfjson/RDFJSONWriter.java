@@ -64,31 +64,24 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		try {
 			if (this.writer != null) {
 				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
 					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				}
-				finally {
+				} finally {
 					this.writer.flush();
 				}
-			}
-			else if (this.outputStream != null) {
+			} else if (this.outputStream != null) {
 				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.outputStream);) {
 					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				}
-				finally {
+				} finally {
 					this.outputStream.flush();
 				}
-			}
-			else {
+			} else {
 				throw new IllegalStateException("The output stream and the writer were both null.");
 			}
-		}
-		catch (final IOException e) {
+		} catch (final IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -108,85 +101,66 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleComment(final String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(final String comment) throws RDFHandlerException {
 		// Comments are ignored.
 	}
 
 	@Override
-	public void handleNamespace(final String prefix, final String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(final String prefix, final String uri) throws RDFHandlerException {
 		// Namespace prefixes are not used in RDF/JSON.
 	}
 
 	@Override
-	public void handleStatement(final Statement statement)
-		throws RDFHandlerException
-	{
+	public void handleStatement(final Statement statement) throws RDFHandlerException {
 		this.graph.add(statement);
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		this.graph = new TreeModel();
 	}
 
 	/**
-	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be
-	 * serialised to JSON if there are also non-null contexts in the contexts array
+	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be serialised
+	 * to JSON if there are also non-null contexts in the contexts array
 	 * 
-	 * @param object
-	 *        The RDF value to serialise
-	 * @param contexts
-	 *        The set of contexts that are relevant to this object, including null contexts as they are found.
-	 * @param jg
-	 *        the {@link JsonGenerator} to write to.
+	 * @param object   The RDF value to serialise
+	 * @param contexts The set of contexts that are relevant to this object, including null contexts as they are found.
+	 * @param jg       the {@link JsonGenerator} to write to.
 	 * @throws IOException
 	 * @throws JsonGenerationException
 	 * @throws JSONException
 	 */
 	public static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg)
-		throws JsonGenerationException,
-		IOException
-	{
+			throws JsonGenerationException, IOException {
 		jg.writeStartObject();
 		if (object instanceof Literal) {
 			jg.writeObjectField(RDFJSONUtility.VALUE, object.stringValue());
 
 			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.LITERAL);
-			final Literal l = (Literal)object;
+			final Literal l = (Literal) object;
 
 			if (Literals.isLanguageLiteral(l)) {
 				jg.writeObjectField(RDFJSONUtility.LANG, l.getLanguage().orElse(null));
-			}
-			else {
+			} else {
 				jg.writeObjectField(RDFJSONUtility.DATATYPE, l.getDatatype().stringValue());
 			}
-		}
-		else if (object instanceof BNode) {
-			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((BNode)object));
+		} else if (object instanceof BNode) {
+			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((BNode) object));
 
 			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.BNODE);
-		}
-		else if (object instanceof IRI) {
-			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((IRI)object));
+		} else if (object instanceof IRI) {
+			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((IRI) object));
 
 			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.URI);
 		}
 
-		if (contexts != null && !contexts.isEmpty()
-				&& !(contexts.size() == 1 && contexts.iterator().next() == null))
-		{
+		if (contexts != null && !contexts.isEmpty() && !(contexts.size() == 1 && contexts.iterator().next() == null)) {
 			jg.writeArrayFieldStart(RDFJSONUtility.GRAPHS);
 			for (final Resource nextContext : contexts) {
 				if (nextContext == null) {
 					jg.writeNull();
-				}
-				else {
+				} else {
 					jg.writeString(resourceToString(nextContext));
 				}
 			}
@@ -199,31 +173,26 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
 	 * 
-	 * @param uriOrBnode
-	 *        The resource to serialise to a string
+	 * @param uriOrBnode The resource to serialise to a string
 	 * @return The string value of the sesame resource
 	 */
 	public static String resourceToString(final Resource uriOrBnode) {
 		if (uriOrBnode instanceof IRI) {
 			return uriOrBnode.stringValue();
-		}
-		else {
-			return "_:" + ((BNode)uriOrBnode).getID();
+		} else {
+			return "_:" + ((BNode) uriOrBnode).getID();
 		}
 	}
 
 	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
-			final JsonGenerator jg)
-		throws IOException,
-		JsonGenerationException
-	{
+			final JsonGenerator jg) throws IOException, JsonGenerationException {
 		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 			// SES-2011: Always use \n for consistency
 			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
 			// By default Jackson does not pretty print, so enable this unless
 			// PRETTY_PRINT setting is disabled
-			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
-					indenter).withObjectIndenter(indenter);
+			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
+					.withObjectIndenter(indenter);
 			jg.setPrettyPrinter(pp);
 		}
 		jg.writeStartObject();
@@ -235,8 +204,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 					// contexts are optional, so this may return empty in some
 					// scenarios depending on the interpretation of the way contexts
 					// work
-					final Set<Resource> contexts = graph.filter(nextSubject, nextPredicate,
-							nextObject).contexts();
+					final Set<Resource> contexts = graph.filter(nextSubject, nextPredicate, nextObject).contexts();
 
 					RDFJSONWriter.writeObject(nextObject, contexts, jg);
 				}

@@ -21,8 +21,8 @@ public class ParsedBooleanQuery extends ParsedQuery {
 	 *--------------*/
 
 	/**
-	 * Creates a new boolean query. To complete this query, a tuple expression needs to be supplied to it
-	 * using {@link #setTupleExpr(TupleExpr)}.
+	 * Creates a new boolean query. To complete this query, a tuple expression needs to be supplied to it using
+	 * {@link #setTupleExpr(TupleExpr)}.
 	 */
 	public ParsedBooleanQuery() {
 		super();
@@ -31,8 +31,7 @@ public class ParsedBooleanQuery extends ParsedQuery {
 	/**
 	 * Creates a new boolean query for the supplied tuple expression.
 	 * 
-	 * @param tupleExpr
-	 *        A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
+	 * @param tupleExpr A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedBooleanQuery(TupleExpr tupleExpr) {
 		super(tupleExpr);
@@ -41,8 +40,7 @@ public class ParsedBooleanQuery extends ParsedQuery {
 	/**
 	 * Creates a new boolean query for the supplied tuple expression.
 	 * 
-	 * @param tupleExpr
-	 *        A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
+	 * @param tupleExpr A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedBooleanQuery(String sourceString, TupleExpr tupleExpr) {
 		super(sourceString, tupleExpr);

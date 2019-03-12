@@ -32,8 +32,8 @@ public class RepositoryWrapper implements DelegatingRepository {
 	}
 
 	/**
-	 * Creates a new <tt>RepositoryWrapper</tt> and calls {@link #setDelegate(Repository)} with the supplied
-	 * delegate repository.
+	 * Creates a new <tt>RepositoryWrapper</tt> and calls {@link #setDelegate(Repository)} with the supplied delegate
+	 * repository.
 	 */
 	public RepositoryWrapper(Repository delegate) {
 		setDelegate(delegate);
@@ -60,30 +60,22 @@ public class RepositoryWrapper implements DelegatingRepository {
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
+	public void initialize() throws RepositoryException {
 		getDelegate().initialize();
 	}
 
 	@Override
-	public void shutDown()
-		throws RepositoryException
-	{
+	public void shutDown() throws RepositoryException {
 		getDelegate().shutDown();
 	}
 
 	@Override
-	public boolean isWritable()
-		throws RepositoryException
-	{
+	public boolean isWritable() throws RepositoryException {
 		return getDelegate().isWritable();
 	}
 
 	@Override
-	public RepositoryConnection getConnection()
-		throws RepositoryException
-	{
+	public RepositoryConnection getConnection() throws RepositoryException {
 		return getDelegate().getConnection();
 	}
 

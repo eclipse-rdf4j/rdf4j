@@ -22,6 +22,7 @@ public class JSONLDHierarchicalProcessor {
 
 	/**
 	 * Converts a JSON-LD object to a hierarchical JSON-LD object
+	 * 
 	 * @param jsonLdObject JSON-LD object to be converted. Gets modified during processing
 	 * @return hierarchical JSON-LD object
 	 */
@@ -30,9 +31,11 @@ public class JSONLDHierarchicalProcessor {
 	}
 
 	/**
-	 * Expands the JSON-LD object to a hierarchical shape.<p>
+	 * Expands the JSON-LD object to a hierarchical shape.
+	 * <p>
 	 * As the first level of nodes in the object can be either a triple or a whole graph we first expand the graph nodes
-	 * and after that we expand the default graph.<p>
+	 * and after that we expand the default graph.
+	 * <p>
 	 * The different graphs are processed independently to keep them in insulation.
 	 *
 	 * @param input the JSON-LD object. Gets modified during processing.
@@ -48,28 +51,29 @@ public class JSONLDHierarchicalProcessor {
 	}
 
 	/**
-	 * Transforms a JSON-LD object to a more human-readable hierarchical form.<p>
+	 * Transforms a JSON-LD object to a more human-readable hierarchical form.
+	 * <p>
 	 * The steps performed are
 	 * <ol>
-	 *     <li>Take all triples which will take part of the processing and add them to a separate map</li>
-	 *     <li>Create a separate list the triples sorted by number of predicates in the descending order</li>
-	 *     <li>Select a root to start</li>
-	 *     <li>Take this root from the graph and start a DFS traversing. For each traversed node
-	 *         <ol>
-	 *             <li>Mark this node as visited</li>
-	 *             <li>Find all sub-nodes (effectively objects in triples in which the current node is subject)</li>
-	 *             <li>Expand the sub-nodes (replace them with their full version) and add them to the traversing if the
-	 *             following conditions are met
-	 *                 <ul>
-	 *                     <li>sub-node is IRI or BlankNode</li>
-	 *                     <li>sub-node has not been expanded already in the current path</li>
-	 *                     <li>sub-node is not the same as it's parent</li>
-	 *                 </ul>
-	 *             </li>
-	 *         </ol>
-	 *     </li>
-	 *     <li>If the visited list shows there are still unvisited nodes choose a new root from the list of sorted
-	 *     nodes and start another traversal</li>
+	 * <li>Take all triples which will take part of the processing and add them to a separate map</li>
+	 * <li>Create a separate list the triples sorted by number of predicates in the descending order</li>
+	 * <li>Select a root to start</li>
+	 * <li>Take this root from the graph and start a DFS traversing. For each traversed node
+	 * <ol>
+	 * <li>Mark this node as visited</li>
+	 * <li>Find all sub-nodes (effectively objects in triples in which the current node is subject)</li>
+	 * <li>Expand the sub-nodes (replace them with their full version) and add them to the traversing if the following
+	 * conditions are met
+	 * <ul>
+	 * <li>sub-node is IRI or BlankNode</li>
+	 * <li>sub-node has not been expanded already in the current path</li>
+	 * <li>sub-node is not the same as it's parent</li>
+	 * </ul>
+	 * </li>
+	 * </ol>
+	 * </li>
+	 * <li>If the visited list shows there are still unvisited nodes choose a new root from the list of sorted nodes and
+	 * start another traversal</li>
 	 * </ol>
 	 *
 	 * @param input JSON-LD object. Gets modified during processing
@@ -108,14 +112,13 @@ public class JSONLDHierarchicalProcessor {
 					if (object instanceof List<?>) {
 						ArrayList<Map<String, Object>> objectsPredSubjPairs = (ArrayList<Map<String, Object>>) object;
 						for (int i = 0; i < objectsPredSubjPairs.size(); i++) {
-							if (objectsPredSubjPairs.get(i) instanceof Map && objectsPredSubjPairs.get(i).get(ID) != null) {
+							if (objectsPredSubjPairs.get(i) instanceof Map
+									&& objectsPredSubjPairs.get(i).get(ID) != null) {
 								String objectsPredId = objectsPredSubjPairs.get(i).get(ID).toString();
-								if (graph.containsKey(objectsPredId)
-										&& !currentNode.get(ID).equals(objectsPredId)
+								if (graph.containsKey(objectsPredId) && !currentNode.get(ID).equals(objectsPredId)
 										&& !currentTreeNode.hasPassedThrough(objectsPredId)) {
 									children.add(objectsPredId);
-									objectsPredSubjPairs.set(i,
-											(Map<String, Object>)graph.get(objectsPredId));
+									objectsPredSubjPairs.set(i, (Map<String, Object>) graph.get(objectsPredId));
 									frontier.add(new TreeNode(objectsPredSubjPairs.get(i), currentTreeNode));
 								}
 							}
@@ -127,7 +130,7 @@ public class JSONLDHierarchicalProcessor {
 
 		expanded.removeIf(o -> {
 			if (o instanceof Map<?, ?>) {
-				return children.contains(((Map<String, Object>)o).get(ID).toString());
+				return children.contains(((Map<String, Object>) o).get(ID).toString());
 			}
 			return false;
 		});
@@ -137,8 +140,8 @@ public class JSONLDHierarchicalProcessor {
 	/**
 	 * Returns the next node to be a root. Chooses the first non-visited node from the sortedNodes list.
 	 *
-	 * @param visited      contains the visited nodes so-far
-	 * @param sortedNodes  contains the nodes in a specific order. This list will get modified by the method!
+	 * @param visited     contains the visited nodes so-far
+	 * @param sortedNodes contains the nodes in a specific order. This list will get modified by the method!
 	 * @return root for the next tree
 	 */
 	private static String getNextRoot(Set<String> visited, List<String> sortedNodes) {
@@ -160,7 +163,8 @@ public class JSONLDHierarchicalProcessor {
 	 * @return List with the nodes' ids
 	 */
 	private static List<String> getNodesOrder(Map<String, Object> graph) {
-		return graph.entrySet().stream()
+		return graph.entrySet()
+				.stream()
 				.sorted(Map.Entry.comparingByValue((o1, o2) -> ((Map) o2).size() - ((Map) o1).size()))
 				.map(entry -> entry.getKey())
 				.collect(Collectors.toList());
@@ -174,7 +178,6 @@ public class JSONLDHierarchicalProcessor {
 			this.node = node;
 			this.parent = null;
 		}
-
 
 		public TreeNode(Map<String, Object> node, TreeNode parent) {
 			this.parent = parent;

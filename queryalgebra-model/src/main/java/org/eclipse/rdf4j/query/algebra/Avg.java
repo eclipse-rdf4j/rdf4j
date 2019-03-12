@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * The AVG operator as defined in http://www.w3.org/TR/sparql11-query/#aggregates.
  * <P>
- * Note that we introduce AVG as a first-class object into the algebra, despite it being defined as a compound
- * of other operators (namely, SUM and COUNT). This allows us to more easily optimize evaluation.
+ * Note that we introduce AVG as a first-class object into the algebra, despite it being defined as a compound of other
+ * operators (namely, SUM and COUNT). This allows us to more easily optimize evaluation.
  * 
  * @author Jeen Broekstra
  */
@@ -26,9 +26,7 @@ public class Avg extends AbstractAggregateOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -44,6 +42,6 @@ public class Avg extends AbstractAggregateOperator {
 
 	@Override
 	public Avg clone() {
-		return (Avg)super.clone();
+		return (Avg) super.clone();
 	}
 }

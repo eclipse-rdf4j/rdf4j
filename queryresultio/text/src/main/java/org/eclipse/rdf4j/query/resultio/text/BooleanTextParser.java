@@ -47,9 +47,7 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 	}
 
 	@Override
-	public synchronized boolean parse(InputStream in)
-		throws IOException, QueryResultParseException
-	{
+	public synchronized boolean parse(InputStream in) throws IOException, QueryResultParseException {
 		Reader reader = new InputStreamReader(in, StandardCharsets.US_ASCII);
 		String value = IOUtil.readString(reader, 16);
 		value = value.trim();
@@ -58,23 +56,19 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 
 		if (value.equalsIgnoreCase("true")) {
 			result = true;
-		}
-		else if (value.equalsIgnoreCase("false")) {
+		} else if (value.equalsIgnoreCase("false")) {
 			result = false;
-		}
-		else {
+		} else {
 			throw new QueryResultParseException("Invalid value: " + value);
 		}
 
 		if (this.handler != null) {
 			try {
 				this.handler.handleBoolean(result);
-			}
-			catch (QueryResultHandlerException e) {
+			} catch (QueryResultHandlerException e) {
 				if (e.getCause() != null && e.getCause() instanceof IOException) {
-					throw (IOException)e.getCause();
-				}
-				else {
+					throw (IOException) e.getCause();
+				} else {
 					throw new QueryResultParseException("Found an issue with the query result handler", e);
 				}
 			}
@@ -90,8 +84,7 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 
 	@Override
 	public void parseQueryResult(InputStream in)
-		throws IOException, QueryResultParseException, QueryResultHandlerException
-	{
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parse(in);
 	}
 }

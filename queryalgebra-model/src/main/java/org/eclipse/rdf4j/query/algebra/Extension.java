@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * An extension operator that can be used to add bindings to solutions whose values are defined by
- * {@link ValueExpr value expressions}.
+ * An extension operator that can be used to add bindings to solutions whose values are defined by {@link ValueExpr
+ * value expressions}.
  */
 public class Extension extends UnaryTupleOperator {
 
@@ -87,16 +87,12 @@ public class Extension extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ExtensionElem elem : elements) {
 			elem.visit(visitor);
 		}
@@ -115,7 +111,7 @@ public class Extension extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Extension && super.equals(other)) {
-			Extension o = (Extension)other;
+			Extension o = (Extension) other;
 			return elements.equals(o.getElements());
 		}
 		return false;
@@ -128,7 +124,7 @@ public class Extension extends UnaryTupleOperator {
 
 	@Override
 	public Extension clone() {
-		Extension clone = (Extension)super.clone();
+		Extension clone = (Extension) super.clone();
 
 		clone.elements = new ArrayList<>(getElements().size());
 		for (ExtensionElem elem : getElements()) {

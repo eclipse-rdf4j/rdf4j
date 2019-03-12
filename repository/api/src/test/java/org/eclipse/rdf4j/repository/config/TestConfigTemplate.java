@@ -42,8 +42,7 @@ public class TestConfigTemplate {
 		String value = "' '' ''' ''''";
 		assertEquals(ConfigTemplate.escapeMultilineQuotes("'''", value), "' '' \\'\\'\\' \\'\\'\\''");
 		value = "\" \"\" \"\"\" \"\"\"\"";
-		assertEquals(ConfigTemplate.escapeMultilineQuotes("\"\"\"", value),
-				"\" \"\" \\\"\\\"\\\" \\\"\\\"\\\"\"");
+		assertEquals(ConfigTemplate.escapeMultilineQuotes("\"\"\"", value), "\" \"\" \\\"\\\"\\\" \\\"\\\"\\\"\"");
 	}
 
 	@Test(expected = IllegalArgumentException.class)

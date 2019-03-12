@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
- * A TupleQueryResultWriter that writes query results in the
- * <a href="http://www.w3.org/TR/rdf-sparql-json-res/">SPARQL Query Results JSON Format</a>.
+ * A TupleQueryResultWriter that writes query results in the <a href="http://www.w3.org/TR/rdf-sparql-json-res/">SPARQL
+ * Query Results JSON Format</a>.
  */
 public class SPARQLResultsJSONWriter extends AbstractSPARQLJSONWriter implements TupleQueryResultWriter {
 

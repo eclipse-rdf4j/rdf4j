@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  * 
  * @author Arjohn Kampman
- * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract
- *      Syntax</a>
+ * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface Literal extends Value {
 
@@ -40,9 +39,9 @@ public interface Literal extends Value {
 	public Optional<String> getLanguage();
 
 	/**
-	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must
-	 * return {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this
-	 * method must return {@link XMLSchema#STRING}.
+	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
+	 * {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this method must return
+	 * {@link XMLSchema#STRING}.
 	 * 
 	 * @return The datatype for this literal.
 	 */
@@ -51,10 +50,9 @@ public interface Literal extends Value {
 	/**
 	 * Compares a literal object to another object.
 	 * 
-	 * @param other
-	 *        The object to compare this literal to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels,
-	 *         language tags and datatypes are equal.
+	 * @param other The object to compare this literal to.
+	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
+	 *         and datatypes are equal.
 	 */
 	@Override
 	public boolean equals(Object other);
@@ -81,8 +79,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>short</tt> value of this literal.
 	 * 
 	 * @return The <tt>short</tt> value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label cannot be represented by a <tt>short</tt>.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>short</tt>.
 	 */
 	public short shortValue();
 
@@ -90,8 +87,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>int</tt> value of this literal.
 	 * 
 	 * @return The <tt>int</tt> value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label cannot be represented by a <tt>int</tt>.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>int</tt>.
 	 */
 	public int intValue();
 
@@ -99,8 +95,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>long</tt> value of this literal.
 	 * 
 	 * @return The <tt>long</tt> value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label cannot be represented by to a <tt>long</tt> .
+	 * @throws NumberFormatException If the literal's label cannot be represented by to a <tt>long</tt> .
 	 */
 	public long longValue();
 
@@ -108,8 +103,7 @@ public interface Literal extends Value {
 	 * Returns the integer value of this literal.
 	 * 
 	 * @return The integer value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label is not a valid integer.
+	 * @throws NumberFormatException If the literal's label is not a valid integer.
 	 */
 	public BigInteger integerValue();
 
@@ -117,8 +111,7 @@ public interface Literal extends Value {
 	 * Returns the decimal value of this literal.
 	 * 
 	 * @return The decimal value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label is not a valid decimal.
+	 * @throws NumberFormatException If the literal's label is not a valid decimal.
 	 */
 	public BigDecimal decimalValue();
 
@@ -126,8 +119,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>float</tt> value of this literal.
 	 * 
 	 * @return The <tt>float</tt> value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label cannot be represented by a <tt>float</tt>.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>float</tt>.
 	 */
 	public float floatValue();
 
@@ -135,8 +127,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>double</tt> value of this literal.
 	 * 
 	 * @return The <tt>double</tt> value of the literal.
-	 * @throws NumberFormatException
-	 *         If the literal's label cannot be represented by a <tt>double</tt>.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>double</tt>.
 	 */
 	public double doubleValue();
 
@@ -144,21 +135,18 @@ public interface Literal extends Value {
 	 * Returns the <tt>boolean</tt> value of this literal.
 	 * 
 	 * @return The <tt>long</tt> value of the literal.
-	 * @throws IllegalArgumentException
-	 *         If the literal's label cannot be represented by a <tt>boolean</tt> .
+	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
 	 */
 	public boolean booleanValue();
 
 	/**
-	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given
-	 * for literals whose label conforms to the syntax of the following
-	 * <a href="http://www.w3.org/TR/xmlschema-2/">XML Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>,
-	 * <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>, <tt>gYear</tt>, <tt>gMonth</tt> or
-	 * <tt>gDay</tt>.
+	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
+	 * literals whose label conforms to the syntax of the following <a href="http://www.w3.org/TR/xmlschema-2/">XML
+	 * Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>, <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>,
+	 * <tt>gYear</tt>, <tt>gMonth</tt> or <tt>gDay</tt>.
 	 * 
 	 * @return The calendar value of the literal.
-	 * @throws IllegalArgumentException
-	 *         If the literal cannot be represented by a {@link XMLGregorianCalendar}.
+	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
 	public XMLGregorianCalendar calendarValue();
 }

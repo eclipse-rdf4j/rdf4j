@@ -59,45 +59,39 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testEndOfLine()
-		throws Exception
-	{
+	public void testEndOfLine() throws Exception {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String> asList());
+		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
 		assertEquals("\r\n", out.toString("UTF-8").replaceAll("\\S+", ""));
 	}
 
 	@Test
-	public void testEmptyResults()
-		throws Exception
-	{
+	public void testEmptyResults() throws Exception {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String> asList());
+		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
 		assertRegex("a,b,c(\r\n)?", out.toString("UTF-8"));
 	}
 
 	@Test
-	public void testSingleVarResults()
-		throws Exception
-	{
+	public void testSingleVarResults() throws Exception {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String> asList());
+		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleSingleVarMultipleBindingSets(), writer);
 
 		System.out.println(out.toString("UTF-8"));
@@ -108,22 +102,19 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testmultipleVarResults()
-		throws Exception
-	{
+	public void testmultipleVarResults() throws Exception {
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String> asList());
+		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleMultipleBindingSets(), writer);
 
-		assertRegex(
-				"a,b,c\r\n" + "foo:bar,_:bnode,baz\r\n" + "1,,Hello World!\r\n"
-						+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
-						+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
-						+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
+		assertRegex("a,b,c\r\n" + "foo:bar,_:bnode,baz\r\n" + "1,,Hello World!\r\n"
+				+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
+				+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
+				+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
 				out.toString("UTF-8"));
 	}
 
@@ -135,8 +126,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 
 	@Override
 	protected void assertQueryResultsEqual(TupleQueryResult tqr1, TupleQueryResult tqr2)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		List<BindingSet> list1 = Iterations.asList(tqr1);
 		List<BindingSet> list2 = Iterations.asList(tqr2);
 
@@ -149,8 +139,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	private boolean matchBindingSets(List<? extends BindingSet> queryResult1,
-			Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx)
-	{
+			Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx) {
 		boolean result = false;
 
 		if (idx < queryResult1.size()) {
@@ -164,8 +153,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 
 				for (Binding binding : bs1) {
 					if (binding.getValue() instanceof BNode) {
-						newBNodeMapping.put((BNode)binding.getValue(),
-								(BNode)bs2.getValue(binding.getName()));
+						newBNodeMapping.put((BNode) binding.getValue(), (BNode) bs2.getValue(binding.getName()));
 					}
 				}
 
@@ -180,8 +168,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 					break;
 				}
 			}
-		}
-		else {
+		} else {
 			// All statements have been mapped successfully
 			result = true;
 		}
@@ -189,9 +176,8 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		return result;
 	}
 
-	private static List<BindingSet> findMatchingBindingSets(BindingSet st,
-			Iterable<? extends BindingSet> model, Map<BNode, BNode> bNodeMapping)
-	{
+	private static List<BindingSet> findMatchingBindingSets(BindingSet st, Iterable<? extends BindingSet> model,
+			Map<BNode, BNode> bNodeMapping) {
 		List<BindingSet> result = new ArrayList<>();
 
 		for (BindingSet modelSt : model) {
@@ -216,11 +202,9 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 
 			if (value1 == null && value2 != null) {
 				return false;
-			}
-			else if (value1 != null && value2 == null) {
+			} else if (value1 != null && value2 == null) {
 				return false;
-			}
-			else if (value1 != null && value2 != null) {
+			} else if (value1 != null && value2 != null) {
 				if (!equals(value1, value2) && !value1.stringValue().equals(value2.stringValue())) {
 					return false;
 				}
@@ -233,8 +217,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	protected static boolean equals(Value value1, Value value2) {
 		try {
 			return QueryEvaluationUtil.compare(value1, value2, Compare.CompareOp.EQ);
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			return false;
 		}
 	}

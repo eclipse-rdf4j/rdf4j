@@ -28,30 +28,22 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class JSONLDParserHandlerTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
 		return writeJSONLD(unknownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
 		return writeJSONLD(knownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
 		return writeJSONLD(unknownLanguageStatements);
 	}
 
 	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeJSONLD(knownLanguageStatements);
 	}
 
@@ -67,9 +59,7 @@ public class JSONLDParserHandlerTest extends AbstractParserHandlingTest {
 	 * @return An {@link InputStream} containing the results.
 	 * @throws RDFHandlerException
 	 */
-	private InputStream writeJSONLD(Model statements)
-		throws RDFHandlerException
-	{
+	private InputStream writeJSONLD(Model statements) throws RDFHandlerException {
 		final StringWriter writer = new StringWriter();
 
 		final RDFWriter jsonldWriter = new JSONLDWriter(writer);

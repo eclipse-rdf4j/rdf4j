@@ -40,19 +40,16 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	}
 
 	/**
-	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should
-	 * override this method when they have child nodes.
+	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should override this
+	 * method when they have child nodes.
 	 */
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 	}
 
 	/**
-	 * Default implementation of {@link QueryModelNode#replaceChildNode(QueryModelNode, QueryModelNode)} that
-	 * throws an {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this
-	 * node.
+	 * Default implementation of {@link QueryModelNode#replaceChildNode(QueryModelNode, QueryModelNode)} that throws an
+	 * {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this node.
 	 */
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
@@ -73,8 +70,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	}
 
 	/**
-	 * Default implementation of {@link QueryModelNode#getSignature()} that prints the name of the node's
-	 * class.
+	 * Default implementation of {@link QueryModelNode#getSignature()} that prints the name of the node's class.
 	 */
 	@Override
 	public String getSignature() {
@@ -91,20 +87,18 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	@Override
 	public AbstractQueryModelNode clone() {
 		try {
-			return (AbstractQueryModelNode)super.clone();
-		}
-		catch (CloneNotSupportedException e) {
+			return (AbstractQueryModelNode) super.clone();
+		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
 		}
 	}
 
 	protected <T extends QueryModelNode> boolean replaceNodeInList(List<T> list, QueryModelNode current,
-			QueryModelNode replacement)
-	{
+			QueryModelNode replacement) {
 		ListIterator<T> iter = list.listIterator();
 		while (iter.hasNext()) {
 			if (iter.next() == current) {
-				iter.set((T)replacement);
+				iter.set((T) replacement);
 				replacement.setParentNode(this);
 				return true;
 			}

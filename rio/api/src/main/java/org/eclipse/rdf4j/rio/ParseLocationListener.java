@@ -13,13 +13,11 @@ package org.eclipse.rdf4j.rio;
 public interface ParseLocationListener {
 
 	/**
-	 * Signals an update of a parser's progress, indicated by a line and column number. Both line and column
-	 * number start with value 1 for the first line or column.
+	 * Signals an update of a parser's progress, indicated by a line and column number. Both line and column number
+	 * start with value 1 for the first line or column.
 	 *
-	 * @param lineNo
-	 *        The line number, or -1 if none is available.
-	 * @param columnNo
-	 *        The column number, or -1 if none is available.
+	 * @param lineNo   The line number, or -1 if none is available.
+	 * @param columnNo The column number, or -1 if none is available.
 	 */
 	public void parseLocationUpdate(long lineNo, long columnNo);
 

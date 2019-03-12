@@ -23,8 +23,7 @@ public interface BooleanQueryResultWriter extends QueryResultWriter, BooleanQuer
 	 * 
 	 * @deprecated Use {@link #handleBoolean(boolean)} instead.
 	 */
-	void write(boolean value)
-		throws IOException;
+	void write(boolean value) throws IOException;
 
 	/**
 	 * Gets the query result format that this writer uses.

@@ -27,9 +27,8 @@ public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException
-	{
-		return QueryResults.asModel(
-				QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+			throws RDFParseException, RDFHandlerException, IOException {
+		return QueryResults
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
 }

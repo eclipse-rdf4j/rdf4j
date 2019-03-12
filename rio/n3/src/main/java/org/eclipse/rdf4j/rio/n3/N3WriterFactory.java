@@ -40,9 +40,7 @@ public class N3WriterFactory implements RDFWriterFactory {
 	}
 
 	@Override
-	public RDFWriter getWriter(OutputStream out, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
 		return new N3Writer(out, new ParsedIRI(baseURI));
 	}
 
@@ -55,9 +53,7 @@ public class N3WriterFactory implements RDFWriterFactory {
 	}
 
 	@Override
-	public RDFWriter getWriter(Writer writer, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
 		return new N3Writer(writer, new ParsedIRI(baseURI));
 	}
 }

@@ -18,21 +18,19 @@ public class ASTCompareAll extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTValueExpr getLeftOperand() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 
 	public ASTCompOperator getOperator() {
-		return (ASTCompOperator)children.get(1);
+		return (ASTCompOperator) children.get(1);
 	}
 
 	public ASTTupleQuery getRightOperand() {
-		return (ASTTupleQuery)children.get(2);
+		return (ASTTupleQuery) children.get(2);
 	}
 }

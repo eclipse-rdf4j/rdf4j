@@ -27,9 +27,8 @@ public class Section6Test extends BaseExamples {
 		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox");
 		Variable x = query.var();
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
-		
-		GraphPatternNotTriples where = GraphPatterns.and(
-				x.has(foaf.iri("name"), name),
+
+		GraphPatternNotTriples where = GraphPatterns.and(x.has(foaf.iri("name"), name),
 				GraphPatterns.optional(x.has(foaf.iri("mbox"), mbox)));
 
 		query.prefix(foaf).select(name, mbox).where(where);
@@ -38,37 +37,29 @@ public class Section6Test extends BaseExamples {
 
 	@Test
 	public void example_6_2() {
-		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)),
-			   ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
-		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder
-				.var("price"), x = SparqlBuilder.var("x");
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
-		GraphPatternNotTriples pricePattern = GraphPatterns
-				.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.lt(price, 30)).optional();
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.lt(price, 30))
+				.optional();
 
-		query.prefix(dc, ns).select(title, price)
-				.where(x.has(dc.iri("title"), title), pricePattern);
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		p();
 	}
 
 	@Test
 	public void example_6_3() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
-		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox"), hpage = SparqlBuilder
-				.var("hpage");
+		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox"), hpage = SparqlBuilder.var("hpage");
 		Variable x = query.var();
 
 		TriplePattern namePattern = x.has(foaf.iri("name"), name);
 
 		query.prefix(foaf)
 				.select(name, mbox, hpage)
-				.where(namePattern,
-						GraphPatterns.and(x.has(foaf.iri("mbox"), mbox))
-								.optional(),
-						GraphPatterns.and(
-								x.has(foaf.iri("homepage"), hpage))
-								.optional());
+				.where(namePattern, GraphPatterns.and(x.has(foaf.iri("mbox"), mbox)).optional(),
+						GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
 		p();
 	}
 }

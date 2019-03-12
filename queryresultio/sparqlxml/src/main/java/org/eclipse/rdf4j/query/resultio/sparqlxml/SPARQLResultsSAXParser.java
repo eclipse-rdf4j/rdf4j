@@ -73,75 +73,58 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	 *---------*/
 
 	@Override
-	public void startDocument()
-		throws SAXException
-	{
+	public void startDocument() throws SAXException {
 		bindingNames = new ArrayList<>();
 		currentValue = null;
 	}
 
 	@Override
-	public void endDocument()
-		throws SAXException
-	{
+	public void endDocument() throws SAXException {
 		try {
 			if (handler != null) {
 				handler.endQueryResult();
 			}
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
 
 	@Override
-	public void startTag(String tagName, Map<String, String> atts, String text)
-		throws SAXException
-	{
+	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
 		if (BINDING_TAG.equals(tagName)) {
 			currentBindingName = atts.get(BINDING_NAME_ATT);
 
 			if (currentBindingName == null) {
-				throw new SAXException(
-						BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
+				throw new SAXException(BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
 			}
-		}
-		else if (URI_TAG.equals(tagName)) {
+		} else if (URI_TAG.equals(tagName)) {
 			try {
 				currentValue = valueFactory.createIRI(text);
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				// Malformed URI
 				throw new SAXException(e.getMessage(), e);
 			}
-		}
-		else if (BNODE_TAG.equals(tagName)) {
+		} else if (BNODE_TAG.equals(tagName)) {
 			currentValue = valueFactory.createBNode(text);
-		}
-		else if (LITERAL_TAG.equals(tagName)) {
+		} else if (LITERAL_TAG.equals(tagName)) {
 			String xmlLang = atts.get(LITERAL_LANG_ATT);
 			String datatype = atts.get(LITERAL_DATATYPE_ATT);
 
 			if (xmlLang != null) {
 				currentValue = valueFactory.createLiteral(text, xmlLang);
-			}
-			else if (datatype != null) {
+			} else if (datatype != null) {
 				try {
 					currentValue = valueFactory.createLiteral(text, valueFactory.createIRI(datatype));
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					// Illegal datatype URI
 					throw new SAXException(e.getMessage(), e);
 				}
-			}
-			else {
+			} else {
 				currentValue = valueFactory.createLiteral(text);
 			}
-		}
-		else if (RESULT_TAG.equals(tagName)) {
+		} else if (RESULT_TAG.equals(tagName)) {
 			currentSolution = new MapBindingSet(bindingNames.size());
-		}
-		else if (VAR_TAG.equals(tagName)) {
+		} else if (VAR_TAG.equals(tagName)) {
 			String varName = atts.get(VAR_NAME_ATT);
 
 			if (varName == null) {
@@ -149,18 +132,15 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			}
 
 			bindingNames.add(varName);
-		}
-		else if (RESULT_SET_TAG.equals(tagName)) {
+		} else if (RESULT_SET_TAG.equals(tagName)) {
 			try {
 				if (handler != null) {
 					handler.startQueryResult(bindingNames);
 				}
-			}
-			catch (TupleQueryResultHandlerException e) {
+			} catch (TupleQueryResultHandlerException e) {
 				throw new SAXException(e);
 			}
-		}
-		else if (BOOLEAN_TAG.equals(tagName)) {
+		} else if (BOOLEAN_TAG.equals(tagName)) {
 			QueryResultParseException realException = new QueryResultParseException(
 					"Found boolean results in tuple parser");
 			throw new SAXException(realException);
@@ -168,9 +148,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	}
 
 	@Override
-	public void endTag(String tagName)
-		throws SAXException
-	{
+	public void endTag(String tagName) throws SAXException {
 		if (BINDING_TAG.equals(tagName)) {
 			if (currentValue == null) {
 				throw new SAXException("Value missing for " + BINDING_TAG + " element");
@@ -180,15 +158,13 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 
 			currentBindingName = null;
 			currentValue = null;
-		}
-		else if (RESULT_TAG.equals(tagName)) {
+		} else if (RESULT_TAG.equals(tagName)) {
 			try {
 				if (handler != null) {
 					handler.handleSolution(currentSolution);
 				}
 				currentSolution = null;
-			}
-			catch (TupleQueryResultHandlerException e) {
+			} catch (TupleQueryResultHandlerException e) {
 				throw new SAXException(e);
 			}
 		}

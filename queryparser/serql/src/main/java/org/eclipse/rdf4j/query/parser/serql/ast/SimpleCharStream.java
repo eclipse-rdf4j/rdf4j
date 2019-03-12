@@ -10,8 +10,8 @@
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
 /**
- * An implementation of interface CharStream, where the stream is assumed to contain only ASCII characters
- * (without unicode processing).
+ * An implementation of interface CharStream, where the stream is assumed to contain only ASCII characters (without
+ * unicode processing).
  */
 
 public class SimpleCharStream {
@@ -78,8 +78,7 @@ public class SimpleCharStream {
 				bufcolumn = newbufcolumn;
 
 				maxNextCharInd = (bufpos += (bufsize - tokenBegin));
-			}
-			else {
+			} else {
 				System.arraycopy(buffer, tokenBegin, newbuffer, 0, bufsize - tokenBegin);
 				buffer = newbuffer;
 
@@ -91,8 +90,7 @@ public class SimpleCharStream {
 
 				maxNextCharInd = (bufpos -= tokenBegin);
 			}
-		}
-		catch (Throwable t) {
+		} catch (Throwable t) {
 			throw new Error(t.getMessage());
 		}
 
@@ -101,21 +99,17 @@ public class SimpleCharStream {
 		tokenBegin = 0;
 	}
 
-	protected void FillBuff()
-		throws java.io.IOException
-	{
+	protected void FillBuff() throws java.io.IOException {
 		if (maxNextCharInd == available) {
 			if (available == bufsize) {
 				if (tokenBegin > 2048) {
 					bufpos = maxNextCharInd = 0;
 					available = tokenBegin;
-				}
-				else if (tokenBegin < 0)
+				} else if (tokenBegin < 0)
 					bufpos = maxNextCharInd = 0;
 				else
 					ExpandBuff(false);
-			}
-			else if (available > tokenBegin)
+			} else if (available > tokenBegin)
 				available = bufsize;
 			else if ((tokenBegin - available) < 2048)
 				ExpandBuff(true);
@@ -128,12 +122,10 @@ public class SimpleCharStream {
 			if ((i = inputStream.read(buffer, maxNextCharInd, available - maxNextCharInd)) == -1) {
 				inputStream.close();
 				throw new java.io.IOException();
-			}
-			else
+			} else
 				maxNextCharInd += i;
 			return;
-		}
-		catch (java.io.IOException e) {
+		} catch (java.io.IOException e) {
 			--bufpos;
 			backup(0);
 			if (tokenBegin == -1)
@@ -143,9 +135,7 @@ public class SimpleCharStream {
 	}
 
 	/** Start. */
-	public char BeginToken()
-		throws java.io.IOException
-	{
+	public char BeginToken() throws java.io.IOException {
 		tokenBegin = -1;
 		char c = readChar();
 		tokenBegin = bufpos;
@@ -159,29 +149,27 @@ public class SimpleCharStream {
 		if (prevCharIsLF) {
 			prevCharIsLF = false;
 			line += (column = 1);
-		}
-		else if (prevCharIsCR) {
+		} else if (prevCharIsCR) {
 			prevCharIsCR = false;
 			if (c == '\n') {
 				prevCharIsLF = true;
-			}
-			else
+			} else
 				line += (column = 1);
 		}
 
 		switch (c) {
-			case '\r':
-				prevCharIsCR = true;
-				break;
-			case '\n':
-				prevCharIsLF = true;
-				break;
-			case '\t':
-				column--;
-				column += (tabSize - (column % tabSize));
-				break;
-			default:
-				break;
+		case '\r':
+			prevCharIsCR = true;
+			break;
+		case '\n':
+			prevCharIsLF = true;
+			break;
+		case '\t':
+			column--;
+			column += (tabSize - (column % tabSize));
+			break;
+		default:
+			break;
 		}
 
 		bufline[bufpos] = line;
@@ -189,9 +177,7 @@ public class SimpleCharStream {
 	}
 
 	/** Read a character. */
-	public char readChar()
-		throws java.io.IOException
-	{
+	public char readChar() throws java.io.IOException {
 		if (inBuf > 0) {
 			--inBuf;
 
@@ -309,9 +295,7 @@ public class SimpleCharStream {
 
 	/** Constructor. */
 	public SimpleCharStream(java.io.InputStream dstream, String encoding, int startline, int startcolumn,
-			int buffersize)
-		throws java.io.UnsupportedEncodingException
-	{
+			int buffersize) throws java.io.UnsupportedEncodingException {
 		this(encoding == null ? new java.io.InputStreamReader(dstream)
 				: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
 	}
@@ -323,8 +307,7 @@ public class SimpleCharStream {
 
 	/** Constructor. */
 	public SimpleCharStream(java.io.InputStream dstream, String encoding, int startline, int startcolumn)
-		throws java.io.UnsupportedEncodingException
-	{
+			throws java.io.UnsupportedEncodingException {
 		this(dstream, encoding, startline, startcolumn, 4096);
 	}
 
@@ -334,9 +317,7 @@ public class SimpleCharStream {
 	}
 
 	/** Constructor. */
-	public SimpleCharStream(java.io.InputStream dstream, String encoding)
-		throws java.io.UnsupportedEncodingException
-	{
+	public SimpleCharStream(java.io.InputStream dstream, String encoding) throws java.io.UnsupportedEncodingException {
 		this(dstream, encoding, 1, 1, 4096);
 	}
 
@@ -346,10 +327,8 @@ public class SimpleCharStream {
 	}
 
 	/** Reinitialise. */
-	public void ReInit(java.io.InputStream dstream, String encoding, int startline, int startcolumn,
-			int buffersize)
-		throws java.io.UnsupportedEncodingException
-	{
+	public void ReInit(java.io.InputStream dstream, String encoding, int startline, int startcolumn, int buffersize)
+			throws java.io.UnsupportedEncodingException {
 		ReInit(encoding == null ? new java.io.InputStreamReader(dstream)
 				: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
 	}
@@ -360,9 +339,7 @@ public class SimpleCharStream {
 	}
 
 	/** Reinitialise. */
-	public void ReInit(java.io.InputStream dstream, String encoding)
-		throws java.io.UnsupportedEncodingException
-	{
+	public void ReInit(java.io.InputStream dstream, String encoding) throws java.io.UnsupportedEncodingException {
 		ReInit(dstream, encoding, 1, 1, 4096);
 	}
 
@@ -373,8 +350,7 @@ public class SimpleCharStream {
 
 	/** Reinitialise. */
 	public void ReInit(java.io.InputStream dstream, String encoding, int startline, int startcolumn)
-		throws java.io.UnsupportedEncodingException
-	{
+			throws java.io.UnsupportedEncodingException {
 		ReInit(dstream, encoding, startline, startcolumn, 4096);
 	}
 
@@ -421,8 +397,7 @@ public class SimpleCharStream {
 
 		if (bufpos >= tokenBegin) {
 			len = bufpos - tokenBegin + inBuf + 1;
-		}
-		else {
+		} else {
 			len = bufsize - tokenBegin + bufpos + 1 + inBuf;
 		}
 

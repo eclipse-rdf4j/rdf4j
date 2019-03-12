@@ -29,16 +29,12 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (deleteExpr != null) {
 			deleteExpr.visit(visitor);
 		}
@@ -54,12 +50,10 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (deleteExpr == current) {
-			setDeleteExpr((TupleExpr)replacement);
-		}
-		else if (insertExpr == current) {
-			setInsertExpr((TupleExpr)replacement);
-		}
-		else {
+			setDeleteExpr((TupleExpr) replacement);
+		} else if (insertExpr == current) {
+			setInsertExpr((TupleExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -67,7 +61,7 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Modify) {
-			Modify o = (Modify)other;
+			Modify o = (Modify) other;
 			return nullEquals(deleteExpr, o.deleteExpr) && nullEquals(insertExpr, o.insertExpr)
 					&& nullEquals(whereExpr, o.whereExpr);
 		}
@@ -99,8 +93,7 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param deleteExpr
-	 *        The deleteExpr to set.
+	 * @param deleteExpr The deleteExpr to set.
 	 */
 	public void setDeleteExpr(TupleExpr deleteExpr) {
 		this.deleteExpr = deleteExpr;
@@ -114,8 +107,7 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param insertExpr
-	 *        The insertExpr to set.
+	 * @param insertExpr The insertExpr to set.
 	 */
 	public void setInsertExpr(TupleExpr insertExpr) {
 		this.insertExpr = insertExpr;
@@ -129,8 +121,7 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param whereExpr
-	 *        The whereExpr to set.
+	 * @param whereExpr The whereExpr to set.
 	 */
 	public void setWhereExpr(TupleExpr whereExpr) {
 		this.whereExpr = whereExpr;

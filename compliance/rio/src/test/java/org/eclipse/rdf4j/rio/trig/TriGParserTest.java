@@ -16,9 +16,7 @@ import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
  */
 public class TriGParserTest extends TriGParserTestCase {
 
-	public static junit.framework.Test suite()
-		throws Exception
-	{
+	public static junit.framework.Test suite() throws Exception {
 		return new TriGParserTest().createTestSuite();
 	}
 

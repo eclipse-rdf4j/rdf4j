@@ -29,9 +29,7 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
  * 
  * @author James Leigh
  */
-public class SPARQLRepository extends AbstractRepository
-		implements HttpClientDependent, SessionManagerDependent
-{
+public class SPARQLRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
 	/**
 	 * Flag indicating if quad mode is enabled in newly created {@link SPARQLConnection}s.
@@ -61,23 +59,19 @@ public class SPARQLRepository extends AbstractRepository
 	/**
 	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
 	 * 
-	 * @param endpointUrl
-	 *        a SPARQL endpoint URL. May not be null.
+	 * @param endpointUrl a SPARQL endpoint URL. May not be null.
 	 */
 	public SPARQLRepository(String endpointUrl) {
 		this(endpointUrl, endpointUrl);
 	}
 
 	/**
-	 * Create a new SPARQLREpository using the supplied query endpoint URL for queries, and the supplied
-	 * update endpoint URL for updates.
+	 * Create a new SPARQLREpository using the supplied query endpoint URL for queries, and the supplied update endpoint
+	 * URL for updates.
 	 * 
-	 * @param queryEndpointUrl
-	 *        a SPARQL endpoint URL for queries. May not be null.
-	 * @param updateEndpointUrl
-	 *        a SPARQL endpoint URL for updates. May not be null.
-	 * @throws IllegalArgumentException
-	 *         if one of the supplied endpoint URLs is null.
+	 * @param queryEndpointUrl  a SPARQL endpoint URL for queries. May not be null.
+	 * @param updateEndpointUrl a SPARQL endpoint URL for updates. May not be null.
+	 * @throws IllegalArgumentException if one of the supplied endpoint URLs is null.
 	 */
 	public SPARQLRepository(String queryEndpointUrl, String updateEndpointUrl) {
 		if (queryEndpointUrl == null || updateEndpointUrl == null) {
@@ -141,7 +135,8 @@ public class SPARQLRepository extends AbstractRepository
 	 */
 	protected SPARQLProtocolSession createHTTPClient() {
 		// initialize HTTP client
-		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl, updateEndpointUrl);
+		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,
+				updateEndpointUrl);
 		httpClient.setValueFactory(SimpleValueFactory.getInstance());
 		httpClient.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.SPARQL);
 		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);
@@ -152,9 +147,7 @@ public class SPARQLRepository extends AbstractRepository
 	}
 
 	@Override
-	public RepositoryConnection getConnection()
-		throws RepositoryException
-	{
+	public RepositoryConnection getConnection() throws RepositoryException {
 		if (!isInitialized()) {
 			throw new RepositoryException("SPARQLRepository not initialized.");
 		}
@@ -172,16 +165,12 @@ public class SPARQLRepository extends AbstractRepository
 	}
 
 	@Override
-	protected void initializeInternal()
-		throws RepositoryException
-	{
+	protected void initializeInternal() throws RepositoryException {
 		// no-op
 	}
 
 	@Override
-	public boolean isWritable()
-		throws RepositoryException
-	{
+	public boolean isWritable() throws RepositoryException {
 		return false;
 	}
 
@@ -193,10 +182,8 @@ public class SPARQLRepository extends AbstractRepository
 	/**
 	 * Set the username and password to use for authenticating with the remote repository.
 	 * 
-	 * @param username
-	 *        the username. Setting this to null will disable authentication.
-	 * @param password
-	 *        the password. Setting this to null will disable authentication.
+	 * @param username the username. Setting this to null will disable authentication.
+	 * @param password the password. Setting this to null will disable authentication.
 	 */
 	public void setUsernameAndPassword(final String username, final String password) {
 		this.username = username;
@@ -204,17 +191,14 @@ public class SPARQLRepository extends AbstractRepository
 	}
 
 	@Override
-	protected void shutDownInternal()
-		throws RepositoryException
-	{
+	protected void shutDownInternal() throws RepositoryException {
 		try {
 			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
 			}
-		}
-		finally {
+		} finally {
 			// remove reference but do not shut down, client may be shared by
 			// other repos.
 			client = null;
@@ -229,39 +213,34 @@ public class SPARQLRepository extends AbstractRepository
 	/**
 	 * Get the additional HTTP headers which will be used
 	 * 
-	 * @return a read-only view of the additional HTTP headers which will be included in every request to the
-	 *         server.
+	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
 		return Collections.unmodifiableMap(additionalHttpHeaders);
 	}
 
 	/**
-	 * Set additional HTTP headers to be included in every request to the server, which may be required for
-	 * certain unusual server configurations. This will only take effect on connections subsequently returned
-	 * by {@link #getConnection()}.
+	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
+	 * unusual server configurations. This will only take effect on connections subsequently returned by
+	 * {@link #getConnection()}.
 	 * 
-	 * @param additionalHttpHeaders
-	 *        a map containing pairs of header names and values. May be null
+	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
 		if (additionalHttpHeaders == null) {
 			this.additionalHttpHeaders = Collections.emptyMap();
-		}
-		else {
+		} else {
 			this.additionalHttpHeaders = additionalHttpHeaders;
 		}
 	}
 
 	/**
-	 * Activate quad mode for this {@link SPARQLRepository}, i.e. for retrieval of statements also retrieve
-	 * the graph.
+	 * Activate quad mode for this {@link SPARQLRepository}, i.e. for retrieval of statements also retrieve the graph.
 	 * <p>
-	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s as the setting is an
-	 * immutable configuration of a connection instance.
+	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s as the setting is an immutable
+	 * configuration of a connection instance.
 	 * 
-	 * @param flag
-	 *        flag to enable or disable the quad mode
+	 * @param flag flag to enable or disable the quad mode
 	 * @see SPARQLConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
 	 *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource...)
 	 */

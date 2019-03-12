@@ -29,7 +29,7 @@ public class ByteArrayUtil {
 	/**
 	 * Gets the subarray from <tt>array</tt> that starts at <tt>offset</tt>.
 	 * 
-	 * @param array source array
+	 * @param array  source array
 	 * @param offset non-negative offset
 	 * @return byte array
 	 */
@@ -40,7 +40,7 @@ public class ByteArrayUtil {
 	/**
 	 * Gets the subarray of length <tt>length</tt> from <tt>array</tt> that starts at <tt>offset</tt>.
 	 * 
-	 * @param array byte array
+	 * @param array  byte array
 	 * @param offset non-negative offset
 	 * @param length length
 	 * @return byte array
@@ -54,72 +54,68 @@ public class ByteArrayUtil {
 	/**
 	 * Put an integer value (padded) in a byte array at a specific offset.
 	 * 
-	 * @param value integer value
-	 * @param array byte array
+	 * @param value  integer value
+	 * @param array  byte array
 	 * @param offset non-negative offset
 	 */
 	public static void putInt(int value, byte[] array, int offset) {
-		array[offset] = (byte)(0xff & (value >>> 24));
-		array[offset + 1] = (byte)(0xff & (value >>> 16));
-		array[offset + 2] = (byte)(0xff & (value >>> 8));
-		array[offset + 3] = (byte)(0xff & value);
+		array[offset] = (byte) (0xff & (value >>> 24));
+		array[offset + 1] = (byte) (0xff & (value >>> 16));
+		array[offset + 2] = (byte) (0xff & (value >>> 8));
+		array[offset + 3] = (byte) (0xff & value);
 	}
 
 	/**
 	 * Get an integer value from a byte array at a specific offset.
 	 * 
-	 * @param array byte array
+	 * @param array  byte array
 	 * @param offset non-negative offset
 	 * @return integer value
 	 */
 	public static int getInt(byte[] array, int offset) {
-		return ((array[offset] & 0xff) << 24) | ((array[offset + 1] & 0xff) << 16)
-				| ((array[offset + 2] & 0xff) << 8) | (array[offset + 3] & 0xff);
+		return ((array[offset] & 0xff) << 24) | ((array[offset + 1] & 0xff) << 16) | ((array[offset + 2] & 0xff) << 8)
+				| (array[offset + 3] & 0xff);
 	}
 
 	/**
-	 * Put a long value (padded) in a byte array at a specific offset. 
+	 * Put a long value (padded) in a byte array at a specific offset.
 	 * 
-	 * @param value long value
-	 * @param array byte array
+	 * @param value  long value
+	 * @param array  byte array
 	 * @param offset non-negative offset
 	 */
 	public static void putLong(long value, byte[] array, int offset) {
-		array[offset] = (byte)(0xff & (value >>> 56));
-		array[offset + 1] = (byte)(0xff & (value >>> 48));
-		array[offset + 2] = (byte)(0xff & (value >>> 40));
-		array[offset + 3] = (byte)(0xff & (value >>> 32));
-		array[offset + 4] = (byte)(0xff & (value >>> 24));
-		array[offset + 5] = (byte)(0xff & (value >>> 16));
-		array[offset + 6] = (byte)(0xff & (value >>> 8));
-		array[offset + 7] = (byte)(0xff & value);
+		array[offset] = (byte) (0xff & (value >>> 56));
+		array[offset + 1] = (byte) (0xff & (value >>> 48));
+		array[offset + 2] = (byte) (0xff & (value >>> 40));
+		array[offset + 3] = (byte) (0xff & (value >>> 32));
+		array[offset + 4] = (byte) (0xff & (value >>> 24));
+		array[offset + 5] = (byte) (0xff & (value >>> 16));
+		array[offset + 6] = (byte) (0xff & (value >>> 8));
+		array[offset + 7] = (byte) (0xff & value);
 	}
 
 	/**
 	 * Get a long value from a byte array at a specific offset.
 	 * 
-	 * @param array byte array
+	 * @param array  byte array
 	 * @param offset offset
 	 * @return long value
 	 */
 	public static long getLong(byte[] array, int offset) {
-		return ((long)(array[offset] & 0xff) << 56) | ((long)(array[offset + 1] & 0xff) << 48)
-				| ((long)(array[offset + 2] & 0xff) << 40) | ((long)(array[offset + 3] & 0xff) << 32)
-				| ((long)(array[offset + 4] & 0xff) << 24) | ((long)(array[offset + 5] & 0xff) << 16)
-				| ((long)(array[offset + 6] & 0xff) << 8) | ((long)(array[offset + 7] & 0xff));
+		return ((long) (array[offset] & 0xff) << 56) | ((long) (array[offset + 1] & 0xff) << 48)
+				| ((long) (array[offset + 2] & 0xff) << 40) | ((long) (array[offset + 3] & 0xff) << 32)
+				| ((long) (array[offset + 4] & 0xff) << 24) | ((long) (array[offset + 5] & 0xff) << 16)
+				| ((long) (array[offset + 6] & 0xff) << 8) | ((long) (array[offset + 7] & 0xff));
 	}
 
 	/**
 	 * Retrieve a byte from a byte array.
 	 * 
-	 * @param a
-	 *        the byte array to look in
-	 * @param fromIndex
-	 *        the position from which to start looking
-	 * @param toIndex
-	 *        the position up to which to look
-	 * @param key
-	 *        the byte to find
+	 * @param a         the byte array to look in
+	 * @param fromIndex the position from which to start looking
+	 * @param toIndex   the position up to which to look
+	 * @param key       the byte to find
 	 * @return the position of the byte in the array, or -1 if the byte was not found in the array
 	 */
 	public static int find(byte[] a, int fromIndex, int toIndex, byte key) {
@@ -142,14 +138,10 @@ public class ByteArrayUtil {
 	/**
 	 * Look for a sequence of bytes in a byte array.
 	 * 
-	 * @param a
-	 *        the byte array to look in
-	 * @param fromIndex
-	 *        the position from which to start looking
-	 * @param toIndex
-	 *        the position up to which to look
-	 * @param key
-	 *        the bytes to find
+	 * @param a         the byte array to look in
+	 * @param fromIndex the position from which to start looking
+	 * @param toIndex   the position up to which to look
+	 * @param key       the bytes to find
 	 * @return the position of the bytes in the array, or -1 if the bytes were not found in the array
 	 */
 	public static int find(byte[] a, int fromIndex, int toIndex, byte[] key) {
@@ -176,8 +168,7 @@ public class ByteArrayUtil {
 
 		if (sublen == 0) {
 			result = 0;
-		}
-		else if (sp == sublen) {
+		} else if (sp == sublen) {
 			result = (first - 1);
 		}
 
@@ -185,14 +176,13 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the bits specified by
-	 * <tt>mask</tt>. In other words: this method returns true if
-	 * <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
+	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the bits specified by <tt>mask</tt>. In
+	 * other words: this method returns true if <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
 	 * 
-	 * @param value byte array
-	 * @param mask 
+	 * @param value   byte array
+	 * @param mask
 	 * @param pattern pattern
-	 * @return  true if pattern was found
+	 * @return true if pattern was found
 	 */
 	public static boolean matchesPattern(byte[] value, byte[] mask, byte[] pattern) {
 		for (int i = 0; i < value.length; i++) {
@@ -205,12 +195,11 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt> starting at offset
-	 * <tt>offset</tt>.
+	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt> starting at offset <tt>offset</tt>.
 	 * 
-	 * @param subValue value to search for
+	 * @param subValue   value to search for
 	 * @param superValue byte array
-	 * @param offset non-negative offset
+	 * @param offset     non-negative offset
 	 * @return true upon exact match, false otherwise
 	 */
 	public static boolean regionMatches(byte[] subValue, byte[] superValue, int offset) {
@@ -226,18 +215,13 @@ public class ByteArrayUtil {
 	/**
 	 * Compares two regions of bytes, indicating whether one is larger than the other.
 	 * 
-	 * @param array1
-	 *        The first byte array.
-	 * @param startIdx1
-	 *        The start of the region in the first array.
-	 * @param array2
-	 *        The second byte array.
-	 * @param startIdx2
-	 *        The start of the region in the second array.
-	 * @param length
-	 *        The length of the region that should be compared.
-	 * @return A negative number when the first region is smaller than the second, a positive number when the
-	 *         first region is larger than the second, or 0 if the regions are equal.
+	 * @param array1    The first byte array.
+	 * @param startIdx1 The start of the region in the first array.
+	 * @param array2    The second byte array.
+	 * @param startIdx2 The start of the region in the second array.
+	 * @param length    The length of the region that should be compared.
+	 * @return A negative number when the first region is smaller than the second, a positive number when the first
+	 *         region is larger than the second, or 0 if the regions are equal.
 	 */
 	public static int compareRegion(byte[] array1, int startIdx1, byte[] array2, int startIdx2, int length) {
 		int result = 0;
@@ -292,13 +276,13 @@ public class ByteArrayUtil {
 	 * @return byte mask
 	 */
 	private static byte byteMask(int bitNo) {
-		return (byte)(0x80 >>> (bitNo % 8));
+		return (byte) (0x80 >>> (bitNo % 8));
 	}
 
 	/**
-	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two
-	 * hexadecimals per byte. As a result, the length of the resulting string is guaranteed to be twice the
-	 * length of the supplied byte array.
+	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two hexadecimals per
+	 * byte. As a result, the length of the resulting string is guaranteed to be twice the length of the supplied byte
+	 * array.
 	 * 
 	 * @param array byte array
 	 * @return hexadecimal string

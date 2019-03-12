@@ -13,17 +13,17 @@ import java.io.IOException;
 import java.io.Reader;
 
 /**
- * This reader respects the TSV semantics of RDF4J and does absolutely no
- * processing except for splitting the line on horizontal tabulator characters.
+ * This reader respects the TSV semantics of RDF4J and does absolutely no processing except for splitting the line on
+ * horizontal tabulator characters.
  */
 public class SPARQLResultsTSVReader extends CSVReader {
-    public SPARQLResultsTSVReader(Reader reader) {
-        super(reader);
-    }
+	public SPARQLResultsTSVReader(Reader reader) {
+		super(reader);
+	}
 
-    @Override
-    public String[] readNext() throws IOException {
-        String line = getNextLine();
-        return line == null ? null : validateResult(line.split("\t", -1));
-    }
+	@Override
+	public String[] readNext() throws IOException {
+		String line = getNextLine();
+		return line == null ? null : validateResult(line.split("\t", -1));
+	}
 }

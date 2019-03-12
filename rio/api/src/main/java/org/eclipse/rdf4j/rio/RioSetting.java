@@ -42,11 +42,10 @@ public interface RioSetting<T extends Object> extends Serializable {
 	/**
 	 * Attempts to convert from a string to a type-safe representation based on the generic type of this setting.
 	 * 
-	 * @param stringValue
-	 *        a string representation of a value for this setting.
+	 * @param stringValue a string representation of a value for this setting.
 	 * @return The corresponding object of type T for the supplied string value.
-	 * @throws RioConfigurationException
-	 *         if the setting type does not provide conversion from a string to the expected type.
+	 * @throws RioConfigurationException if the setting type does not provide conversion from a string to the expected
+	 *                                   type.
 	 */
 	default T convert(String stringRepresentation) {
 		throw new RioConfigurationException("Conversion not implemented for setting: " + getKey());

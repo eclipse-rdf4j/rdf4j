@@ -16,8 +16,7 @@ import org.junit.Test;
 
 public abstract class IterationTest {
 
-	protected static final List<String> stringList1 = Arrays.asList("1", "2", "3", "4", "5", "1", "2", "3",
-			"4", "5");
+	protected static final List<String> stringList1 = Arrays.asList("1", "2", "3", "4", "5", "1", "2", "3", "4", "5");
 
 	protected static final List<String> stringList2 = Arrays.asList("4", "5", "6", "7", "8");
 
@@ -29,15 +28,12 @@ public abstract class IterationTest {
 		return new CloseableIteratorIteration<>(stringList2.iterator());
 	}
 
-	protected abstract Iteration<String, Exception> createTestIteration()
-		throws Exception;
+	protected abstract Iteration<String, Exception> createTestIteration() throws Exception;
 
 	protected abstract int getTestIterationSize();
 
 	@Test
-	public void testFullIteration()
-		throws Exception
-	{
+	public void testFullIteration() throws Exception {
 		Iteration<String, Exception> iter = createTestIteration();
 		int count = 0;
 

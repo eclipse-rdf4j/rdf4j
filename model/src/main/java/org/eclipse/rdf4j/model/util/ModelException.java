@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * An exception thrown by {@link Model} and {@link org.eclipse.rdf4j.model.util.Models Models} when specific
- * conditions are not met.
+ * An exception thrown by {@link Model} and {@link org.eclipse.rdf4j.model.util.Models Models} when specific conditions
+ * are not met.
  * 
  * @author Arjohn Kampman
  */
@@ -47,15 +47,13 @@ public class ModelException extends RDF4JException {
 			sb.append(v1.toString());
 			sb.append(" and ");
 			sb.append(v2.toString());
-		}
-		else if (!v1.getClass().getName().equals(v2.getClass().getName())) {
+		} else if (!v1.getClass().getName().equals(v2.getClass().getName())) {
 			sb.append("Object is both ");
 			sb.append("a ");
 			sb.append(v1.getClass().getName());
 			sb.append(" and a ");
 			sb.append(v2.getClass().getName());
-		}
-		else {
+		} else {
 			sb.append("Object is ");
 			sb.append(v1);
 			sb.append(" twice!? (store maybe corrupt)");

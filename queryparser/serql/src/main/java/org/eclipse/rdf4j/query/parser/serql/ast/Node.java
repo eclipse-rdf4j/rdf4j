@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 public interface Node {
 
 	/**
-	 * This method is called after the node has been made the current node. It indicates that child nodes can
-	 * now be added to it.
+	 * This method is called after the node has been made the current node. It indicates that child nodes can now be
+	 * added to it.
 	 */
 	public void jjtOpen();
 
@@ -63,6 +63,5 @@ public interface Node {
 	/**
 	 * Accept the visitor.
 	 */
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException;
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException;
 }

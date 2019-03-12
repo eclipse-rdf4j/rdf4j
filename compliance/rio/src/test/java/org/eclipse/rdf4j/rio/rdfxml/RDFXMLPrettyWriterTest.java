@@ -45,9 +45,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	/**
 	 * Extract lines that start an rdf element so basic assertions can be made.
 	 */
-	private static List<String> rdfOpenTags(String s)
-		throws IOException
-	{
+	private static List<String> rdfOpenTags(String s) throws IOException {
 		String withoutSpaces = Pattern.compile("^\\s+", Pattern.MULTILINE).matcher(s).replaceAll("");
 
 		List<String> rdfLines = new ArrayList<>();
@@ -62,9 +60,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	}
 
 	@Test
-	public void sequenceItemsAreAbbreviated()
-		throws RDFHandlerException, IOException
-	{
+	public void sequenceItemsAreAbbreviated() throws RDFHandlerException, IOException {
 		StringWriter writer = new StringWriter();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
 
@@ -74,10 +70,10 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"),
-				vf.createIRI("http://example.com/#1")));
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"),
-				vf.createIRI("http://example.com/#2")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
@@ -86,9 +82,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	}
 
 	@Test
-	public void outOfSequenceItemsAreNotAbbreviated()
-		throws RDFHandlerException, IOException
-	{
+	public void outOfSequenceItemsAreNotAbbreviated() throws RDFHandlerException, IOException {
 		StringWriter writer = new StringWriter();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
 
@@ -98,10 +92,10 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_0"),
-				vf.createIRI("http://example.com/#0")));
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"),
-				vf.createIRI("http://example.com/#2")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_0"), vf.createIRI("http://example.com/#0")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
@@ -110,9 +104,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	}
 
 	@Test
-	public void inSequenceItemsMixedWithOtherElementsAreAbbreviated()
-		throws RDFHandlerException, IOException
-	{
+	public void inSequenceItemsMixedWithOtherElementsAreAbbreviated() throws RDFHandlerException, IOException {
 		StringWriter writer = new StringWriter();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
 
@@ -122,19 +114,18 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"),
-				vf.createIRI("http://example.com/#2")));
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"),
-				vf.createIRI("http://example.com/#1")));
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_3"),
-				vf.createIRI("http://example.com/#3")));
-		rdfWriter.handleStatement(vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"),
-				vf.createIRI("http://example.com/#2")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_3"), vf.createIRI("http://example.com/#3")));
+		rdfWriter.handleStatement(
+				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
 
-		assertEquals(Arrays.asList("<rdf:RDF", "<rdf:Bag", "<rdf:_2", "<rdf:li", "<rdf:_3", "<rdf:li"),
-				rdfLines);
+		assertEquals(Arrays.asList("<rdf:RDF", "<rdf:Bag", "<rdf:_2", "<rdf:li", "<rdf:_3", "<rdf:li"), rdfLines);
 	}
 }

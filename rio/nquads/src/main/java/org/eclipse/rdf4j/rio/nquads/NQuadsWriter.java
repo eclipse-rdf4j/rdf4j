@@ -37,9 +37,7 @@ public class NQuadsWriter extends NTriplesWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
@@ -62,8 +60,7 @@ public class NQuadsWriter extends NTriplesWriter {
 			}
 
 			writer.write(" .\n");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}

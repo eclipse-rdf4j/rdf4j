@@ -38,8 +38,8 @@ public class ParsedUpdate extends ParsedOperation {
 	 *--------------*/
 
 	/**
-	 * Creates a new update sequence. To complete this update sequence, one or more update expressions need to
-	 * be supplied to it using {@link #addUpdateExpr(UpdateExpr)}.
+	 * Creates a new update sequence. To complete this update sequence, one or more update expressions need to be
+	 * supplied to it using {@link #addUpdateExpr(UpdateExpr)}.
 	 */
 	public ParsedUpdate() {
 		super();
@@ -55,12 +55,11 @@ public class ParsedUpdate extends ParsedOperation {
 	}
 
 	/**
-	 * Creates a new update sequence. To complete this update sequence, one or update expressions need to be
-	 * supplied to it using {@link #addUpdateExpr(UpdateExpr)}.
+	 * Creates a new update sequence. To complete this update sequence, one or update expressions need to be supplied to
+	 * it using {@link #addUpdateExpr(UpdateExpr)}.
 	 * 
-	 * @param namespaces
-	 *        A mapping of namespace prefixes to namespace names representing the namespaces that are used in
-	 *        the update.
+	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
+	 *                   the update.
 	 */
 	public ParsedUpdate(Map<String, String> namespaces) {
 		super();
@@ -74,8 +73,7 @@ public class ParsedUpdate extends ParsedOperation {
 	public Map<String, String> getNamespaces() {
 		if (namespaces != null) {
 			return namespaces;
-		}
-		else {
+		} else {
 			return Collections.emptyMap();
 		}
 	}
@@ -89,10 +87,8 @@ public class ParsedUpdate extends ParsedOperation {
 	}
 
 	/**
-	 * @param updateExpr
-	 *        The updateExpr to map to a dataset.
-	 * @param dataset
-	 *        the dataset that applies to the updateExpr. May be null.
+	 * @param updateExpr The updateExpr to map to a dataset.
+	 * @param dataset    the dataset that applies to the updateExpr. May be null.
 	 */
 	public void map(UpdateExpr updateExpr, Dataset dataset) {
 		datasetMapping.put(updateExpr, dataset);

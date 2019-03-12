@@ -145,12 +145,10 @@ public abstract class SPARQLOperation implements Operation {
 	private String getReplacement(Value value) {
 		StringBuilder sb = new StringBuilder();
 		if (value instanceof IRI) {
-			return appendValue(sb, (IRI)value).toString();
-		}
-		else if (value instanceof Literal) {
-			return appendValue(sb, (Literal)value).toString();
-		}
-		else {
+			return appendValue(sb, (IRI) value).toString();
+		} else if (value instanceof Literal) {
+			return appendValue(sb, (Literal) value).toString();
+		} else {
 			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
 		}
 	}
@@ -168,8 +166,7 @@ public abstract class SPARQLOperation implements Operation {
 		if (Literals.isLanguageLiteral(lit)) {
 			sb.append('@');
 			sb.append(lit.getLanguage().get());
-		}
-		else {
+		} else {
 			sb.append("^^<");
 			sb.append(lit.getDatatype().stringValue());
 			sb.append('>');

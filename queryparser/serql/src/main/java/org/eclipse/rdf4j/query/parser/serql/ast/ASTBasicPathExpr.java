@@ -18,17 +18,15 @@ public class ASTBasicPathExpr extends ASTPathExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTNode getHead() {
-		return (ASTNode)children.get(0);
+		return (ASTNode) children.get(0);
 	}
 
 	public ASTBasicPathExprTail getTail() {
-		return (ASTBasicPathExprTail)children.get(1);
+		return (ASTBasicPathExprTail) children.get(1);
 	}
 }

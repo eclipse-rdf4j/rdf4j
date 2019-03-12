@@ -31,7 +31,7 @@ public abstract class AbstractBindingSet implements BindingSet {
 			return false;
 		}
 
-		BindingSet that = (BindingSet)other;
+		BindingSet that = (BindingSet) other;
 
 		if (this.size() != that.size()) {
 			return false;

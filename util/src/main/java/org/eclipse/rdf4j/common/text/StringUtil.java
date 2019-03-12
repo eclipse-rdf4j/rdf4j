@@ -23,17 +23,13 @@ public class StringUtil {
 	private static final int MAX_INITIAL_TEXT_LENGTH = 250;
 
 	/**
-	 * Substitute String "old" by String "new" in String "text" everywhere. This is static util function that
-	 * I could not place anywhere more appropriate. The name of this function is from the good-old awk time.
+	 * Substitute String "old" by String "new" in String "text" everywhere. This is static util function that I could
+	 * not place anywhere more appropriate. The name of this function is from the good-old awk time.
 	 * 
-	 * @param olds
-	 *        The String to be substituted.
-	 * @param news
-	 *        The String is the new content.
-	 * @param text
-	 *        The String in which the substitution is done.
-	 * @return The result String containing the substitutions; if no substitutions were made, the result is
-	 *         'text'.
+	 * @param olds The String to be substituted.
+	 * @param news The String is the new content.
+	 * @param text The String in which the substitution is done.
+	 * @return The result String containing the substitutions; if no substitutions were made, the result is 'text'.
 	 */
 	public static String gsub(String olds, String news, String text) {
 		if (olds == null || olds.length() == 0) {
@@ -77,36 +73,30 @@ public class StringUtil {
 	}
 
 	/**
-	 * Returns all text occurring after the specified separator character, or the entire string when the
-	 * seperator char does not occur.
+	 * Returns all text occurring after the specified separator character, or the entire string when the seperator char
+	 * does not occur.
 	 * 
-	 * @param string
-	 *        The string of which the substring needs to be determined.
-	 * @param separatorChar
-	 *        The character to look for.
-	 * @return All text occurring after the separator character, or the entire string when the character does
-	 *         not occur.
+	 * @param string        The string of which the substring needs to be determined.
+	 * @param separatorChar The character to look for.
+	 * @return All text occurring after the separator character, or the entire string when the character does not occur.
 	 */
 	public static String getAllAfter(String string, char separatorChar) {
 		int index = string.indexOf(separatorChar);
 		if (index < 0 || index == string.length() - 1) {
 			return string;
-		}
-		else {
+		} else {
 			return string.substring(index + 1);
 		}
 	}
 
 	/**
-	 * Returns all text occurring before the specified separator character, or the entire string when the
-	 * seperator char does not occur.
+	 * Returns all text occurring before the specified separator character, or the entire string when the seperator char
+	 * does not occur.
 	 * 
-	 * @param string
-	 *        The string of which the substring needs to be determined.
-	 * @param separatorChar
-	 *        The character to look for.
-	 * @return All text occurring before the separator character, or the entire string when the character does
-	 *         not occur.
+	 * @param string        The string of which the substring needs to be determined.
+	 * @param separatorChar The character to look for.
+	 * @return All text occurring before the separator character, or the entire string when the character does not
+	 *         occur.
 	 */
 	public static String getAllBefore(String string, char separatorChar) {
 		int index = string.indexOf(separatorChar);
@@ -115,8 +105,7 @@ public class StringUtil {
 
 	/**
 	 * Encodes an array of Strings into a single String than can be decoded to the original array using the
-	 * corresponding decode method. Useful for e.g. storing an array of Strings as a single entry in a
-	 * Preferences node.
+	 * corresponding decode method. Useful for e.g. storing an array of Strings as a single entry in a Preferences node.
 	 */
 	public static String encodeArray(String[] array) {
 		StringBuilder buffer = new StringBuilder();
@@ -154,8 +143,8 @@ public class StringUtil {
 	}
 
 	/**
-	 * Derives the initial text from the supplied text. The returned text excludes whitespace and other
-	 * special characters and is useful for display purposes (e.g. previews).
+	 * Derives the initial text from the supplied text. The returned text excludes whitespace and other special
+	 * characters and is useful for display purposes (e.g. previews).
 	 */
 	public static String deriveInitialText(String text) {
 		String result = null;
@@ -175,8 +164,7 @@ public class StringUtil {
 			// try to find an initial text of a sufficient length
 			endIdx = startIdx + 1;
 			while (endIdx < textLength && ((endIdx - startIdx) < MAX_INITIAL_TEXT_LENGTH)
-					&& isInitialTextChar(text.charAt(endIdx)))
-			{
+					&& isInitialTextChar(text.charAt(endIdx))) {
 				endIdx++;
 			}
 
@@ -194,16 +182,15 @@ public class StringUtil {
 	}
 
 	/**
-	 * Titles shorter than MIN_TITLE_LENGTH and long titles that don't contain a single space character are
-	 * considered to be garbage.
+	 * Titles shorter than MIN_TITLE_LENGTH and long titles that don't contain a single space character are considered
+	 * to be garbage.
 	 */
 	public static boolean isGarbageText(String text) {
 		boolean result = false;
 
 		if (text.trim().length() < MIN_INITIAL_TEXT_LENGTH) {
 			result = true;
-		}
-		else if (text.length() > 30) {
+		} else if (text.length() > 30) {
 			result = true;
 
 			for (int i = 0; i < text.length(); i++) {
@@ -220,12 +207,9 @@ public class StringUtil {
 	/**
 	 * Appends the specified character <tt>n</tt> times to the supplied StringBuilder.
 	 * 
-	 * @param c
-	 *        The character to append.
-	 * @param n
-	 *        The number of times the character should be appended.
-	 * @param sb
-	 *        The StringBuilder to append the character(s) to.
+	 * @param c  The character to append.
+	 * @param n  The number of times the character should be appended.
+	 * @param sb The StringBuilder to append the character(s) to.
 	 */
 	public static void appendN(char c, int n, StringBuilder sb) {
 		for (int i = n; i > 0; i--) {
@@ -234,14 +218,12 @@ public class StringUtil {
 	}
 
 	/**
-	 * Removes the double quote from the start and end of the supplied string if it starts and ends with this
-	 * character. This method does not create a new string if <tt>text</tt> doesn't start and end with double
-	 * quotes, the <tt>text</tt> object itself is returned in that case.
+	 * Removes the double quote from the start and end of the supplied string if it starts and ends with this character.
+	 * This method does not create a new string if <tt>text</tt> doesn't start and end with double quotes, the
+	 * <tt>text</tt> object itself is returned in that case.
 	 * 
-	 * @param text
-	 *        The string to remove the double quotes from.
-	 * @return The trimmed string, or a reference to <tt>text</tt> if it did not start and end with double
-	 *         quotes.
+	 * @param text The string to remove the double quotes from.
+	 * @return The trimmed string, or a reference to <tt>text</tt> if it did not start and end with double quotes.
 	 */
 	public static String trimDoubleQuotes(String text) {
 		int textLength = text.length();
@@ -280,8 +262,7 @@ public class StringUtil {
 	/**
 	 * Concatenate a number of Strings. This implementation uses a StringBuilder.
 	 * 
-	 * @param strings
-	 *        the String to concatenate
+	 * @param strings the String to concatenate
 	 * @return a String that is the results of concatenating the input strings.
 	 */
 	public static String concat(String... strings) {

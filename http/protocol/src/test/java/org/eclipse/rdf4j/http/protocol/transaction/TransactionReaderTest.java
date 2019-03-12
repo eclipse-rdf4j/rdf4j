@@ -48,9 +48,7 @@ public class TransactionReaderTest {
 	private static final IRI context2 = vf.createIRI("http://example.org/context2");
 
 	@Test
-	public void testRoundtrip()
-		throws Exception
-	{
+	public void testRoundtrip() throws Exception {
 
 		AddStatementOperation operation = new AddStatementOperation(bob, knows, alice, context1, context2);
 
@@ -69,7 +67,7 @@ public class TransactionReaderTest {
 
 		for (TransactionOperation op : parsedTxn) {
 			assertTrue(op instanceof AddStatementOperation);
-			AddStatementOperation addOp = (AddStatementOperation)op;
+			AddStatementOperation addOp = (AddStatementOperation) op;
 
 			Resource[] contexts = addOp.getContexts();
 
@@ -81,9 +79,7 @@ public class TransactionReaderTest {
 	}
 
 	@Test
-	public void testControlCharHandling()
-		throws Exception
-	{
+	public void testControlCharHandling() throws Exception {
 		AddStatementOperation operation = new AddStatementOperation(bob, knows, controlCharText);
 
 		List<TransactionOperation> txn = new ArrayList<>();
@@ -101,7 +97,7 @@ public class TransactionReaderTest {
 
 		for (TransactionOperation op : parsedTxn) {
 			assertTrue(op instanceof AddStatementOperation);
-			AddStatementOperation addOp = (AddStatementOperation)op;
+			AddStatementOperation addOp = (AddStatementOperation) op;
 			assertTrue(addOp.getObject().equals(controlCharText));
 		}
 

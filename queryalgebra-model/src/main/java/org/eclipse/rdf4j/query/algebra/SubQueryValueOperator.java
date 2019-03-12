@@ -41,18 +41,15 @@ public abstract class SubQueryValueOperator extends AbstractQueryModelNode imple
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		subQuery.visit(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subQuery == current) {
-			setSubQuery((TupleExpr)replacement);
-		}
-		else {
+			setSubQuery((TupleExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -60,7 +57,7 @@ public abstract class SubQueryValueOperator extends AbstractQueryModelNode imple
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof SubQueryValueOperator) {
-			SubQueryValueOperator o = (SubQueryValueOperator)other;
+			SubQueryValueOperator o = (SubQueryValueOperator) other;
 			return subQuery.equals(o.getSubQuery());
 		}
 
@@ -74,7 +71,7 @@ public abstract class SubQueryValueOperator extends AbstractQueryModelNode imple
 
 	@Override
 	public SubQueryValueOperator clone() {
-		SubQueryValueOperator clone = (SubQueryValueOperator)super.clone();
+		SubQueryValueOperator clone = (SubQueryValueOperator) super.clone();
 		clone.setSubQuery(getSubQuery().clone());
 		return clone;
 	}

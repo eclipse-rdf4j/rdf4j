@@ -23,16 +23,15 @@ public class BasicWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.pretty_print}.
 	 */
-	public static final RioSetting<Boolean> PRETTY_PRINT = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.pretty_print", "Pretty print", Boolean.TRUE);
+	public static final RioSetting<Boolean> PRETTY_PRINT = new BooleanRioSetting("org.eclipse.rdf4j.rio.pretty_print",
+			"Pretty print", Boolean.TRUE);
 
 	/**
-	 * Inline blanks nodes by their value and don't write any blank node labels when this setting is true. This
-	 * setting should only be used when blank nodes never appear in the context and there are no blank node
-	 * cycles.
+	 * Inline blanks nodes by their value and don't write any blank node labels when this setting is true. This setting
+	 * should only be used when blank nodes never appear in the context and there are no blank node cycles.
 	 * <p>
-	 * WARNING: This setting requires all triples to be processed before being written and could use a lot of
-	 * memory in the process and should be set to false for large RDF files.
+	 * WARNING: This setting requires all triples to be processed before being written and could use a lot of memory in
+	 * the process and should be set to false for large RDF files.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
@@ -46,11 +45,10 @@ public class BasicWriterSettings {
 			Boolean.FALSE);
 
 	/**
-	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals
-	 * and represent them as RDF-1.0 Plain Literals.
+	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals and
+	 * represent them as RDF-1.0 Plain Literals.
 	 * <p>
-	 * In RDF-1.1, all literals that would have been Plain Literals in RDF-1.0 will be typed as xsd:string
-	 * internally.
+	 * In RDF-1.1, all literals that would have been Plain Literals in RDF-1.0 will be typed as xsd:string internally.
 	 * <p>
 	 * Defaults to true to allow for backwards compatibility without enforcing it.
 	 * <p>
@@ -60,15 +58,15 @@ public class BasicWriterSettings {
 			"org.eclipse.rdf4j.rio.rdf10_plain_literals", "RDF-1.0 compatible Plain Literals", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for writer to determine whether it should omit the rdf:langString datatype from language
-	 * literals when serialising them.
+	 * Boolean setting for writer to determine whether it should omit the rdf:langString datatype from language literals
+	 * when serialising them.
 	 * <p>
-	 * In RDF-1.1, all RDF-1.0 Language Literals are typed using rdf:langString in the abstract model, but this
-	 * datatype is not necessary for concrete syntaxes.
+	 * In RDF-1.1, all RDF-1.0 Language Literals are typed using rdf:langString in the abstract model, but this datatype
+	 * is not necessary for concrete syntaxes.
 	 * <p>
-	 * In most concrete syntaxes it is either syntactically invalid or semantically ambiguous to have a language
-	 * tagged literal with an explicit datatype. In those cases this setting will not be used, and the
-	 * rdf:langString datatype will not be attached to language tagged literals.
+	 * In most concrete syntaxes it is either syntactically invalid or semantically ambiguous to have a language tagged
+	 * literal with an explicit datatype. In those cases this setting will not be used, and the rdf:langString datatype
+	 * will not be attached to language tagged literals.
 	 * <p>
 	 * In particular, in RDF/XML, if rdf:langString is serialised, the language tag may not be retained when the
 	 * document is parsed due to the precedence rule in RDF/XML for datatype over language.

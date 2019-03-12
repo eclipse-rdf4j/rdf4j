@@ -3,112 +3,113 @@ package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 
 public class GraphPatternNotTriples implements GraphPattern {
-    GraphPattern gp;
+	GraphPattern gp;
 
-    GraphPatternNotTriples() {
-        this(new GroupGraphPattern());
-    }
-    GraphPatternNotTriples(GraphPattern from) {
-        this.gp = from;
-    }
+	GraphPatternNotTriples() {
+		this(new GroupGraphPattern());
+	}
 
-    /**
-     * Like {@link GraphPattern#and(GraphPattern...)}, but mutates and returns this instance
-     * @param patterns
-     *            the patterns to add
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples and(GraphPattern... patterns) {
-        gp = gp.and(patterns);
+	GraphPatternNotTriples(GraphPattern from) {
+		this.gp = from;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#and(GraphPattern...)}, but mutates and returns this instance
+	 * 
+	 * @param patterns the patterns to add
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples and(GraphPattern... patterns) {
+		gp = gp.and(patterns);
 
-    /**
-     * Like {@link GraphPattern#union(GraphPattern...)}, but mutates and returns this instance
-     * @param patterns
-     *            the patterns to add
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples union(GraphPattern... patterns) {
-        gp = gp.union(patterns);
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#union(GraphPattern...)}, but mutates and returns this instance
+	 * 
+	 * @param patterns the patterns to add
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples union(GraphPattern... patterns) {
+		gp = gp.union(patterns);
 
-    /**
-     * Like {@link GraphPattern#optional()}, but mutates and returns this instance
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples optional() {
-        gp = gp.optional();
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#optional()}, but mutates and returns this instance
+	 * 
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples optional() {
+		gp = gp.optional();
 
-    /**
-     * Like {@link GraphPattern#optional(boolean)}, but mutates and returns this instance
-     * @param isOptional
-     *            if this graph pattern should be optional or not
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples optional(boolean isOptional) {
-        gp = gp.optional(isOptional);
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#optional(boolean)}, but mutates and returns this instance
+	 * 
+	 * @param isOptional if this graph pattern should be optional or not
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples optional(boolean isOptional) {
+		gp = gp.optional(isOptional);
 
-    /**
-     * Like {@link GraphPattern#filter(Expression)}, but mutates and returns this instance
-     * @param constraint
-     *            the filter constraint
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples filter(Expression<?> constraint) {
-        gp = gp.filter(constraint);
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#filter(Expression)}, but mutates and returns this instance
+	 * 
+	 * @param constraint the filter constraint
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples filter(Expression<?> constraint) {
+		gp = gp.filter(constraint);
 
-    /**
-     * Like {@link GraphPattern#minus(GraphPattern...)}, but mutates and returns this instance
-     * @param patterns
-     *            the patterns to construct the <code>MINUS</code> graph pattern
-     *            with
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples minus(GraphPattern... patterns) {
-        gp = gp.minus(patterns);
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#minus(GraphPattern...)}, but mutates and returns this instance
+	 * 
+	 * @param patterns the patterns to construct the <code>MINUS</code> graph pattern with
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples minus(GraphPattern... patterns) {
+		gp = gp.minus(patterns);
 
-    /**
-     * Like {@link GraphPattern#from(GraphName)}, but mutates and returns this instance
-     * @param name
-     *            the name to specify
-     * @return this
-     */
-    @Override
-    public GraphPatternNotTriples from(GraphName name) {
-        gp = gp.from(name);
+		return this;
+	}
 
-        return this;
-    }
+	/**
+	 * Like {@link GraphPattern#from(GraphName)}, but mutates and returns this instance
+	 * 
+	 * @param name the name to specify
+	 * @return this
+	 */
+	@Override
+	public GraphPatternNotTriples from(GraphName name) {
+		gp = gp.from(name);
 
-    @Override
-    public boolean isEmpty() {
-        return gp.isEmpty();
-    }
+		return this;
+	}
 
-    @Override
-    public String getQueryString() {
-        return gp.getQueryString();
-    }
+	@Override
+	public boolean isEmpty() {
+		return gp.isEmpty();
+	}
+
+	@Override
+	public String getQueryString() {
+		return gp.getQueryString();
+	}
 }

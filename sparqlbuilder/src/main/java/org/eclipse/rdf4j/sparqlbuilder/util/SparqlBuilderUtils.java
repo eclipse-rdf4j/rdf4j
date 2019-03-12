@@ -15,28 +15,32 @@ import java.util.function.UnaryOperator;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 /**
- * Utility functions for the SparqlBuilder 
+ * Utility functions for the SparqlBuilder
  *
  */
 public class SparqlBuilderUtils {
 	private static final String PAD = " ";
 
-	public static <O> Optional<O> getOrCreateAndModifyOptional(Optional<O> optional, Supplier<O> getter, UnaryOperator<O> operator) {
+	public static <O> Optional<O> getOrCreateAndModifyOptional(Optional<O> optional, Supplier<O> getter,
+			UnaryOperator<O> operator) {
 		return Optional.of(operator.apply(optional.orElseGet(getter)));
 	}
-	
-	public static void appendAndNewlineIfPresent(Optional<? extends QueryElement> elementOptional, StringBuilder builder) {
+
+	public static void appendAndNewlineIfPresent(Optional<? extends QueryElement> elementOptional,
+			StringBuilder builder) {
 		appendQueryElementIfPresent(elementOptional, builder, null, "\n");
 	}
-	
-	public static void appendQueryElementIfPresent(Optional<? extends QueryElement> queryElementOptional, StringBuilder builder, String prefix, String suffix) {
+
+	public static void appendQueryElementIfPresent(Optional<? extends QueryElement> queryElementOptional,
+			StringBuilder builder, String prefix, String suffix) {
 		appendStringIfPresent(queryElementOptional.map(QueryElement::getQueryString), builder, prefix, suffix);
 	}
-	
-	public static void appendStringIfPresent(Optional<String> stringOptional, StringBuilder builder, String prefix, String suffix) {
+
+	public static void appendStringIfPresent(Optional<String> stringOptional, StringBuilder builder, String prefix,
+			String suffix) {
 		Optional<String> preOpt = Optional.ofNullable(prefix);
 		Optional<String> sufOpt = Optional.ofNullable(suffix);
-		
+
 		stringOptional.ifPresent(string -> {
 			preOpt.ifPresent(builder::append);
 			builder.append(string);
@@ -51,7 +55,7 @@ public class SparqlBuilderUtils {
 	public static String getBracketedString(String contents) {
 		return getEnclosedString("[", "]", contents);
 	}
-	
+
 	public static String getParenthesizedString(String contents) {
 		return getEnclosedString("(", ")", contents);
 	}
@@ -63,21 +67,19 @@ public class SparqlBuilderUtils {
 	/**
 	 * For string literals that contain single- or double-quotes
 	 * 
-	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals">
-	 * RDF Literal Syntax</a>
+	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals"> RDF Literal Syntax</a>
 	 * @param contents
 	 * @return a "long quoted" string
 	 */
 	public static String getLongQuotedString(String contents) {
 		return getEnclosedString("'''", "'''", contents, false);
 	}
-	
+
 	private static String getEnclosedString(String open, String close, String contents) {
 		return getEnclosedString(open, close, contents, true);
 	}
 
-	private static String getEnclosedString(String open, String close,
-			String contents, boolean pad) {
+	private static String getEnclosedString(String open, String close, String contents, boolean pad) {
 		StringBuilder es = new StringBuilder();
 
 		es.append(open);

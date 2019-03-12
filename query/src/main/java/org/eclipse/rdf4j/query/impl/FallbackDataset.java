@@ -99,8 +99,7 @@ public class FallbackDataset implements Dataset, Serializable {
 		if (str.length() > 50) {
 			sb.append("<").append(str, 0, 19).append("..");
 			sb.append(str, str.length() - 29, str.length()).append(">\n");
-		}
-		else {
+		} else {
 			sb.append("<").append(uri).append(">\n");
 		}
 	}

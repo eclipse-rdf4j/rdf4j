@@ -27,11 +27,11 @@ public class SesameHTTPClientTest {
 
 		httpClient.setServerURL("http://www.repo.org/server");
 
-		//assertFalse(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
+		// assertFalse(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
 
 		httpClient.setUsernameAndPassword("user01", "secret");
 
-		//assertTrue(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
+		// assertTrue(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
 
 	}
 
@@ -41,7 +41,7 @@ public class SesameHTTPClientTest {
 		expectedException.expect(IllegalStateException.class);
 		expectedException.expectMessage("Server URL has not been set");
 
-		//assertFalse(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
+		// assertFalse(httpClient.getHttpClient().getParams().isAuthenticationPreemptive());
 
 		httpClient.setUsernameAndPassword("user01", "secret");
 

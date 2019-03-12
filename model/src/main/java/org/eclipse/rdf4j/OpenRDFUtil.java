@@ -17,19 +17,17 @@ import org.eclipse.rdf4j.model.Resource;
 public class OpenRDFUtil {
 
 	/**
-	 * Verifies that the supplied contexts parameter is not <tt>null</tt>, throwing an
-	 * {@link IllegalArgumentException} if it is.
+	 * Verifies that the supplied contexts parameter is not <tt>null</tt>, throwing an {@link IllegalArgumentException}
+	 * if it is.
 	 * <p>
-	 * The semantics of supplying <tt>null</tt> as the value of the <tt>contexts</tt> vararg is not completely
-	 * clear; it can either be equivalent to supplying an empty array (i.e.: matching all statements
-	 * disregarding context), or to supplying a <tt>null</tt>-Resource value (e.g.: matching all statements
-	 * with no associated context). As we so far haven't been able to prefer one over the other, methods
-	 * operating on contexts currently throw {@link IllegalArgumentException}s.
+	 * The semantics of supplying <tt>null</tt> as the value of the <tt>contexts</tt> vararg is not completely clear; it
+	 * can either be equivalent to supplying an empty array (i.e.: matching all statements disregarding context), or to
+	 * supplying a <tt>null</tt>-Resource value (e.g.: matching all statements with no associated context). As we so far
+	 * haven't been able to prefer one over the other, methods operating on contexts currently throw
+	 * {@link IllegalArgumentException}s.
 	 * 
-	 * @param contexts
-	 *        The parameter to check.
-	 * @throws IllegalArgumentException
-	 *         If the supplied contexts parameter is <tt>null</tt>.
+	 * @param contexts The parameter to check.
+	 * @throws IllegalArgumentException If the supplied contexts parameter is <tt>null</tt>.
 	 */
 	public static void verifyContextNotNull(Resource... contexts) {
 		if (contexts == null) {

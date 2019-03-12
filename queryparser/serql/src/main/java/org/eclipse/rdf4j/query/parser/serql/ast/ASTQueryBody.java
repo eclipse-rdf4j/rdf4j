@@ -21,9 +21,7 @@ public class ASTQueryBody extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -32,9 +30,8 @@ public class ASTQueryBody extends SimpleNode {
 
 		for (Node n : children) {
 			if (n instanceof ASTFrom) {
-				fromClauseList.add((ASTFrom)n);
-			}
-			else {
+				fromClauseList.add((ASTFrom) n);
+			} else {
 				break;
 			}
 		}
@@ -49,7 +46,7 @@ public class ASTQueryBody extends SimpleNode {
 	public ASTWhere getWhereClause() {
 		for (Node n : children) {
 			if (n instanceof ASTWhere) {
-				return (ASTWhere)n;
+				return (ASTWhere) n;
 			}
 		}
 

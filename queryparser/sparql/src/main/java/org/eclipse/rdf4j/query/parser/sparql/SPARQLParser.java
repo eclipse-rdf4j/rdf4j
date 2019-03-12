@@ -51,9 +51,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 public class SPARQLParser implements QueryParser {
 
 	@Override
-	public ParsedUpdate parseUpdate(String updateStr, String baseURI)
-		throws MalformedQueryException
-	{
+	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
 		try {
 
 			ParsedUpdate update = new ParsedUpdate(updateStr);
@@ -96,8 +94,7 @@ public class SPARQLParser implements QueryParser {
 							uc.jjtAppendChild(prefixDecl);
 						}
 					}
-				}
-				else {
+				} else {
 					sharedPrefixDeclarations = prefixDeclList;
 				}
 
@@ -107,8 +104,7 @@ public class SPARQLParser implements QueryParser {
 				if (uc.getUpdate() instanceof ASTInsertData || uc.getUpdate() instanceof ASTInsertData) {
 					if (Collections.disjoint(usedBNodeIds, globalUsedBNodeIds)) {
 						globalUsedBNodeIds.addAll(usedBNodeIds);
-					}
-					else {
+					} else {
 						throw new MalformedQueryException(
 								"blank node identifier may not be shared across INSERT/DELETE DATA operations");
 					}
@@ -118,7 +114,7 @@ public class SPARQLParser implements QueryParser {
 
 				ASTUpdate updateNode = uc.getUpdate();
 				if (updateNode != null) {
-					UpdateExpr updateExpr = (UpdateExpr)updateNode.jjtAccept(updateExprBuilder, null);
+					UpdateExpr updateExpr = (UpdateExpr) updateNode.jjtAccept(updateExprBuilder, null);
 
 					// add individual update expression to ParsedUpdate sequence
 					// container
@@ -131,23 +127,18 @@ public class SPARQLParser implements QueryParser {
 			} // end for
 
 			return update;
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
-		}
-		catch (TokenMgrError e) {
+		} catch (TokenMgrError e) {
 			throw new MalformedQueryException(e.getMessage(), e);
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 
 	}
 
 	@Override
-	public ParsedQuery parseQuery(String queryStr, String baseURI)
-		throws MalformedQueryException
-	{
+	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
 		try {
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);
 			StringEscapesProcessor.process(qc);
@@ -167,17 +158,13 @@ public class SPARQLParser implements QueryParser {
 				ASTQuery queryNode = qc.getQuery();
 				if (queryNode instanceof ASTSelectQuery) {
 					query = new ParsedTupleQuery(queryStr, tupleExpr);
-				}
-				else if (queryNode instanceof ASTConstructQuery) {
+				} else if (queryNode instanceof ASTConstructQuery) {
 					query = new ParsedGraphQuery(queryStr, tupleExpr, prefixes);
-				}
-				else if (queryNode instanceof ASTAskQuery) {
+				} else if (queryNode instanceof ASTAskQuery) {
 					query = new ParsedBooleanQuery(queryStr, tupleExpr);
-				}
-				else if (queryNode instanceof ASTDescribeQuery) {
+				} else if (queryNode instanceof ASTDescribeQuery) {
 					query = new ParsedDescribeQuery(queryStr, tupleExpr, prefixes);
-				}
-				else {
+				} else {
 					throw new RuntimeException("Unexpected query type: " + queryNode.getClass());
 				}
 
@@ -188,34 +175,26 @@ public class SPARQLParser implements QueryParser {
 				}
 
 				return query;
-			}
-			else {
+			} else {
 				throw new IncompatibleOperationException("supplied string is not a query operation");
 			}
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
-		}
-		catch (TokenMgrError e) {
+		} catch (TokenMgrError e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}
 
-	private TupleExpr buildQueryModel(Node qc)
-		throws MalformedQueryException
-	{
+	private TupleExpr buildQueryModel(Node qc) throws MalformedQueryException {
 		TupleExprBuilder tupleExprBuilder = new TupleExprBuilder(SimpleValueFactory.getInstance());
 		try {
-			return (TupleExpr)qc.jjtAccept(tupleExprBuilder, null);
-		}
-		catch (VisitorException e) {
+			return (TupleExpr) qc.jjtAccept(tupleExprBuilder, null);
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}
 
-	public static void main(String[] args)
-		throws java.io.IOException
-	{
+	public static void main(String[] args) throws java.io.IOException {
 		System.out.println("Your SPARQL query:");
 
 		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
@@ -228,8 +207,7 @@ public class SPARQLParser implements QueryParser {
 			if (line.length() > 0) {
 				emptyLineCount = 0;
 				buf.append(' ').append(line).append('\n');
-			}
-			else {
+			} else {
 				emptyLineCount++;
 			}
 
@@ -239,8 +217,8 @@ public class SPARQLParser implements QueryParser {
 				if (queryStr.length() > 0) {
 					try {
 						long start = System.currentTimeMillis();
-						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL,
-								queryStr, null);
+						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryStr,
+								null);
 						long finish = System.currentTimeMillis();
 
 						System.out.println("Parsed query: ");
@@ -248,8 +226,7 @@ public class SPARQLParser implements QueryParser {
 						System.out.println();
 						System.out.println("parsed in " + (finish - start) + " ms.");
 
-					}
-					catch (Exception e) {
+					} catch (Exception e) {
 						System.err.println(e.getMessage());
 						e.printStackTrace();
 					}

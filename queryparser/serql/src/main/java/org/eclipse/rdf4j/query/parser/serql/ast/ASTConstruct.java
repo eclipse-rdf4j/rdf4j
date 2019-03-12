@@ -24,9 +24,7 @@ public class ASTConstruct extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -55,7 +53,7 @@ public class ASTConstruct extends SimpleNode {
 	}
 
 	public ASTPathExpr getPathExpr() {
-		return (ASTPathExpr)children.get(0);
+		return (ASTPathExpr) children.get(0);
 	}
 
 	@Override

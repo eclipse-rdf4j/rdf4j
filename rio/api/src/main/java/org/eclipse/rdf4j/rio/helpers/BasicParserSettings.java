@@ -28,7 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A class encapsulating the basic parser settings that most parsers may support. 
+ * A class encapsulating the basic parser settings that most parsers may support.
  * 
  * @author Peter Ansell
  */
@@ -138,8 +138,7 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.fail_on_unknown_datatypes", "Fail on unknown datatypes", Boolean.FALSE);
 
 	/**
-	 * Boolean setting for parser to determine whether recognised datatypes need to have their values be
-	 * normalized.
+	 * Boolean setting for parser to determine whether recognised datatypes need to have their values be normalized.
 	 * <p>
 	 * Normalization is performed using registered DatatypeHandlers.
 	 * <p>
@@ -148,15 +147,14 @@ public class BasicParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_datatype_values}.
 	 */
 	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.normalize_datatype_values", "Normalize recognised datatype values",
-			Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.normalize_datatype_values", "Normalize recognised datatype values", Boolean.FALSE);
 
 	/**
 	 * Setting used to specify which {@link DatatypeHandler} implementations are to be used for a given parser
 	 * configuration.
 	 * <p>
-	 * Defaults to an XMLSchema DatatypeHandler implementation based on {@link DatatypeHandler#XMLSCHEMA} and an
-	 * RDF DatatypeHandler implementation based on {@link DatatypeHandler#RDFDATATYPES}.
+	 * Defaults to an XMLSchema DatatypeHandler implementation based on {@link DatatypeHandler#XMLSCHEMA} and an RDF
+	 * DatatypeHandler implementation based on {@link DatatypeHandler#RDFDATATYPES}.
 	 */
 	public static final RioSetting<List<DatatypeHandler>> DATATYPE_HANDLERS;
 
@@ -173,8 +171,8 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.fail_on_unknown_languages", "Fail on unknown languages", Boolean.FALSE);
 
 	/**
-	 * Boolean setting for parser to determine whether languages are to be verified based on a given set of
-	 * definitions for valid languages.
+	 * Boolean setting for parser to determine whether languages are to be verified based on a given set of definitions
+	 * for valid languages.
 	 * <p>
 	 * Verification is performed using registered {@link LanguageHandler}s.
 	 * <p>
@@ -186,8 +184,8 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.verify_language_tags", "Verify language tags", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether languages need to be normalized, and to which format they
-	 * should be normalized.
+	 * Boolean setting for parser to determine whether languages need to be normalized, and to which format they should
+	 * be normalized.
 	 * <p>
 	 * Normalization is performed using registered {@link LanguageHandler}s.
 	 * <p>
@@ -219,8 +217,8 @@ public class BasicParserSettings {
 	/**
 	 * Boolean setting for parser to determine if URIs should be verified to contain only legal characters.
 	 * <p>
-	 * Defaults to {@code true}. If set to {@code false}, the parser will report syntactically illegal URIs to
-	 * the {@link RDFHandler}.
+	 * Defaults to {@code true}. If set to {@code false}, the parser will report syntactically illegal URIs to the
+	 * {@link RDFHandler}.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_uri_syntax}.
 	 */
@@ -228,9 +226,8 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.verify_uri_syntax", "Verify URI syntax", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether parser should attempt to preserve identifiers for blank
-	 * nodes. If the blank node did not have an identifier in the document a new identifier will be generated
-	 * for it.
+	 * Boolean setting for parser to determine whether parser should attempt to preserve identifiers for blank nodes. If
+	 * the blank node did not have an identifier in the document a new identifier will be generated for it.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
@@ -253,9 +250,9 @@ public class BasicParserSettings {
 			"Replace blank nodes with well known genid IRIs using this scheme and authority", null);
 
 	/**
-	 * Boolean setting for parser to determine whether parser should preserve, truncate, drop, or otherwise
-	 * manipulate statements that contain long literals. The maximum length of literals if this setting is set
-	 * to truncate or drop is configured using {@link #LARGE_LITERALS_LIMIT}.
+	 * Boolean setting for parser to determine whether parser should preserve, truncate, drop, or otherwise manipulate
+	 * statements that contain long literals. The maximum length of literals if this setting is set to truncate or drop
+	 * is configured using {@link #LARGE_LITERALS_LIMIT}.
 	 * <p>
 	 * Defaults to {@link LargeLiteralHandling#PRESERVE}.
 	 */
@@ -263,15 +260,15 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.large_literals", "Large literals handling", LargeLiteralHandling.PRESERVE);
 
 	/**
-	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#PRESERVE}, which it is by
-	 * default, then the value of this setting is not used.
+	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#PRESERVE}, which it is by default, then
+	 * the value of this setting is not used.
 	 * <p>
-	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#DROP} , then the value of this
-	 * setting corresponds to the maximum number of bytes for a literal before the statement it is a part of is
-	 * dropped silently by the parser.
+	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#DROP} , then the value of this setting
+	 * corresponds to the maximum number of bytes for a literal before the statement it is a part of is dropped silently
+	 * by the parser.
 	 * <p>
-	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#TRUNCATE} , then the value of
-	 * this setting corresponds to the maximum number of bytes for a literal before the value is truncated.
+	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#TRUNCATE} , then the value of this
+	 * setting corresponds to the maximum number of bytes for a literal before the value is truncated.
 	 * <p>
 	 * Defaults to 1048576 bytes, which is equivalent to 1 megabyte.
 	 * <p>
@@ -282,8 +279,8 @@ public class BasicParserSettings {
 
 	/**
 	 * <p>
-	 * Setting to provide a collection of {@link Namespace} objects which will be used when parsing RDF as the
-	 * basis for the default set of namespaces of the document.
+	 * Setting to provide a collection of {@link Namespace} objects which will be used when parsing RDF as the basis for
+	 * the default set of namespaces of the document.
 	 * </p>
 	 * <p>
 	 * Namespaces specified within the RDF document being parsed will override these defaults
@@ -293,26 +290,22 @@ public class BasicParserSettings {
 	 * </p>
 	 */
 	public static final RioSetting<Set<Namespace>> NAMESPACES = new RioSettingImpl<Set<Namespace>>(
-			"org.eclipse.rdf4j.rio.namespaces", "Collection of default namespaces to use for parsing",
-			_DEFAULT_PREFIX);
+			"org.eclipse.rdf4j.rio.namespaces", "Collection of default namespaces to use for parsing", _DEFAULT_PREFIX);
 
 	static {
 		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(5);
 		try {
 			DatatypeHandlerRegistry registry = DatatypeHandlerRegistry.getInstance();
 			for (String nextDatatype : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,
-					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL))
-			{
+					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL)) {
 				Optional<DatatypeHandler> nextDatatypeHandler = registry.get(nextDatatype);
 				if (nextDatatypeHandler.isPresent()) {
 					defaultDatatypeHandlers.add(nextDatatypeHandler.get());
-				}
-				else {
+				} else {
 					log.warn("Could not find DatatypeHandler : {}", nextDatatype);
 				}
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			// Ignore exceptions so that service loading failures do not cause
 			// class initialization errors.
 			log.warn("Found an error loading DatatypeHandler services", e);
@@ -329,13 +322,11 @@ public class BasicParserSettings {
 				Optional<LanguageHandler> nextLanguageHandler = registry.get(nextLanguageTagScheme);
 				if (nextLanguageHandler.isPresent()) {
 					defaultLanguageHandlers.add(nextLanguageHandler.get());
-				}
-				else {
+				} else {
 					log.warn("Could not find LanguageHandler : {}", nextLanguageTagScheme);
 				}
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			// Ignore exceptions so that service loading failures do not cause
 			// class initialization errors.
 			log.warn("Found an error loading LanguageHandler services", e);

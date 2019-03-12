@@ -34,8 +34,7 @@ public abstract class ASTPathExprTail extends SimpleNode {
 	/**
 	 * Gets the path epxression tail following this part of the path expression, if any.
 	 * 
-	 * @return The next part of the path expression, or <tt>null</tt> if this is the last part of the path
-	 *         expression.
+	 * @return The next part of the path expression, or <tt>null</tt> if this is the last part of the path expression.
 	 */
 	public abstract ASTPathExprTail getNextTail();
 

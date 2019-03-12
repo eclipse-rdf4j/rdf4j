@@ -20,13 +20,10 @@ import org.junit.Test;
 public abstract class CloseableIterationTest extends IterationTest {
 
 	@Override
-	protected abstract CloseableIteration<String, Exception> createTestIteration()
-		throws Exception;
+	protected abstract CloseableIteration<String, Exception> createTestIteration() throws Exception;
 
 	@Test
-	public void testClosedIteration()
-		throws Exception
-	{
+	public void testClosedIteration() throws Exception {
 		for (int n = 0; n < getTestIterationSize(); n++) {
 			CloseableIteration<String, Exception> iter = createTestIteration();
 
@@ -42,11 +39,9 @@ public abstract class CloseableIterationTest extends IterationTest {
 			try {
 				iter.next();
 				fail("next() called on a closed iteration should throw a NoSuchElementException");
-			}
-			catch (NoSuchElementException e) {
+			} catch (NoSuchElementException e) {
 				// expected exception
-			}
-			catch (Exception e) {
+			} catch (Exception e) {
 				fail("next() called on a closed iteration should throw a NoSuchElementException");
 			}
 		}

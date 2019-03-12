@@ -71,16 +71,12 @@ public class Projection extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		projElemList.visit(visitor);
 		super.visitChildren(visitor);
 	}
@@ -88,9 +84,8 @@ public class Projection extends UnaryTupleOperator {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (projElemList == current) {
-			setProjectionElemList((ProjectionElemList)replacement);
-		}
-		else {
+			setProjectionElemList((ProjectionElemList) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -98,7 +93,7 @@ public class Projection extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Projection && super.equals(other)) {
-			Projection o = (Projection)other;
+			Projection o = (Projection) other;
 			return projElemList.equals(o.getProjectionElemList());
 		}
 		return false;
@@ -111,7 +106,7 @@ public class Projection extends UnaryTupleOperator {
 
 	@Override
 	public Projection clone() {
-		Projection clone = (Projection)super.clone();
+		Projection clone = (Projection) super.clone();
 		clone.setProjectionElemList(getProjectionElemList().clone());
 		return clone;
 	}
@@ -124,8 +119,7 @@ public class Projection extends UnaryTupleOperator {
 	}
 
 	/**
-	 * @param projectionContext
-	 *        The projectionContext to set.
+	 * @param projectionContext The projectionContext to set.
 	 */
 	public void setProjectionContext(Var projectionContext) {
 		this.projectionContext = projectionContext;

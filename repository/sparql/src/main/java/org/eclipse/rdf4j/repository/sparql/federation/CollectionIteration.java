@@ -34,9 +34,7 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 	}
 
 	@Override
-	public boolean hasNext()
-		throws X
-	{
+	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -44,9 +42,7 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 	}
 
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -54,9 +50,7 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 	}
 
 	@Override
-	public void remove()
-		throws X
-	{
+	public void remove() throws X {
 		throw new UnsupportedOperationException("Remove not supported on CollectionIteration");
 	}
 

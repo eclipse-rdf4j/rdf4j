@@ -12,8 +12,8 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * Convenience base class for RDF handlers that wrap one or more other RDF handler. This class provides
- * default methods that forward method calls to the wrapped RDF handler(s).
+ * Convenience base class for RDF handlers that wrap one or more other RDF handler. This class provides default methods
+ * that forward method calls to the wrapped RDF handler(s).
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra
@@ -34,12 +34,12 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFHandlerWrapper that wraps the supplied RDF handler(s). If more than one RDFHandler is
-	 * supplied for wrapping, the RDFHandlerWrapper forwards every method call to each of the supplied
-	 * handler, in the order in which the handlers are supplied.
+	 * Creates a new RDFHandlerWrapper that wraps the supplied RDF handler(s). If more than one RDFHandler is supplied
+	 * for wrapping, the RDFHandlerWrapper forwards every method call to each of the supplied handler, in the order in
+	 * which the handlers are supplied.
 	 * 
-	 * @param rdfHandlers
-	 *        One or more wrapped RDF handlers for this <tt>RDFHandlerWrapper</tt>, must not be <tt>null</tt>.
+	 * @param rdfHandlers One or more wrapped RDF handlers for this <tt>RDFHandlerWrapper</tt>, must not be
+	 *                    <tt>null</tt>.
 	 */
 	public RDFHandlerWrapper(RDFHandler... rdfHandlers) {
 		assert rdfHandlers != null;
@@ -51,45 +51,35 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 *---------*/
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.startRDF();
 		}
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.endRDF();
 		}
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.handleNamespace(prefix, uri);
 		}
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.handleStatement(st);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.handleComment(comment);
 		}

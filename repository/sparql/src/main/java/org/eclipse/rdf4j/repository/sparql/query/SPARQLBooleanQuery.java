@@ -29,23 +29,18 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 	}
 
 	@Override
-	public boolean evaluate()
-		throws QueryEvaluationException
-	{
+	public boolean evaluate() throws QueryEvaluationException {
 
 		SPARQLProtocolSession client = getHttpClient();
 
 		try {
-			return client.sendBooleanQuery(queryLanguage, getQueryString(), baseURI, dataset,
-					getIncludeInferred(), getMaxExecutionTime(), getBindingsArray());
-		}
-		catch (IOException e) {
+			return client.sendBooleanQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), getBindingsArray());
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}

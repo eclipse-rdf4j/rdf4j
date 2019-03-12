@@ -9,12 +9,9 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
 /**
- * Denotes an orederable SPARQL query element (can be used in a
- * <code>ORDER BY</code> clause)
+ * Denotes an orederable SPARQL query element (can be used in a <code>ORDER BY</code> clause)
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOrderBy">
- *      SPARQL Order By Clause</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOrderBy"> SPARQL Order By Clause</a>
  */
 public interface Orderable extends QueryElement {
 	/**
@@ -23,7 +20,7 @@ public interface Orderable extends QueryElement {
 	default public OrderCondition asc() {
 		return SparqlBuilder.asc(this);
 	}
-	
+
 	/**
 	 * @return an descending {@link OrderCondition} instance for this {@link Orderable} object
 	 */

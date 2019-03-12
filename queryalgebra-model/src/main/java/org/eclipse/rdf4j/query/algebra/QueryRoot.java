@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * A semantics-less query model node that is used as the root of query model trees. This is a placeholder that
- * facilitates modifications to query model trees, including the replacement of the actual (semantically
- * relevant) root node with another root node.
+ * facilitates modifications to query model trees, including the replacement of the actual (semantically relevant) root
+ * node with another root node.
  * 
  * @author Arjohn Kampman
  */
@@ -30,8 +30,7 @@ public class QueryRoot extends UnaryTupleOperator {
 	public void setParentNode(QueryModelNode parent) {
 		if (parent instanceof QueryRoot) {
 			this.parent = parent;
-		}
-		else {
+		} else {
 			throw new UnsupportedOperationException("Not allowed to set a parent on a QueryRoot object");
 		}
 	}
@@ -42,9 +41,7 @@ public class QueryRoot extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -60,6 +57,6 @@ public class QueryRoot extends UnaryTupleOperator {
 
 	@Override
 	public QueryRoot clone() {
-		return (QueryRoot)super.clone();
+		return (QueryRoot) super.clone();
 	}
 }

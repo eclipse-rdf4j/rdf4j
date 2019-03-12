@@ -22,12 +22,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 public class ContextStatementImpl extends ContextStatement {
 
 	/**
-	 * @deprecated since 4.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value, Resource)}
-	 *             instead.
+	 * @deprecated since 4.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value, Resource)} instead.
 	 */
 	@Deprecated
 	public ContextStatementImpl(Resource subject, URI predicate, Value object, Resource context) {
-		super(subject, (IRI)predicate, object, context);
+		super(subject, (IRI) predicate, object, context);
 	}
 
 }

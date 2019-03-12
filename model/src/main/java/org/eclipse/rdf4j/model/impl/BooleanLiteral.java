@@ -55,9 +55,8 @@ public class BooleanLiteral extends SimpleLiteral {
 	}
 
 	/**
-	 * Returns a {@link BooleanLiteral} for the specified value. This method uses the constants {@link #TRUE}
-	 * and {@link #FALSE} as result values, preventing the often unnecessary creation of new
-	 * {@link BooleanLiteral} objects.
+	 * Returns a {@link BooleanLiteral} for the specified value. This method uses the constants {@link #TRUE} and
+	 * {@link #FALSE} as result values, preventing the often unnecessary creation of new {@link BooleanLiteral} objects.
 	 */
 	public static BooleanLiteral valueOf(boolean value) {
 		return value ? TRUE : FALSE;

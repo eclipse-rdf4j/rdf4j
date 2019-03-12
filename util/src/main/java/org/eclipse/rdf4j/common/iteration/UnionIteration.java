@@ -15,8 +15,8 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that
- * the UnionIteration does not filter duplicate objects.
+ * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
+ * UnionIteration does not filter duplicate objects.
  */
 public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
 
@@ -35,8 +35,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	/**
 	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
 	 * 
-	 * @param args
-	 *        The Iterations containing the elements to iterate over.
+	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	public UnionIteration(Iteration<? extends E, X>... args) {
 		this(Arrays.asList(args));
@@ -45,8 +44,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	/**
 	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
 	 * 
-	 * @param args
-	 *        The Iterations containing the elements to iterate over.
+	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
 		argIter = args.iterator();
@@ -60,9 +58,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *--------------*/
 
 	@Override
-	protected E getNextElement()
-		throws X
-	{
+	protected E getNextElement() throws X {
 		if (isClosed()) {
 			return null;
 		}
@@ -77,8 +73,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		synchronized (this) {
 			if (argIter.hasNext()) {
 				currentIter = argIter.next();
-			}
-			else {
+			} else {
 				// All elements have been returned
 				return null;
 			}
@@ -88,23 +83,19 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	}
 
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			// Close this iteration, this will prevent lookAhead() from calling
 			// getNextElement() again
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				List<Throwable> collectedExceptions = new ArrayList<>();
 				synchronized (this) {
 					while (argIter.hasNext()) {
 						try {
 							Iterations.closeCloseable(argIter.next());
-						}
-						catch (Throwable e) {
+						} catch (Throwable e) {
 							collectedExceptions.add(e);
 						}
 					}
@@ -112,8 +103,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 				if (!collectedExceptions.isEmpty()) {
 					throw new UndeclaredThrowableException(collectedExceptions.get(0));
 				}
-			}
-			finally {
+			} finally {
 				Iterations.closeCloseable(currentIter);
 			}
 		}

@@ -34,11 +34,9 @@ public class SPARQLUtil {
 	/**
 	 * Decodes an encoded SPARQL string. Any \-escape sequences are substituted with their decoded value.
 	 * 
-	 * @param s
-	 *        An encoded SPARQL string.
+	 * @param s An encoded SPARQL string.
 	 * @return The unencoded string.
-	 * @exception IllegalArgumentException
-	 *            If the supplied string is not a correctly encoded SPARQL string.
+	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded SPARQL string.
 	 */
 	public static String decodeString(String s) {
 		int backSlashIdx = s.indexOf('\\');
@@ -64,36 +62,28 @@ public class SPARQLUtil {
 			if (c == 't') {
 				sb.append('\t');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == 'n') {
+			} else if (c == 'n') {
 				sb.append('\n');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == 'r') {
+			} else if (c == 'r') {
 				sb.append('\r');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == 'b') {
+			} else if (c == 'b') {
 				sb.append('\b');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == 'f') {
+			} else if (c == 'f') {
 				sb.append('\f');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == '"') {
+			} else if (c == '"') {
 				sb.append('"');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == '\'') {
+			} else if (c == '\'') {
 				sb.append('\'');
 				startIdx = backSlashIdx + 2;
-			}
-			else if (c == '\\') {
+			} else if (c == '\\') {
 				sb.append('\\');
 				startIdx = backSlashIdx + 2;
-			}
-			else {
+			} else {
 				throw new IllegalArgumentException("Unescaped backslash in: " + s);
 			}
 

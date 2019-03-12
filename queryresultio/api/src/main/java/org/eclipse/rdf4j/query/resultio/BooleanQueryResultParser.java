@@ -25,15 +25,11 @@ public interface BooleanQueryResultParser extends QueryResultParser {
 	/**
 	 * Parses the data from the supplied InputStream.
 	 * 
-	 * @param in
-	 *        The InputStream from which to read the data.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws QueryResultParseException
-	 *         If the parser has encountered an unrecoverable parse error.
+	 * @param in The InputStream from which to read the data.
+	 * @throws IOException               If an I/O error occurred while data was read from the InputStream.
+	 * @throws QueryResultParseException If the parser has encountered an unrecoverable parse error.
 	 * @deprecated Use {@link #parseQueryResult(InputStream)} instead.
 	 */
 	@Deprecated
-	boolean parse(InputStream in)
-		throws IOException, QueryResultParseException;
+	boolean parse(InputStream in) throws IOException, QueryResultParseException;
 }

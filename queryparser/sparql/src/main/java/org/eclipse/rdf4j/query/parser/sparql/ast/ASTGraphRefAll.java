@@ -25,15 +25,12 @@ public class ASTGraphRefAll extends SimpleNode {
 
 	/** Accept the visitor. **/
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	/**
-	 * @param _default
-	 *        The default to set.
+	 * @param _default The default to set.
 	 */
 	public void setDefault(boolean _default) {
 		this._default = _default;
@@ -47,8 +44,7 @@ public class ASTGraphRefAll extends SimpleNode {
 	}
 
 	/**
-	 * @param named
-	 *        The named to set.
+	 * @param named The named to set.
 	 */
 	public void setNamed(boolean named) {
 		this.named = named;

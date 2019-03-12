@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 /**
- * Enumeration for tracking versions of the RDFa specification to specify processing capabilities of RDFa
- * modules.
+ * Enumeration for tracking versions of the RDFa specification to specify processing capabilities of RDFa modules.
  * 
  * @author Peter Ansell
  */
@@ -18,8 +17,7 @@ public enum RDFaVersion {
 	/**
 	 * The initial RDFa 1.0 version (2008)
 	 * 
-	 * @see <a href="http://www.w3.org/TR/2008/REC-rdfa-syntax-20081014/">RDFa in XHTML: Syntax and
-	 *      Processing</a>
+	 * @see <a href="http://www.w3.org/TR/2008/REC-rdfa-syntax-20081014/">RDFa in XHTML: Syntax and Processing</a>
 	 */
 	RDFA_1_0("RDFa 1.0", "http://www.w3.org/TR/2008/REC-rdfa-syntax-20081014/"),
 

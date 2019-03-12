@@ -26,13 +26,12 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 	public RDFJSONWriterTest() {
 		super(new RDFJSONWriterFactory(), new RDFJSONParserFactory());
 	}
-	
+
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException
-	{
-		return QueryResults.asModel(
-				QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+			throws RDFParseException, RDFHandlerException, IOException {
+		return QueryResults
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
-	
+
 }

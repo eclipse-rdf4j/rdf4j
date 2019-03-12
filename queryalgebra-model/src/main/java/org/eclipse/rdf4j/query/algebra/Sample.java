@@ -23,9 +23,7 @@ public class Sample extends AbstractAggregateOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -41,6 +39,6 @@ public class Sample extends AbstractAggregateOperator {
 
 	@Override
 	public Sample clone() {
-		return (Sample)super.clone();
+		return (Sample) super.clone();
 	}
 }

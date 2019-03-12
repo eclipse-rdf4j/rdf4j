@@ -51,8 +51,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	/**
 	 * Creates a new query object.
 	 * 
-	 * @param tupleExpr
-	 *        The tuple expression underlying this query.
+	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	public ParsedQuery(String sourceString, TupleExpr tupleExpr) {
 		this(sourceString);
@@ -62,8 +61,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	/**
 	 * Creates a new query object.
 	 * 
-	 * @param tupleExpr
-	 *        The tuple expression underlying this query.
+	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	public ParsedQuery(TupleExpr tupleExpr) {
 		this(null, tupleExpr);
@@ -72,8 +70,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	/**
 	 * Creates a new query object.
 	 * 
-	 * @param tupleExpr
-	 *        The tuple expression underlying this query.
+	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	public ParsedQuery(TupleExpr tupleExpr, Dataset dataset) {
 		this(null, tupleExpr, dataset);
@@ -82,8 +79,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	/**
 	 * Creates a new query object.
 	 * 
-	 * @param tupleExpr
-	 *        The tuple expression underlying this query.
+	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	public ParsedQuery(String sourceString, TupleExpr tupleExpr, Dataset dataset) {
 		this(sourceString, tupleExpr);
@@ -121,8 +117,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	public String toString() {
 		if (getDataset() != null) {
 			return getDataset().toString() + getTupleExpr().toString();
-		}
-		else {
+		} else {
 			return getTupleExpr().toString();
 		}
 	}

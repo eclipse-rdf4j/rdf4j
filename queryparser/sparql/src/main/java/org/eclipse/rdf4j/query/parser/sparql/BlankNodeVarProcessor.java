@@ -30,15 +30,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  */
 public class BlankNodeVarProcessor extends AbstractASTVisitor {
 
-	public static Set<String> process(ASTOperationContainer qc)
-		throws MalformedQueryException
-	{
+	public static Set<String> process(ASTOperationContainer qc) throws MalformedQueryException {
 		try {
 			BlankNodeToVarConverter converter = new BlankNodeToVarConverter();
 			qc.jjtAccept(converter, null);
 			return converter.getUsedBNodeIDs();
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e);
 		}
 	}
@@ -65,9 +62,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 		}
 
 		@Override
-		public Object visit(ASTBasicGraphPattern node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTBasicGraphPattern node, Object data) throws VisitorException {
 			// The same Blank node ID cannot be used across Graph Patterns
 			usedBNodeIDs.addAll(conversionMap.keySet());
 
@@ -78,9 +73,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 		}
 
 		@Override
-		public Object visit(ASTBlankNode node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTBlankNode node, Object data) throws VisitorException {
 			String bnodeID = node.getID();
 			String varName = findVarName(bnodeID);
 
@@ -101,9 +94,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 			return super.visit(node, data);
 		}
 
-		private String findVarName(String bnodeID)
-			throws VisitorException
-		{
+		private String findVarName(String bnodeID) throws VisitorException {
 			if (bnodeID == null)
 				return null;
 			String varName = conversionMap.get(bnodeID);
@@ -113,17 +104,13 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 		}
 
 		@Override
-		public Object visit(ASTBlankNodePropertyList node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTBlankNodePropertyList node, Object data) throws VisitorException {
 			node.setVarName(createAnonVarName());
 			return super.visit(node, data);
 		}
 
 		@Override
-		public Object visit(ASTCollection node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTCollection node, Object data) throws VisitorException {
 			node.setVarName(createAnonVarName());
 			return super.visit(node, data);
 		}

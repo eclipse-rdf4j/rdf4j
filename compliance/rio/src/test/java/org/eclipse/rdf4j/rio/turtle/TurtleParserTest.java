@@ -19,9 +19,7 @@ import junit.framework.Test;
  */
 public class TurtleParserTest extends TurtleParserTestCase {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return new TurtleParserTest().createTestSuite();
 	}
 

@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
 /**
  * A triple pattern formed by a property-list blank node
  * 
- * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes">
- * 		blank node syntax</a>
+ * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> blank node syntax</a>
  */
 class BNodeTriplePattern implements TriplePattern {
 	private PropertiesBlankNode bnode;

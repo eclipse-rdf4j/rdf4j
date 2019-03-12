@@ -21,8 +21,7 @@ public class QueryResultHandlerException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultHandlerException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public QueryResultHandlerException(String msg) {
 		super(msg);
@@ -31,8 +30,7 @@ public class QueryResultHandlerException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param t
-	 *        The cause of the exception.
+	 * @param t The cause of the exception.
 	 */
 	public QueryResultHandlerException(Throwable t) {
 		super(t);
@@ -41,10 +39,8 @@ public class QueryResultHandlerException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param t
-	 *        The cause of the exception.
+	 * @param msg An error message.
+	 * @param t   The cause of the exception.
 	 */
 	public QueryResultHandlerException(String msg, Throwable t) {
 		super(msg, t);

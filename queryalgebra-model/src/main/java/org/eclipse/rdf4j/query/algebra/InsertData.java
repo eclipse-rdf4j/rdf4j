@@ -15,15 +15,13 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 	private final String dataBlock;
 
 	private int lineNumberCorrection;
-	
+
 	public InsertData(String dataBlock) {
 		this.dataBlock = dataBlock;
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -34,7 +32,7 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof InsertData) {
-			InsertData o = (InsertData)other;
+			InsertData o = (InsertData) other;
 			return dataBlock.equals(o.dataBlock);
 		}
 		return false;
@@ -61,7 +59,7 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 	public int getLineNumberOffset() {
 		return lineNumberCorrection;
 	}
-	
+
 	public void setLineNumberOffset(int lineNumberOffset) {
 		this.lineNumberCorrection = lineNumberOffset;
 	}

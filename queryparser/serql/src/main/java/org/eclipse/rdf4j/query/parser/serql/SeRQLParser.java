@@ -31,9 +31,7 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 public class SeRQLParser implements QueryParser {
 
 	@Override
-	public ParsedQuery parseQuery(String queryStr, String baseURI)
-		throws MalformedQueryException
-	{
+	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
 		try {
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);
 
@@ -55,30 +53,23 @@ public class SeRQLParser implements QueryParser {
 			ParsedQuery query;
 			if (queryNode instanceof ASTTupleQuery) {
 				query = new ParsedTupleQuery(tupleExpr);
-			}
-			else if (queryNode instanceof ASTGraphQuery) {
+			} else if (queryNode instanceof ASTGraphQuery) {
 				query = new ParsedGraphQuery(tupleExpr, namespaces);
-			}
-			else {
+			} else {
 				throw new RuntimeException("Unexpected query type: " + queryNode.getClass());
 			}
 
 			return query;
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
-		}
-		catch (TokenMgrError e) {
+		} catch (TokenMgrError e) {
 			throw new MalformedQueryException(e.getMessage(), e);
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}
 
-	public static void main(String[] args)
-		throws java.io.IOException
-	{
+	public static void main(String[] args) throws java.io.IOException {
 		System.out.println("Your SeRQL query:");
 		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
 
@@ -87,15 +78,13 @@ public class SeRQLParser implements QueryParser {
 		while ((line = in.readLine()) != null) {
 			if (line.length() > 0) {
 				buf.append(' ').append(line).append('\n');
-			}
-			else {
+			} else {
 				String queryStr = buf.toString().trim();
 				if (queryStr.length() > 0) {
 					try {
 						SeRQLParser parser = new SeRQLParser();
 						parser.parseQuery(queryStr, null);
-					}
-					catch (Exception e) {
+					} catch (Exception e) {
 						System.err.println(e.getMessage());
 						e.printStackTrace();
 					}
@@ -106,9 +95,7 @@ public class SeRQLParser implements QueryParser {
 	}
 
 	@Override
-	public ParsedUpdate parseUpdate(String updateStr, String baseURI)
-		throws MalformedQueryException
-	{
+	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
 		throw new UnsupportedOperationException("SeRQL does not support update operations");
 	}
 }

@@ -165,8 +165,7 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 	}
 
 	/**
-	 * @param baseURI
-	 *        The default baseURI to set.
+	 * @param baseURI The default baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;
@@ -225,23 +224,21 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 	}
 
 	@Override
-	public void parse(Model model, Resource resource)
-		throws RepositoryConfigException
-	{
+	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		super.parse(model, resource);
 
 		try {
-			Models.objectLiteral(model.filter(resource, INCLUDE_INFERRED, null)).ifPresent(
-					lit -> setIncludeInferred(lit.booleanValue()));
+			Models.objectLiteral(model.filter(resource, INCLUDE_INFERRED, null))
+					.ifPresent(lit -> setIncludeInferred(lit.booleanValue()));
 
-			Models.objectLiteral(model.filter(resource, MAX_QUERY_TIME, null)).ifPresent(
-					lit -> setMaxQueryTime(lit.intValue()));
+			Models.objectLiteral(model.filter(resource, MAX_QUERY_TIME, null))
+					.ifPresent(lit -> setMaxQueryTime(lit.intValue()));
 
-			Models.objectLiteral(model.filter(resource, QUERY_LANGUAGE, null)).ifPresent(
-					lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
+			Models.objectLiteral(model.filter(resource, QUERY_LANGUAGE, null))
+					.ifPresent(lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
 
-			Models.objectIRI(model.filter(resource, QUERY_LANGUAGE, null)).ifPresent(
-					iri -> setBaseURI(iri.stringValue()));
+			Models.objectIRI(model.filter(resource, QUERY_LANGUAGE, null))
+					.ifPresent(iri -> setBaseURI(iri.stringValue()));
 
 			Set<Value> objects = model.filter(resource, READ_CONTEXT, null).objects();
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
@@ -255,10 +252,8 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
-			Models.objectIRI(model.filter(resource, INSERT_CONTEXT, null)).ifPresent(
-					iri -> setInsertContext(iri));
-		}
-		catch (ArrayStoreException e) {
+			Models.objectIRI(model.filter(resource, INSERT_CONTEXT, null)).ifPresent(iri -> setInsertContext(iri));
+		} catch (ArrayStoreException e) {
 			throw new RepositoryConfigException(e);
 		}
 	}

@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
- * Defines constants for the HTTPRepository schema which is used by {@link HTTPRepositoryFactory}s to
- * initialize {@link HTTPRepository}s.
+ * Defines constants for the HTTPRepository schema which is used by {@link HTTPRepositoryFactory}s to initialize
+ * {@link HTTPRepository}s.
  * 
  * @author Arjohn Kampman
  */

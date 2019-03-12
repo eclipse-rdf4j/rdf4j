@@ -14,8 +14,7 @@ public class MinusIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new MinusIteration<>(createStringList1Iteration(),
-				createStringList2Iteration());
+		return new MinusIteration<>(createStringList1Iteration(), createStringList2Iteration());
 	}
 
 	@Override

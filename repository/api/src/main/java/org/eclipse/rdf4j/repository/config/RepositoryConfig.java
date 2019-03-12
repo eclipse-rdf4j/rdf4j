@@ -96,15 +96,12 @@ public class RepositoryConfig {
 	}
 
 	/**
-	 * Validates this configuration. A {@link RepositoryConfigException} is thrown when the configuration is
-	 * invalid. The exception should contain an error message that indicates why the configuration is invalid.
+	 * Validates this configuration. A {@link RepositoryConfigException} is thrown when the configuration is invalid.
+	 * The exception should contain an error message that indicates why the configuration is invalid.
 	 * 
-	 * @throws RepositoryConfigException
-	 *         If the configuration is invalid.
+	 * @throws RepositoryConfigException If the configuration is invalid.
 	 */
-	public void validate()
-		throws RepositoryConfigException
-	{
+	public void validate() throws RepositoryConfigException {
 		if (id == null) {
 			throw new RepositoryConfigException("Repository ID missing");
 		}
@@ -126,8 +123,7 @@ public class RepositoryConfig {
 	/**
 	 * Exports the configuration into RDF using the given repositoryNode
 	 *
-	 * @param model
-	 *        target RDF collection
+	 * @param model          target RDF collection
 	 * @param repositoryNode
 	 * @since 2.3
 	 */
@@ -150,19 +146,16 @@ public class RepositoryConfig {
 		}
 	}
 
-	public void parse(Model model, Resource repositoryNode)
-		throws RepositoryConfigException
-	{
+	public void parse(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		try {
 
-			Models.objectLiteral(model.filter(repositoryNode, REPOSITORYID, null)).ifPresent(
-					lit -> setID(lit.getLabel()));
-			Models.objectLiteral(model.filter(repositoryNode, RDFS.LABEL, null)).ifPresent(
-					lit -> setTitle(lit.getLabel()));
-			Models.objectResource(model.filter(repositoryNode, REPOSITORYIMPL, null)).ifPresent(
-					res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
-		}
-		catch (ModelException e) {
+			Models.objectLiteral(model.filter(repositoryNode, REPOSITORYID, null))
+					.ifPresent(lit -> setID(lit.getLabel()));
+			Models.objectLiteral(model.filter(repositoryNode, RDFS.LABEL, null))
+					.ifPresent(lit -> setTitle(lit.getLabel()));
+			Models.objectResource(model.filter(repositoryNode, REPOSITORYIMPL, null))
+					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
+		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}
@@ -171,14 +164,11 @@ public class RepositoryConfig {
 	 * Creates a new {@link RepositoryConfig} object and initializes it by supplying the {@code model} and
 	 * {@code repositoryNode} to its {@link #parse(Model, Resource) parse} method.
 	 * 
-	 * @param model
-	 *        the {@link Model} to read initialization data from.
-	 * @param repositoryNode
-	 *        the subject {@link Resource} that identifies the {@link RepositoryConfig} in the supplied Model.
+	 * @param model          the {@link Model} to read initialization data from.
+	 * @param repositoryNode the subject {@link Resource} that identifies the {@link RepositoryConfig} in the supplied
+	 *                       Model.
 	 */
-	public static RepositoryConfig create(Model model, Resource repositoryNode)
-		throws RepositoryConfigException
-	{
+	public static RepositoryConfig create(Model model, Resource repositoryNode) throws RepositoryConfigException {
 		RepositoryConfig config = new RepositoryConfig();
 		config.parse(model, repositoryNode);
 		return config;

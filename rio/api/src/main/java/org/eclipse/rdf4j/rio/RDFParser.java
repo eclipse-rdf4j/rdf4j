@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 /**
- * An interface for RDF parsers. All implementing classes should define a public zero-argument constructor to
- * allow them to be created through reflection.
+ * An interface for RDF parsers. All implementing classes should define a public zero-argument constructor to allow them
+ * to be created through reflection.
  */
 public interface RDFParser {
 
@@ -61,50 +61,40 @@ public interface RDFParser {
 	/**
 	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed RDF data.
 	 * 
-	 * @param valueFactory
-	 *        The value factory that the parser should use.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param valueFactory The value factory that the parser should use.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RDFParser setValueFactory(ValueFactory valueFactory);
 
 	/**
 	 * Sets the RDFHandler that will handle the parsed RDF data.
 	 * 
-	 * @param handler
-	 *        The RDFHandler to handle the parsed data.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param handler The RDFHandler to handle the parsed data.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RDFParser setRDFHandler(RDFHandler handler);
 
 	/**
 	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
 	 * 
-	 * @param el
-	 *        The ParseErrorListener that will be notified of errors or warnings.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param el The ParseErrorListener that will be notified of errors or warnings.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RDFParser setParseErrorListener(ParseErrorListener el);
 
 	/**
 	 * Sets the ParseLocationListener that will be notified of the parser's progress during the parse process.
 	 * 
-	 * @param ll
-	 *        The ParseLocationListener that will be notified of the parser's progress.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param ll The ParseLocationListener that will be notified of the parser's progress.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RDFParser setParseLocationListener(ParseLocationListener ll);
 
 	/**
 	 * Sets all supplied parser configuration options.
 	 * 
-	 * @param config
-	 *        a parser configuration object.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param config a parser configuration object.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RDFParser setParserConfig(ParserConfig config);
 
@@ -123,12 +113,9 @@ public interface RDFParser {
 	/**
 	 * Set a setting on the parser, and return this parser object to allow chaining.
 	 * 
-	 * @param setting
-	 *        The setting to change.
-	 * @param value
-	 *        The value to change.
-	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param setting The setting to change.
+	 * @param value   The value to change.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public <T> RDFParser set(RioSetting<T> setting, T value);
 
@@ -144,8 +131,7 @@ public interface RDFParser {
 	public void setVerifyData(boolean verifyData);
 
 	/**
-	 * Set whether the parser should preserve bnode identifiers specified in the source (default is
-	 * <tt>false</tt>).
+	 * Set whether the parser should preserve bnode identifiers specified in the source (default is <tt>false</tt>).
 	 */
 	public void setPreserveBNodeIDs(boolean preserveBNodeIDs);
 
@@ -153,23 +139,20 @@ public interface RDFParser {
 	 * Sets whether the parser should stop immediately if it finds an error in the data (default value is
 	 * <tt>true</tt>).
 	 * 
-	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with
-	 *             {@link ParserConfig#addNonFatalError(RioSetting)} to select which errors will not always
-	 *             fail the parse prematurely.
+	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with {@link ParserConfig#addNonFatalError(RioSetting)} to
+	 *             select which errors will not always fail the parse prematurely.
 	 */
 	@Deprecated
 	public void setStopAtFirstError(boolean stopAtFirstError);
 
 	/**
-	 * Sets the datatype handling mode. There are three modes for handling datatyped literals: <em>ignore</em>
-	 * , <em>verify</em>and <em>normalize</em> . If set to <em>ignore</em>, no special action will be taken to
-	 * handle datatyped literals. If set to <em>verify</em>, any literals with known (XML Schema built-in)
-	 * datatypes are checked to see if their values are valid. If set to <em>normalize</em>, the literal
-	 * values are not only checked, but also normalized to their canonical representation. The default value
-	 * is <em>verify</em>.
+	 * Sets the datatype handling mode. There are three modes for handling datatyped literals: <em>ignore</em> ,
+	 * <em>verify</em>and <em>normalize</em> . If set to <em>ignore</em>, no special action will be taken to handle
+	 * datatyped literals. If set to <em>verify</em>, any literals with known (XML Schema built-in) datatypes are
+	 * checked to see if their values are valid. If set to <em>normalize</em>, the literal values are not only checked,
+	 * but also normalized to their canonical representation. The default value is <em>verify</em>.
 	 * 
-	 * @param datatypeHandling
-	 *        A datatype handling option.
+	 * @param datatypeHandling A datatype handling option.
 	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with
 	 *             {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
@@ -179,38 +162,24 @@ public interface RDFParser {
 	public void setDatatypeHandling(DatatypeHandling datatypeHandling);
 
 	/**
-	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI
-	 * references.
+	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
 	 * 
-	 * @param in
-	 *        The InputStream from which to read the data.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException
-	 *         If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException
-	 *         If the configured statement handler has encountered an unrecoverable error.
+	 * @param in      The InputStream from which to read the data.
+	 * @param baseURI The URI associated with the data in the InputStream.
+	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
 	 */
-	public void parse(InputStream in, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException;
+	public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException;
 
 	/**
-	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI
-	 * references.
+	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
 	 * 
-	 * @param reader
-	 *        The Reader from which to read the data.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException
-	 *         If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException
-	 *         If the configured statement handler has encountered an unrecoverable error.
+	 * @param reader  The Reader from which to read the data.
+	 * @param baseURI The URI associated with the data in the InputStream.
+	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
 	 */
-	public void parse(Reader reader, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException;
+	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException;
 }

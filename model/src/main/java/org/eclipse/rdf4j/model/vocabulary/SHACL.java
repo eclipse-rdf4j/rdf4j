@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the Shapes Constraint Language.
  *
@@ -359,7 +358,6 @@ public class SHACL {
 	/** sh:XoneConstraintComponent-xone */
 	public static final IRI XONE_CONSTRAINT_COMPONENT_XONE;
 
-
 	// Properties
 	/** sh:alternativePath */
 	public static final IRI ALTERNATIVE_PATH;
@@ -619,7 +617,6 @@ public class SHACL {
 	/** sh:zeroOrOnePath */
 	public static final IRI ZERO_OR_ONE_PATH;
 
-
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 
@@ -633,7 +630,8 @@ public class SHACL {
 		CLASS_CONSTRAINT_COMPONENT_CLASS = factory.createIRI(NAMESPACE, "ClassConstraintComponent-class");
 		CLOSED_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "ClosedConstraintComponent");
 		CLOSED_CONSTRAINT_COMPONENT_CLOSED = factory.createIRI(NAMESPACE, "ClosedConstraintComponent-closed");
-		CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES = factory.createIRI(NAMESPACE, "ClosedConstraintComponent-ignoredProperties");
+		CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES = factory.createIRI(NAMESPACE,
+				"ClosedConstraintComponent-ignoredProperties");
 		CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "ConstraintComponent");
 		DATATYPE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "DatatypeConstraintComponent");
 		DATATYPE_CONSTRAINT_COMPONENT_DATATYPE = factory.createIRI(NAMESPACE, "DatatypeConstraintComponent-datatype");
@@ -651,28 +649,36 @@ public class SHACL {
 		IN_CONSTRAINT_COMPONENT_IN = factory.createIRI(NAMESPACE, "InConstraintComponent-in");
 		INFO = factory.createIRI(NAMESPACE, "Info");
 		LANGUAGE_IN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LanguageInConstraintComponent");
-		LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN = factory.createIRI(NAMESPACE, "LanguageInConstraintComponent-languageIn");
+		LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN = factory.createIRI(NAMESPACE,
+				"LanguageInConstraintComponent-languageIn");
 		LESS_THAN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LessThanConstraintComponent");
 		LESS_THAN_CONSTRAINT_COMPONENT_LESS_THAN = factory.createIRI(NAMESPACE, "LessThanConstraintComponent-lessThan");
 		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LessThanOrEqualsConstraintComponent");
-		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS = factory.createIRI(NAMESPACE, "LessThanOrEqualsConstraintComponent-lessThanOrEquals");
+		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS = factory.createIRI(NAMESPACE,
+				"LessThanOrEqualsConstraintComponent-lessThanOrEquals");
 		LITERAL = factory.createIRI(NAMESPACE, "Literal");
 		MAX_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxCountConstraintComponent");
 		MAX_COUNT_CONSTRAINT_COMPONENT_MAX_COUNT = factory.createIRI(NAMESPACE, "MaxCountConstraintComponent-maxCount");
 		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxExclusiveConstraintComponent");
-		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE = factory.createIRI(NAMESPACE, "MaxExclusiveConstraintComponent-maxExclusive");
+		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE = factory.createIRI(NAMESPACE,
+				"MaxExclusiveConstraintComponent-maxExclusive");
 		MAX_INCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxInclusiveConstraintComponent");
-		MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE = factory.createIRI(NAMESPACE, "MaxInclusiveConstraintComponent-maxInclusive");
+		MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE = factory.createIRI(NAMESPACE,
+				"MaxInclusiveConstraintComponent-maxInclusive");
 		MAX_LENGTH_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxLengthConstraintComponent");
-		MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH = factory.createIRI(NAMESPACE, "MaxLengthConstraintComponent-maxLength");
+		MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH = factory.createIRI(NAMESPACE,
+				"MaxLengthConstraintComponent-maxLength");
 		MIN_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinCountConstraintComponent");
 		MIN_COUNT_CONSTRAINT_COMPONENT_MIN_COUNT = factory.createIRI(NAMESPACE, "MinCountConstraintComponent-minCount");
 		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinExclusiveConstraintComponent");
-		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE = factory.createIRI(NAMESPACE, "MinExclusiveConstraintComponent-minExclusive");
+		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE = factory.createIRI(NAMESPACE,
+				"MinExclusiveConstraintComponent-minExclusive");
 		MIN_INCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinInclusiveConstraintComponent");
-		MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE = factory.createIRI(NAMESPACE, "MinInclusiveConstraintComponent-minInclusive");
+		MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE = factory.createIRI(NAMESPACE,
+				"MinInclusiveConstraintComponent-minInclusive");
 		MIN_LENGTH_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinLengthConstraintComponent");
-		MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH = factory.createIRI(NAMESPACE, "MinLengthConstraintComponent-minLength");
+		MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH = factory.createIRI(NAMESPACE,
+				"MinLengthConstraintComponent-minLength");
 		NODE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "NodeConstraintComponent");
 		NODE_CONSTRAINT_COMPONENT_NODE = factory.createIRI(NAMESPACE, "NodeConstraintComponent-node");
 		NODE_KIND = factory.createIRI(NAMESPACE, "NodeKind");
@@ -694,13 +700,19 @@ public class SHACL {
 		PROPERTY_GROUP = factory.createIRI(NAMESPACE, "PropertyGroup");
 		PROPERTY_SHAPE = factory.createIRI(NAMESPACE, "PropertyShape");
 		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "QualifiedMaxCountConstraintComponent");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT = factory.createIRI(NAMESPACE, "QualifiedMaxCountConstraintComponent-qualifiedMaxCount");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE, "QualifiedMaxCountConstraintComponent-qualifiedValueShape");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE, "QualifiedMaxCountConstraintComponent-qualifiedValueShapesDisjoint");
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT = factory.createIRI(NAMESPACE,
+				"QualifiedMaxCountConstraintComponent-qualifiedMaxCount");
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE,
+				"QualifiedMaxCountConstraintComponent-qualifiedValueShape");
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE,
+				"QualifiedMaxCountConstraintComponent-qualifiedValueShapesDisjoint");
 		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent-qualifiedMinCount");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent-qualifiedValueShape");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint");
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT = factory.createIRI(NAMESPACE,
+				"QualifiedMinCountConstraintComponent-qualifiedMinCount");
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE,
+				"QualifiedMinCountConstraintComponent-qualifiedValueShape");
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE,
+				"QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint");
 		RESULT_ANNOTATION = factory.createIRI(NAMESPACE, "ResultAnnotation");
 		SPARQL_ASK_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLAskExecutable");
 		SPARQL_ASK_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLAskValidator");
@@ -721,7 +733,8 @@ public class SHACL {
 		TARGET = factory.createIRI(NAMESPACE, "Target");
 		TARGET_TYPE = factory.createIRI(NAMESPACE, "TargetType");
 		UNIQUE_LANG_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "UniqueLangConstraintComponent");
-		UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG = factory.createIRI(NAMESPACE, "UniqueLangConstraintComponent-uniqueLang");
+		UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG = factory.createIRI(NAMESPACE,
+				"UniqueLangConstraintComponent-uniqueLang");
 		VALIDATION_REPORT = factory.createIRI(NAMESPACE, "ValidationReport");
 		VALIDATION_RESULT = factory.createIRI(NAMESPACE, "ValidationResult");
 		VALIDATOR = factory.createIRI(NAMESPACE, "Validator");
@@ -819,4 +832,3 @@ public class SHACL {
 		ZERO_OR_ONE_PATH = factory.createIRI(NAMESPACE, "zeroOrOnePath");
 	}
 }
-

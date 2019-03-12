@@ -17,9 +17,7 @@ import org.eclipse.rdf4j.rio.EarlReport;
  */
 public class NQuadsEarlReport {
 
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		new EarlReport().generateReport(new NQuadsParserTest().createTestSuite(), EarlReport.ANSELL,
 				SimpleValueFactory.getInstance().createIRI("http://www.w3.org/TR/n-quads/"));
 	}
