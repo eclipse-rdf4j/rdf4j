@@ -66,7 +66,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	boolean useAllRdfsRules = true;
 
 	// the SPIN sail will add inferred statements that it wants to be used for further inference.
-	protected boolean useInferredToCreateSchema;
+	volatile protected boolean useInferredToCreateSchema;
 
 	// Schema cache
 	private final Collection<Resource> properties = new HashSet<>();
@@ -92,9 +92,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	// The inferencer has been instantiated from another inferencer and shares it's schema with that one
 	private boolean sharedSchema;
-
-	// The previous transaction rolled back
-	boolean rolledBackAfterModifyingSchemaCache;
 
 	// Inferred statements can either be added to the default context
 	// or to the context that the original inserted statement has
@@ -309,10 +306,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			boolean useAllRdfsRules)
 	{
 
-		if (sailToInstantiateFrom.rolledBackAfterModifyingSchemaCache) {
-			throw new SailException(
-					"SchemaCachingRDFSInferencer used was previously rolled back and can not be used by fastInstantiateFrom().");
-		}
 		sailToInstantiateFrom.getConnection().close();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,

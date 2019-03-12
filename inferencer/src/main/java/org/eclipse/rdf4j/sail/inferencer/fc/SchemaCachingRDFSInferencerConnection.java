@@ -737,11 +737,10 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void rollback()
 		throws SailException {
+		sail.clearInferenceTables();
+		regenerateCacheAndInferenceMaps();
 
 		super.rollback();
-
-		sail.clearInferenceTables();
-		sail.rolledBackAfterModifyingSchemaCache = true;
 
 		statementsRemoved = false;
 
@@ -772,14 +771,6 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 		super.begin(compatibleLevel);
 
-		if (sail.rolledBackAfterModifyingSchemaCache) {
-			// previous connection was rolled back after modifying the schema cache
-			// refresh the cache before beginning
-
-			regenerateCacheAndInferenceMaps();
-		}
-
-		sail.rolledBackAfterModifyingSchemaCache = false;
 		originalSchemaSize = sail.getSchemaSize();
 	}
 
