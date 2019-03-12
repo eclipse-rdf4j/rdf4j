@@ -46,8 +46,7 @@ public class BasicGroup implements Group {
 	/**
 	 * Create a new BasicGroup
 	 * 
-	 * @param theOptional
-	 *        whether or not the patterns and filters in this group are optional
+	 * @param theOptional whether or not the patterns and filters in this group are optional
 	 */
 	public BasicGroup(final boolean theOptional) {
 		mIsOptional = theOptional;
@@ -78,8 +77,7 @@ public class BasicGroup implements Group {
 	/**
 	 * Remove a child from this group
 	 * 
-	 * @param theGroup
-	 *        the child to remove
+	 * @param theGroup the child to remove
 	 */
 	public void removeChild(Group theGroup) {
 		mChildren.remove(theGroup);
@@ -88,8 +86,7 @@ public class BasicGroup implements Group {
 	/**
 	 * Add a Filter to this group
 	 * 
-	 * @param theExpr
-	 *        the value filter to add
+	 * @param theExpr the value filter to add
 	 */
 	public void addFilter(ValueExpr theExpr) {
 		mFilters.add(theExpr);
@@ -122,13 +119,11 @@ public class BasicGroup implements Group {
 			if (mChildren.isEmpty()) {
 				return null;
 			}
-		}
-		else if (mExpressions.isEmpty() && !mFilters.isEmpty()) {
+		} else if (mExpressions.isEmpty() && !mFilters.isEmpty()) {
 			if (mChildren.isEmpty()) {
 				aExpr = new Filter(new EmptySet(), filtersAsAnd());
 			}
-		}
-		else {
+		} else {
 			aExpr = asJoin(mExpressions);
 
 			if (filterExpr) {
@@ -141,27 +136,23 @@ public class BasicGroup implements Group {
 				if (aExpr == null) {
 					if (mExpressions.isEmpty() && !mFilters.isEmpty()) {
 						aExpr = new Filter(aGroup.expr(), filtersAsAnd());
-					}
-					else {
+					} else {
 						aExpr = aGroup.expr();
 					}
-				}
-				else {
+				} else {
 					BinaryTupleOperator aJoin = aGroup.isOptional() ? new LeftJoin() : new Join();
 
 					aJoin.setLeftArg(aExpr);
 
 					if (aGroup.isOptional() && aJoin instanceof LeftJoin && aGroup instanceof BasicGroup
-							&& !((BasicGroup)aGroup).mFilters.isEmpty())
-					{
+							&& !((BasicGroup) aGroup).mFilters.isEmpty()) {
 
-						BasicGroup aBasicGroup = (BasicGroup)aGroup;
+						BasicGroup aBasicGroup = (BasicGroup) aGroup;
 
 						aJoin.setRightArg(aBasicGroup.expr(false));
 
-						((LeftJoin)aJoin).setCondition(aBasicGroup.filtersAsAnd());
-					}
-					else {
+						((LeftJoin) aJoin).setCondition(aBasicGroup.filtersAsAnd());
+					} else {
 						aJoin.setRightArg(aGroup.expr());
 					}
 
@@ -193,8 +184,7 @@ public class BasicGroup implements Group {
 		for (ValueExpr aValEx : mFilters) {
 			if (aExpr == null) {
 				aExpr = aValEx;
-			}
-			else {
+			} else {
 				And aAnd = new And();
 				aAnd.setLeftArg(aValEx);
 				aAnd.setRightArg(aExpr);
@@ -218,19 +208,16 @@ public class BasicGroup implements Group {
 
 		if (theList.isEmpty()) {
 			throw new RuntimeException("Can't have an empty or missing join.");
-		}
-		else if (theList.size() == 1) {
+		} else if (theList.size() == 1) {
 			return theList.iterator().next();
 		}
 
 		for (TupleExpr aExpr : theList) {
 			if (aJoin.getLeftArg() == null) {
 				aJoin.setLeftArg(aExpr);
-			}
-			else if (aJoin.getRightArg() == null) {
+			} else if (aJoin.getRightArg() == null) {
 				aJoin.setRightArg(aExpr);
-			}
-			else {
+			} else {
 				Join aNewJoin = new Join();
 
 				aNewJoin.setLeftArg(aJoin);
@@ -247,7 +234,7 @@ public class BasicGroup implements Group {
 		Set<StatementPattern> aPatternSet = new HashSet<>();
 		for (TupleExpr aExpr : mExpressions) {
 			if (aExpr instanceof StatementPattern) {
-				aPatternSet.add((StatementPattern)aExpr);
+				aPatternSet.add((StatementPattern) aExpr);
 			}
 		}
 		return aPatternSet;

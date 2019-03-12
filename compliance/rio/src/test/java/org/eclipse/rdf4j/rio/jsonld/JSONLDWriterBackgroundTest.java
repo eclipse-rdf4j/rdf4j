@@ -60,24 +60,19 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException
-	{
-		return QueryResults.asModel(
-				QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
-	}
-	
-	@Test
-	@Override
-	@Ignore("TODO: Determine why this test is breaking")
-	public void testIllegalPrefix()
-		throws RDFHandlerException, RDFParseException, IOException
-	{
+			throws RDFParseException, RDFHandlerException, IOException {
+		return QueryResults
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
 
 	@Test
-	public void testRoundTripNamespaces()
-		throws Exception
-	{
+	@Override
+	@Ignore("TODO: Determine why this test is breaking")
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
+	}
+
+	@Test
+	public void testRoundTripNamespaces() throws Exception {
 		String exNs = "http://example.org/";
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");

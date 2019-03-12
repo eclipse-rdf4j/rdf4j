@@ -50,8 +50,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	/**
 	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
 	 * 
-	 * @param valueFactory
-	 *        The ValueFactory to use
+	 * @param valueFactory The ValueFactory to use
 	 */
 	public JSONLDParser(final ValueFactory valueFactory) {
 		super(valueFactory);
@@ -83,10 +82,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final InputStream in, final String baseURI)
-		throws IOException,
-		RDFParseException,
-		RDFHandlerException
-	{
+			throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {
@@ -104,31 +100,24 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
 
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
-		}
-		catch (final JsonLdError e) {
+		} catch (final JsonLdError e) {
 			throw new RDFParseException("Could not parse JSONLD", e);
-		}
-		catch (final JsonProcessingException e) {
+		} catch (final JsonProcessingException e) {
 			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
 					e.getLocation().getColumnNr());
-		}
-		catch (final RuntimeException e) {
+		} catch (final RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
-				throw (RDFParseException)e.getCause();
+				throw (RDFParseException) e.getCause();
 			}
 			throw e;
-		}
-		finally {
+		} finally {
 			clear();
 		}
 	}
 
 	@Override
 	public void parse(final Reader reader, final String baseURI)
-		throws IOException,
-		RDFParseException,
-		RDFHandlerException
-	{
+			throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {
@@ -146,21 +135,17 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
 
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
-		}
-		catch (final JsonLdError e) {
+		} catch (final JsonLdError e) {
 			throw new RDFParseException("Could not parse JSONLD", e);
-		}
-		catch (final JsonProcessingException e) {
+		} catch (final JsonProcessingException e) {
 			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
 					e.getLocation().getColumnNr());
-		}
-		catch (final RuntimeException e) {
+		} catch (final RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
-				throw (RDFParseException)e.getCause();
+				throw (RDFParseException) e.getCause();
 			}
 			throw e;
-		}
-		finally {
+		} finally {
 			clear();
 		}
 	}

@@ -28,8 +28,7 @@ public class UpdateExecutionException extends RDF4JException {
 	/**
 	 * Creates a new UpdateExecutionException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public UpdateExecutionException(String msg) {
 		super(msg);
@@ -38,8 +37,7 @@ public class UpdateExecutionException extends RDF4JException {
 	/**
 	 * Creates a new {@link UpdateExecutionException} wrapping another exception.
 	 * 
-	 * @param cause
-	 *        the cause of the exception
+	 * @param cause the cause of the exception
 	 */
 	public UpdateExecutionException(Throwable cause) {
 		super(cause);
@@ -48,10 +46,8 @@ public class UpdateExecutionException extends RDF4JException {
 	/**
 	 * Creates a new {@link UpdateExecutionException} wrapping another exception.
 	 * 
-	 * @param msg
-	 *        and error message.
-	 * @param cause
-	 *        the cause of the exception
+	 * @param msg   and error message.
+	 * @param cause the cause of the exception
 	 */
 	public UpdateExecutionException(String msg, Throwable cause) {
 		super(msg, cause);

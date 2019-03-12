@@ -50,9 +50,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		this.bindingNames = bindingNames;
 
 		try {
@@ -63,33 +61,26 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 				}
 			}
 			writer.write("\r\n");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		if (bindingNames == null) {
-			throw new IllegalStateException(
-					"Could not end query result as startQueryResult was not called first.");
+			throw new IllegalStateException("Could not end query result as startQueryResult was not called first.");
 		}
 		try {
 			writer.flush();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (bindingNames == null) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}
@@ -106,8 +97,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 				}
 			}
 			writer.write("\r\n");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -122,31 +112,23 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 		return getTupleQueryResultFormat();
 	}
 
-	protected void writeValue(Value val)
-		throws IOException
-	{
+	protected void writeValue(Value val) throws IOException {
 		if (val instanceof Resource) {
-			writeResource((Resource)val);
-		}
-		else {
-			writeLiteral((Literal)val);
+			writeResource((Resource) val);
+		} else {
+			writeLiteral((Literal) val);
 		}
 	}
 
-	protected void writeResource(Resource res)
-		throws IOException
-	{
+	protected void writeResource(Resource res) throws IOException {
 		if (res instanceof IRI) {
-			writeURI((IRI)res);
-		}
-		else {
-			writeBNode((BNode)res);
+			writeURI((IRI) res);
+		} else {
+			writeBNode((BNode) res);
 		}
 	}
 
-	protected void writeURI(IRI uri)
-		throws IOException
-	{
+	protected void writeURI(IRI uri) throws IOException {
 		String uriString = uri.toString();
 		boolean quoted = uriString.contains(",");
 
@@ -163,30 +145,24 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 		}
 	}
 
-	protected void writeBNode(BNode bNode)
-		throws IOException
-	{
+	protected void writeBNode(BNode bNode) throws IOException {
 		writer.write("_:");
 		writer.write(bNode.getID());
 	}
 
-	private void writeLiteral(Literal literal)
-		throws IOException
-	{
+	private void writeLiteral(Literal literal) throws IOException {
 		String label = literal.getLabel();
 		IRI datatype = literal.getDatatype();
 
 		boolean quoted = false;
 
 		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)
-				|| XMLSchema.DOUBLE.equals(datatype))
-		{
+				|| XMLSchema.DOUBLE.equals(datatype)) {
 			try {
 				String normalized = XMLDatatypeUtil.normalize(label, datatype);
 				writer.write(normalized);
 				return; // done
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				// not a valid numeric datatyped literal. ignore error and write as
 				// (optionally quoted) string instead.
 			}
@@ -218,51 +194,37 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public void startDocument()
-		throws QueryResultHandlerException
-	{
+	public void startDocument() throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 
 	@Override
-	public void handleStylesheet(String stylesheetUrl)
-		throws QueryResultHandlerException
-	{
+	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 
 	@Override
-	public void startHeader()
-		throws QueryResultHandlerException
-	{
+	public void startHeader() throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 
 	@Override
-	public void endHeader()
-		throws QueryResultHandlerException
-	{
+	public void endHeader() throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle boolean results");
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// Ignored by SPARQLResultsCSVWriter
 	}
 

@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * <p>
- * Visitor implementation for the query algebra which walks the tree and figures out the context for
- * nodes in the algebra. The context for a node is set on the highest node in the tree. That is, everything
- * below it shares the same context.
+ * Visitor implementation for the query algebra which walks the tree and figures out the context for nodes in the
+ * algebra. The context for a node is set on the highest node in the tree. That is, everything below it shares the same
+ * context.
  * </p>
  * 
  * @author Blazej Bulka
@@ -33,19 +33,17 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 
 	/**
-	 * Maps TupleExpr to contexts. This map contains only top-level expression elements that share the given
-	 * context (i.e., all elements below share the same context) -- this is because of where contexts are
-	 * being introduced into a SPARQL query -- all elements sharing the same contexts are grouped together
-	 * with a "GRAPH <ctx> { ... }" clause.
+	 * Maps TupleExpr to contexts. This map contains only top-level expression elements that share the given context
+	 * (i.e., all elements below share the same context) -- this is because of where contexts are being introduced into
+	 * a SPARQL query -- all elements sharing the same contexts are grouped together with a "GRAPH <ctx> { ... }"
+	 * clause.
 	 */
 	private Map<TupleExpr, Var> mContexts = new HashMap<>();
 
 	private ContextCollector() {
 	}
 
-	static Map<TupleExpr, Var> collectContexts(TupleExpr theTupleExpr)
-		throws Exception
-	{
+	static Map<TupleExpr, Var> collectContexts(TupleExpr theTupleExpr) throws Exception {
 		ContextCollector aContextVisitor = new ContextCollector();
 
 		theTupleExpr.visit(aContextVisitor);
@@ -54,9 +52,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	@Override
-	public void meet(Join theJoin)
-		throws Exception
-	{
+	public void meet(Join theJoin) throws Exception {
 		binaryOpMeet(theJoin, theJoin.getLeftArg(), theJoin.getRightArg());
 	}
 
@@ -64,9 +60,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LeftJoin theJoin)
-		throws Exception
-	{
+	public void meet(LeftJoin theJoin) throws Exception {
 		binaryOpMeet(theJoin, theJoin.getLeftArg(), theJoin.getRightArg());
 	}
 
@@ -74,9 +68,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Union theOp)
-		throws Exception
-	{
+	public void meet(Union theOp) throws Exception {
 		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());
 	}
 
@@ -84,9 +76,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Difference theOp)
-		throws Exception
-	{
+	public void meet(Difference theOp) throws Exception {
 		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());
 	}
 
@@ -94,9 +84,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Intersection theOp)
-		throws Exception
-	{
+	public void meet(Intersection theOp) throws Exception {
 		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());
 	}
 
@@ -104,9 +92,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Filter theFilter)
-		throws Exception
-	{
+	public void meet(final Filter theFilter) throws Exception {
 		theFilter.getArg().visit(this);
 
 		if (mContexts.containsKey(theFilter.getArg())) {
@@ -117,8 +103,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	private void binaryOpMeet(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, TupleExpr theRightExpr)
-		throws Exception
-	{
+			throws Exception {
 		theLeftExpr.visit(this);
 
 		Var aLeftCtx = mContexts.get(theLeftExpr);
@@ -134,9 +119,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(StatementPattern thePattern)
-		throws Exception
-	{
+	public void meet(StatementPattern thePattern) throws Exception {
 		Var aCtxVar = thePattern.getContextVar();
 
 		if (aCtxVar != null) {
@@ -144,9 +127,8 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 		}
 	}
 
-	private void sameCtxCheck(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, Var theLeftCtx,
-			TupleExpr theRightExpr, Var theRightCtx)
-	{
+	private void sameCtxCheck(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, Var theLeftCtx, TupleExpr theRightExpr,
+			Var theRightCtx) {
 		if ((theLeftCtx != null) && (theRightCtx != null) && isSameCtx(theLeftCtx, theRightCtx)) {
 			mContexts.remove(theLeftExpr);
 			mContexts.remove(theRightExpr);
@@ -157,8 +139,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	private boolean isSameCtx(Var v1, Var v2) {
 		if ((v1 != null && v1.getValue() != null) && (v2 != null && v2.getValue() != null)) {
 			return v1.getValue().equals(v2.getValue());
-		}
-		else if ((v1 != null && v1.getName() != null) && (v2 != null && v2.getName() != null)) {
+		} else if ((v1 != null && v1.getName() != null) && (v2 != null && v2.getName() != null)) {
 			return v1.getName().equals(v2.getName());
 		}
 

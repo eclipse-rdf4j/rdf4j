@@ -41,17 +41,14 @@ public class HTTPRepositoryFactory implements RepositoryFactory {
 	}
 
 	@Override
-	public Repository getRepository(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
 		HTTPRepository result = null;
 
 		if (config instanceof HTTPRepositoryConfig) {
-			HTTPRepositoryConfig httpConfig = (HTTPRepositoryConfig)config;
+			HTTPRepositoryConfig httpConfig = (HTTPRepositoryConfig) config;
 			result = new HTTPRepository(httpConfig.getURL());
-			//			result.setUsernameAndPassword(httpConfig.getUsername(), httpConfig.getPassword());
-		}
-		else {
+			// result.setUsernameAndPassword(httpConfig.getUsername(), httpConfig.getPassword());
+		} else {
 			throw new RepositoryConfigException("Invalid configuration class: " + config.getClass());
 		}
 		return result;

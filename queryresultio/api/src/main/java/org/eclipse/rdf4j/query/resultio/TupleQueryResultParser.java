@@ -34,17 +34,13 @@ public interface TupleQueryResultParser extends QueryResultParser {
 	/**
 	 * Parses the data from the supplied InputStream.
 	 * 
-	 * @param in
-	 *        The InputStream from which to read the data.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws QueryResultParseException
-	 *         If the parser has encountered an unrecoverable parse error.
-	 * @throws TupleQueryResultHandlerException
-	 *         If the configured query result handler has encountered an unrecoverable error.
+	 * @param in The InputStream from which to read the data.
+	 * @throws IOException                      If an I/O error occurred while data was read from the InputStream.
+	 * @throws QueryResultParseException        If the parser has encountered an unrecoverable parse error.
+	 * @throws TupleQueryResultHandlerException If the configured query result handler has encountered an unrecoverable
+	 *                                          error.
 	 * @deprecated Use {@link #parseQueryResult(InputStream)} instead.
 	 */
 	@Deprecated
-	void parse(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException;
+	void parse(InputStream in) throws IOException, QueryResultParseException, TupleQueryResultHandlerException;
 }

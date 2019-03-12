@@ -18,10 +18,10 @@ public abstract class ASTGraphQuerySet extends ASTGraphQuery {
 	}
 
 	public ASTGraphQuery getLeftArg() {
-		return (ASTGraphQuery)children.get(0);
+		return (ASTGraphQuery) children.get(0);
 	}
 
 	public ASTGraphQuery getRightArg() {
-		return (ASTGraphQuery)children.get(1);
+		return (ASTGraphQuery) children.get(1);
 	}
 }

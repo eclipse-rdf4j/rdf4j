@@ -60,9 +60,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -85,7 +83,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ProjectionElem) {
-			ProjectionElem o = (ProjectionElem)other;
+			ProjectionElem o = (ProjectionElem) other;
 			return sourceName.equals(o.getSourceName()) && targetName.equals(o.getTargetName());
 		}
 		return false;
@@ -99,7 +97,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 
 	@Override
 	public ProjectionElem clone() {
-		return (ProjectionElem)super.clone();
+		return (ProjectionElem) super.clone();
 	}
 
 	/**
@@ -110,8 +108,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	/**
-	 * @param aggregateOperatorInExpression
-	 *        The aggregateOperatorInExpression to set.
+	 * @param aggregateOperatorInExpression The aggregateOperatorInExpression to set.
 	 */
 	public void setAggregateOperatorInExpression(boolean aggregateOperatorInExpression) {
 		this.aggregateOperatorInExpression = aggregateOperatorInExpression;
@@ -125,8 +122,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	/**
-	 * @param sourceExpression
-	 *        The sourceExpression to set.
+	 * @param sourceExpression The sourceExpression to set.
 	 */
 	public void setSourceExpression(ExtensionElem sourceExpression) {
 		this.sourceExpression = sourceExpression;

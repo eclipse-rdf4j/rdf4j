@@ -40,15 +40,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 
 public class ConstructorBuilder {
 
-	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct,
-			boolean reduced)
-	{
+	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct, boolean reduced) {
 		return buildConstructor(bodyExpr, constructExpr, true, distinct, reduced);
 	}
 
 	public TupleExpr buildConstructor(TupleExpr bodyExpr, boolean distinct, boolean reduced)
-		throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		// check that bodyExpr contains _only_ a basic graph pattern.
 		BasicPatternVerifier verifier = new BasicPatternVerifier();
 		bodyExpr.visit(verifier);
@@ -66,8 +63,7 @@ public class ConstructorBuilder {
 		private boolean basicPattern = true;
 
 		/**
-		 * @param basicPattern
-		 *        The basicPattern to set.
+		 * @param basicPattern The basicPattern to set.
 		 */
 		/**
 		 * @return Returns the basicPattern.
@@ -105,19 +101,16 @@ public class ConstructorBuilder {
 		public void meet(StatementPattern node) {
 			if (!Scope.DEFAULT_CONTEXTS.equals(node.getScope())) {
 				basicPattern = false;
-			}
-			else if (node.getContextVar() != null) {
+			} else if (node.getContextVar() != null) {
 				basicPattern = false;
-			}
-			else {
+			} else {
 				super.meet(node);
 			}
 		}
 	}
 
-	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr,
-			boolean explicitConstructor, boolean distinct, boolean reduced)
-	{
+	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
+			boolean distinct, boolean reduced) {
 		TupleExpr result = bodyExpr;
 
 		// Retrieve all StatementPattern's from the construct expression
@@ -148,8 +141,7 @@ public class ConstructorBuilder {
 			// Filter the duplicates from these projected bindings
 			if (distinct) {
 				result = new Distinct(result);
-			}
-			else {
+			} else {
 				result = new Reduced(result);
 			}
 		}
@@ -163,8 +155,7 @@ public class ConstructorBuilder {
 
 				if (var.hasValue()) {
 					valueExpr = new ValueConstant(var.getValue());
-				}
-				else if (explicitConstructor) {
+				} else if (explicitConstructor) {
 					// only generate bnodes in case of an explicit constructor
 					valueExpr = new BNodeGenerator();
 				}
@@ -197,19 +188,16 @@ public class ConstructorBuilder {
 
 			// Note: no need to apply the second duplicate elimination step if
 			// there's just one projection
-		}
-		else if (projections.size() > 1) {
+		} else if (projections.size() > 1) {
 			result = new MultiProjection(result, projections);
 
 			if (distinct) {
 				// Add another distinct to filter duplicate statements
 				result = new Distinct(result);
-			}
-			else if (reduced) {
+			} else if (reduced) {
 				result = new Reduced(result);
 			}
-		}
-		else {
+		} else {
 			// Empty constructor
 			result = new EmptySet();
 		}
@@ -218,8 +206,8 @@ public class ConstructorBuilder {
 	}
 
 	/**
-	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject,
-	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
+	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject, predicate
+	 * and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
 		Set<Var> vars = new LinkedHashSet<>(statementPatterns.size() * 2);

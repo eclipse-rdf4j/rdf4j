@@ -38,9 +38,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	@Override
-	public boolean hasNext()
-		throws X
-	{
+	public boolean hasNext() throws X {
 		checkInterrupted();
 		if (isClosed()) {
 			return false;
@@ -50,8 +48,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 			boolean result = super.hasNext();
 			checkInterrupted();
 			return result;
-		}
-		catch (NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			checkInterrupted();
 			close();
 			throw e;
@@ -59,9 +56,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		checkInterrupted();
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
@@ -69,8 +64,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		checkInterrupted();
 		try {
 			return super.next();
-		}
-		catch (NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			checkInterrupted();
 			close();
 			throw e;
@@ -78,9 +72,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	@Override
-	public void remove()
-		throws X
-	{
+	public void remove() throws X {
 		checkInterrupted();
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
@@ -88,8 +80,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		checkInterrupted();
 		try {
 			super.remove();
-		}
-		catch (IllegalStateException e) {
+		} catch (IllegalStateException e) {
 			checkInterrupted();
 			close();
 			throw e;
@@ -97,29 +88,22 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			interruptTask.cancel();
-		}
-		finally {
+		} finally {
 			super.handleClose();
 		}
 	}
 
-	private final void checkInterrupted()
-		throws X
-	{
+	private final void checkInterrupted() throws X {
 		if (isInterrupted.get()) {
 			try {
 				throwInterruptedException();
-			}
-			finally {
+			} finally {
 				try {
 					close();
-				}
-				catch (Exception e) {
+				} catch (Exception e) {
 					logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
 				}
 			}
@@ -127,28 +111,25 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	/**
-	 * If the iteration is interrupted by its time limit, this method is called to generate and throw the
-	 * appropriate exception.
+	 * If the iteration is interrupted by its time limit, this method is called to generate and throw the appropriate
+	 * exception.
 	 * 
-	 * @throws X
-	 *         The generic class of exceptions thrown by this method.
+	 * @throws X The generic class of exceptions thrown by this method.
 	 */
-	protected abstract void throwInterruptedException()
-		throws X;
+	protected abstract void throwInterruptedException() throws X;
 
 	/**
-	 * Users of this class must call this method to interrupt the execution at the next available point. It
-	 * does not immediately interrupt the running method, but will call close() and set a flag to increase the
-	 * chances of it being picked up as soon as possible and to cleanup its resources. <br/>
-	 * Note, this method does not generate {@link InterruptedException}s that would occur if
-	 * {@link Thread#interrupt()} were called on this thread.
+	 * Users of this class must call this method to interrupt the execution at the next available point. It does not
+	 * immediately interrupt the running method, but will call close() and set a flag to increase the chances of it
+	 * being picked up as soon as possible and to cleanup its resources. <br/>
+	 * Note, this method does not generate {@link InterruptedException}s that would occur if {@link Thread#interrupt()}
+	 * were called on this thread.
 	 */
 	void interrupt() {
 		isInterrupted.set(true);
 		try {
 			close();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
 		}
 	}

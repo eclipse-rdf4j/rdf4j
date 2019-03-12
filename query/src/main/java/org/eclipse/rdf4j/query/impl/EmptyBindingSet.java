@@ -66,7 +66,7 @@ public class EmptyBindingSet implements BindingSet {
 	@Override
 	public boolean equals(Object o) {
 		if (o instanceof BindingSet) {
-			return ((BindingSet)o).size() == 0;
+			return ((BindingSet) o).size() == 0;
 		}
 
 		return false;

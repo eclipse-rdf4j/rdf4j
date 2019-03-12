@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class ContextAwareSchema {
 
 	/**
-	 * The ContextAwareRepository schema namespace (
-	 * <tt>http://www.openrdf.org/config/repository/contextaware#</tt>).
+	 * The ContextAwareRepository schema namespace ( <tt>http://www.openrdf.org/config/repository/contextaware#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/contextaware#";
 

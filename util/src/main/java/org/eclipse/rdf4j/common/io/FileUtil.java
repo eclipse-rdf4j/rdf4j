@@ -25,10 +25,8 @@ public class FileUtil {
 	/**
 	 * Gets the relative representations of a file compared to another.
 	 * 
-	 * @param subj
-	 *        The File to find the relative form for.
-	 * @param relativeTo
-	 *        The File 'subj' should be made relative to.
+	 * @param subj       The File to find the relative form for.
+	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
 	 */
 	public static String getRelativePath(File subj, File relativeTo) {
@@ -99,10 +97,8 @@ public class FileUtil {
 	/**
 	 * Gets the relative representations of a file compared to another.
 	 * 
-	 * @param subj
-	 *        The File to find the relative form for.
-	 * @param relativeTo
-	 *        The File 'subj' should be made relative to.
+	 * @param subj       The File to find the relative form for.
+	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
 	 */
 	public static File getRelativeFile(File subj, File relativeTo) {
@@ -112,10 +108,9 @@ public class FileUtil {
 	/**
 	 * Gets the extension of the specified file name.
 	 * 
-	 * @param fileName
-	 *        A file name.
-	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt> if the file name does not have
-	 *         a (valid) extension.
+	 * @param fileName A file name.
+	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt> if the file name does not have a (valid)
+	 *         extension.
 	 */
 	public static String getFileExtension(String fileName) {
 		int lastDotIdx = fileName.lastIndexOf('.');
@@ -161,13 +156,11 @@ public class FileUtil {
 	/**
 	 * Copies the contents of file <tt>source</tt> to file <tt>destination</tt>.
 	 * 
-	 * @param source source file
+	 * @param source      source file
 	 * @param destination destination file
 	 * @throws IOException
 	 */
-	public static void copyFile(File source, File destination)
-		throws IOException
-	{
+	public static void copyFile(File source, File destination) throws IOException {
 		try (FileInputStream in = new FileInputStream(source)) {
 			IOUtil.writeStream(in, destination);
 		}
@@ -176,14 +169,10 @@ public class FileUtil {
 	/**
 	 * Creates a directory if it doesn't exist yet.
 	 * 
-	 * @param dir
-	 *        The directory to create.
-	 * @throws IOException
-	 *        If the creation of the directory failed.
+	 * @param dir The directory to create.
+	 * @throws IOException If the creation of the directory failed.
 	 */
-	public static void createDirIfNotExists(File dir)
-		throws IOException
-	{
+	public static void createDirIfNotExists(File dir) throws IOException {
 		if (!dir.exists() && !dir.mkdirs()) {
 			throw new IOException("Unable to create directory: " + dir.toString());
 		}
@@ -203,8 +192,7 @@ public class FileUtil {
 		boolean result = true;
 		if (directory.isFile()) {
 			result = directory.delete();
-		}
-		else {
+		} else {
 			File[] list = directory.listFiles();
 			for (int i = list.length; i-- > 0;) {
 				if (!deltree(list[i])) {
@@ -219,12 +207,11 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes all files in the specified directory. 
-	 * Nothing happens when the specified File is not a directory.
+	 * Deletes all files in the specified directory. Nothing happens when the specified File is not a directory.
 	 * 
 	 * @param directory
-	 * @return true when all files in the specified directory were successfully deleted, when there where no
-	 *         files or when the specified file was not a directory.
+	 * @return true when all files in the specified directory were successfully deleted, when there where no files or
+	 *         when the specified file was not a directory.
 	 */
 	public static boolean deleteFiles(File directory) {
 		boolean result = true;
@@ -243,12 +230,12 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes all files and subdirectories in the specified directory.
-	 * Nothing happens when the specified File is not a directory.
+	 * Deletes all files and subdirectories in the specified directory. Nothing happens when the specified File is not a
+	 * directory.
 	 * 
 	 * @param directory
-	 * @return true when all children were successfully deleted, when there were no children or when the file
-	 *         was not a directory.
+	 * @return true when all children were successfully deleted, when there were no children or when the file was not a
+	 *         directory.
 	 */
 	public static boolean deleteChildren(File directory) {
 		boolean result = true;
@@ -264,16 +251,13 @@ public class FileUtil {
 	}
 
 	/**
-	 * Moves the given file and all files under it (if it's a directory) to the given location, excluding the
-	 * given collection of File objects!
+	 * Moves the given file and all files under it (if it's a directory) to the given location, excluding the given
+	 * collection of File objects!
 	 * 
-	 * @param from
-	 *        File or directory to be moved
-	 * @param to
-	 *        The file or directory to rename to
-	 * @param excludes
-	 *        The File objects to be excluded; if a directory is excluded, all files under it are excluded as
-	 *        well!
+	 * @param from     File or directory to be moved
+	 * @param to       The file or directory to rename to
+	 * @param excludes The File objects to be excluded; if a directory is excluded, all files under it are excluded as
+	 *                 well!
 	 * @return Whether moving was successful
 	 */
 	public static boolean moveRecursive(File from, File to, Collection<File> excludes) {
@@ -287,8 +271,7 @@ public class FileUtil {
 				to.getParentFile().mkdirs();
 				result = from.renameTo(to);
 			}
-		}
-		else {
+		} else {
 			boolean excludedFileFound = false;
 
 			File[] list = from.listFiles();
@@ -296,8 +279,7 @@ public class FileUtil {
 				File listItem = list[i];
 				if (excludes != null && excludes.contains(listItem)) {
 					excludedFileFound = true;
-				}
-				else {
+				} else {
 					if (!moveRecursive(listItem, new File(to, listItem.getName()), excludes)) {
 						result = false;
 					}
@@ -317,32 +299,24 @@ public class FileUtil {
 	/**
 	 * Creates a new and empty directory in the default temp directory using the given prefix.
 	 * 
-	 * @param prefix
-	 *        The prefix string to be used in generating the directory's name; must be at least three
-	 *        characters long.
+	 * @param prefix The prefix string to be used in generating the directory's name; must be at least three characters
+	 *               long.
 	 * @return A newly-created empty directory.
-	 * @throws IOException
-	 *         If no directory could be created.
+	 * @throws IOException If no directory could be created.
 	 * @deprecated use {@link Files#createTempDirectory(String, java.nio.file.attribute.FileAttribute...)} instead
 	 */
 	@Deprecated
-	public static synchronized File createTempDir(String prefix)
-		throws IOException
-	{	
+	public static synchronized File createTempDir(String prefix) throws IOException {
 		return Files.createTempDirectory(prefix).toFile();
 	}
 
 	/**
 	 * Deletes the specified directory and any files and directories in it recursively.
 	 * 
-	 * @param dir
-	 *        The directory to remove.
-	 * @throws IOException
-	 *         If the directory could not be removed.
+	 * @param dir The directory to remove.
+	 * @throws IOException If the directory could not be removed.
 	 */
-	public static void deleteDir(File dir)
-		throws IOException
-	{
+	public static void deleteDir(File dir) throws IOException {
 		if (!dir.isDirectory()) {
 			throw new IOException("Not a directory " + dir);
 		}
@@ -353,8 +327,7 @@ public class FileUtil {
 
 			if (file.isDirectory()) {
 				deleteDir(file);
-			}
-			else {
+			} else {
 				boolean deleted = file.delete();
 				if (!deleted) {
 					throw new IOException("Unable to delete file" + file);

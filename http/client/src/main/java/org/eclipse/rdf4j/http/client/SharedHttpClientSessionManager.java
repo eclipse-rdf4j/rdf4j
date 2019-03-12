@@ -31,14 +31,12 @@ import org.slf4j.LoggerFactory;
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
 	/**
-	 * FIXME: issue #1271, workaround for OpenJDK 8 bug.
-	 * ScheduledThreadPoolExecutor with 0 core threads may cause 100% CPU usage.
-	 * Using 1 core thread instead of 0 (default) fixes the problem but wastes some resources.
+	 * FIXME: issue #1271, workaround for OpenJDK 8 bug. ScheduledThreadPoolExecutor with 0 core threads may cause 100%
+	 * CPU usage. Using 1 core thread instead of 0 (default) fixes the problem but wastes some resources.
 	 * 
 	 * @see <a href="https://bugs.openjdk.java.net/browse/JDK-8129861">JDK-8129861</a>
 	 */
-	private static final int cores = 
-			(System.getProperty("org.eclipse.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
+	private static final int cores = (System.getProperty("org.eclipse.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
 	/**/
 
 	private static final AtomicLong threadCount = new AtomicLong();
@@ -58,7 +56,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 */
 	private volatile HttpClientBuilder httpClientBuilder;
 
-	private final Map<SPARQLProtocolSession,Boolean> openSessions = new ConcurrentHashMap<>();
+	private final Map<SPARQLProtocolSession, Boolean> openSessions = new ConcurrentHashMap<>();
 
 	/*--------------*
 	 * Constructors *
@@ -79,10 +77,8 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
-			ScheduledExecutorService dependentExecutorService)
-	{
-		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient,
-				"HTTP client was null");
+			ScheduledExecutorService dependentExecutorService) {
+		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient, "HTTP client was null");
 		this.executor = Objects.requireNonNull(dependentExecutorService, "Executor service was null");
 	}
 
@@ -101,8 +97,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	/**
-	 * @param httpClient
-	 *        The httpClient to use for remote/service calls.
+	 * @param httpClient The httpClient to use for remote/service calls.
 	 */
 	@Override
 	public void setHttpClient(HttpClient httpClient) {
@@ -119,11 +114,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	/**
-	 * Set an optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if the latter is not
-	 * provided externally as dependent client).
+	 * Set an optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if the latter is not provided
+	 * externally as dependent client).
 	 *
-	 * @param httpClientBuilder
-	 *        the builder for the managed HttpClient
+	 * @param httpClientBuilder the builder for the managed HttpClient
 	 * @see HttpClientBuilders
 	 */
 	public void setHttpClientBuilder(HttpClientBuilder httpClientBuilder) {
@@ -139,17 +133,14 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	@Override
-	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl,
-			String updateEndpointUrl)
-	{
+	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
 		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
 
 			@Override
 			public void close() {
 				try {
 					super.close();
-				}
-				finally {
+				} finally {
 					openSessions.remove(this);
 				}
 			}
@@ -168,8 +159,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			public void close() {
 				try {
 					super.close();
-				}
-				finally {
+				} finally {
 					openSessions.remove(this);
 				}
 			}
@@ -189,8 +179,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			openSessions.keySet().forEach(session -> {
 				try {
 					session.close();
-				}
-				catch (Exception e) {
+				} catch (Exception e) {
 					logger.error(e.toString(), e);
 				}
 			});
@@ -199,17 +188,14 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			if (toCloseDependentClient != null) {
 				HttpClientUtils.closeQuietly(toCloseDependentClient);
 			}
-		}
-		finally {
+		} finally {
 			try {
 				executor.shutdown();
 				executor.awaitTermination(10, TimeUnit.SECONDS);
-			}
-			catch (InterruptedException e) {
+			} catch (InterruptedException e) {
 				// Preserve the interrupt status so others can check it as necessary
 				Thread.currentThread().interrupt();
-			}
-			finally {
+			} finally {
 				if (!executor.isTerminated()) {
 					executor.shutdownNow();
 				}

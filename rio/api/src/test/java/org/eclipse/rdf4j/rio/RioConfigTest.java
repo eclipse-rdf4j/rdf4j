@@ -24,9 +24,7 @@ public class RioConfigTest {
 	private BooleanRioSetting testSetting = new BooleanRioSetting(key, "test setting", true);
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		config = new RioConfig();
 	}
 
@@ -36,80 +34,64 @@ public class RioConfigTest {
 	}
 
 	@Test
-	public void testIsSetDefault()
-		throws Exception
-	{
+	public void testIsSetDefault() throws Exception {
 		assertThat(config.isSet(testSetting)).isFalse();
 	}
 
 	@Test
-	public void testIsSetWithSystemPropertyOverride()
-		throws Exception
-	{
+	public void testIsSetWithSystemPropertyOverride() throws Exception {
 		System.setProperty(key, "false");
 		assertThat(config.isSet(testSetting)).isTrue();
 	}
 
 	@Test
-	public void testIsSetWithExplicitSet()
-		throws Exception
-	{
+	public void testIsSetWithExplicitSet() throws Exception {
 		config.set(testSetting, false);
 		assertThat(config.isSet(testSetting)).isTrue();
 	}
 
 	@Test
-	public void testUseDefaultsNoOverride()
-		throws Exception
-	{
+	public void testUseDefaultsNoOverride() throws Exception {
 		config.set(testSetting, false);
 		config.useDefaults();
 		assertThat(config.isSet(testSetting)).isFalse();
 	}
 
 	@Test
-	public void testUseDefaultsWithOverride()
-		throws Exception
-	{
+	public void testUseDefaultsWithOverride() throws Exception {
 		System.setProperty(key, "false");
 		config.useDefaults();
 		assertThat(config.isSet(testSetting)).isTrue();
 	}
 
 	@Test
-	public void testGetWithSystemPropertyOverride()
-		throws Exception
-	{
+	public void testGetWithSystemPropertyOverride() throws Exception {
 		System.setProperty(key, "false");
 		assertThat(config.get(testSetting)).as("default setting overridden by system prop").isFalse();
 
 		config.set(testSetting, true);
-		assertThat(config.get(testSetting)).as(
-				"explicit user-configured setting overriding system prop").isTrue();
+		assertThat(config.get(testSetting)).as("explicit user-configured setting overriding system prop").isTrue();
 
 		config.useDefaults();
 		assertThat(config.get(testSetting)).as("default setting overridden by sytem prop").isFalse();
-		
+
 		System.clearProperty(key);
 		assertThat(config.get(testSetting)).as("default setting overridden by system prop").isFalse();
 
 		config.useDefaults();
 		assertThat(config.get(testSetting)).as("default setting").isTrue();
 	}
-	
+
 	@Test
-	public void testGetWithUnsupportedConversionType()
-		throws Exception
-	{
+	public void testGetWithUnsupportedConversionType() throws Exception {
 		// we deliberately do not use StringRioSetting as that supports conversion of system property values
 		AbstractRioSetting<String> nonConvertableSetting = new AbstractRioSetting<String>(key, "test setting",
-				"default value")
-		{
+				"default value") {
 			private static final long serialVersionUID = 1L;
 		};
 
 		assertThat(config.get(nonConvertableSetting)).isEqualTo("default value");
-		
+
 		System.setProperty(key, "system property value");
 
 		// system property should be ignored

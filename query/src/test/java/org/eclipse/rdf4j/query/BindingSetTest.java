@@ -19,8 +19,8 @@ import org.junit.Test;
 public abstract class BindingSetTest<T extends BindingSet> {
 
 	/**
-	 * Verifies that the BindingSet implementation honors the API spec for {@link BindingSet#equals(Object)}
-	 * and {@link BindingSet#hashCode()}.
+	 * Verifies that the BindingSet implementation honors the API spec for {@link BindingSet#equals(Object)} and
+	 * {@link BindingSet#hashCode()}.
 	 */
 	@Test
 	public void testEqualsHashcode() {

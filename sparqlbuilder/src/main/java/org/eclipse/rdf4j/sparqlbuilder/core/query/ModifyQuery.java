@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * The SPARQL Modify Queries
  * 
- * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteInsert">
- * 		SPARQL DELETE/INSERT Query</a>
+ * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteInsert"> SPARQL DELETE/INSERT Query</a>
  */
 public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	private static final String INSERT = "INSERT";
@@ -31,7 +30,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	private static final String WITH = "WITH";
 	private static final String USING = "USING";
 	private static final String NAMED = "NAMED";
-	
+
 	private Optional<Iri> with = Optional.empty();
 	private Optional<Iri> using = Optional.empty();
 	private boolean usingNamed = false;
@@ -43,8 +42,9 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 
 	private QueryPattern where = SparqlBuilder.where();
 
-	ModifyQuery() { }
-	
+	ModifyQuery() {
+	}
+
 	/**
 	 * Define the graph that will be modified or matched against in the absence of more explicit graph definitions
 	 * 
@@ -54,26 +54,26 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery with(Iri iri) {
 		with = Optional.ofNullable(iri);
-		
+
 		return this;
 	}
-	
-	/** 
+
+	/**
 	 * Specify triples to delete (or leave empty for DELETE WHERE shortcut)
 	 * 
 	 * @param triples the triples to delete
 	 * 
 	 * @return this modify query instance
 	 * 
-	 * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteWhere">
-	 * 			SPARQL DELETE WHERE shortcut</a>
+	 * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteWhere"> SPARQL DELETE WHERE shortcut</a>
 	 */
 	public ModifyQuery delete(TriplePattern... triples) {
-		deleteTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(deleteTriples, SparqlBuilder::triplesTemplate, tt -> tt.and(triples));
-		
+		deleteTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(deleteTriples, SparqlBuilder::triplesTemplate,
+				tt -> tt.and(triples));
+
 		return this;
 	}
-	
+
 	/**
 	 * Specify the graph to delete triples from
 	 * 
@@ -83,11 +83,11 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery from(GraphName graphName) {
 		this.deleteGraph = Optional.ofNullable(graphName);
-		
+
 		return this;
 	}
-	
-	/** 
+
+	/**
 	 * Specify triples to insert
 	 * 
 	 * @param triples the triples to insert
@@ -95,11 +95,12 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 * @return this modify query instance
 	 */
 	public ModifyQuery insert(TriplePattern... triples) {
-		insertTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(insertTriples, SparqlBuilder::triplesTemplate, tt -> tt.and(triples));
-		
+		insertTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(insertTriples, SparqlBuilder::triplesTemplate,
+				tt -> tt.and(triples));
+
 		return this;
 	}
-	
+
 	/**
 	 * Specify the graph to insert triples into
 	 * 
@@ -109,7 +110,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery into(GraphName graphName) {
 		insertGraph = Optional.ofNullable(graphName);
-		
+
 		return this;
 	}
 
@@ -122,10 +123,10 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery using(Iri iri) {
 		using = Optional.ofNullable(iri);
-		
+
 		return this;
 	}
-	
+
 	/**
 	 * Specify a named graph to use to when evaluating the WHERE clause
 	 * 
@@ -135,10 +136,10 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery usingNamed(Iri iri) {
 		usingNamed = true;
-		
+
 		return using(iri);
 	}
-	
+
 	/**
 	 * Add graph patterns to this query's query pattern
 	 * 
@@ -148,46 +149,46 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery where(GraphPattern... patterns) {
 		where.where(patterns);
-		
+
 		return this;
 	}
-	
+
 	@Override
 	protected String getQueryActionString() {
 		StringBuilder modifyQuery = new StringBuilder();
-		
+
 		with.ifPresent(withIri -> modifyQuery.append(WITH).append(" ").append(withIri.getQueryString()).append("\n"));
-		
+
 		deleteTriples.ifPresent(delTriples -> {
-				modifyQuery.append(DELETE).append(" ");
-				
-				// DELETE WHERE shortcut
-				// https://www.w3.org/TR/sparql11-update/#deleteWhere
-				if(!delTriples.isEmpty()) {
-					appendNamedTriplesTemplates(modifyQuery, deleteGraph, delTriples);
-				}
-				modifyQuery.append("\n");
-			});
-		
+			modifyQuery.append(DELETE).append(" ");
+
+			// DELETE WHERE shortcut
+			// https://www.w3.org/TR/sparql11-update/#deleteWhere
+			if (!delTriples.isEmpty()) {
+				appendNamedTriplesTemplates(modifyQuery, deleteGraph, delTriples);
+			}
+			modifyQuery.append("\n");
+		});
+
 		insertTriples.ifPresent(insTriples -> {
-				modifyQuery.append(INSERT).append(" ");
-				appendNamedTriplesTemplates(modifyQuery, insertGraph, insTriples);
-				modifyQuery.append("\n");
-			});
-		
+			modifyQuery.append(INSERT).append(" ");
+			appendNamedTriplesTemplates(modifyQuery, insertGraph, insTriples);
+			modifyQuery.append("\n");
+		});
+
 		using.ifPresent(usingIri -> {
-				modifyQuery.append(USING).append(" ");
-				
-				if(usingNamed) {
-					modifyQuery.append(NAMED).append(" ");
-				}
-	
-				modifyQuery.append(usingIri.getQueryString());
-				modifyQuery.append("\n");
-			});
-		
+			modifyQuery.append(USING).append(" ");
+
+			if (usingNamed) {
+				modifyQuery.append(NAMED).append(" ");
+			}
+
+			modifyQuery.append(usingIri.getQueryString());
+			modifyQuery.append("\n");
+		});
+
 		modifyQuery.append(where.getQueryString());
-		
+
 		return modifyQuery.toString();
 	}
 }

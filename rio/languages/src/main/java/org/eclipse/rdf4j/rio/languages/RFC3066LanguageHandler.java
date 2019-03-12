@@ -49,12 +49,10 @@ public class RFC3066LanguageHandler implements LanguageHandler {
 	}
 
 	@Override
-	public boolean verifyLanguage(String literalValue, String languageTag)
-		throws LiteralUtilException
-	{
+	public boolean verifyLanguage(String literalValue, String languageTag) throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
-		
+
 		if (isRecognizedLanguage(languageTag)) {
 			// Language tag syntax already checked in isRecognizedLanguage
 			return true;
@@ -65,11 +63,10 @@ public class RFC3066LanguageHandler implements LanguageHandler {
 
 	@Override
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
-		throws LiteralUtilException
-	{
+			throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
-		
+
 		if (isRecognizedLanguage(languageTag)) {
 			return valueFactory.createLiteral(literalValue, languageTag.toLowerCase().intern());
 		}

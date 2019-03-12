@@ -57,18 +57,14 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	}
 
 	@Override
-	public void parse(Reader reader, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public void parse(InputStream in, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		clear();
-		
+
 		try {
 			if (in == null) {
 				throw new IllegalArgumentException("Input stream must not be null");
@@ -97,26 +93,25 @@ public class BinaryRDFParser extends AbstractRDFParser {
 				int recordType = this.in.readByte();
 
 				switch (recordType) {
-					case END_OF_DATA:
-						break loop;
-					case STATEMENT:
-						readStatement();
-						break;
-					case VALUE_DECL:
-						readValueDecl();
-						break;
-					case NAMESPACE_DECL:
-						readNamespaceDecl();
-						break;
-					case COMMENT:
-						readComment();
-						break;
-					default:
-						reportFatalError("Invalid record type: " + recordType);
+				case END_OF_DATA:
+					break loop;
+				case STATEMENT:
+					readStatement();
+					break;
+				case VALUE_DECL:
+					readValueDecl();
+					break;
+				case NAMESPACE_DECL:
+					readNamespaceDecl();
+					break;
+				case COMMENT:
+					readComment();
+					break;
+				default:
+					reportFatalError("Invalid record type: " + recordType);
 				}
 			}
-		}
-		finally {
+		} finally {
 			clear();
 		}
 
@@ -125,9 +120,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		}
 	}
 
-	private void readNamespaceDecl()
-		throws IOException, RDFHandlerException
-	{
+	private void readNamespaceDecl() throws IOException, RDFHandlerException {
 		String prefix = readString();
 		String namespace = readString();
 		if (rdfHandler != null) {
@@ -135,18 +128,14 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		}
 	}
 
-	private void readComment()
-		throws IOException, RDFHandlerException
-	{
+	private void readComment() throws IOException, RDFHandlerException {
 		String comment = readString();
 		if (rdfHandler != null) {
 			rdfHandler.handleComment(comment);
 		}
 	}
 
-	private void readValueDecl()
-		throws IOException, RDFParseException
-	{
+	private void readValueDecl() throws IOException, RDFParseException {
 		int id = in.readInt();
 		Value v = readValue();
 
@@ -160,24 +149,20 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		declaredValues[id] = v;
 	}
 
-	private void readStatement()
-		throws RDFParseException, IOException, RDFHandlerException
-	{
+	private void readStatement() throws RDFParseException, IOException, RDFHandlerException {
 		Value v = readValue();
 		Resource subj = null;
 		if (v instanceof Resource) {
-			subj = (Resource)v;
-		}
-		else {
+			subj = (Resource) v;
+		} else {
 			reportFatalError("Invalid subject type: " + v);
 		}
 
 		v = readValue();
 		IRI pred = null;
 		if (v instanceof IRI) {
-			pred = (IRI)v;
-		}
-		else {
+			pred = (IRI) v;
+		} else {
 			reportFatalError("Invalid predicate type: " + v);
 		}
 
@@ -189,9 +174,8 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		v = readValue();
 		Resource context = null;
 		if (v == null || v instanceof Resource) {
-			context = (Resource)v;
-		}
-		else {
+			context = (Resource) v;
+		} else {
 			reportFatalError("Invalid context type: " + v);
 		}
 
@@ -201,79 +185,63 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		}
 	}
 
-	private Value readValue()
-		throws RDFParseException, IOException
-	{
+	private Value readValue() throws RDFParseException, IOException {
 		byte valueType = in.readByte();
 		switch (valueType) {
-			case NULL_VALUE:
-				return null;
-			case VALUE_REF:
-				return readValueRef();
-			case URI_VALUE:
-				return readURI();
-			case BNODE_VALUE:
-				return readBNode();
-			case PLAIN_LITERAL_VALUE:
-				return readPlainLiteral();
-			case LANG_LITERAL_VALUE:
-				return readLangLiteral();
-			case DATATYPE_LITERAL_VALUE:
-				return readDatatypeLiteral();
-			default:
-				reportFatalError("Unknown value type: " + valueType);
-				return null;
+		case NULL_VALUE:
+			return null;
+		case VALUE_REF:
+			return readValueRef();
+		case URI_VALUE:
+			return readURI();
+		case BNODE_VALUE:
+			return readBNode();
+		case PLAIN_LITERAL_VALUE:
+			return readPlainLiteral();
+		case LANG_LITERAL_VALUE:
+			return readLangLiteral();
+		case DATATYPE_LITERAL_VALUE:
+			return readDatatypeLiteral();
+		default:
+			reportFatalError("Unknown value type: " + valueType);
+			return null;
 		}
 	}
 
-	private Value readValueRef()
-		throws IOException, RDFParseException
-	{
+	private Value readValueRef() throws IOException, RDFParseException {
 		int id = in.readInt();
 		return declaredValues[id];
 	}
 
-	private IRI readURI()
-		throws IOException, RDFParseException
-	{
+	private IRI readURI() throws IOException, RDFParseException {
 		String uri = readString();
 		return createURI(uri);
 	}
 
-	private Resource readBNode()
-		throws IOException, RDFParseException
-	{
+	private Resource readBNode() throws IOException, RDFParseException {
 		String bnodeID = readString();
 		return createNode(bnodeID);
 	}
 
-	private Literal readPlainLiteral()
-		throws IOException, RDFParseException
-	{
+	private Literal readPlainLiteral() throws IOException, RDFParseException {
 		String label = readString();
 		return createLiteral(label, null, null, -1, -1);
 	}
 
-	private Literal readLangLiteral()
-		throws IOException, RDFParseException
-	{
+	private Literal readLangLiteral() throws IOException, RDFParseException {
 		String label = readString();
 		String language = readString();
 		return createLiteral(label, language, null, -1, -1);
 	}
 
-	private Literal readDatatypeLiteral()
-		throws IOException, RDFParseException
-	{
+	private Literal readDatatypeLiteral() throws IOException, RDFParseException {
 		String label = readString();
 		String datatype = readString();
 		IRI dtUri = createURI(datatype);
 		return createLiteral(label, null, dtUri, -1, -1);
 	}
 
-	private String readString()
-		throws IOException
-	{
+	private String readString() throws IOException {
 		int stringLength = in.readInt();
 		int stringBytes = stringLength << 1;
 		if (buf == null || buf.length < stringBytes) {

@@ -89,8 +89,7 @@ class UnmodifiableModel extends AbstractModel {
 
 	@Override
 	public void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-	{
+			Resource... contexts) {
 		throw new UnsupportedOperationException();
 	}
 

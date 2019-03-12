@@ -44,30 +44,23 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	 * Calls {@link #handleClose()} upon first call and makes sure this method gets called only once.
 	 */
 	@Override
-	public final void close()
-		throws IOException
-	{
+	public final void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			handleClose();
-		}
-		else {
+		} else {
 			handleAlreadyClosed();
 		}
 	}
 
 	/**
-	 * Called by {@link #close} when it is called for the first time. This method is only called once on each
-	 * iteration. By default, this method does nothing.
+	 * Called by {@link #close} when it is called for the first time. This method is only called once on each iteration.
+	 * By default, this method does nothing.
 	 * 
 	 * @throws X
 	 */
-	protected void handleClose()
-		throws IOException
-	{
+	protected void handleClose() throws IOException {
 	}
 
-	protected void handleAlreadyClosed()
-		throws IOException
-	{
+	protected void handleAlreadyClosed() throws IOException {
 	}
 }

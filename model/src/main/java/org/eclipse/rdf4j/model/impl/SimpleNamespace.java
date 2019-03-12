@@ -37,10 +37,8 @@ public class SimpleNamespace implements Namespace {
 	/**
 	 * Creates a new Namespace object.
 	 * 
-	 * @param prefix
-	 *        The namespace's prefix.
-	 * @param name
-	 *        The namespace's name.
+	 * @param prefix The namespace's prefix.
+	 * @param name   The namespace's name.
 	 */
 	public SimpleNamespace(String prefix, String name) {
 		setPrefix(prefix);
@@ -64,8 +62,7 @@ public class SimpleNamespace implements Namespace {
 	/**
 	 * Sets the prefix of the namespace.
 	 * 
-	 * @param prefix
-	 *        The (new) prefix for this namespace.
+	 * @param prefix The (new) prefix for this namespace.
 	 */
 	public void setPrefix(String prefix) {
 		this.prefix = prefix;
@@ -84,8 +81,7 @@ public class SimpleNamespace implements Namespace {
 	/**
 	 * Sets the name of the namespace.
 	 * 
-	 * @param name
-	 *        The (new) name for this namespace.
+	 * @param name The (new) name for this namespace.
 	 */
 	public void setName(String name) {
 		this.name = name;
@@ -112,21 +108,19 @@ public class SimpleNamespace implements Namespace {
 		if (!(obj instanceof Namespace)) {
 			return false;
 		}
-		Namespace other = (Namespace)obj;
+		Namespace other = (Namespace) obj;
 		if (prefix == null) {
 			if (other.getPrefix() != null) {
 				return false;
 			}
-		}
-		else if (!prefix.equals(other.getPrefix())) {
+		} else if (!prefix.equals(other.getPrefix())) {
 			return false;
 		}
 		if (name == null) {
 			if (other.getName() != null) {
 				return false;
 			}
-		}
-		else if (!name.equals(other.getName())) {
+		} else if (!name.equals(other.getName())) {
 			return false;
 		}
 		return true;
@@ -146,12 +140,10 @@ public class SimpleNamespace implements Namespace {
 		if (getPrefix().equals(o.getPrefix())) {
 			if (getName().equals(o.getName())) {
 				return 0;
-			}
-			else {
+			} else {
 				return getName().compareTo(o.getName());
 			}
-		}
-		else {
+		} else {
 			return getPrefix().compareTo(o.getPrefix());
 		}
 	}

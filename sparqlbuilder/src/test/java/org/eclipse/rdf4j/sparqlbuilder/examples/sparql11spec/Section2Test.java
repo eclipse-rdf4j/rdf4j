@@ -32,19 +32,20 @@ public class Section2Test extends BaseExamples {
 	public void example_2_1() {
 		Variable title = SparqlBuilder.var("title");
 
-		TriplePattern book1_has_title = GraphPatterns.tp(Rdf.iri(EXAMPLE_ORG_BOOK_NS, "book1"), Rdf.iri(DC_NS, "title"), title);
+		TriplePattern book1_has_title = GraphPatterns.tp(Rdf.iri(EXAMPLE_ORG_BOOK_NS, "book1"), Rdf.iri(DC_NS, "title"),
+				title);
 
 		query.select(title).where(book1_has_title);
 
 		p();
 	}
-	
+
 	@Test
 	public void example_2_1_model() {
 		Variable title = SparqlBuilder.var("title");
 		String ex = EXAMPLE_ORG_BOOK_NS;
 		IRI book1 = VF.createIRI(ex, "book1");
-		
+
 		TriplePattern book1_has_title = GraphPatterns.tp(book1, DC.TITLE, title);
 
 		query.select(title).where(book1_has_title);
@@ -57,8 +58,7 @@ public class Section2Test extends BaseExamples {
 		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
 
 		/**
-		 * As a shortcut, Query objects can create variables that will be unique to the
-		 * query instance.
+		 * As a shortcut, Query objects can create variables that will be unique to the query instance.
 		 */
 		Variable name = query.var(), mbox = query.var(), x = query.var();
 
@@ -75,8 +75,7 @@ public class Section2Test extends BaseExamples {
 		Prefix foaf = SparqlBuilder.prefix(FOAF.NS);
 
 		/**
-		 * As a shortcut, Query objects can create variables that will be unique to the
-		 * query instance.
+		 * As a shortcut, Query objects can create variables that will be unique to the query instance.
 		 */
 		Variable name = query.var(), mbox = query.var(), x = query.var();
 
@@ -87,7 +86,7 @@ public class Section2Test extends BaseExamples {
 
 		p();
 	}
-	
+
 	@Test
 	public void example_2_3_1() {
 		Variable v = query.var(), p = query.var();
@@ -96,7 +95,6 @@ public class Section2Test extends BaseExamples {
 
 		query.select(v).where(v_hasP_cat);
 		p();
-
 
 		TriplePattern v_hasP_cat_en = GraphPatterns.tp(v, p, Rdf.literalOfLanguage("cat", "en"));
 		SelectQuery queryWithLangTag = Queries.SELECT(v).where(v_hasP_cat_en);
@@ -117,26 +115,27 @@ public class Section2Test extends BaseExamples {
 	public void example_2_3_3() {
 		String datatype = "specialDatatype";
 		Variable v = query.var(), p = query.var();
-		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p, Rdf.literalOfType("abc", Rdf.iri(EXAMPLE_DATATYPE_NS, datatype)));
+		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p,
+				Rdf.literalOfType("abc", Rdf.iri(EXAMPLE_DATATYPE_NS, datatype)));
 
 		query.select(v).where(v_hasP_abc_dt);
 		p();
 	}
-	
+
 	@Test
 	public void example_2_3_3_model() {
 		String datatype = "specialDatatype";
 		Variable v = query.var(), p = query.var();
-		
+
 		Literal lit = VF.createLiteral("abc", VF.createIRI(EXAMPLE_DATATYPE_NS, datatype));
-		
+
 		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p, lit);
 
 		query.select(v).where(v_hasP_abc_dt);
 		p();
-		
+
 	}
-	
+
 	@Test
 	public void example_2_4() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
@@ -149,15 +148,14 @@ public class Section2Test extends BaseExamples {
 	@Test
 	public void example_2_5() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
-		Variable G = SparqlBuilder.var("G"),
-				P = SparqlBuilder.var("P"), 
-				S = SparqlBuilder.var("S"),
+		Variable G = SparqlBuilder.var("G"), P = SparqlBuilder.var("P"), S = SparqlBuilder.var("S"),
 				name = SparqlBuilder.var("name");
 
 		Assignment concatAsName = SparqlBuilder.as(Expressions.concat(G, Rdf.literalOf(" "), S), name);
 
-		query.prefix(foaf).select(concatAsName).where(
-				GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
+		query.prefix(foaf)
+				.select(concatAsName)
+				.where(GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
 		p();
 
 		// TODO add BIND() capability in graph patterns (also show example of

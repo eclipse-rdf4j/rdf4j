@@ -10,10 +10,9 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 /**
- * QueryModelVisitor implementation that "prints" a tree representation of a query model. The tree
- * representations is printed to an internal character buffer and can be retrieved using
- * {@link #getTreeString()}. As an alternative, the static utility method {@link #printTree(QueryModelNode)}
- * can be used.
+ * QueryModelVisitor implementation that "prints" a tree representation of a query model. The tree representations is
+ * printed to an internal character buffer and can be retrieved using {@link #getTreeString()}. As an alternative, the
+ * static utility method {@link #printTree(QueryModelNode)} can be used.
  */
 public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeException> {
 

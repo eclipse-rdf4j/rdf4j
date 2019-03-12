@@ -19,25 +19,25 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 abstract class UpdateDataQuery<T extends UpdateDataQuery<T>> extends UpdateQuery<T> {
 	protected TriplesTemplate triplesTemplate = SparqlBuilder.triplesTemplate();
 	protected Optional<GraphName> graphName = Optional.empty();
-	
+
 	protected T addTriples(TriplePattern... triples) {
 		triplesTemplate.and(triples);
-		
+
 		return (T) this;
 	}
-	
+
 	protected T setTriplesTemplate(TriplesTemplate triplesTemplate) {
 		this.triplesTemplate = triplesTemplate;
-		
+
 		return (T) this;
 	}
-	
+
 	public T graph(GraphName graph) {
 		graphName = Optional.ofNullable(graph);
-		
+
 		return (T) this;
 	}
-	
+
 	protected abstract String getPrefix();
 
 	@Override

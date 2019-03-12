@@ -24,22 +24,18 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
  * @author Andreas Schwarte
  */
 public class ServiceJoinConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>
-{
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
 
 	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			List<BindingSet> bindings)
-	{
+			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
 
 	@Override
-	protected BindingSet convert(BindingSet bIn)
-		throws QueryEvaluationException
-	{
+	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
 
 		// overestimate the capacity
 		SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(bIn.size() + bindings.size());

@@ -41,7 +41,7 @@ public class FilterBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 	}
 
 	public GroupBuilder<T, E> filter(ValueExpr theExpr) {
-		((BasicGroup)mGroup.getGroup()).addFilter(theExpr);
+		((BasicGroup) mGroup.getGroup()).addFilter(theExpr);
 
 		return mGroup;
 	}

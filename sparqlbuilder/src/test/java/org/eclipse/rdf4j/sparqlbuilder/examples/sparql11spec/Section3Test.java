@@ -25,10 +25,10 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_3_1() {
 		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
-		
+
 		Variable x = query.var(), title = SparqlBuilder.var("title");
 		TriplePattern xTitle = GraphPatterns.tp(x, dc.iri("title"), title);
-		
+
 		Expression<?> regex = Expressions.regex(title, Rdf.literalOf("^SPARQL"));
 		GraphPattern where = xTitle.filter(regex);
 
@@ -41,17 +41,14 @@ public class Section3Test extends BaseExamples {
 
 	@Test
 	public void example_3_2() {
-		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)),
-			   ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_COM_NS));
-		
-		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder
-				.var("price");
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_COM_NS));
+
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price");
 		Variable x = query.var();
 		Expression<?> priceConstraint = Expressions.lt(price, 30.5);
 
-		GraphPattern where = GraphPatterns.and(
-				x.has(ns.iri("price"), price),
-				x.has(dc.iri("title"), title)).filter(priceConstraint);
+		GraphPattern where = GraphPatterns.and(x.has(ns.iri("price"), price), x.has(dc.iri("title"), title))
+				.filter(priceConstraint);
 
 		query.prefix(dc, ns).select(title, price).where(where);
 		p();

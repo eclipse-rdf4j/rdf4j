@@ -19,8 +19,8 @@ import java.util.Map.Entry;
 
 /**
  * A utility class offering convenience methods for writing XML. This class takes care of character escaping,
- * identation, etc. This class does not verify that the written data is legal XML. It is the callers
- * responsibility to make sure that elements are properly nested, etc.
+ * identation, etc. This class does not verify that the written data is legal XML. It is the callers responsibility to
+ * make sure that elements are properly nested, etc.
  * <h3>Example:</h3>
  * <p>
  * To write the following XML:
@@ -102,29 +102,26 @@ public class XMLWriter {
 	 *--------------*/
 
 	/**
-	 * Creates a new XMLWriter that will write its data to the supplied Writer. Character encoding issues are
-	 * left to the supplier of the Writer.
+	 * Creates a new XMLWriter that will write its data to the supplied Writer. Character encoding issues are left to
+	 * the supplier of the Writer.
 	 * 
-	 * @param writer
-	 *        The Writer to write the XML to.
+	 * @param writer The Writer to write the XML to.
 	 */
 	public XMLWriter(Writer writer) {
 		_writer = writer;
 	}
 
 	/**
-	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in the default UTF-8
-	 * character encoding.
+	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in the default UTF-8 character
+	 * encoding.
 	 * 
-	 * @param outputStream
-	 *        The OutputStream to write the XML to.
+	 * @param outputStream The OutputStream to write the XML to.
 	 */
 	public XMLWriter(OutputStream outputStream) {
 		try {
 			_charEncoding = "UTF-8";
 			_writer = new OutputStreamWriter(outputStream, _charEncoding);
-		}
-		catch (UnsupportedEncodingException e) {
+		} catch (UnsupportedEncodingException e) {
 			// UTF-8 must be supported by all compliant JVM's,
 			// this exception should never be thrown.
 			throw new RuntimeException("UTF-8 character encoding not supported on this platform");
@@ -132,15 +129,11 @@ public class XMLWriter {
 	}
 
 	/**
-	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in specified character
-	 * encoding.
+	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in specified character encoding.
 	 * 
-	 * @param outputStream
-	 *        The OutputStream to write the XML to.
+	 * @param outputStream The OutputStream to write the XML to.
 	 */
-	public XMLWriter(OutputStream outputStream, String charEncoding)
-		throws UnsupportedEncodingException
-	{
+	public XMLWriter(OutputStream outputStream, String charEncoding) throws UnsupportedEncodingException {
 		_charEncoding = charEncoding;
 		_writer = new OutputStreamWriter(outputStream, _charEncoding);
 	}
@@ -153,8 +146,7 @@ public class XMLWriter {
 	 * Enables or disables pretty-printing. If pretty-printing is enabled, the XMLWriter will add newlines and
 	 * indentation to the written data. Pretty-printing is disabled by default.
 	 * 
-	 * @param prettyPrint
-	 *        Flag indicating whether pretty-printing should be enabled.
+	 * @param prettyPrint Flag indicating whether pretty-printing should be enabled.
 	 */
 	public void setPrettyPrint(boolean prettyPrint) {
 		_prettyPrint = prettyPrint;
@@ -170,11 +162,10 @@ public class XMLWriter {
 	}
 
 	/**
-	 * Sets the string that should be used for indentation when pretty-printing is enabled. The default
-	 * indentation string is a tab character.
+	 * Sets the string that should be used for indentation when pretty-printing is enabled. The default indentation
+	 * string is a tab character.
 	 * 
-	 * @param indentString
-	 *        The indentation string, e.g. a tab or a number of spaces.
+	 * @param indentString The indentation string, e.g. a tab or a number of spaces.
 	 */
 	public void setIndentString(String indentString) {
 		_indentString = indentString;
@@ -192,12 +183,9 @@ public class XMLWriter {
 	/**
 	 * Writes the XML header for the XML file.
 	 * 
-	 * @throws IOException
-	 *         If an I/O error occurs.
+	 * @throws IOException If an I/O error occurs.
 	 */
-	public void startDocument()
-		throws IOException
-	{
+	public void startDocument() throws IOException {
 		_write("<?xml version='1.0'");
 		if (_charEncoding != null) {
 			_write(" encoding='" + _charEncoding + "'");
@@ -208,19 +196,15 @@ public class XMLWriter {
 	/**
 	 * Finishes writing and flushes the OutputStream or Writer that this XMLWriter is writing to.
 	 */
-	public void endDocument()
-		throws IOException
-	{
+	public void endDocument() throws IOException {
 		_writer.flush();
 	}
 
 	/**
 	 * Sets an attribute for the next start tag.
 	 * 
-	 * @param name
-	 *        The name of the attribute.
-	 * @param value
-	 *        The value of the attribute.
+	 * @param name  The name of the attribute.
+	 * @param value The value of the attribute.
 	 */
 	public void setAttribute(String name, String value) {
 		_attributes.put(name, value);
@@ -229,11 +213,9 @@ public class XMLWriter {
 	/**
 	 * Sets an attribute for the next start element.
 	 * 
-	 * @param name
-	 *        The name of the attribute.
-	 * @param value
-	 *        The value of the attribute. The integer value will be transformed to a string using the method
-	 *        <tt>String.valueOf(int)</tt>.
+	 * @param name  The name of the attribute.
+	 * @param value The value of the attribute. The integer value will be transformed to a string using the method
+	 *              <tt>String.valueOf(int)</tt>.
 	 * @see java.lang.String#valueOf(int)
 	 */
 	public void setAttribute(String name, int value) {
@@ -243,11 +225,9 @@ public class XMLWriter {
 	/**
 	 * Sets an attribute for the next start element.
 	 * 
-	 * @param name
-	 *        The name of the attribute.
-	 * @param value
-	 *        The value of the attribute. The boolean value will be transformed to a string using the method
-	 *        <tt>String.valueOf(boolean)</tt>.
+	 * @param name  The name of the attribute.
+	 * @param value The value of the attribute. The boolean value will be transformed to a string using the method
+	 *              <tt>String.valueOf(boolean)</tt>.
 	 * @see java.lang.String#valueOf(boolean)
 	 */
 	public void setAttribute(String name, boolean value) {
@@ -257,13 +237,10 @@ public class XMLWriter {
 	/**
 	 * Writes a start tag containing the previously set attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
+	 * @param elName The element name.
 	 * @see #setAttribute(java.lang.String,java.lang.String)
 	 */
-	public void startTag(String elName)
-		throws IOException
-	{
+	public void startTag(String elName) throws IOException {
 		_writeIndent();
 		_write("<" + elName);
 		_writeAtts();
@@ -274,28 +251,21 @@ public class XMLWriter {
 	/**
 	 * Writes an end tag.
 	 * 
-	 * @param elName
-	 *        The element name.
+	 * @param elName The element name.
 	 */
-	public void endTag(String elName)
-		throws IOException
-	{
+	public void endTag(String elName) throws IOException {
 		_indentLevel--;
 		_writeIndent();
 		_writeLn("</" + elName + ">");
 	}
 
 	/**
-	 * Writes an 'empty' element, e.g. <tt>&lt;foo/&gt;</tt>. The tag will contain any previously set
-	 * attributes.
+	 * Writes an 'empty' element, e.g. <tt>&lt;foo/&gt;</tt>. The tag will contain any previously set attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
+	 * @param elName The element name.
 	 * @see #setAttribute(java.lang.String,java.lang.String)
 	 */
-	public void emptyElement(String elName)
-		throws IOException
-	{
+	public void emptyElement(String elName) throws IOException {
 		_writeIndent();
 		_write("<" + elName);
 		_writeAtts();
@@ -305,30 +275,23 @@ public class XMLWriter {
 	/**
 	 * Writes a link to an XSL stylesheet, using <tt>&lt;?xml-stylesheet type='text/xsl' href='url'?&gt;</tt>.
 	 * 
-	 * @param url
-	 *        The URL of the stylesheet.
+	 * @param url The URL of the stylesheet.
 	 */
-	public void writeStylesheet(String url)
-		throws IOException
-	{
+	public void writeStylesheet(String url) throws IOException {
 		_write("<?xml-stylesheet type='text/xsl' href='");
 		text(url);
 		_writeLn("'?>");
 	}
 
 	/**
-	 * Writes a start and end tag with the supplied text between them. The start tag will contain any
-	 * previously set attributes.
+	 * Writes a start and end tag with the supplied text between them. The start tag will contain any previously set
+	 * attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
-	 * @param text
-	 *        The text.
+	 * @param elName The element name.
+	 * @param text   The text.
 	 * @see #setAttribute(java.lang.String,java.lang.String)
 	 */
-	public void textElement(String elName, String text)
-		throws IOException
-	{
+	public void textElement(String elName, String text) throws IOException {
 		_writeIndent();
 		_write("<" + elName);
 		_writeAtts();
@@ -338,18 +301,14 @@ public class XMLWriter {
 	}
 
 	/**
-	 * Writes a start and end tag with the supplied text between them, without the usual escape rules. The
-	 * start tag will contain any previously set attributes.
+	 * Writes a start and end tag with the supplied text between them, without the usual escape rules. The start tag
+	 * will contain any previously set attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
-	 * @param text
-	 *        The text.
+	 * @param elName The element name.
+	 * @param text   The text.
 	 * @see #setAttribute(java.lang.String,java.lang.String)
 	 */
-	public void unescapedTextElement(String elName, String text)
-		throws IOException
-	{
+	public void unescapedTextElement(String elName, String text) throws IOException {
 		_writeIndent();
 		_write("<" + elName);
 		_writeAtts();
@@ -359,19 +318,15 @@ public class XMLWriter {
 	}
 
 	/**
-	 * Writes a start and end tag with the supplied value between them. The start tag will contain any
-	 * previously set attributes.
+	 * Writes a start and end tag with the supplied value between them. The start tag will contain any previously set
+	 * attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
-	 * @param value
-	 *        The value. The integer value will be transformed to a string using the method
-	 *        <tt>String.valueOf(int)</tt>.
+	 * @param elName The element name.
+	 * @param value  The value. The integer value will be transformed to a string using the method
+	 *               <tt>String.valueOf(int)</tt>.
 	 * @see java.lang.String#valueOf(int)
 	 */
-	public void textElement(String elName, int value)
-		throws IOException
-	{
+	public void textElement(String elName, int value) throws IOException {
 		textElement(elName, String.valueOf(value));
 	}
 
@@ -379,40 +334,30 @@ public class XMLWriter {
 	 * Writes a start and end tag with the supplied boolean value between them. The start tag will contain any
 	 * previously set attributes.
 	 * 
-	 * @param elName
-	 *        The element name.
-	 * @param value
-	 *        The boolean value. The integer value will be transformed to a string using the method
-	 *        <tt>String.valueOf(boolean)</tt>.
+	 * @param elName The element name.
+	 * @param value  The boolean value. The integer value will be transformed to a string using the method
+	 *               <tt>String.valueOf(boolean)</tt>.
 	 * @see java.lang.String#valueOf(boolean)
 	 */
-	public void textElement(String elName, boolean value)
-		throws IOException
-	{
+	public void textElement(String elName, boolean value) throws IOException {
 		textElement(elName, String.valueOf(value));
 	}
 
 	/**
 	 * Writes a piece of text.
 	 * 
-	 * @param text
-	 *        The text.
+	 * @param text The text.
 	 */
-	public void text(String text)
-		throws IOException
-	{
+	public void text(String text) throws IOException {
 		_write(XMLUtil.escapeCharacterData(text));
 	}
 
 	/**
 	 * Writes a comment.
 	 * 
-	 * @param comment
-	 *        The comment.
+	 * @param comment The comment.
 	 */
-	public void comment(String comment)
-		throws IOException
-	{
+	public void comment(String comment) throws IOException {
 		_writeIndent();
 		_writeLn("<!-- " + comment + " -->");
 	}
@@ -422,18 +367,14 @@ public class XMLWriter {
 	 * 
 	 * @see #setPrettyPrint
 	 */
-	public void emptyLine()
-		throws IOException
-	{
+	public void emptyLine() throws IOException {
 		_writeLn("");
 	}
 
 	/**
 	 * Writes any set attributes and clears them afterwards.
 	 */
-	private void _writeAtts()
-		throws IOException
-	{
+	private void _writeAtts() throws IOException {
 		for (Entry<String, String> entry : _attributes.entrySet()) {
 			String name = entry.getKey();
 			String value = entry.getValue();
@@ -451,19 +392,14 @@ public class XMLWriter {
 	/**
 	 * Writes a string.
 	 */
-	protected void _write(String s)
-		throws IOException
-	{
+	protected void _write(String s) throws IOException {
 		_writer.write(s);
 	}
 
 	/**
-	 * Writes a string followed by a line-separator. The line-separator is not written when pretty-printing is
-	 * disabled.
+	 * Writes a string followed by a line-separator. The line-separator is not written when pretty-printing is disabled.
 	 */
-	protected void _writeLn(String s)
-		throws IOException
-	{
+	protected void _writeLn(String s) throws IOException {
 		_write(s);
 		if (_prettyPrint) {
 			_write(LINE_SEPARATOR);
@@ -471,12 +407,10 @@ public class XMLWriter {
 	}
 
 	/**
-	 * Writes as much indentation strings as appropriate for the current indentation level. A call to this
-	 * method is ignored when pretty-printing is disabled.
+	 * Writes as much indentation strings as appropriate for the current indentation level. A call to this method is
+	 * ignored when pretty-printing is disabled.
 	 */
-	protected void _writeIndent()
-		throws IOException
-	{
+	protected void _writeIndent() throws IOException {
 		if (_prettyPrint) {
 			for (int i = 0; i < _indentLevel; i++) {
 				_write(_indentString);

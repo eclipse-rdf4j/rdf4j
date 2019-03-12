@@ -32,8 +32,7 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	protected final String baseURI;
 
 	public AbstractHTTPQuery(SPARQLProtocolSession httpClient, QueryLanguage queryLanguage, String queryString,
-			String baseURI)
-	{
+			String baseURI) {
 		super();
 		this.httpClient = httpClient;
 		this.queryLanguage = queryLanguage;

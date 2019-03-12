@@ -28,8 +28,8 @@ public class JJTSyntaxTreeBuilderState {
 	}
 
 	/*
-	 * Determines whether the current node was actually closed and pushed. This should only be called in the
-	 * final user action of a node scope.
+	 * Determines whether the current node was actually closed and pushed. This should only be called in the final user
+	 * action of a node scope.
 	 */
 	public boolean nodeCreated() {
 		return node_created;
@@ -94,9 +94,8 @@ public class JJTSyntaxTreeBuilderState {
 	}
 
 	/*
-	 * A definite node is constructed from a specified number of children. That number of nodes are popped
-	 * from the stack and made the children of the definite node. Then the definite node is pushed on to the
-	 * stack.
+	 * A definite node is constructed from a specified number of children. That number of nodes are popped from the
+	 * stack and made the children of the definite node. Then the definite node is pushed on to the stack.
 	 */
 	public void closeNodeScope(Node n, int num) {
 		mk = marks.remove(marks.size() - 1);
@@ -111,9 +110,9 @@ public class JJTSyntaxTreeBuilderState {
 	}
 
 	/*
-	 * A conditional node is constructed if its condition is true. All the nodes that have been pushed since
-	 * the node was opened are made children of the conditional node, which is then pushed on to the stack. If
-	 * the condition is false the node is not constructed and they are left on the stack.
+	 * A conditional node is constructed if its condition is true. All the nodes that have been pushed since the node
+	 * was opened are made children of the conditional node, which is then pushed on to the stack. If the condition is
+	 * false the node is not constructed and they are left on the stack.
 	 */
 	public void closeNodeScope(Node n, boolean condition) {
 		if (condition) {
@@ -127,8 +126,7 @@ public class JJTSyntaxTreeBuilderState {
 			n.jjtClose();
 			pushNode(n);
 			node_created = true;
-		}
-		else {
+		} else {
 			mk = marks.remove(marks.size() - 1);
 			node_created = false;
 		}

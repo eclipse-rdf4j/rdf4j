@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public interface InterceptingRepositoryConnection extends RepositoryConnection {
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
-	 * are performed on this connection.
+	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
+	 * performed on this connection.
 	 */
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 

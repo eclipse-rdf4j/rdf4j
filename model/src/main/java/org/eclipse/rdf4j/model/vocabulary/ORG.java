@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * @author Bart.Hanssens
  */
 public class ORG {
-	
+
 	/**
 	 * The Organization Ontology namespace: http://www.w3.org/ns/org#
 	 */

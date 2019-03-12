@@ -36,14 +36,10 @@ public class LanguageTag implements LanguageTagCodes {
 	/**
 	 * Creates new RFC3066 LanguageTag.
 	 * 
-	 * @param tag
-	 *        The tag to parse and analyse.
-	 * @throws LanguageTagSyntaxException
-	 *         If the syntactic rules of RFC3066 section 2.1 are broken.
+	 * @param tag The tag to parse and analyse.
+	 * @throws LanguageTagSyntaxException If the syntactic rules of RFC3066 section 2.1 are broken.
 	 */
-	public LanguageTag(String tag)
-		throws LanguageTagSyntaxException
-	{
+	public LanguageTag(String tag) throws LanguageTagSyntaxException {
 		String lc = tag.toLowerCase();
 		List<String> subtagList = new ArrayList<>();
 		int subT;
@@ -52,8 +48,7 @@ public class LanguageTag implements LanguageTagCodes {
 			if (subT != -1) {
 				subtagList.add(lc.substring(0, subT));
 				lc = lc.substring(subT + 1);
-			}
-			else
+			} else
 				break;
 		}
 		subtagList.add(lc);
@@ -61,14 +56,12 @@ public class LanguageTag implements LanguageTagCodes {
 		subtagList.toArray(subtags);
 		int lg = subtags[0].length();
 		if (lg == 0 || lg > 8) {
-			throw new LanguageTagSyntaxException(
-					"Primary subtag must be between 1 and 8 alpha characters: " + tag);
+			throw new LanguageTagSyntaxException("Primary subtag must be between 1 and 8 alpha characters: " + tag);
 		}
 		for (int j = 0; j < lg; j++) {
 			int ch = subtags[0].charAt(j);
 			if (!('a' <= ch && ch <= 'z')) {
-				throw new LanguageTagSyntaxException(
-						"Primary subtag must be between 1 and 8 alpha characters: " + tag);
+				throw new LanguageTagSyntaxException("Primary subtag must be between 1 and 8 alpha characters: " + tag);
 			}
 		}
 		for (int i = 1; i < subtags.length; i++) {
@@ -99,8 +92,8 @@ public class LanguageTag implements LanguageTagCodes {
 	// Special cases.
 	// Overall properties
 	/**
-	 * The properties of this LanguageTag, expressed as a bitwise or of fields from {@link LanguageTagCodes}.
-	 * If the tag is illegal only <CODE>LT_ILLEGAL</CODE> is reported. Examples include:
+	 * The properties of this LanguageTag, expressed as a bitwise or of fields from {@link LanguageTagCodes}. If the tag
+	 * is illegal only <CODE>LT_ILLEGAL</CODE> is reported. Examples include:
 	 * <dl>
 	 * <dt><CODE>LT_ISO639</CODE></dt>
 	 * <dd>en <I>English.</I></dd>
@@ -125,9 +118,8 @@ public class LanguageTag implements LanguageTagCodes {
 	private int getTagType() {
 		IanaLanguageTag iana = null;
 		if (this instanceof IanaLanguageTag) {
-			iana = (IanaLanguageTag)this;
-		}
-		else {
+			iana = (IanaLanguageTag) this;
+		} else {
 			iana = IanaLanguageTag.find(this);
 		}
 		Iso639 lang = Iso639.find(subtags[0]);
@@ -138,55 +130,54 @@ public class LanguageTag implements LanguageTagCodes {
 			}
 		}
 		switch (subtags[0].length()) {
-			case 1:
-				switch (subtags[0].charAt(0)) {
-					case 'x':
-						return LT_PRIVATE_USE; // reserved for private use.
-					case 'i':
-						return iana != null ? rslt : LT_ILLEGAL;
-					default:
-						return LT_ILLEGAL;
-				}
-			case 2:
-				if (lang == null) {
-					return LT_ILLEGAL;
-				}
-				rslt |= lang.classification; // all special case tags etc.
-				break;
-			case 3:
-				if (lang == null) {
-					return LT_ILLEGAL;
-				}
-				if (lang.twoCharCode != null) {
-					return LT_ILLEGAL; // Section 2.3 Para 2
-				}
-				if (!lang.terminologyCode.equals(subtags[0])) {
-					return LT_ILLEGAL;
-					// Section 2.3 Para 3
-				}
-				rslt |= lang.classification; // all special case tags etc.
-				// Section 2.3 para 4,5,6 in a separate function.
-				break;
+		case 1:
+			switch (subtags[0].charAt(0)) {
+			case 'x':
+				return LT_PRIVATE_USE; // reserved for private use.
+			case 'i':
+				return iana != null ? rslt : LT_ILLEGAL;
 			default:
 				return LT_ILLEGAL;
+			}
+		case 2:
+			if (lang == null) {
+				return LT_ILLEGAL;
+			}
+			rslt |= lang.classification; // all special case tags etc.
+			break;
+		case 3:
+			if (lang == null) {
+				return LT_ILLEGAL;
+			}
+			if (lang.twoCharCode != null) {
+				return LT_ILLEGAL; // Section 2.3 Para 2
+			}
+			if (!lang.terminologyCode.equals(subtags[0])) {
+				return LT_ILLEGAL;
+				// Section 2.3 Para 3
+			}
+			rslt |= lang.classification; // all special case tags etc.
+			// Section 2.3 para 4,5,6 in a separate function.
+			break;
+		default:
+			return LT_ILLEGAL;
 		}
 		if (subtags.length == 1) {
 			return rslt;
 		}
 		switch (subtags[1].length()) {
-			case 1:
+		case 1:
+			return LT_ILLEGAL;
+		case 2:
+			if (Iso3166.find(subtags[1]) == null) {
 				return LT_ILLEGAL;
-			case 2:
-				if (Iso3166.find(subtags[1]) == null) {
-					return LT_ILLEGAL;
-				}
-				else {
-					rslt |= LT_ISO3166;
-				}
-				break;
-			default:
-				if (iana == null)
-					rslt |= LT_EXTRA;
+			} else {
+				rslt |= LT_ISO3166;
+			}
+			break;
+		default:
+			if (iana == null)
+				rslt |= LT_EXTRA;
 		}
 		if (subtags.length > 2 && iana == null) {
 			rslt |= LT_EXTRA;
@@ -201,54 +192,54 @@ public class LanguageTag implements LanguageTagCodes {
 	 */
 	private String getErrorMessage() {
 		switch (subtags[0].length()) {
-			case 1:
-				switch (subtags[0].charAt(0)) {
-					case 'x':
-						return null; // reserved for private use.
-					case 'i':
-						if (this instanceof IanaLanguageTag || IanaLanguageTag.find(this) != null) {
-							return null;
-						}
-						return toString() + " not found in IANA langauge registry.";
-					default:
-						return "Only 'x' and 'i' single character primary language subtags are defined in RFC3066.";
+		case 1:
+			switch (subtags[0].charAt(0)) {
+			case 'x':
+				return null; // reserved for private use.
+			case 'i':
+				if (this instanceof IanaLanguageTag || IanaLanguageTag.find(this) != null) {
+					return null;
 				}
-			case 2:
-				if (Iso639.find(subtags[0]) == null) {
-					return "ISO-639 does not define language: '" + subtags[0] + "'.";
-				}
-				break;
-			case 3:
-				Iso639 lang = Iso639.find(subtags[0]);
-				if (lang == null) {
-					return "ISO-639 does not define language: '" + subtags[0] + "'.";
-				}
-				if (lang.twoCharCode != null) {
-					return "RFC 3066 section 2.3 mandates the use of '" + lang.twoCharCode + "' instead of '"
-							+ subtags[0] + "'.";
-					// Section 2.3 Para 2
-				}
-				if (!lang.terminologyCode.equals(subtags[0])) {
-					return "RFC 3066 section 2.3 mandates the use of '" + lang.terminologyCode
-							+ "' instead of '" + subtags[0] + "'.";
-					// Section 2.3 Para 3
-				}
-				// Section 2.3 para 4,5,6 in a separate function.
-				break;
+				return toString() + " not found in IANA langauge registry.";
 			default:
-				return "No primary language subtags of length greater than 3 are currently defined.";
+				return "Only 'x' and 'i' single character primary language subtags are defined in RFC3066.";
+			}
+		case 2:
+			if (Iso639.find(subtags[0]) == null) {
+				return "ISO-639 does not define language: '" + subtags[0] + "'.";
+			}
+			break;
+		case 3:
+			Iso639 lang = Iso639.find(subtags[0]);
+			if (lang == null) {
+				return "ISO-639 does not define language: '" + subtags[0] + "'.";
+			}
+			if (lang.twoCharCode != null) {
+				return "RFC 3066 section 2.3 mandates the use of '" + lang.twoCharCode + "' instead of '" + subtags[0]
+						+ "'.";
+				// Section 2.3 Para 2
+			}
+			if (!lang.terminologyCode.equals(subtags[0])) {
+				return "RFC 3066 section 2.3 mandates the use of '" + lang.terminologyCode + "' instead of '"
+						+ subtags[0] + "'.";
+				// Section 2.3 Para 3
+			}
+			// Section 2.3 para 4,5,6 in a separate function.
+			break;
+		default:
+			return "No primary language subtags of length greater than 3 are currently defined.";
 		}
 		if (subtags.length == 1) {
 			return null;
 		}
 		switch (subtags[1].length()) {
-			case 1:
-				return "Second language subtags of length 1 are prohibited by RFC3066.";
-			case 2:
-				if (Iso3166.find(subtags[1]) == null) {
-					return "Country code, '" + subtags[1] + "', not found in ISO 3166.";
-				}
-				break;
+		case 1:
+			return "Second language subtags of length 1 are prohibited by RFC3066.";
+		case 2:
+			if (Iso3166.find(subtags[1]) == null) {
+				return "Country code, '" + subtags[1] + "', not found in ISO 3166.";
+			}
+			break;
 		}
 		return null;
 	}
@@ -290,8 +281,7 @@ public class LanguageTag implements LanguageTagCodes {
 		if (hasVariant()) {
 			if (hasCountry()) {
 				result = subtags[2];
-			}
-			else {
+			} else {
 				result = subtags[1];
 			}
 		}
@@ -322,12 +312,10 @@ public class LanguageTag implements LanguageTagCodes {
 				String country = iso3166Country.code.toUpperCase();
 				if (variant != null) {
 					result = new Locale(language, country, variant);
-				}
-				else {
+				} else {
 					result = new Locale(language, country);
 				}
-			}
-			else {
+			} else {
 				result = new Locale(language);
 			}
 		}

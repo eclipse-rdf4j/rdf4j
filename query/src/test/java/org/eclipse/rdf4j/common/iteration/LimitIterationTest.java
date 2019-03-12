@@ -30,9 +30,7 @@ public class LimitIterationTest extends CloseableIterationTest {
 	}
 
 	@Test
-	public void testInRangeOffset()
-		throws Exception
-	{
+	public void testInRangeOffset() throws Exception {
 		for (int limit = 0; limit < stringList1.size(); limit++) {
 			Iteration<String, Exception> iter = createLimitIteration(limit);
 			List<String> resultList = Iterations.asList(iter);
@@ -42,9 +40,7 @@ public class LimitIterationTest extends CloseableIterationTest {
 	}
 
 	@Test
-	public void testOutOfRangeOffset()
-		throws Exception
-	{
+	public void testOutOfRangeOffset() throws Exception {
 		Iteration<String, Exception> iter = createLimitIteration(2 * stringList1.size());
 		List<String> resultList = Iterations.asList(iter);
 		assertEquals(stringList1, resultList);

@@ -43,7 +43,6 @@ public class LOCN {
 	/** locn:Geometry */
 	public static final IRI GEOMETRY;
 
-
 	// Properties
 	/** locn:address */
 	public static final IRI ADDRESS_PROP;
@@ -113,4 +112,3 @@ public class LOCN {
 		THOROUGHFARE = factory.createIRI(NAMESPACE, "thoroughfare");
 	}
 }
-

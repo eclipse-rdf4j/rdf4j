@@ -35,8 +35,7 @@ public class SPARQLBooleanJSONParser extends AbstractSPARQLJSONParser implements
 	/**
 	 * Construct a parser with a specific {@link ValueFactory}.
 	 * 
-	 * @param valueFactory
-	 *        The factory to use to create values.
+	 * @param valueFactory The factory to use to create values.
 	 */
 	public SPARQLBooleanJSONParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -54,13 +53,10 @@ public class SPARQLBooleanJSONParser extends AbstractSPARQLJSONParser implements
 
 	@Override
 	@Deprecated
-	public boolean parse(InputStream in)
-		throws IOException, QueryResultParseException
-	{
+	public boolean parse(InputStream in) throws IOException, QueryResultParseException {
 		try {
 			return parseQueryResultInternal(in, true, false);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new QueryResultParseException(e);
 		}
 	}

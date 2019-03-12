@@ -93,9 +93,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testAsModel()
-		throws QueryEvaluationException
-	{
+	public void testAsModel() throws QueryEvaluationException {
 		Model model = QueryResults.asModel(gqr);
 
 		assertFalse(gqr.hasNext());
@@ -105,8 +103,9 @@ public class QueryResultsTest {
 
 	@Test
 	public void testStreamGraphResult() {
-		List<Statement> aboutA = QueryResults.stream(gqr).filter(s -> s.getSubject().equals(a)).collect(
-				Collectors.toList());
+		List<Statement> aboutA = QueryResults.stream(gqr)
+				.filter(s -> s.getSubject().equals(a))
+				.collect(Collectors.toList());
 
 		assertFalse(aboutA.isEmpty());
 
@@ -125,8 +124,9 @@ public class QueryResultsTest {
 		tqr1.append(b);
 		tqr1.append(b);
 
-		List<BindingSet> list = QueryResults.stream(tqr1).filter(bs -> bs.getValue("a").equals(foo)).collect(
-				Collectors.toList());
+		List<BindingSet> list = QueryResults.stream(tqr1)
+				.filter(bs -> bs.getValue("a").equals(foo))
+				.collect(Collectors.toList());
 
 		assertNotNull(list);
 		assertFalse(list.isEmpty());
@@ -136,25 +136,20 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testGraphQueryResultEquals()
-		throws QueryEvaluationException
-	{
+	public void testGraphQueryResultEquals() throws QueryEvaluationException {
 
 		StubGraphQueryResult toCompare = new StubGraphQueryResult();
 
 		assertTrue(QueryResults.equals(gqr, toCompare));
 		gqr = new StubGraphQueryResult();
 		toCompare = new StubGraphQueryResult();
-		toCompare.statements.add(
-				VF.createStatement(VF.createURI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
+		toCompare.statements.add(VF.createStatement(VF.createURI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
 
 		assertFalse(QueryResults.equals(gqr, toCompare));
 	}
 
 	@Test
-	public void testDistinctGraphQueryResults()
-		throws QueryEvaluationException
-	{
+	public void testDistinctGraphQueryResults() throws QueryEvaluationException {
 
 		GraphQueryResult filtered = QueryResults.distinctResults(gqr);
 
@@ -167,9 +162,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testDistinctTupleQueryResults()
-		throws QueryEvaluationException
-	{
+	public void testDistinctTupleQueryResults() throws QueryEvaluationException {
 
 		BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
 		BindingSet b = new ListBindingSet(twoBindingNames, bar, lit2);
@@ -190,8 +183,7 @@ public class QueryResultsTest {
 	}
 
 	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement, QueryEvaluationException>
-			implements GraphQueryResult
-	{
+			implements GraphQueryResult {
 
 		private List<Statement> statements = new ArrayList<>();
 
@@ -204,30 +196,22 @@ public class QueryResultsTest {
 		}
 
 		@Override
-		public boolean hasNext()
-			throws QueryEvaluationException
-		{
+		public boolean hasNext() throws QueryEvaluationException {
 			return !statements.isEmpty();
 		}
 
 		@Override
-		public Statement next()
-			throws QueryEvaluationException
-		{
+		public Statement next() throws QueryEvaluationException {
 			return statements.remove(0);
 		}
 
 		@Override
-		public void remove()
-			throws QueryEvaluationException
-		{
+		public void remove() throws QueryEvaluationException {
 			statements.remove(0);
 		}
 
 		@Override
-		public Map<String, String> getNamespaces()
-			throws QueryEvaluationException
-		{
+		public Map<String, String> getNamespaces() throws QueryEvaluationException {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -235,9 +219,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testEmptyQueryResult()
-		throws QueryEvaluationException
-	{
+	public void testEmptyQueryResult() throws QueryEvaluationException {
 		tqr1.append(EmptyBindingSet.getInstance());
 		tqr2.append(EmptyBindingSet.getInstance());
 		tqr3.append(EmptyBindingSet.getInstance());
@@ -246,9 +228,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testEmptyQueryResult2()
-		throws QueryEvaluationException
-	{
+	public void testEmptyQueryResult2() throws QueryEvaluationException {
 		tqr1.append(EmptyBindingSet.getInstance());
 		tqr3.append(EmptyBindingSet.getInstance());
 
@@ -256,9 +236,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testEmptyQueryResult3()
-		throws QueryEvaluationException
-	{
+	public void testEmptyQueryResult3() throws QueryEvaluationException {
 		tqr1.append(EmptyBindingSet.getInstance());
 		tqr3.append(EmptyBindingSet.getInstance());
 
@@ -266,18 +244,14 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testEmptyBindingSet()
-		throws QueryEvaluationException
-	{
+	public void testEmptyBindingSet() throws QueryEvaluationException {
 		tqr1.append(EmptyBindingSet.getInstance());
 		tqr2.append(EmptyBindingSet.getInstance());
 		assertTrue(QueryResults.equals(tqr1, tqr2));
 	}
 
 	@Test
-	public void testNonBNodeBindingSet1()
-		throws QueryEvaluationException
-	{
+	public void testNonBNodeBindingSet1() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, lit1));
 		tqr1.append(new ListBindingSet(twoBindingNames, bar, lit2));
 
@@ -288,9 +262,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testNonBNodeBindingSet2()
-		throws QueryEvaluationException
-	{
+	public void testNonBNodeBindingSet2() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, lit1));
 		tqr2.append(new ListBindingSet(twoBindingNames, foo, lit2));
 
@@ -298,9 +270,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testNonBNodeBindingSet3()
-		throws QueryEvaluationException
-	{
+	public void testNonBNodeBindingSet3() throws QueryEvaluationException {
 		tqr3.append(new ListBindingSet(threeBindingNames, foo, lit1, bar));
 		tqr2.append(new ListBindingSet(twoBindingNames, foo, lit1));
 
@@ -308,9 +278,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testNonBNodeBindingSet()
-		throws QueryEvaluationException
-	{
+	public void testNonBNodeBindingSet() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, lit1));
 		tqr2.append(new ListBindingSet(twoBindingNames, foo, lit2));
 
@@ -318,9 +286,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet1()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet1() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode1));
 		tqr1.append(new ListBindingSet(twoBindingNames, bar, bnode2));
 
@@ -331,9 +297,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet2()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet2() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode1));
 		tqr2.append(new ListBindingSet(twoBindingNames, foo, lit1));
 
@@ -341,9 +305,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet3()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet3() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode1));
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 
@@ -354,9 +316,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet4()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet4() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, bnode1, bnode2));
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 
@@ -367,9 +327,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet5()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet5() throws QueryEvaluationException {
 		tqr1.append(new ListBindingSet(twoBindingNames, bnode1, bnode2));
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 
@@ -380,9 +338,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet6()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet6() throws QueryEvaluationException {
 		tqr3.append(new ListBindingSet(threeBindingNames, foo, bnode2, bnode1));
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 
@@ -390,9 +346,7 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testBNodeBindingSet7()
-		throws QueryEvaluationException
-	{
+	public void testBNodeBindingSet7() throws QueryEvaluationException {
 		tqr3.append(new ListBindingSet(threeBindingNames, foo, bnode2, bnode1));
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 

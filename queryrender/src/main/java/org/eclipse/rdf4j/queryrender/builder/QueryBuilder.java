@@ -33,8 +33,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Specify an offset for the query
 	 * 
-	 * @param theOffset
-	 *        the new offset
+	 * @param theOffset the new offset
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> offset(int theOffset);
@@ -42,8 +41,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Specify a limit for the query
 	 * 
-	 * @param theLimit
-	 *        the new limit for the query
+	 * @param theLimit the new limit for the query
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> limit(int theLimit);
@@ -84,8 +82,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Add projection variables to the query
 	 * 
-	 * @param theNames
-	 *        the names of the variables to add to the projection
+	 * @param theNames the names of the variables to add to the projection
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> addProjectionVar(String... theNames);
@@ -93,8 +90,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Add a from clause to this query
 	 * 
-	 * @param theURI
-	 *        the from URI
+	 * @param theURI the from URI
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> from(IRI theURI);
@@ -102,8 +98,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Add a 'from named' clause to this query
 	 * 
-	 * @param theURI
-	 *        the graph URI
+	 * @param theURI the graph URI
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> fromNamed(IRI theURI);
@@ -111,8 +106,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Specify ORDER BY clause with ASC modifier by default
 	 * 
-	 * @param theNames
-	 *        the names of the variables to apply the ordering
+	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderBy(String... theNames);
@@ -120,8 +114,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Specify ORDER BY clause with ASC modifier
 	 * 
-	 * @param theNames
-	 *        the names of the variables to apply the ordering
+	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderByAsc(String... theNames);
@@ -129,8 +122,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 	/**
 	 * Specify ORDER BY clause with DESC modifier
 	 * 
-	 * @param theNames
-	 *        the names of the variables to apply the ordering
+	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderByDesc(String... theNames);

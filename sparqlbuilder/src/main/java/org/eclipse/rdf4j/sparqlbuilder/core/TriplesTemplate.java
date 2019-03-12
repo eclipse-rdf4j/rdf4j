@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  */
 public class TriplesTemplate extends StandardQueryElementCollection<TriplePattern> {
 	private static final Function<String, String> WRAPPER = SparqlBuilderUtils::getBracedString;
+
 	TriplesTemplate(TriplePattern... triples) {
 		super("\n");
 		setWrapperMethod(WRAPPER);
@@ -34,7 +35,7 @@ public class TriplesTemplate extends StandardQueryElementCollection<TriplePatter
 	 */
 	public TriplesTemplate and(TriplePattern... triples) {
 		Collections.addAll(elements, triples);
-		
+
 		return this;
 	}
 }

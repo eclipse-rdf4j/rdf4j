@@ -28,101 +28,77 @@ public class TurtlePrettyWriterTest extends RDFWriterTest {
 
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
-		config.set(BasicWriterSettings.PRETTY_PRINT, true).set(BasicWriterSettings.INLINE_BLANK_NODES,
-				inlineBlankNodes);
+		config.set(BasicWriterSettings.PRETTY_PRINT, true)
+				.set(BasicWriterSettings.INLINE_BLANK_NODES, inlineBlankNodes);
 	}
 
 	@Override
-	public void testPerformance()
-		throws Exception
-	{
+	public void testPerformance() throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testPerformance();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
-	public void testPerformanceNoHandling()
-		throws Exception
-	{
+	public void testPerformanceNoHandling() throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testPerformanceNoHandling();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
-	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
-		throws Exception
-	{
+	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace() throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
 	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
-	public void testRoundTripWithXSDString()
-		throws RDFHandlerException,
-		IOException,
-		RDFParseException
-	{
+	public void testRoundTripWithXSDString() throws RDFHandlerException, IOException, RDFParseException {
 		try {
 			inlineBlankNodes = false;
 			super.testRoundTripWithXSDString();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
-	public void testRoundTripWithoutXSDString()
-		throws RDFHandlerException,
-		IOException,
-		RDFParseException
-	{
+	public void testRoundTripWithoutXSDString() throws RDFHandlerException, IOException, RDFParseException {
 		try {
 			inlineBlankNodes = false;
 			super.testRoundTripWithoutXSDString();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}
 
 	@Override
-	public void testRoundTripPreserveBNodeIds()
-		throws Exception
-	{
+	public void testRoundTripPreserveBNodeIds() throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testRoundTripPreserveBNodeIds();
-		}
-		finally {
+		} finally {
 			inlineBlankNodes = true;
 		}
 	}

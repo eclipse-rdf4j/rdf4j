@@ -22,8 +22,7 @@ import org.apache.http.ssl.TrustStrategy;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 
 /**
- * Convenience utility class offering helper methods to configure {@link HttpClient}s and
- * {@link HttpClientBuilders}.
+ * Convenience utility class offering helper methods to configure {@link HttpClient}s and {@link HttpClientBuilders}.
  * 
  * @author Andreas Schwarte
  * @see HttpClientDependent
@@ -31,8 +30,8 @@ import org.eclipse.rdf4j.http.client.HttpClientDependent;
 public class HttpClientBuilders {
 
 	/**
-	 * Return an {@link HttpClientBuilder} that can be used to build an {@link HttpClient} which trusts all
-	 * certificates (particularly including self-signed certificates).
+	 * Return an {@link HttpClientBuilder} that can be used to build an {@link HttpClient} which trusts all certificates
+	 * (particularly including self-signed certificates).
 	 * 
 	 * @return a {@link HttpClientBuilder} for <i>SSL trust all</i>
 	 */
@@ -42,9 +41,7 @@ public class HttpClientBuilders {
 			builder.loadTrustMaterial(null, new TrustStrategy() {
 
 				@Override
-				public boolean isTrusted(X509Certificate[] chain, String authType)
-					throws CertificateException
-				{
+				public boolean isTrusted(X509Certificate[] chain, String authType) throws CertificateException {
 					return true;
 				}
 			});
@@ -56,12 +53,10 @@ public class HttpClientBuilders {
 					return true;
 				}
 			};
-			SSLConnectionSocketFactory sslSF = new SSLConnectionSocketFactory(builder.build(),
-					hostNameVerifier);
+			SSLConnectionSocketFactory sslSF = new SSLConnectionSocketFactory(builder.build(), hostNameVerifier);
 
 			return HttpClients.custom().setSSLSocketFactory(sslSF).useSystemProperties();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			// key management exception, etc.
 			throw new RuntimeException(e);
 		}

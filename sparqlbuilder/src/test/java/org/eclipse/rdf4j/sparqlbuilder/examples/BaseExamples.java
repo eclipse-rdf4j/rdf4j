@@ -24,9 +24,9 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 
 /**
- * The classes inheriting from this pose as examples on how to use SparqlBuilder. They follow the SPARQL 1.1
- * Spec and the SPARQL 1.1 Update Spec linked below. Each class covers a section of the spec, documenting how
- * to create the example SPARQL queries in each section using SparqlBuilder.
+ * The classes inheriting from this pose as examples on how to use SparqlBuilder. They follow the SPARQL 1.1 Spec and
+ * the SPARQL 1.1 Update Spec linked below. Each class covers a section of the spec, documenting how to create the
+ * example SPARQL queries in each section using SparqlBuilder.
  * 
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/"> The referenced SPARQL 1.1 Spec</a>
  * @see <a href="https://www.w3.org/TR/sparql11-update/">The referenced SPARQL 1.1 Update Spec</a>
@@ -79,7 +79,7 @@ public class BaseExamples {
 		String name = testName.getMethodName();
 		String[] tokens = name.split("_");
 
-		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length)).collect(
-				Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
+		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length))
+				.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
 	}
 }

@@ -15,13 +15,12 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 /**
  * The SPARQL Insert Data Query
  * 
- * @see <a href="https://www.w3.org/TR/sparql11-update/#insertData">
- * 		SPARQL INSERT DATA Query</a>
- * 		
+ * @see <a href="https://www.w3.org/TR/sparql11-update/#insertData"> SPARQL INSERT DATA Query</a>
+ * 
  */
 public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	private static final String INSERT_DATA = "INSERT DATA";
-	
+
 	/**
 	 * Add triples to be inserted
 	 * 
@@ -32,18 +31,18 @@ public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	public InsertDataQuery insertData(TriplePattern... triples) {
 		return addTriples(triples);
 	}
-	
+
 	/**
 	 * Set this query's triples template
 	 * 
-	 * @param triplesTemplate
-	 * 		the {@link TriplesTemplate} instance to set
+	 * @param triplesTemplate the {@link TriplesTemplate} instance to set
 	 * 
 	 * @return this instance
 	 */
 	public InsertDataQuery insertData(TriplesTemplate triplesTemplate) {
 		return setTriplesTemplate(triplesTemplate);
 	}
+
 	/**
 	 * Specify a graph to insert the data into
 	 * 
@@ -54,7 +53,7 @@ public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	public InsertDataQuery into(GraphName graph) {
 		return graph(graph);
 	}
-	
+
 	@Override
 	public String getPrefix() {
 		return INSERT_DATA;

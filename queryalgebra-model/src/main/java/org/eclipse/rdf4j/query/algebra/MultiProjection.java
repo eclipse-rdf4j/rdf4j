@@ -97,16 +97,12 @@ public class MultiProjection extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ProjectionElemList projElemList : projections) {
 			projElemList.visit(visitor);
 		}
@@ -125,7 +121,7 @@ public class MultiProjection extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof MultiProjection && super.equals(other)) {
-			MultiProjection o = (MultiProjection)other;
+			MultiProjection o = (MultiProjection) other;
 			return projections.equals(o.getProjections());
 		}
 		return false;
@@ -138,7 +134,7 @@ public class MultiProjection extends UnaryTupleOperator {
 
 	@Override
 	public MultiProjection clone() {
-		MultiProjection clone = (MultiProjection)super.clone();
+		MultiProjection clone = (MultiProjection) super.clone();
 
 		clone.projections = new ArrayList<>(getProjections().size());
 		for (ProjectionElemList pe : getProjections()) {

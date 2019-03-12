@@ -69,15 +69,11 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	/**
 	 * Return the rendering of the ValueExpr object
 	 * 
-	 * @param theExpr
-	 *        the expression to render
+	 * @param theExpr the expression to render
 	 * @return the rendering
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	public String render(ValueExpr theExpr)
-		throws Exception
-	{
+	public String render(ValueExpr theExpr) throws Exception {
 		reset();
 
 		theExpr.visit(this);
@@ -89,9 +85,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Bound theOp)
-		throws Exception
-	{
+	public void meet(Bound theOp) throws Exception {
 		mBuffer.append(" bound(");
 		theOp.getArg().visit(this);
 		mBuffer.append(")");
@@ -101,16 +95,12 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Var theVar)
-		throws Exception
-	{
+	public void meet(Var theVar) throws Exception {
 		if (theVar.isAnonymous() && !theVar.hasValue()) {
 			mBuffer.append(BaseTupleExprRenderer.scrubVarName(theVar.getName().substring(1)));
-		}
-		else if (theVar.hasValue()) {
+		} else if (theVar.hasValue()) {
 			mBuffer.append(RenderUtils.getSerqlQueryString(theVar.getValue()));
-		}
-		else {
+		} else {
 			mBuffer.append(theVar.getName());
 		}
 	}
@@ -119,9 +109,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(BNodeGenerator theGen)
-		throws Exception
-	{
+	public void meet(BNodeGenerator theGen) throws Exception {
 		mBuffer.append(theGen.getSignature());
 	}
 
@@ -129,9 +117,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(MathExpr theOp)
-		throws Exception
-	{
+	public void meet(MathExpr theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" ");
@@ -143,9 +129,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Compare theOp)
-		throws Exception
-	{
+	public void meet(Compare theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" ");
@@ -157,9 +141,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Exists theOp)
-		throws Exception
-	{
+	public void meet(Exists theOp) throws Exception {
 		mBuffer.append(" exists(");
 		// TODO: query render this
 		theOp.getSubQuery().visit(this);
@@ -170,9 +152,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(In theOp)
-		throws Exception
-	{
+	public void meet(In theOp) throws Exception {
 		theOp.getArg().visit(this);
 		mBuffer.append(" in ");
 		mBuffer.append("(");
@@ -185,9 +165,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(CompareAll theOp)
-		throws Exception
-	{
+	public void meet(CompareAll theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" all ");
@@ -202,9 +180,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(ValueConstant theVal)
-		throws Exception
-	{
+	public void meet(ValueConstant theVal) throws Exception {
 		mBuffer.append(RenderUtils.getSerqlQueryString(theVal.getValue()));
 	}
 
@@ -212,16 +188,13 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(FunctionCall theOp)
-		throws Exception
-	{
+	public void meet(FunctionCall theOp) throws Exception {
 		mBuffer.append(theOp.getURI()).append("(");
 		boolean aFirst = true;
 		for (ValueExpr aArg : theOp.getArgs()) {
 			if (!aFirst) {
 				mBuffer.append(", ");
-			}
-			else {
+			} else {
 				aFirst = false;
 			}
 
@@ -234,9 +207,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(CompareAny theOp)
-		throws Exception
-	{
+	public void meet(CompareAny theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" any ");
@@ -251,9 +222,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Regex theOp)
-		throws Exception
-	{
+	public void meet(Regex theOp) throws Exception {
 		mBuffer.append(" regex(");
 		theOp.getArg().visit(this);
 		mBuffer.append(", ");
@@ -269,9 +238,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LangMatches theOp)
-		throws Exception
-	{
+	public void meet(LangMatches theOp) throws Exception {
 		mBuffer.append(" langMatches(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(", ");
@@ -283,17 +250,14 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(SameTerm theOp)
-		throws Exception
-	{
+	public void meet(SameTerm theOp) throws Exception {
 		if (SeRQLQueryRenderer.SERQL_ONE_X_COMPATIBILITY_MODE) {
 			mBuffer.append("(");
 			theOp.getLeftArg().visit(this);
 			mBuffer.append(" = ");
 			theOp.getRightArg().visit(this);
 			mBuffer.append(")");
-		}
-		else {
+		} else {
 			mBuffer.append(" sameTerm(");
 			theOp.getLeftArg().visit(this);
 			mBuffer.append(", ");
@@ -306,9 +270,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(And theAnd)
-		throws Exception
-	{
+	public void meet(And theAnd) throws Exception {
 		binaryMeet("and", theAnd);
 	}
 
@@ -316,9 +278,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Or theOr)
-		throws Exception
-	{
+	public void meet(Or theOr) throws Exception {
 		binaryMeet("or", theOr);
 	}
 
@@ -326,9 +286,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Not theNot)
-		throws Exception
-	{
+	public void meet(Not theNot) throws Exception {
 		unaryMeet("not", theNot);
 	}
 
@@ -336,9 +294,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Count theOp)
-		throws Exception
-	{
+	public void meet(Count theOp) throws Exception {
 		unaryMeet("count", theOp);
 	}
 
@@ -346,9 +302,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Datatype theOp)
-		throws Exception
-	{
+	public void meet(Datatype theOp) throws Exception {
 		unaryMeet("datatype", theOp);
 	}
 
@@ -356,9 +310,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsBNode theOp)
-		throws Exception
-	{
+	public void meet(IsBNode theOp) throws Exception {
 		unaryMeet("isBNode", theOp);
 	}
 
@@ -366,9 +318,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsLiteral theOp)
-		throws Exception
-	{
+	public void meet(IsLiteral theOp) throws Exception {
 		unaryMeet("isLiteral", theOp);
 	}
 
@@ -376,9 +326,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsResource theOp)
-		throws Exception
-	{
+	public void meet(IsResource theOp) throws Exception {
 		unaryMeet("isResource", theOp);
 	}
 
@@ -386,9 +334,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsURI theOp)
-		throws Exception
-	{
+	public void meet(IsURI theOp) throws Exception {
 		unaryMeet("isURI", theOp);
 	}
 
@@ -396,9 +342,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Label theOp)
-		throws Exception
-	{
+	public void meet(Label theOp) throws Exception {
 		unaryMeet("label", theOp);
 	}
 
@@ -406,9 +350,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Lang theOp)
-		throws Exception
-	{
+	public void meet(Lang theOp) throws Exception {
 		unaryMeet("lang", theOp);
 	}
 
@@ -416,9 +358,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Like theOp)
-		throws Exception
-	{
+	public void meet(Like theOp) throws Exception {
 		theOp.getArg().visit(this);
 		mBuffer.append(" like \"").append(theOp.getPattern()).append("\"");
 		if (!theOp.isCaseSensitive()) {
@@ -430,9 +370,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LocalName theOp)
-		throws Exception
-	{
+	public void meet(LocalName theOp) throws Exception {
 		unaryMeet("localName", theOp);
 	}
 
@@ -440,9 +378,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Min theOp)
-		throws Exception
-	{
+	public void meet(Min theOp) throws Exception {
 		unaryMeet("min", theOp);
 	}
 
@@ -450,9 +386,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Max theOp)
-		throws Exception
-	{
+	public void meet(Max theOp) throws Exception {
 		unaryMeet("max", theOp);
 	}
 
@@ -460,9 +394,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Namespace theOp)
-		throws Exception
-	{
+	public void meet(Namespace theOp) throws Exception {
 		unaryMeet("namespace", theOp);
 	}
 
@@ -470,15 +402,11 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Str theOp)
-		throws Exception
-	{
+	public void meet(Str theOp) throws Exception {
 		unaryMeet("str", theOp);
 	}
 
-	private void binaryMeet(String theOpStr, BinaryValueOperator theOp)
-		throws Exception
-	{
+	private void binaryMeet(String theOpStr, BinaryValueOperator theOp) throws Exception {
 		mBuffer.append(" (");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOpStr).append(" ");
@@ -486,9 +414,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 		mBuffer.append(")");
 	}
 
-	private void unaryMeet(String theOpStr, UnaryValueOperator theOp)
-		throws Exception
-	{
+	private void unaryMeet(String theOpStr, UnaryValueOperator theOp) throws Exception {
 		mBuffer.append(" ").append(theOpStr).append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(")");

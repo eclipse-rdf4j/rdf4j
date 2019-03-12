@@ -17,12 +17,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 
 /**
- * Iteration which forms the cross product of a list of materialized input bindings with each result obtained
- * from the inner iteration. Example: <source> inputBindings := {b1, b2, ...} resultIteration := {r1, r2, ...}
- * getNextElement() returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross product per
- * result binding </source> Note that this class is a fully equivalent copy of
- * {@link org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration}, and is only included
- * here to avoid a circular dependency between the algebra-evaluation module and the sparql-repository module.
+ * Iteration which forms the cross product of a list of materialized input bindings with each result obtained from the
+ * inner iteration. Example: <source> inputBindings := {b1, b2, ...} resultIteration := {r1, r2, ...} getNextElement()
+ * returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross product per result binding </source>
+ * Note that this class is a fully equivalent copy of
+ * {@link org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration}, and is only included here to avoid
+ * a circular dependency between the algebra-evaluation module and the sparql-repository module.
  * 
  * @author Andreas Schwarte
  */
@@ -36,19 +36,15 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 
 	protected BindingSet currentInputBinding = null;
 
-	public SPARQLCrossProductIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
-			List<BindingSet> inputBindings)
-	{
+	public SPARQLCrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
+			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;
 		this.inputBindings = inputBindings;
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 
 		if (currentInputBinding == null) {
 			inputBindingsIterator = inputBindings.iterator();
@@ -72,13 +68,10 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			resultIteration.close();
 		}
 	}

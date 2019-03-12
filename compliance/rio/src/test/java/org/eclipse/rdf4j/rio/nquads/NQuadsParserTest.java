@@ -18,9 +18,7 @@ import junit.framework.Test;
  */
 public class NQuadsParserTest extends AbstractNQuadsParserTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return new NQuadsParserTest().createTestSuite();
 	}
 

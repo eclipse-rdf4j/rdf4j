@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 /**
  * The SPARQL Delete Data Query
  * 
- * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteData"> SPARQL
- *      DELETE DATA Query</a>
+ * @see <a href="https://www.w3.org/TR/sparql11-update/#deleteData"> SPARQL DELETE DATA Query</a>
  * 
  */
 public class DeleteDataQuery extends UpdateDataQuery<DeleteDataQuery> {
@@ -32,12 +31,11 @@ public class DeleteDataQuery extends UpdateDataQuery<DeleteDataQuery> {
 	public DeleteDataQuery deleteData(TriplePattern... triples) {
 		return addTriples(triples);
 	}
-	
+
 	/**
 	 * Set this query's triples template
 	 * 
-	 * @param triplesTemplate
-	 * 		the {@link TriplesTemplate} instance to set
+	 * @param triplesTemplate the {@link TriplesTemplate} instance to set
 	 * 
 	 * @return this instance
 	 */
@@ -55,7 +53,7 @@ public class DeleteDataQuery extends UpdateDataQuery<DeleteDataQuery> {
 	public DeleteDataQuery from(GraphName graph) {
 		return graph(graph);
 	}
-	
+
 	@Override
 	protected String getPrefix() {
 		return DELETE_DATA;

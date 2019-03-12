@@ -30,9 +30,7 @@ public class LocalName extends UnaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -48,6 +46,6 @@ public class LocalName extends UnaryValueOperator {
 
 	@Override
 	public LocalName clone() {
-		return (LocalName)super.clone();
+		return (LocalName) super.clone();
 	}
 }

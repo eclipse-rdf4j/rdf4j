@@ -14,12 +14,11 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 
 /**
- * NotifyingLocalRepositoryManager extends LocalRepositoryManager with support for registering listeners. In
- * time this class is likely to become redundant as RepositoryManager may be extended with listener support.
- * This functionality can currently not be implemented as a wrapper around any existing RepositoryManager due
- * to the fact that RepositoryManager defines abstract protected methods. A wrapper class cannot implement
- * these methods in a meaningful way by itself and, because of the protected access, cannot invoke it on the
- * wrapped RepositoryManager either.
+ * NotifyingLocalRepositoryManager extends LocalRepositoryManager with support for registering listeners. In time this
+ * class is likely to become redundant as RepositoryManager may be extended with listener support. This functionality
+ * can currently not be implemented as a wrapper around any existing RepositoryManager due to the fact that
+ * RepositoryManager defines abstract protected methods. A wrapper class cannot implement these methods in a meaningful
+ * way by itself and, because of the protected access, cannot invoke it on the wrapped RepositoryManager either.
  */
 public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
 
@@ -39,9 +38,7 @@ public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
+	public void initialize() throws RepositoryException {
 		super.initialize();
 		fireInitialized();
 	}

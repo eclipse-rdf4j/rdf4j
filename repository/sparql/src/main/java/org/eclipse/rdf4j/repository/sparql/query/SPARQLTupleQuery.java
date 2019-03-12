@@ -35,43 +35,34 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	}
 
 	@Override
-	public TupleQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public TupleQueryResult evaluate() throws QueryEvaluationException {
 
 		SPARQLProtocolSession client = getHttpClient();
 		try {
-			return client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset,
-					getIncludeInferred(), getMaxExecutionTime(), getBindingsArray());
-		}
-		catch (IOException e) {
+			return client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), getBindingsArray());
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException
-	{
+			throws QueryEvaluationException, TupleQueryResultHandlerException {
 
 		SPARQLProtocolSession client = getHttpClient();
 		try {
-			client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset,
-					getIncludeInferred(), getMaxExecutionTime(), handler, getBindingsArray());
-		}
-		catch (IOException e) {
+			client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), handler, getBindingsArray());
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}

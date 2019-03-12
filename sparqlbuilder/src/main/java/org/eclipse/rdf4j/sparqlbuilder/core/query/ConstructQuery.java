@@ -15,21 +15,19 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 /**
  * The SPARQL CONSTRUCT query
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#construct">
- *      SPARQL CONSTRUCT Query</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#construct"> SPARQL CONSTRUCT Query</a>
  */
 public class ConstructQuery extends OuterQuery<ConstructQuery> {
 	// package-protect instantiation of this class
-	ConstructQuery() { }
+	ConstructQuery() {
+	}
 
 	private GraphTemplate construct = SparqlBuilder.construct();
 
 	/**
 	 * Add triples to this query's graph template
 	 * 
-	 * @param patterns
-	 *            the triples to include in the graph template
+	 * @param patterns the triples to include in the graph template
 	 * @return this
 	 */
 	public ConstructQuery construct(TriplePattern... patterns) {
@@ -41,8 +39,7 @@ public class ConstructQuery extends OuterQuery<ConstructQuery> {
 	/**
 	 * Set this query's graph template
 	 * 
-	 * @param construct
-	 *            the {@link GraphTemplate} to set
+	 * @param construct the {@link GraphTemplate} to set
 	 * @return this
 	 */
 	public ConstructQuery construct(GraphTemplate construct) {

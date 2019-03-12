@@ -19,16 +19,14 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 
 /**
- * An implementation of the {@link QueryResultHandler} interface that is able to collect a single result from
- * either Boolean or Tuple results simultaneously.
+ * An implementation of the {@link QueryResultHandler} interface that is able to collect a single result from either
+ * Boolean or Tuple results simultaneously.
  * <p>
  * The {@link List}s that are returned by this interface are immutable.
  * 
  * @author Peter Ansell
  */
-public class QueryResultCollector
-		implements QueryResultHandler, TupleQueryResultHandler, BooleanQueryResultHandler
-{
+public class QueryResultCollector implements QueryResultHandler, TupleQueryResultHandler, BooleanQueryResultHandler {
 
 	private boolean hasBooleanSet = false;
 
@@ -46,34 +44,26 @@ public class QueryResultCollector
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		hasBooleanSet = true;
 		this.value = value;
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		endQueryResultFound = false;
 		this.bindingNames = Collections.unmodifiableList(new ArrayList<>(bindingNames));
 		bindingSets = new ArrayList<>();
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		endQueryResultFound = false;
 		bindingSets.add(bindingSet);
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		endQueryResultFound = true;
 		// the binding sets cannot be modified after this point without a call to
 		// startQueryResult which will reset the bindingsets
@@ -82,9 +72,7 @@ public class QueryResultCollector
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		this.links.addAll(linkUrls);
 	}
 
@@ -101,27 +89,23 @@ public class QueryResultCollector
 	 * If {@link #getHandledBoolean()} returns true this method returns the boolean that was last found using
 	 * {@link #handleBoolean(boolean)}
 	 * <p>
-	 * If {@link #getHandledBoolean()} returns false this method throws a {@link QueryResultHandlerException}
-	 * indicating that a response could not be provided.
+	 * If {@link #getHandledBoolean()} returns false this method throws a {@link QueryResultHandlerException} indicating
+	 * that a response could not be provided.
 	 * 
 	 * @return The boolean value that was collected.
-	 * @throws QueryResultHandlerException
-	 *         If there was no boolean value collected.
+	 * @throws QueryResultHandlerException If there was no boolean value collected.
 	 */
-	public boolean getBoolean()
-		throws QueryResultHandlerException
-	{
+	public boolean getBoolean() throws QueryResultHandlerException {
 		if (!hasBooleanSet) {
 			throw new QueryResultHandlerException("Did not collect a boolean value");
-		}
-		else {
+		} else {
 			return this.value;
 		}
 	}
 
 	/**
-	 * Determines whether {@link #endQueryResult()} was called after the last calls to
-	 * {@link #startQueryResult(List)} and optionally calls to {@link #handleSolution(BindingSet)}.
+	 * Determines whether {@link #endQueryResult()} was called after the last calls to {@link #startQueryResult(List)}
+	 * and optionally calls to {@link #handleSolution(BindingSet)}.
 	 * 
 	 * @return True if there was a call to {@link #endQueryResult()} after the last calls to
 	 *         {@link #startQueryResult(List)} and {@link #handleSolution(BindingSet)}.
@@ -134,34 +118,26 @@ public class QueryResultCollector
 	 * Returns a collection of binding names collected.
 	 * 
 	 * @return An immutable list of {@link String}s that were collected as the binding names.
-	 * @throws QueryResultHandlerException
-	 *         If the tuple results set was not successfully collected, as signalled by a call to
-	 *         {@link #endQueryResult()}.
+	 * @throws QueryResultHandlerException If the tuple results set was not successfully collected, as signalled by a
+	 *                                     call to {@link #endQueryResult()}.
 	 */
-	public List<String> getBindingNames()
-		throws QueryResultHandlerException
-	{
+	public List<String> getBindingNames() throws QueryResultHandlerException {
 		if (!endQueryResultFound) {
 			throw new QueryResultHandlerException("Did not successfully collect a tuple results set.");
-		}
-		else {
+		} else {
 			return bindingNames;
 		}
 	}
 
 	/**
 	 * @return An immutable list of {@link BindingSet}s that were collected as the tuple results.
-	 * @throws QueryResultHandlerException
-	 *         If the tuple results set was not successfully collected, as signalled by a call to
-	 *         {@link #endQueryResult()}.
+	 * @throws QueryResultHandlerException If the tuple results set was not successfully collected, as signalled by a
+	 *                                     call to {@link #endQueryResult()}.
 	 */
-	public List<BindingSet> getBindingSets()
-		throws QueryResultHandlerException
-	{
+	public List<BindingSet> getBindingSets() throws QueryResultHandlerException {
 		if (!endQueryResultFound) {
 			throw new QueryResultHandlerException("Did not successfully collect a tuple results set.");
-		}
-		else {
+		} else {
 			return bindingSets;
 		}
 	}

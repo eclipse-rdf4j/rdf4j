@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 
 /**
- * RDF parser for <a href="https://www.w3.org/TR/trig/">RDF-1.1 TriG</a> files. This parser is not
- * thread-safe, therefore its public methods are synchronized.
+ * RDF parser for <a href="https://www.w3.org/TR/trig/">RDF-1.1 TriG</a> files. This parser is not thread-safe,
+ * therefore its public methods are synchronized.
  * 
  * @author Arjohn Kampman
  * @author Peter Ansell
@@ -51,8 +51,7 @@ public class TriGParser extends TurtleParser {
 	/**
 	 * Creates a new TriGParser that will use the supplied ValueFactory to create RDF model objects.
 	 * 
-	 * @param valueFactory
-	 *        A ValueFactory.
+	 * @param valueFactory A ValueFactory.
 	 */
 	public TriGParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -68,9 +67,7 @@ public class TriGParser extends TurtleParser {
 	}
 
 	@Override
-	protected void parseStatement()
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	protected void parseStatement() throws IOException, RDFParseException, RDFHandlerException {
 		StringBuilder sb = new StringBuilder(8);
 
 		int c;
@@ -81,9 +78,8 @@ public class TriGParser extends TurtleParser {
 				unread(c);
 				break;
 			}
-			sb.append((char)c);
-		}
-		while (sb.length() < 8);
+			sb.append((char) c);
+		} while (sb.length() < 8);
 
 		String directive = sb.toString();
 
@@ -91,23 +87,18 @@ public class TriGParser extends TurtleParser {
 			parseDirective(directive);
 			skipWSC();
 			verifyCharacterOrFail(readCodePoint(), ".");
-		}
-		else if ((directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix"))
-				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base")))
-		{
+		} else if ((directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix"))
+				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base"))) {
 			parseDirective(directive);
 			skipWSC();
 			// SPARQL BASE and PREFIX lines do not end in .
-		}
-		else if (directive.length() >= 6 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")
-				&& directive.substring(5, 6).equals(":"))
-		{
+		} else if (directive.length() >= 6 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")
+				&& directive.substring(5, 6).equals(":")) {
 			// If there was a colon immediately after the graph keyword then
 			// assume it was a pname and not the SPARQL GRAPH keyword
 			unread(directive);
 			parseGraph();
-		}
-		else if (directive.length() >= 5 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")) {
+		} else if (directive.length() >= 5 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")) {
 			// Do not unread the directive if it was SPARQL GRAPH
 			// Just continue with TriG parsing at this point
 			skipWSC();
@@ -116,16 +107,13 @@ public class TriGParser extends TurtleParser {
 			if (getContext() == null) {
 				reportFatalError("Missing GRAPH label or subject");
 			}
-		}
-		else {
+		} else {
 			unread(directive);
 			parseGraph();
 		}
 	}
 
-	protected void parseGraph()
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	protected void parseGraph() throws IOException, RDFParseException, RDFHandlerException {
 		int c = readCodePoint();
 		int c2 = peekCodePoint();
 		Resource contextOrSubject = null;
@@ -137,25 +125,20 @@ public class TriGParser extends TurtleParser {
 				contextOrSubject = createNode();
 				foundContextOrSubject = true;
 				skipWSC();
-			}
-			else {
+			} else {
 				unread(c2);
 				unread(c);
 			}
 			c = readCodePoint();
-		}
-		else if (c == '<' || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-')
-				|| (c == '_' && c2 == ':'))
-		{
+		} else if (c == '<' || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-') || (c == '_' && c2 == ':')) {
 			unread(c);
 
 			Value value = parseValue();
 
 			if (value instanceof Resource) {
-				contextOrSubject = (Resource)value;
+				contextOrSubject = (Resource) value;
 				foundContextOrSubject = true;
-			}
-			else {
+			} else {
 				// NOTE: If a user parses Turtle using TriG, then the following
 				// could actually be "Illegal subject name", but it should still
 				// hold
@@ -164,8 +147,7 @@ public class TriGParser extends TurtleParser {
 
 			skipWSC();
 			c = readCodePoint();
-		}
-		else {
+		} else {
 			setContext(null);
 		}
 
@@ -195,8 +177,7 @@ public class TriGParser extends TurtleParser {
 
 				verifyCharacterOrFail(c, "}");
 			}
-		}
-		else {
+		} else {
 			setContext(null);
 
 			// Did not turn out to be a graph, so assign it to subject instead
@@ -218,9 +199,7 @@ public class TriGParser extends TurtleParser {
 	}
 
 	@Override
-	protected void parseTriples()
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	protected void parseTriples() throws IOException, RDFParseException, RDFHandlerException {
 		int c = peekCodePoint();
 
 		// If the first character is an open bracket we need to decide which of
@@ -234,8 +213,7 @@ public class TriGParser extends TurtleParser {
 				subject = createNode();
 				skipWSC();
 				parsePredicateObjectList();
-			}
-			else {
+			} else {
 				unread('[');
 				subject = parseImplicitBlank();
 			}
@@ -249,8 +227,7 @@ public class TriGParser extends TurtleParser {
 			if (c != '.' && c != '}') {
 				parsePredicateObjectList();
 			}
-		}
-		else {
+		} else {
 			parseSubject();
 			skipWSC();
 			parsePredicateObjectList();
@@ -262,9 +239,7 @@ public class TriGParser extends TurtleParser {
 	}
 
 	@Override
-	protected void reportStatement(Resource subj, IRI pred, Value obj)
-		throws RDFParseException, RDFHandlerException
-	{
+	protected void reportStatement(Resource subj, IRI pred, Value obj) throws RDFParseException, RDFHandlerException {
 		Statement st = createStatement(subj, pred, obj, getContext());
 		if (rdfHandler != null) {
 			rdfHandler.handleStatement(st);

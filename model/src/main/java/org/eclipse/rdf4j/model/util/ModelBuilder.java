@@ -32,9 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * Builder to facilitate easier creation of new RDF {@link Model} objects via a fluent interface. All methods
- * returning a {@link ModelBuilder} return an immutable reference to the current object, allowing method
- * chaining.
+ * Builder to facilitate easier creation of new RDF {@link Model} objects via a fluent interface. All methods returning
+ * a {@link ModelBuilder} return an immutable reference to the current object, allowing method chaining.
  * <p>
  * Usage example:
  * 
@@ -88,8 +87,7 @@ public class ModelBuilder {
 	/**
 	 * Set the supplied {@link Namespace} mapping.
 	 * 
-	 * @param ns
-	 *        a {@link Namespace} to add to the model
+	 * @param ns a {@link Namespace} to add to the model
 	 * @return the {@link ModelBuilder}
 	 */
 	public ModelBuilder setNamespace(Namespace ns) {
@@ -100,10 +98,8 @@ public class ModelBuilder {
 	/**
 	 * Set the namespace mapping defined by the supplied prefix and name
 	 * 
-	 * @param prefix
-	 *        prefix of the namespace to add to the model.
-	 * @param namespace
-	 *        namespace name to add to the model.
+	 * @param prefix    prefix of the namespace to add to the model.
+	 * @param namespace namespace name to add to the model.
 	 * @return the {@link ModelBuilder}
 	 */
 	public ModelBuilder setNamespace(String prefix, String namespace) {
@@ -114,8 +110,7 @@ public class ModelBuilder {
 	/**
 	 * Set the subject resource about which statements are to be added to the model.
 	 * 
-	 * @param subject
-	 *        the subject resource about which statements are to be added.
+	 * @param subject the subject resource about which statements are to be added.
 	 * @return the {@link ModelBuilder}
 	 */
 	public ModelBuilder subject(Resource subject) {
@@ -124,14 +119,13 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the subject about which statements are to be added to the model, defined by a prefixed name or an
-	 * IRI reference.
+	 * Set the subject about which statements are to be added to the model, defined by a prefixed name or an IRI
+	 * reference.
 	 * 
-	 * @param subject
-	 *        the subject resource about which statements are to be added. This can be defined either as a
-	 *        prefixed name string (e.g. "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If
-	 *        supplied as a prefixed name, the {@link ModelBuilder} will need to have a namespace mapping for
-	 *        the prefix.
+	 * @param subject the subject resource about which statements are to be added. This can be defined either as a
+	 *                prefixed name string (e.g. "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If
+	 *                supplied as a prefixed name, the {@link ModelBuilder} will need to have a namespace mapping for
+	 *                the prefix.
 	 * @return the {@link ModelBuilder}
 	 */
 	public ModelBuilder subject(String prefixedNameOrIri) {
@@ -139,11 +133,10 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the current graph in which to add new statements to the supplied named graph. This method resets
-	 * the current subject.
+	 * Set the current graph in which to add new statements to the supplied named graph. This method resets the current
+	 * subject.
 	 * 
-	 * @param namedGraph
-	 *        a named graph identifier
+	 * @param namedGraph a named graph identifier
 	 * @return this {@link ModelBuilder}
 	 */
 	public ModelBuilder namedGraph(Resource namedGraph) {
@@ -153,13 +146,12 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the current graph in which to add new statements to the supplied named graph. This method clears
-	 * the current subject.
+	 * Set the current graph in which to add new statements to the supplied named graph. This method clears the current
+	 * subject.
 	 * 
-	 * @param namedGraph
-	 *        a named graph identifier. This can be defined either as a prefixed name string (e.g. "ex:john"),
-	 *        or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name, the
-	 *        {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param namedGraph a named graph identifier. This can be defined either as a prefixed name string (e.g.
+	 *                   "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
+	 *                   the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
 	 * @return this {@link ModelBuilder}
 	 */
 	public ModelBuilder namedGraph(String prefixedNameOrIRI) {
@@ -167,8 +159,8 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the current graph in which to add new statements to the default graph. This method clears the
-	 * current subject.
+	 * Set the current graph in which to add new statements to the default graph. This method clears the current
+	 * subject.
 	 * 
 	 * @return this {@link ModelBuilder}
 	 */
@@ -179,22 +171,19 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph
-	 * (either named or default).
+	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph (either
+	 * named or default).
 	 * 
-	 * @param subject
-	 *        the statement's subject
-	 * @param predicate
-	 *        the statement's predicate
-	 * @param object
-	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
-	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
-	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
-	 *        is available, the method creates a literal with the string representation of the supplied object
-	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 *        {@link XMLGregorianCalendar } , and {@link Date}.
+	 * @param subject   the statement's subject
+	 * @param predicate the statement's predicate
+	 * @param object    the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *                  {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *                  is available, the method creates a literal with the string representation of the supplied object
+	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
 	 * @see #defaultGraph()
@@ -204,10 +193,9 @@ public class ModelBuilder {
 
 		Value objectValue = null;
 		if (object instanceof Value) {
-			objectValue = (Value)object;
-		}
-		else if (object instanceof String) {
-			objectValue = convertPrefixedName((String)object);
+			objectValue = (Value) object;
+		} else if (object instanceof String) {
+			objectValue = convertPrefixedName((String) object);
 		}
 
 		if (objectValue == null) {
@@ -217,32 +205,28 @@ public class ModelBuilder {
 
 		if (currentNamedGraph != null) {
 			model.add(subject, predicate, objectValue, currentNamedGraph);
-		}
-		else {
+		} else {
 			model.add(subject, predicate, objectValue);
 		}
 		return this;
 	}
 
 	/**
-	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph
-	 * (either named or default).
+	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph (either
+	 * named or default).
 	 * 
-	 * @param subject
-	 *        the statement's subject. This can be defined either as a prefixed name string (e.g. "ex:john"),
-	 *        or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name, the
-	 *        {@link ModelBuilder} will need to have a namespace mapping for the prefix.
-	 * @param predicate
-	 *        the statement's predicate
-	 * @param object
-	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
-	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
-	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
-	 *        is available, the method creates a literal with the string representation of the supplied object
-	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 *        {@link XMLGregorianCalendar } , and {@link Date}.
+	 * @param subject   the statement's subject. This can be defined either as a prefixed name string (e.g. "ex:john"),
+	 *                  or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name, the
+	 *                  {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param predicate the statement's predicate
+	 * @param object    the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *                  {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *                  is available, the method creates a literal with the string representation of the supplied object
+	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
 	 * @see #defaultGraph()
@@ -253,26 +237,23 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph
-	 * (either named or default).
+	 * Add an RDF statement with the given subject, predicate and object to the model, using the current graph (either
+	 * named or default).
 	 * 
-	 * @param subject
-	 *        the statement's subject. This can be defined either as a prefixed name string (e.g. "ex:john"),
-	 *        or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name, the
-	 *        {@link ModelBuilder} will need to have a namespace mapping for the prefix.
-	 * @param predicate
-	 *        the statement's predicate. This can be defined either as a prefixed name string (e.g.
-	 *        "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
-	 *        the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
-	 * @param object
-	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
-	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
-	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
-	 *        is available, the method creates a literal with the string representation of the supplied object
-	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 *        {@link XMLGregorianCalendar } , and {@link Date}.
+	 * @param subject   the statement's subject. This can be defined either as a prefixed name string (e.g. "ex:john"),
+	 *                  or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name, the
+	 *                  {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param predicate the statement's predicate. This can be defined either as a prefixed name string (e.g.
+	 *                  "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
+	 *                  the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param object    the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *                  {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *                  is available, the method creates a literal with the string representation of the supplied object
+	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
 	 * @see #defaultGraph()
@@ -283,23 +264,21 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Add an RDF statement with the predicate and object to the model, using the current subject and graph
-	 * (either named or default).
+	 * Add an RDF statement with the predicate and object to the model, using the current subject and graph (either
+	 * named or default).
 	 * 
-	 * @param predicate
-	 *        the statement's predicate.
-	 * @param object
-	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
-	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
-	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
-	 *        is available, the method creates a literal with the string representation of the supplied object
-	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 *        {@link XMLGregorianCalendar } , and {@link Date}.
+	 * @param predicate the statement's predicate.
+	 * @param object    the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *                  {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *                  is available, the method creates a literal with the string representation of the supplied object
+	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
-	 * @throws ModelException
-	 *         if the current subject is not set using {@link #subject(Resource)} or {@link #subject(String)}.
+	 * @throws ModelException if the current subject is not set using {@link #subject(Resource)} or
+	 *                        {@link #subject(String)}.
 	 */
 	public ModelBuilder add(IRI predicate, Object object) {
 		if (currentSubject == null) {
@@ -309,25 +288,23 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Add an RDF statement with the predicate and object to the model, using the current subject and graph
-	 * (either named or default).
+	 * Add an RDF statement with the predicate and object to the model, using the current subject and graph (either
+	 * named or default).
 	 * 
-	 * @param predicate
-	 *        the statement's predicate. This can be defined either as a prefixed name string (e.g.
-	 *        "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
-	 *        the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
-	 * @param object
-	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
-	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
-	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
-	 *        is available, the method creates a literal with the string representation of the supplied object
-	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 *        {@link XMLGregorianCalendar } , and {@link Date}.
+	 * @param predicate the statement's predicate. This can be defined either as a prefixed name string (e.g.
+	 *                  "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
+	 *                  the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param object    the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *                  {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *                  is available, the method creates a literal with the string representation of the supplied object
+	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
-	 * @throws ModelException
-	 *         if the current subject is not set using {@link #subject(Resource)} or {@link #subject(String)}.
+	 * @throws ModelException if the current subject is not set using {@link #subject(Resource)} or
+	 *                        {@link #subject(String)}.
 	 */
 	public ModelBuilder add(String predicate, Object object) {
 		return add(mapToIRI(predicate), object);
@@ -345,10 +322,8 @@ public class ModelBuilder {
 	/**
 	 * Convert the given prefixed name string to an IRI if possible.
 	 * 
-	 * @param prefixedName
-	 *        a prefixed name string, e.g. "rdf:type"
-	 * @return the IRI corresponding to the prefixed name, or {@code null} if the supplied string couldn't be
-	 *         converted.
+	 * @param prefixedName a prefixed name string, e.g. "rdf:type"
+	 * @return the IRI corresponding to the prefixed name, or {@code null} if the supplied string couldn't be converted.
 	 */
 	private IRI convertPrefixedName(String prefixedName) {
 		if (prefixedName.indexOf(':') < 0) {
@@ -379,7 +354,7 @@ public class ModelBuilder {
 		if (prefixedNameOrIRI.indexOf(':') < 0) {
 			throw new ModelException("not a valid prefixed name or IRI: " + prefixedNameOrIRI);
 		}
-		
+
 		IRI iri = convertPrefixedName(prefixedNameOrIRI);
 		if (iri == null) {
 			iri = SimpleValueFactory.getInstance().createIRI(prefixedNameOrIRI);

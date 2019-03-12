@@ -103,11 +103,11 @@ public class SPARQLJSONParserCustomTest {
 
 	private final IRI testBindingValueIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
 
-	private final Literal testBindingValueNotANumber = SimpleValueFactory.getInstance().createLiteral("NaN",
-			XMLSchema.DOUBLE);
+	private final Literal testBindingValueNotANumber = SimpleValueFactory.getInstance()
+			.createLiteral("NaN", XMLSchema.DOUBLE);
 
-	private final Literal testBindingValueLiteralNumber = SimpleValueFactory.getInstance().createLiteral("42",
-			XMLSchema.INTEGER);
+	private final Literal testBindingValueLiteralNumber = SimpleValueFactory.getInstance()
+			.createLiteral("42", XMLSchema.INTEGER);
 
 	private final Literal testBindingValueLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
 			.createLiteral("42\u0009", XMLSchema.STRING);

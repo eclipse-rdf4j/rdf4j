@@ -28,8 +28,7 @@ public class AccurateRepositoryBloomFilter implements RepositoryBloomFilter {
 
 	@Override
 	public boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-	{
+			Resource... contexts) {
 		return conn.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 

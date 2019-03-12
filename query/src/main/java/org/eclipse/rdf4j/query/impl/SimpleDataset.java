@@ -51,8 +51,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of default remove graph URIs.
 	 * 
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain
-	 *         the URI.
+	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultRemoveGraph(IRI graphURI) {
 		return defaultRemoveGraphs.remove(graphURI);
@@ -67,8 +66,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	}
 
 	/**
-	 * @param defaultInsertGraph
-	 *        The default insert graph to used.
+	 * @param defaultInsertGraph The default insert graph to used.
 	 */
 	public void setDefaultInsertGraph(IRI defaultInsertGraph) {
 		this.defaultInsertGraph = defaultInsertGraph;
@@ -89,8 +87,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of default graph URIs.
 	 * 
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain
-	 *         the URI.
+	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultGraph(IRI graphURI) {
 		return defaultGraphs.remove(graphURI);
@@ -114,8 +111,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of named graph URIs.
 	 * 
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain
-	 *         the URI.
+	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeNamedGraph(IRI graphURI) {
 		return namedGraphs.remove(graphURI);
@@ -161,8 +157,7 @@ public class SimpleDataset implements Dataset, Serializable {
 		if (str.length() > 50) {
 			sb.append("<").append(str, 0, 19).append("..");
 			sb.append(str, str.length() - 29, str.length()).append(">\n");
-		}
-		else {
+		} else {
 			sb.append("<").append(uri).append(">\n");
 		}
 	}

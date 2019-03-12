@@ -13,7 +13,8 @@ import java.util.Optional;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 @SuppressWarnings("javadoc")
-public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManagementQuery<T>> extends GraphManagementQuery<TargetedGraphManagementQuery<T>> {
+public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManagementQuery<T>>
+		extends GraphManagementQuery<TargetedGraphManagementQuery<T>> {
 	private static final String GRAPH = "GRAPH";
 	private static final String DEFAULT = "DEFAULT";
 	private static final String NAMED = "NAMED";
@@ -21,7 +22,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 
 	private String target = DEFAULT;
 	private Optional<Iri> graph = Optional.empty();
-	
+
 	/**
 	 * Specify which graph to target
 	 * 
@@ -32,7 +33,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	@SuppressWarnings("unchecked")
 	public T graph(Iri graph) {
 		this.graph = Optional.ofNullable(graph);
-		
+
 		return (T) this;
 	}
 
@@ -44,7 +45,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	public T def() {
 		return target(DEFAULT);
 	}
-	
+
 	/**
 	 * Target all named graphs
 	 * 
@@ -53,7 +54,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	public T named() {
 		return target(NAMED);
 	}
-	
+
 	/**
 	 * Target all graphs
 	 * 
@@ -62,28 +63,28 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	public T all() {
 		return target(ALL);
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	private T target(String target) {
 		this.target = target;
 		graph = Optional.empty();
-		
+
 		return (T) this;
 	}
-	
+
 	protected abstract String getQueryActionString();
 
 	@Override
 	public String getQueryString() {
 		StringBuilder query = new StringBuilder();
-		
+
 		query.append(getQueryActionString()).append(" ");
-		
+
 		appendSilent(query);
-		
+
 		String targetString = graph.map(iri -> GRAPH + " " + iri.getQueryString()).orElse(target);
 		query.append(targetString);
-		
+
 		return query.toString();
 	}
 }

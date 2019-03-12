@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Jeen Broekstra
  */
 public class IteratingGraphQueryResult extends IterationWrapper<Statement, QueryEvaluationException>
-		implements GraphQueryResult
-{
+		implements GraphQueryResult {
 
 	/*-----------*
 	 * Variables *
@@ -38,21 +37,16 @@ public class IteratingGraphQueryResult extends IterationWrapper<Statement, Query
 	 * Constructors *
 	 *--------------*/
 
-	public IteratingGraphQueryResult(Map<String, String> namespaces,
-			Iterable<? extends Statement> statements)
-	{
+	public IteratingGraphQueryResult(Map<String, String> namespaces, Iterable<? extends Statement> statements) {
 		this(namespaces, statements.iterator());
 	}
 
-	public IteratingGraphQueryResult(Map<String, String> namespaces,
-			Iterator<? extends Statement> statementIter)
-	{
+	public IteratingGraphQueryResult(Map<String, String> namespaces, Iterator<? extends Statement> statementIter) {
 		this(namespaces, new CloseableIteratorIteration<Statement, QueryEvaluationException>(statementIter));
 	}
 
 	public IteratingGraphQueryResult(Map<String, String> namespaces,
-			CloseableIteration<? extends Statement, ? extends QueryEvaluationException> statementIter)
-	{
+			CloseableIteration<? extends Statement, ? extends QueryEvaluationException> statementIter) {
 		super(statementIter);
 		this.namespaces = Collections.unmodifiableMap(namespaces);
 	}

@@ -40,9 +40,7 @@ public class RDFCollectionsTest {
 	private Literal c;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		a = Literals.createLiteral(vf, "A");
 		b = Literals.createLiteral(vf, "B");
 		c = Literals.createLiteral(vf, "C");
@@ -76,8 +74,7 @@ public class RDFCollectionsTest {
 		try {
 			RDFCollections.asValues(m, head, new ArrayList<>());
 			fail("collection missing terminator should result in error");
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			// fall through, expected
 		}
 
@@ -87,8 +84,7 @@ public class RDFCollectionsTest {
 		try {
 			RDFCollections.asValues(m, head, new ArrayList<>());
 			fail("collection with cycle should result in error");
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			// fall through, expected
 		}
 
@@ -96,8 +92,7 @@ public class RDFCollectionsTest {
 		try {
 			RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
 			fail("resource that is not a collection should result in error");
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			// fall through, expected
 		}
 	}

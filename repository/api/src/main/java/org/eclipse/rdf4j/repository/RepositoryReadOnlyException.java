@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.repository;
 
 /**
- * Indicates that the current write operation did not succeed because the SAIL cannot be written to, it can
- * only be read from.
+ * Indicates that the current write operation did not succeed because the SAIL cannot be written to, it can only be read
+ * from.
  * 
  * @author James Leigh
  */

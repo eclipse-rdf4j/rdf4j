@@ -20,9 +20,7 @@ public class ASTNamespaceDecl extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -35,7 +33,7 @@ public class ASTNamespaceDecl extends SimpleNode {
 	}
 
 	public ASTURI getURI() {
-		return (ASTURI)jjtGetChild(0);
+		return (ASTURI) jjtGetChild(0);
 	}
 
 	@Override

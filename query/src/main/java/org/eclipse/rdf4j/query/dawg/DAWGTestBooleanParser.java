@@ -50,38 +50,29 @@ public class DAWGTestBooleanParser extends AbstractRDFHandler {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		graph.clear();
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		graph.add(st);
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		try {
 			Resource resultSetNode = GraphUtil.getUniqueSubject(graph, RDF.TYPE, RESULTSET);
 			Literal booleanLit = GraphUtil.getUniqueObjectLiteral(graph, resultSetNode, BOOLEAN);
 
 			if (booleanLit.equals(DAWGTestResultSetSchema.TRUE)) {
 				value = true;
-			}
-			else if (booleanLit.equals(DAWGTestResultSetSchema.FALSE)) {
+			} else if (booleanLit.equals(DAWGTestResultSetSchema.FALSE)) {
 				value = false;
-			}
-			else {
+			} else {
 				throw new RDFHandlerException("Invalid boolean value: " + booleanLit);
 			}
-		}
-		catch (GraphUtilException e) {
+		} catch (GraphUtilException e) {
 			throw new RDFHandlerException(e.getMessage(), e);
 		}
 	}

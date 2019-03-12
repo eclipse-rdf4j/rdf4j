@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public class InaccurateRepositoryBloomFilter implements RepositoryBloomFilter {
 	@Override
 	public boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-	{
+			Resource... contexts) {
 		return true;
 	}
 

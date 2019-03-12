@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
- * A graph pattern consisting of (required and optional) tuple expressions, binding assignments and boolean
- * constraints.
+ * A graph pattern consisting of (required and optional) tuple expressions, binding assignments and boolean constraints.
  * 
  * @author Arjohn Kampman
  */
@@ -48,8 +47,8 @@ public class GraphPattern {
 	private List<TupleExpr> requiredTEs = new ArrayList<>();
 
 	/**
-	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple
-	 * expression as the key and a list of constraints applicable to the tuple expression as the value.
+	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple expression as
+	 * the key and a list of constraints applicable to the tuple expression as the value.
 	 */
 	private List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<>();
 
@@ -101,24 +100,21 @@ public class GraphPattern {
 	}
 
 	/**
-	 * add the supplied tuple expression as an optional expression, with a list of constraints that hold as
-	 * conditions.
+	 * add the supplied tuple expression as an optional expression, with a list of constraints that hold as conditions.
 	 * 
-	 * @param te
-	 *        a tuple expression
-	 * @param constraints
-	 *        a list of constraints that form a condition for the LeftJoin to be formed from the optional TE.
+	 * @param te          a tuple expression
+	 * @param constraints a list of constraints that form a condition for the LeftJoin to be formed from the optional
+	 *                    TE.
 	 */
 	public void addOptionalTE(TupleExpr te, List<ValueExpr> constraints) {
 
-		Map.Entry<TupleExpr, List<ValueExpr>> entry = new AbstractMap.SimpleImmutableEntry<>(
-				te, constraints);
+		Map.Entry<TupleExpr, List<ValueExpr>> entry = new AbstractMap.SimpleImmutableEntry<>(te, constraints);
 		optionalTEs.add(entry);
 	}
 
 	/**
-	 * Retrieves the optional tuple expressions as a list of tuples with the tuple expression as the key and
-	 * the list of value expressions as the value.
+	 * Retrieves the optional tuple expressions as a list of tuples with the tuple expression as the key and the list of
+	 * value expressions as the value.
 	 * 
 	 * @return a list of Map entries.
 	 */
@@ -163,8 +159,7 @@ public class GraphPattern {
 
 		if (requiredTEs.isEmpty()) {
 			result = new SingletonSet();
-		}
-		else {
+		} else {
 			result = requiredTEs.get(0);
 
 			for (int i = 1; i < requiredTEs.size(); i++) {
@@ -188,8 +183,7 @@ public class GraphPattern {
 				}
 
 				result = new LeftJoin(result, entry.getKey(), condition);
-			}
-			else {
+			} else {
 				result = new LeftJoin(result, entry.getKey());
 			}
 		}

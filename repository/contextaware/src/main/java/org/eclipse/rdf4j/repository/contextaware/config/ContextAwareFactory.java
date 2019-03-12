@@ -49,11 +49,9 @@ public class ContextAwareFactory implements RepositoryFactory {
 	}
 
 	@Override
-	public Repository getRepository(RepositoryImplConfig configuration)
-		throws RepositoryConfigException
-	{
+	public Repository getRepository(RepositoryImplConfig configuration) throws RepositoryConfigException {
 		if (configuration instanceof ContextAwareConfig) {
-			ContextAwareConfig config = (ContextAwareConfig)configuration;
+			ContextAwareConfig config = (ContextAwareConfig) configuration;
 
 			ContextAwareRepository repo = new ContextAwareRepository();
 

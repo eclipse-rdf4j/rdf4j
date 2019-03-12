@@ -23,29 +23,23 @@ import org.eclipse.rdf4j.query.parser.serql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Processes projections. 'Wildcard' projections are made explicit by adding projection elements with the
- * appropriate variable nodes to them. Explicit projections are checked to see if they don't contain any
- * unbound variables.
+ * Processes projections. 'Wildcard' projections are made explicit by adding projection elements with the appropriate
+ * variable nodes to them. Explicit projections are checked to see if they don't contain any unbound variables.
  * 
  * @author Arjohn Kampman
  */
 class ProjectionProcessor extends AbstractASTVisitor {
 
-	public static void process(ASTQueryContainer qc)
-		throws MalformedQueryException
-	{
+	public static void process(ASTQueryContainer qc) throws MalformedQueryException {
 		try {
 			qc.jjtAccept(new ProjectionProcessor(), null);
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}
 
 	@Override
-	public Object visit(ASTSelect selectNode, Object data)
-		throws VisitorException
-	{
+	public Object visit(ASTSelect selectNode, Object data) throws VisitorException {
 		// Collect all variables used in the body of the select query
 		Set<String> bodyVars = VariableCollector.process(selectNode.jjtGetParent());
 
@@ -64,8 +58,7 @@ class ProjectionProcessor extends AbstractASTVisitor {
 			}
 
 			selectNode.setWildcard(false);
-		}
-		else {
+		} else {
 			// Verify that all projection vars are bound
 			Set<String> projVars = new LinkedHashSet<>();
 
@@ -105,9 +98,7 @@ class ProjectionProcessor extends AbstractASTVisitor {
 	 */
 	private static class VariableCollector extends AbstractASTVisitor {
 
-		public static Set<String> process(Node node)
-			throws VisitorException
-		{
+		public static Set<String> process(Node node) throws VisitorException {
 			VariableCollector visitor = new VariableCollector();
 			node.jjtAccept(visitor, null);
 			return visitor.getVariableNames();
@@ -120,25 +111,19 @@ class ProjectionProcessor extends AbstractASTVisitor {
 		}
 
 		@Override
-		public Object visit(ASTSelect node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTSelect node, Object data) throws VisitorException {
 			// Do not visit select clauses
 			return data;
 		}
 
 		@Override
-		public Object visit(ASTWhere node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTWhere node, Object data) throws VisitorException {
 			// Do not visit where clauses
 			return data;
 		}
 
 		@Override
-		public Object visit(ASTVar node, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTVar node, Object data) throws VisitorException {
 			variableNames.add(node.getName());
 			return super.visit(node, data);
 		}

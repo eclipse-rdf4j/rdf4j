@@ -796,13 +796,13 @@
                           <configuration>
                             <configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
                           </configuration>
-                          <!-- executions>
+                          <executions>
                             <execution>
                               <goals>
                                 <goal>validate</goal>
                               </goals>
                             </execution>
-                          </executions -->
+                          </executions>
                         </plugin>
 		</plugins>
 

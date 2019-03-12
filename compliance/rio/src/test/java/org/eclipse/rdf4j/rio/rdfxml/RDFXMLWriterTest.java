@@ -15,7 +15,7 @@ public class RDFXMLWriterTest extends RDFXMLWriterTestCase {
 	public RDFXMLWriterTest() {
 		super(new RDFXMLWriterFactory(), new RDFXMLParserFactory());
 	}
-	
+
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
 		config.set(BasicWriterSettings.PRETTY_PRINT, false);

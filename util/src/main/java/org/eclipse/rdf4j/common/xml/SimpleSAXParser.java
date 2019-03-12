@@ -25,10 +25,9 @@ import org.xml.sax.XMLReader;
 import org.xml.sax.helpers.DefaultHandler;
 
 /**
- * An XML parser that generates "simple" SAX-like events from a limited subset of XML documents. The
- * SimpleSAXParser can parse simple XML documents; it doesn't support processing instructions or elements that
- * contain both sub-element and character data; character data is only supported in the "leaves" of the XML
- * element tree.
+ * An XML parser that generates "simple" SAX-like events from a limited subset of XML documents. The SimpleSAXParser can
+ * parse simple XML documents; it doesn't support processing instructions or elements that contain both sub-element and
+ * character data; character data is only supported in the "leaves" of the XML element tree.
  * <h3>Example:</h3>
  * <p>
  * Parsing the following XML:
@@ -86,8 +85,7 @@ public class SimpleSAXParser {
 	 * Constructors *
 	 *--------------*/
 	/**
-	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One
-	 * must set a
+	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One must set a
 	 * <tt>SimpleSAXListener</tt> on this object before calling one of the <tt>parse()</tt> methods.
 	 *
 	 * @param xmlReader The XMLReader to use for parsing.
@@ -100,8 +98,8 @@ public class SimpleSAXParser {
 
 	/**
 	 * Creates a new SimpleSAXParser that will try to create a new <tt>XMLReader</tt> using
-	 * <tt>info.aduna.xml.XMLReaderFactory</tt> for parsing the XML. One must set a <tt>SimpleSAXListener</tt>
-	 * on this object before calling one of the <tt>parse()</tt> methods.
+	 * <tt>info.aduna.xml.XMLReaderFactory</tt> for parsing the XML. One must set a <tt>SimpleSAXListener</tt> on this
+	 * object before calling one of the <tt>parse()</tt> methods.
 	 *
 	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader.
 	 * @see #setListener
@@ -139,8 +137,8 @@ public class SimpleSAXParser {
 	}
 
 	/**
-	 * Sets whether leading and trailing whitespace characters in text elements should be preserved. Such
-	 * whitespace characters are discarded by default.
+	 * Sets whether leading and trailing whitespace characters in text elements should be preserved. Such whitespace
+	 * characters are discarded by default.
 	 */
 	public void setPreserveWhitespace(boolean preserveWhitespace) {
 		this.preserveWhitespace = preserveWhitespace;
@@ -253,7 +251,7 @@ public class SimpleSAXParser {
 		// overrides DefaultHandler.startElement()
 		@Override
 		public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
-			throws SAXException {
+				throws SAXException {
 			// Report any deferred start tag
 			if (deferredStartTag != null) {
 				reportDeferredStartElement();

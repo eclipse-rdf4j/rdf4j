@@ -20,9 +20,7 @@ public class ASTLike extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -35,11 +33,11 @@ public class ASTLike extends ASTBooleanExpr {
 	}
 
 	public ASTValueExpr getValueExpr() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 
 	public ASTString getPattern() {
-		return (ASTString)children.get(1);
+		return (ASTString) children.get(1);
 	}
 
 	@Override

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+
 /**
  * Follows the SPARQL 1.1 Update Spec starting <a href="https://www.w3.org/TR/sparql11-update/#graphManagement">here</a>
  */
@@ -38,13 +39,9 @@ public class Section3Test extends BaseExamples {
 	Prefix rdf = SparqlBuilder.prefix("rdf", iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#"));
 
 	/**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * INSERT DATA
-     * {
-     *     <http://example/book1> dc:title "A new book" ;
-     *     dc:creator "A.N.Other" .
-     * }
-     */
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> INSERT DATA { <http://example/book1> dc:title "A new book" ;
+	 * dc:creator "A.N.Other" . }
+	 */
 	@Test
 	public void example_1() {
 		InsertDataQuery insertDataQuery = Queries.INSERT_DATA();
@@ -57,32 +54,25 @@ public class Section3Test extends BaseExamples {
 	}
 
 	/**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * PREFIX ns: <http://example.org/ns#>
-     * INSERT DATA
-     * { GRAPH <http://example/bookStore>
-     *     { <http://example/book1> ns:price 42 }
-     * }
-     */
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX ns: <http://example.org/ns#> INSERT DATA { GRAPH
+	 * <http://example/bookStore> { <http://example/book1> ns:price 42 } }
+	 */
 	@Test
 	public void example_2() {
 		InsertDataQuery insertDataQuery = Queries.INSERT_DATA();
 
-		insertDataQuery.prefix(dc, ns).insertData(iri("http://example/book1").has(ns.iri("price"), Rdf.literalOf(42)))
+		insertDataQuery.prefix(dc, ns)
+				.insertData(iri("http://example/book1").has(ns.iri("price"), Rdf.literalOf(42)))
 				.into(iri("http://example/bookStore"));
 
 		p(insertDataQuery);
 	}
 
-    /**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     *
-     * DELETE DATA
-     * {
-     *     <http://example/book2> dc:title "David Copperfield" ;
-     *          dc:creator "Edmund Wells" .
-     * }
-     */
+	/**
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/>
+	 *
+	 * DELETE DATA { <http://example/book2> dc:title "David Copperfield" ; dc:creator "Edmund Wells" . }
+	 */
 	@Test
 	public void example_3() {
 		DeleteDataQuery deleteDataQuery = Queries.DELETE_DATA().prefix(dc);
@@ -93,26 +83,26 @@ public class Section3Test extends BaseExamples {
 		p(deleteDataQuery);
 	}
 
-    /**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * DELETE DATA
-     * { GRAPH <http://example/bookStore> { <http://example/book1> dc:title
-     * "Fundamentals of Compiler Desing" } } ;
-     *
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * INSERT DATA
-     * { GRAPH <http://example/bookStore> { <http://example/book1> dc:title
-     * "Fundamentals of Compiler Design" } }
-     */
+	/**
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> DELETE DATA { GRAPH <http://example/bookStore> {
+	 * <http://example/book1> dc:title "Fundamentals of Compiler Desing" } } ;
+	 *
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> INSERT DATA { GRAPH <http://example/bookStore> {
+	 * <http://example/book1> dc:title "Fundamentals of Compiler Design" } }
+	 */
 	@Test
 	public void example_4() {
 		Iri bookStore = iri("http://example/bookStore"), exampleBook = iri("http://example/book1"),
 				title = dc.iri("title");
 
-		DeleteDataQuery deleteTypoQuery = Queries.DELETE_DATA().prefix(dc)
-				.deleteData(exampleBook.has(title, "Fundamentals of Compiler Desing")).from(bookStore);
-		InsertDataQuery insertFixedTitleQuery = Queries.INSERT_DATA().prefix(dc)
-				.insertData(exampleBook.has(title, "Fundamentals of Compiler Design")).into(bookStore);
+		DeleteDataQuery deleteTypoQuery = Queries.DELETE_DATA()
+				.prefix(dc)
+				.deleteData(exampleBook.has(title, "Fundamentals of Compiler Desing"))
+				.from(bookStore);
+		InsertDataQuery insertFixedTitleQuery = Queries.INSERT_DATA()
+				.prefix(dc)
+				.insertData(exampleBook.has(title, "Fundamentals of Compiler Design"))
+				.into(bookStore);
 		p(deleteTypoQuery, insertFixedTitleQuery);
 	}
 
@@ -136,214 +126,188 @@ public class Section3Test extends BaseExamples {
 		p(modify);
 	}
 
-    /**
-     * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-     *
-     * WITH <http://example/addresses>
-     * DELETE { ?person foaf:givenName 'Bill' }
-     * INSERT { ?person foaf:givenName 'William' }
-     * WHERE { ?person foaf:givenName 'Bill' }
-     */
+	/**
+	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+	 *
+	 * WITH <http://example/addresses> DELETE { ?person foaf:givenName 'Bill' } INSERT { ?person foaf:givenName
+	 * 'William' } WHERE { ?person foaf:givenName 'Bill' }
+	 */
 	@Test
 	public void example_5() {
 		Variable person = SparqlBuilder.var("person");
 		ModifyQuery modify = Queries.MODIFY();
 
-		modify.prefix(foaf).with(iri("http://example/addresses")).delete(person.has(foaf.iri("givenName"), "Bill"))
-				.insert(person.has(foaf.iri("givenName"), "William")).where(person.has(foaf.iri("givenName"), "Bill"));
+		modify.prefix(foaf)
+				.with(iri("http://example/addresses"))
+				.delete(person.has(foaf.iri("givenName"), "Bill"))
+				.insert(person.has(foaf.iri("givenName"), "William"))
+				.where(person.has(foaf.iri("givenName"), "Bill"));
 
 		p(modify);
 	}
 
-    /**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-     *
-     * DELETE
-     * { ?book ?p ?v }
-     * WHERE
-     * {
-     *     ?book dc:date ?date .
-     *     FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime )
-     *     ?book ?p ?v
-     * }
-     */
+	/**
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+	 *
+	 * DELETE { ?book ?p ?v } WHERE { ?book dc:date ?date . FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime )
+	 * ?book ?p ?v }
+	 */
 	@Test
 	public void example_6() {
-		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
+				date = SparqlBuilder.var("date");
 
 		ModifyQuery modify = Queries.MODIFY();
 
-		modify.prefix(dc, xsd).delete(book.has(p, v))
-				.where(GraphPatterns.and(book.has(dc.iri("date"), date), book.has(p, v)).filter(
-						Expressions.gt(date, Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+		modify.prefix(dc, xsd)
+				.delete(book.has(p, v))
+				.where(GraphPatterns.and(book.has(dc.iri("date"), date), book.has(p, v))
+						.filter(Expressions.gt(date,
+								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 		p(modify);
 	}
 
-    /**
-     * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-     *
-     * WITH <http://example/addresses>
-     * DELETE { ?person ?property ?value }
-     * WHERE { ?person ?property ?value ; foaf:givenName 'Fred' }
-     */
+	/**
+	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+	 *
+	 * WITH <http://example/addresses> DELETE { ?person ?property ?value } WHERE { ?person ?property ?value ;
+	 * foaf:givenName 'Fred' }
+	 */
 	@Test
 	public void example_7() {
-		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"), value = SparqlBuilder.var("value");
+		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"),
+				value = SparqlBuilder.var("value");
 
-		ModifyQuery modify = Queries.MODIFY().prefix(foaf).with(iri("http://example/addresses"))
+		ModifyQuery modify = Queries.MODIFY()
+				.prefix(foaf)
+				.with(iri("http://example/addresses"))
 				.delete(person.has(property, value))
 				.where(person.has(property, value).andHas(foaf.iri("givenName"), "Fred"));
 
 		p(modify);
 	}
 
-    /**
-     * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-     * PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-     *
-     * INSERT
-     * { GRAPH <http://example/bookStore2> { ?book ?p ?v } }
-     * WHERE
-     * { GRAPH <http://example/bookStore>
-     *     {
-     *         ?book dc:date ?date .
-     *         FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime )
-     *         ?book ?p ?v
-     *     }
-     * }
-     */
+	/**
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+	 *
+	 * INSERT { GRAPH <http://example/bookStore2> { ?book ?p ?v } } WHERE { GRAPH <http://example/bookStore> { ?book
+	 * dc:date ?date . FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v } }
+	 */
 	@Test
 	public void example_8() {
-		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
+				date = SparqlBuilder.var("date");
 
-		p(Queries.MODIFY().prefix(dc, xsd).insert(book.has(p, v)).into(iri("http://example/bookStore2"))
-				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore")).filter(
-						Expressions.gt(date, Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime"))))));
+		p(Queries.MODIFY()
+				.prefix(dc, xsd)
+				.insert(book.has(p, v))
+				.into(iri("http://example/bookStore2"))
+				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
+						.filter(Expressions.gt(date,
+								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime"))))));
 	}
 
-    /**
-     * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-     * PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-     *
-     * INSERT
-     * { GRAPH <http://example/addresses>
-     *     {
-     *         ?person foaf:name ?name .
-     *         ?person foaf:mbox ?email
-     *     }
-     * }
-     * WHERE
-     * { GRAPH <http://example/people>
-     *     {
-     *         ?person foaf:name ?name .
-     *         OPTIONAL { ?person foaf:mbox ?email }
-     *     }
-     * }
-     */
+	/**
+	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+	 *
+	 * INSERT { GRAPH <http://example/addresses> { ?person foaf:name ?name . ?person foaf:mbox ?email } } WHERE { GRAPH
+	 * <http://example/people> { ?person foaf:name ?name . OPTIONAL { ?person foaf:mbox ?email } } }
+	 */
 	@Test
 	public void example_9() {
-		Variable person = SparqlBuilder.var("person"), name = SparqlBuilder.var("name"), email = SparqlBuilder.var("email");
+		Variable person = SparqlBuilder.var("person"), name = SparqlBuilder.var("name"),
+				email = SparqlBuilder.var("email");
 		TriplePattern personNameTriple = person.has(foaf.iri("name"), name),
 				personEmailTriple = person.has(foaf.iri("mbox"), email);
 
-		ModifyQuery insertAddressesQuery = Queries.MODIFY().prefix(foaf, rdf)
-				.insert(personNameTriple, personEmailTriple).into(iri("http://example/addresses"))
+		ModifyQuery insertAddressesQuery = Queries.MODIFY()
+				.prefix(foaf, rdf)
+				.insert(personNameTriple, personEmailTriple)
+				.into(iri("http://example/addresses"))
 				.where(and(personNameTriple, GraphPatterns.optional(personEmailTriple))
 						.from(iri("http://example/people")));
 
 		p(insertAddressesQuery);
 	}
 
-    /**
-     * PREFIX dc:  <http://purl.org/dc/elements/1.1/>
-     * PREFIX dcmitype: <http://purl.org/dc/dcmitype/>
-     * PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-     *
-     * INSERT
-     *   { GRAPH <http://example/bookStore2> { ?book ?p ?v } }
-     * WHERE
-     *   { GRAPH  <http://example/bookStore>
-     *      { ?book dc:date ?date .
-     *        FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime )
-     *        ?book ?p ?v
-     *      }
-     *   } ;
-     *
-     * WITH <http://example/bookStore>
-     * DELETE
-     *  { ?book ?p ?v }
-     * WHERE
-     *  { ?book dc:date ?date ;
-     *          dc:type dcmitype:PhysicalObject .
-     *    FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime )
-     *    ?book ?p ?v
-     *  }
-     */
+	/**
+	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX dcmitype: <http://purl.org/dc/dcmitype/> PREFIX xsd:
+	 * <http://www.w3.org/2001/XMLSchema#>
+	 *
+	 * INSERT { GRAPH <http://example/bookStore2> { ?book ?p ?v } } WHERE { GRAPH <http://example/bookStore> { ?book
+	 * dc:date ?date . FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v } } ;
+	 *
+	 * WITH <http://example/bookStore> DELETE { ?book ?p ?v } WHERE { ?book dc:date ?date ; dc:type
+	 * dcmitype:PhysicalObject . FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v }
+	 */
 	@Test
 	public void example_10() {
-		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
+				date = SparqlBuilder.var("date");
 		Prefix dcmitype = SparqlBuilder.prefix("dcmitype", iri("http://purl.org/dc/dcmitype/"));
 
-		ModifyQuery insertIntobookStore2Query = Queries.MODIFY().prefix(dcmitype, dc, xsd)
-				.insert(book.has(p, v)).into(iri("http://example/bookStore2"))
-				.where(and(book.has(dc.iri("date"), date), book.has(p, v))
-						.from(iri("http://example/bookStore"))
-						.filter(Expressions.lt(date, Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
-		ModifyQuery deleteFromBookStoreQuery = Queries.MODIFY().with(iri("http://example/bookStore"))
+		ModifyQuery insertIntobookStore2Query = Queries.MODIFY()
+				.prefix(dcmitype, dc, xsd)
+				.insert(book.has(p, v))
+				.into(iri("http://example/bookStore2"))
+				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
+						.filter(Expressions.lt(date,
+								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+		ModifyQuery deleteFromBookStoreQuery = Queries.MODIFY()
+				.with(iri("http://example/bookStore"))
 				.delete(book.has(p, v))
 				.where(and(book.has(dc.iri("date"), date).andHas(dc.iri("type"), dcmitype.iri("PhysicalObject")),
-						   book.has(p, v))
-						.filter(Expressions.lt(date, Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
-		
+						book.has(p, v))
+								.filter(Expressions.lt(date,
+										Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+
 		p(insertIntobookStore2Query, deleteFromBookStoreQuery);
 	}
 
-    /**
-     * PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
-     *
-     * DELETE WHERE { ?person foaf:givenName 'Fred';
-     *                        ?property      ?value }
-     */
+	/**
+	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+	 *
+	 * DELETE WHERE { ?person foaf:givenName 'Fred'; ?property ?value }
+	 */
 	@Test
 	public void example_11() {
-		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"), value = SparqlBuilder.var("value");
+		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"),
+				value = SparqlBuilder.var("value");
 
-		p(Queries.MODIFY().prefix(foaf).delete().where(person.has(foaf.iri("givenName"), "Fred").andHas(property, value)));
+		p(Queries.MODIFY()
+				.prefix(foaf)
+				.delete()
+				.where(person.has(foaf.iri("givenName"), "Fred").andHas(property, value)));
 	}
 
-    /**
-     * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-     *
-     * DELETE WHERE {
-     *   GRAPH <http://example.com/names> {
-     *     ?person foaf:givenName 'Fred' ;
-     *             ?property1 ?value1
-     *   }
-     *   GRAPH <http://example.com/addresses> {
-     *     ?person ?property2 ?value2
-     *   }
-     * }
-     */
+	/**
+	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+	 *
+	 * DELETE WHERE { GRAPH <http://example.com/names> { ?person foaf:givenName 'Fred' ; ?property1 ?value1 } GRAPH
+	 * <http://example.com/addresses> { ?person ?property2 ?value2 } }
+	 */
 	@Test
 	public void example_12() {
-		Variable person = SparqlBuilder.var("person"), property1 = SparqlBuilder.var("property1"), value1 = SparqlBuilder.var("value1"),
-				property2 = SparqlBuilder.var("property2"), value2 = SparqlBuilder.var("value2");
+		Variable person = SparqlBuilder.var("person"), property1 = SparqlBuilder.var("property1"),
+				value1 = SparqlBuilder.var("value1"), property2 = SparqlBuilder.var("property2"),
+				value2 = SparqlBuilder.var("value2");
 		Iri namesGraph = iri("http://example.com/names"), addressesGraph = iri("http://example.com/addresses");
 
-		ModifyQuery deleteFredFromNamesAndAddressesQuery = Queries.MODIFY().prefix(foaf)
-				.delete().where(and(person.has(foaf.iri("givenName"), "Fred").andHas(property1, value1)).from(namesGraph),
+		ModifyQuery deleteFredFromNamesAndAddressesQuery = Queries.MODIFY()
+				.prefix(foaf)
+				.delete()
+				.where(and(person.has(foaf.iri("givenName"), "Fred").andHas(property1, value1)).from(namesGraph),
 						and(person.has(property2, value2)).from(addressesGraph));
-		
+
 		p(deleteFredFromNamesAndAddressesQuery);
 	}
-	
+
 	@Test
 	public void example_load() {
 		p(Queries.LOAD().from(iri(EXAMPLE_ORG_NS)));
 		p(Queries.LOAD().silent().from(iri(EXAMPLE_ORG_NS)).to(iri(EXAMPLE_COM_NS)));
 	}
-	
+
 	@Test
 	public void example_clear() {
 		p(Queries.CLEAR().def());
@@ -355,25 +319,25 @@ public class Section3Test extends BaseExamples {
 		p(Queries.CREATE().graph(iri(EXAMPLE_ORG_NS)));
 		p(Queries.CREATE().silent().graph(iri(EXAMPLE_ORG_NS)));
 	}
-	
+
 	@Test
 	public void example_drop() {
 		p(Queries.DROP().def());
 		p(Queries.DROP().silent().graph(iri(EXAMPLE_ORG_NS)));
 	}
-	
+
 	/** COPY DEFAULT TO \<http://example.org/named> */
 	@Test
 	public void example_13() {
 		p(Queries.COPY().fromDefault().to(iri("http://example.org/named")));
 	}
-	
+
 	/** MOVE DEFAULT TO <http://example.org/named> */
 	@Test
 	public void example_14() {
 		p(Queries.MOVE().fromDefault().to(iri("http://example.org/named")));
 	}
-	
+
 	/** ADD DEFAULT TO <http://example.org/named> */
 	@Test
 	public void example_15() {

@@ -70,8 +70,7 @@ public class IndentingWriter extends Writer {
 	/**
 	 * Sets the string that should be used for indentation. The default indentation string is a tab character.
 	 * 
-	 * @param indentString
-	 *        The indentation string, e.g. a tab or a number of spaces.
+	 * @param indentString The indentation string, e.g. a tab or a number of spaces.
 	 */
 	public void setIndentationString(String indentString) {
 		this.indentationString = indentString;
@@ -106,7 +105,8 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Get the number of characters read since end-of-line.
-	 * @return 
+	 * 
+	 * @return
 	 */
 	public int getCharactersSinceEOL() {
 		return charactersSinceEOL;
@@ -127,37 +127,28 @@ public class IndentingWriter extends Writer {
 	}
 
 	/**
-	 * Writes an end-of-line character sequence and triggers the indentation for the text written on the next
-	 * line.
+	 * Writes an end-of-line character sequence and triggers the indentation for the text written on the next line.
 	 * 
 	 * @throws IOException
 	 */
-	public void writeEOL()
-		throws IOException
-	{
+	public void writeEOL() throws IOException {
 		write(LINE_SEPARATOR);
 		indentationWritten = false;
 		charactersSinceEOL = 0;
 	}
 
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		out.close();
 	}
 
 	@Override
-	public void flush()
-		throws IOException
-	{
+	public void flush() throws IOException {
 		out.flush();
 	}
 
 	@Override
-	public void write(char cbuf[], int off, int len)
-		throws IOException
-	{
+	public void write(char cbuf[], int off, int len) throws IOException {
 		if (!indentationWritten) {
 			for (int i = 0; i < indentationLevel; i++) {
 				out.write(indentationString);

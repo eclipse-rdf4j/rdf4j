@@ -32,8 +32,7 @@ public class LanguageTagSyntaxException extends java.lang.Exception {
 	/**
 	 * Constructs an <code>LanguageTagSyntaxException</code> with the specified detail message.
 	 * 
-	 * @param msg
-	 *        the detail message.
+	 * @param msg the detail message.
 	 */
 	LanguageTagSyntaxException(String msg) {
 		super(msg);

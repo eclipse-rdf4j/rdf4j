@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 
 /**
  * Parser for reading boolean query results formatted as SPARQL Results Documents. See
- * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of
- * this format. The parser assumes that the XML is wellformed.
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of this
+ * format. The parser assumes that the XML is wellformed.
  */
 public class SPARQLBooleanXMLParser extends AbstractSPARQLXMLParser implements BooleanQueryResultParser {
 
@@ -49,26 +49,20 @@ public class SPARQLBooleanXMLParser extends AbstractSPARQLXMLParser implements B
 	}
 
 	@Override
-	public synchronized void parseQueryResult(InputStream in)
-		throws IOException, QueryResultParseException
-	{
+	public synchronized void parseQueryResult(InputStream in) throws IOException, QueryResultParseException {
 		try {
 			parseQueryResultInternal(in, true, false);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new QueryResultParseException(e);
 		}
 	}
 
 	@Override
 	@Deprecated
-	public boolean parse(InputStream in)
-		throws IOException, QueryResultParseException
-	{
+	public boolean parse(InputStream in) throws IOException, QueryResultParseException {
 		try {
 			return parseQueryResultInternal(in, true, false);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new QueryResultParseException(e);
 
 		}

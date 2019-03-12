@@ -13,4 +13,5 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 /**
  * Interface to denote an Expression operator
  */
-public interface SparqlOperator extends QueryElement { }
+public interface SparqlOperator extends QueryElement {
+}

@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can
- * apply aggregate functions on the grouped results.
+ * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can apply
+ * aggregate functions on the grouped results.
  * 
  * @author David Huynh
  * @author Arjohn Kampman
@@ -57,25 +57,20 @@ public class GroupElem extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		operator.visit(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (operator == current) {
-			setOperator((AggregateOperator)replacement);
-		}
-		else {
+			setOperator((AggregateOperator) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -83,7 +78,7 @@ public class GroupElem extends AbstractQueryModelNode {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof GroupElem) {
-			GroupElem o = (GroupElem)other;
+			GroupElem o = (GroupElem) other;
 			return name.equals(o.getName()) && operator.equals(o.getOperator());
 		}
 		return false;
@@ -96,7 +91,7 @@ public class GroupElem extends AbstractQueryModelNode {
 
 	@Override
 	public GroupElem clone() {
-		GroupElem clone = (GroupElem)super.clone();
+		GroupElem clone = (GroupElem) super.clone();
 		clone.setOperator(getOperator().clone());
 		return clone;
 	}

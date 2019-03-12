@@ -45,17 +45,13 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		checkInterrupted();
 		super.startRDF();
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		checkInterrupted();
 		if (ended.compareAndSet(false, true)) {
 			super.endRDF();
@@ -63,32 +59,24 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		checkInterrupted();
 		super.handleNamespace(prefix, uri);
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		checkInterrupted();
 		super.handleStatement(st);
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		checkInterrupted();
 		super.handleComment(comment);
 	}
 
-	private void checkInterrupted()
-		throws RDFHandlerException
-	{
+	private void checkInterrupted() throws RDFHandlerException {
 		if (isInterrupted) {
 			throw new RDFHandlerException("RDFHandler took too long");
 		}
@@ -100,8 +88,7 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 			try {
 				// we call endRDF() in case impls have resources to close
 				endRDF();
-			}
-			catch (RDFHandlerException e) {
+			} catch (RDFHandlerException e) {
 				logger.warn("Failed to end RDF", e);
 			}
 		}

@@ -21,10 +21,10 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
 /**
  * Utility class that prints all events to a PrintStream (default: System.err), optionally with a stacktrace.
  * <p>
- * System.err is chosen as default because Thread.dumpStack() also prints to System.err. Consequently,
- * println's and stacktraces remain properly aligned. When printing to System.out instead, environments such
- * as Eclipse's Console may mess up the order of println's and stacktraces, probably due to the use of
- * separate line buffers below the surface that get flushed to the UI at different times.
+ * System.err is chosen as default because Thread.dumpStack() also prints to System.err. Consequently, println's and
+ * stacktraces remain properly aligned. When printing to System.out instead, environments such as Eclipse's Console may
+ * mess up the order of println's and stacktraces, probably due to the use of separate line buffers below the surface
+ * that get flushed to the UI at different times.
  */
 public class DebugRepositoryConnectionListener implements RepositoryConnectionListener {
 
@@ -110,12 +110,10 @@ public class DebugRepositoryConnectionListener implements RepositoryConnectionLi
 	}
 
 	@Override
-	public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-	{
+	public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (printing) {
-			stream.println("ADD (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", " + object
-					+ ", " + Arrays.toString(contexts));
+			stream.println("ADD (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", " + object + ", "
+					+ Arrays.toString(contexts));
 		}
 		if (dumpingStack) {
 			Thread.dumpStack();
@@ -123,12 +121,10 @@ public class DebugRepositoryConnectionListener implements RepositoryConnectionLi
 	}
 
 	@Override
-	public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-	{
+	public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (printing) {
-			stream.println("REMOVE (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", "
-					+ object + ", " + Arrays.toString(contexts));
+			stream.println("REMOVE (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", " + object + ", "
+					+ Arrays.toString(contexts));
 		}
 		if (dumpingStack) {
 			Thread.dumpStack();
@@ -183,9 +179,7 @@ public class DebugRepositoryConnectionListener implements RepositoryConnectionLi
 	}
 
 	@Override
-	public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-			Update operation)
-	{
+	public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI, Update operation) {
 		if (printing) {
 			stream.println("EXECUTE (" + getConnectionID(conn) + ") " + update);
 		}

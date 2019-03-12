@@ -13,9 +13,7 @@ import java.util.ArrayList;
 /**
  * A SPARQL Projection
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#selectproject">
- *      SPARQL Projections</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#selectproject"> SPARQL Projections</a>
  */
 public class Projection extends QueryElementCollection<Projectable> {
 	private static final String SELECT = "SELECT";
@@ -35,9 +33,7 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 * 
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct">
-	 *      SPARQL Distinct modifier</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct"> SPARQL Distinct modifier</a>
 	 */
 	public Projection distinct() {
 		return distinct(true);
@@ -46,13 +42,10 @@ public class Projection extends QueryElementCollection<Projectable> {
 	/**
 	 * Specify if this projection should be distinct or not
 	 * 
-	 * @param isDistinct
-	 *            if this projection should be distinct
+	 * @param isDistinct if this projection should be distinct
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct">
-	 *      SPARQL Distinct modifier</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct"> SPARQL Distinct modifier</a>
 	 */
 	public Projection distinct(boolean isDistinct) {
 		this.isDistinct = isDistinct;
@@ -65,9 +58,7 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 * 
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select">
-	 *      SPARQL Select</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select"> SPARQL Select</a>
 	 */
 	public Projection all() {
 		return all(true);
@@ -76,13 +67,10 @@ public class Projection extends QueryElementCollection<Projectable> {
 	/**
 	 * Specify if this projection should select all in-scope expressions or not
 	 * 
-	 * @param selectAll
-	 *            if this projection should select all expressions
+	 * @param selectAll if this projection should select all expressions
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select">
-	 *      SPARQL Select</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select"> SPARQL Select</a>
 	 */
 	public Projection all(boolean selectAll) {
 		this.selectAll = selectAll;
@@ -93,8 +81,7 @@ public class Projection extends QueryElementCollection<Projectable> {
 	/**
 	 * Add expressions for this projection to select
 	 * 
-	 * @param projectables
-	 *            the projectable expressions to add
+	 * @param projectables the projectable expressions to add
 	 * @return this
 	 */
 	public Projection select(Projectable... projectables) {
@@ -110,11 +97,11 @@ public class Projection extends QueryElementCollection<Projectable> {
 
 		if (selectAll || isEmpty()) {
 			selectStatement.append("*").append(" ");
-		} else {	
+		} else {
 			if (isDistinct) {
 				selectStatement.append(DISTINCT).append(" ");
 			}
-	
+
 			selectStatement.append(super.getQueryString());
 		}
 

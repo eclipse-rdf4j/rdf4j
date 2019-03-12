@@ -42,8 +42,8 @@ public class SimpleIRI implements IRI {
 	 *--------------*/
 
 	/**
-	 * Creates a new, un-initialized IRI. This IRI's string value needs to be {@link #setIRIString(String)
-	 * set} before the normal methods can be used.
+	 * Creates a new, un-initialized IRI. This IRI's string value needs to be {@link #setIRIString(String) set} before
+	 * the normal methods can be used.
 	 */
 	protected SimpleIRI() {
 	}
@@ -51,14 +51,12 @@ public class SimpleIRI implements IRI {
 	/**
 	 * Creates a new IRI from the supplied string.
 	 * <p>
-	 * Note that creating SimpleIRI objects directly via this constructor is not the recommended approach.
-	 * Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository
-	 * or by using {@link SimpleValueFactory#getInstance()}) to create new IRI objects.
+	 * Note that creating SimpleIRI objects directly via this constructor is not the recommended approach. Instead, use
+	 * a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by using
+	 * {@link SimpleValueFactory#getInstance()}) to create new IRI objects.
 	 * 
-	 * @param iriString
-	 *        A String representing a valid, absolute IRI. May not be <code>null</code>.
-	 * @throws IllegalArgumentException
-	 *         If the supplied IRI is not a valid (absolute) IRI.
+	 * @param iriString A String representing a valid, absolute IRI. May not be <code>null</code>.
+	 * @throws IllegalArgumentException If the supplied IRI is not a valid (absolute) IRI.
 	 * @see {@link SimpleValueFactory#createIRI(String)}
 	 */
 	protected SimpleIRI(String iriString) {

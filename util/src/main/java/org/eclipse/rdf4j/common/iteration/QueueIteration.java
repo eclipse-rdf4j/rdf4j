@@ -14,10 +14,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-
 /**
- * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and
- * after converting the Exception to the required type using {@link #convert(Exception)}.
+ * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and after
+ * converting the Exception to the required type using {@link #convert(Exception)}.
  * 
  * @author James Leigh
  */
@@ -34,8 +33,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and default access policy.
 	 * 
-	 * @param capacity
-	 *        the capacity of this queue
+	 * @param capacity the capacity of this queue
 	 */
 	public QueueIteration(int capacity) {
 		this(capacity, false);
@@ -44,11 +42,9 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and the specified access policy.
 	 * 
-	 * @param capacity
-	 *        the capacity of this queue
-	 * @param fair
-	 *        if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
-	 *        in FIFO order; if <tt>false</tt> the access order is unspecified.
+	 * @param capacity the capacity of this queue
+	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
+	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
 	public QueueIteration(int capacity, boolean fair) {
 		super();
@@ -57,12 +53,11 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given {@link BlockingQueue} as its backing queue.<br>
-	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This
-	 * method only enables the default {@link ArrayBlockingQueue} to be overridden.
+	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
+	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
 	 * 
-	 * @param queue
-	 *        A BlockingQueue that is not used in other locations, but will be used as the backing Queue
-	 *        implementation for this cursor.
+	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+	 *              implementation for this cursor.
 	 */
 	public QueueIteration(BlockingQueue<E> queue) {
 		this.queue = queue;
@@ -74,8 +69,8 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	protected abstract T convert(Exception e);
 
 	/**
-	 * The next time {@link #next()} is called this exception will be thrown. If it is not a
-	 * QueryEvaluationException or RuntimeException it will be wrapped in a QueryEvaluationException.
+	 * The next time {@link #next()} is called this exception will be thrown. If it is not a QueryEvaluationException or
+	 * RuntimeException it will be wrapped in a QueryEvaluationException.
 	 */
 	public void toss(Exception exception) {
 		exceptions.add(exception);
@@ -84,21 +79,18 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	/**
 	 * Adds another item to the queue, blocking while the queue is full.
 	 */
-	public void put(E item)
-		throws InterruptedException, T
-	{
+	public void put(E item) throws InterruptedException, T {
 		try {
 			while (!isClosed() && !done.get() && !Thread.currentThread().isInterrupted()
-					&& !queue.offer(item, 1, TimeUnit.SECONDS))
-			{
-				// No body, just iterating regularly through the loop conditions to respond to state changes without a full busy-wait loop
+					&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
+				// No body, just iterating regularly through the loop conditions to respond to state changes without a
+				// full busy-wait loop
 			}
 			// Proactively close if interruption didn't propagate an exception to the catch clause below
 			if (done.get() || Thread.currentThread().isInterrupted()) {
 				close();
 			}
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			close();
 			throw e;
@@ -122,9 +114,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * Returns the next item in the queue, which may be <tt>null</tt>, or throws an exception.
 	 */
 	@Override
-	public E getNextElement()
-		throws T
-	{
+	public E getNextElement() throws T {
 		if (isClosed()) {
 			return null;
 		}
@@ -133,8 +123,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 			E take;
 			if (done.get()) {
 				take = queue.poll();
-			}
-			else {
+			} else {
 				take = queue.take();
 				if (done.get()) {
 					done(); // in case the queue was full before
@@ -147,8 +136,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 			}
 			checkException();
 			return take;
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			checkException();
 			close();
 			throw convert(e);
@@ -156,31 +144,24 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	@Override
-	public void handleClose()
-		throws T
-	{
+	public void handleClose() throws T {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			done.set(true);
 			do {
 				queue.clear(); // ensure extra room is available
-			}
-			while (!queue.offer(afterLast));
+			} while (!queue.offer(afterLast));
 			checkException();
 		}
 	}
 
-	public void checkException()
-		throws T
-	{
+	public void checkException() throws T {
 		if (!exceptions.isEmpty()) {
 			try {
 				close();
 				throw exceptions.remove();
-			}
-			catch (Exception e) {
+			} catch (Exception e) {
 				throw convert(e);
 			}
 		}
@@ -192,7 +173,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	@SuppressWarnings("unchecked")
 	private E createAfterLast() {
-		return (E)new Object();
+		return (E) new Object();
 	}
 
 }

@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * A non-subquery query.
  * 
- * @param <T>
- * 		The query type. Used to support fluency.
+ * @param <T> The query type. Used to support fluency.
  */
 @SuppressWarnings("unchecked")
 public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
@@ -34,8 +33,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Set the base IRI of this query
 	 * 
-	 * @param iri
-	 *            the base IRI
+	 * @param iri the base IRI
 	 * @return this
 	 */
 	public T base(Iri iri) {
@@ -47,8 +45,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Set the Base clause of this query
 	 * 
-	 * @param base
-	 *            the {@link Base} clause to set
+	 * @param base the {@link Base} clause to set
 	 * @return this
 	 */
 	public T base(Base base) {
@@ -60,12 +57,12 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Add prefix declarations to this query
 	 * 
-	 * @param prefixes
-	 *            the prefixes to add
+	 * @param prefixes the prefixes to add
 	 * @return this
 	 */
 	public T prefix(Prefix... prefixes) {
-		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes, p -> p.addPrefix(prefixes));
+		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes,
+				p -> p.addPrefix(prefixes));
 
 		return (T) this;
 	}
@@ -73,8 +70,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Set the Prefix declarations of this query
 	 * 
-	 * @param prefixes
-	 *            the {@link PrefixDeclarations} to set
+	 * @param prefixes the {@link PrefixDeclarations} to set
 	 * @return this
 	 */
 	public T prefix(PrefixDeclarations prefixes) {
@@ -86,8 +82,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Add datasets to this query
 	 * 
-	 * @param graphs
-	 *            the graph specifiers to add
+	 * @param graphs the graph specifiers to add
 	 * @return this
 	 */
 	public T from(From... graphs) {
@@ -99,8 +94,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	/**
 	 * Set the Dataset clause for this query
 	 * 
-	 * @param from
-	 *            the {@link Dataset} clause to set
+	 * @param from the {@link Dataset} clause to set
 	 * @return this
 	 */
 	public T from(Dataset from) {

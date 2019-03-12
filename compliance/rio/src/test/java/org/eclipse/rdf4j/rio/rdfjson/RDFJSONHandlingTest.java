@@ -28,30 +28,22 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
 		return writeRDFJSON(unknownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
 		return writeRDFJSON(knownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
 		return writeRDFJSON(unknownLanguageStatements);
 	}
 
 	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeRDFJSON(knownLanguageStatements);
 	}
 
@@ -67,9 +59,7 @@ public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 	 * @return An {@link InputStream} containing the results.
 	 * @throws RDFHandlerException
 	 */
-	private InputStream writeRDFJSON(Model statements)
-		throws RDFHandlerException
-	{
+	private InputStream writeRDFJSON(Model statements) throws RDFHandlerException {
 		StringWriter writer = new StringWriter();
 
 		RDFWriter rdfjsonWriter = new RDFJSONWriter(writer, RDFFormat.RDFJSON);

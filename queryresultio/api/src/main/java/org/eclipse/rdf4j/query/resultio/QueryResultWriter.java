@@ -27,28 +27,23 @@ public interface QueryResultWriter extends QueryResultHandler {
 	QueryResultFormat getQueryResultFormat();
 
 	/**
-	 * Handles a namespace prefix declaration. If this is called, it should be called before
-	 * {@link #startDocument()} to ensure that it has a document wide effect.
+	 * Handles a namespace prefix declaration. If this is called, it should be called before {@link #startDocument()} to
+	 * ensure that it has a document wide effect.
 	 * <p>
 	 * NOTE: If the format does not support namespaces, it must silently ignore calls to this method.
 	 * 
-	 * @param prefix
-	 *        The prefix to use for the namespace
-	 * @param uri
-	 *        The full URI that is to be represented by the prefix.
+	 * @param prefix The prefix to use for the namespace
+	 * @param uri    The full URI that is to be represented by the prefix.
 	 * @throws QueryResultHandlerException
 	 */
-	void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException;
+	void handleNamespace(String prefix, String uri) throws QueryResultHandlerException;
 
 	/**
 	 * Indicates the start of the document.
 	 * 
-	 * @throws QueryResultHandlerException
-	 *         If there was an error starting the writing of the results.
+	 * @throws QueryResultHandlerException If there was an error starting the writing of the results.
 	 */
-	void startDocument()
-		throws QueryResultHandlerException;
+	void startDocument() throws QueryResultHandlerException;
 
 	/**
 	 * Handles a stylesheet URL. If this is called, it must be called after {@link #startDocument} and before
@@ -56,41 +51,33 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * <p>
 	 * NOTE: If the format does not support stylesheets, it must silently ignore calls to this method.
 	 * 
-	 * @param stylesheetUrl
-	 *        The URL of the stylesheet to be used to style the results.
-	 * @throws QueryResultHandlerException
-	 *         If there was an error handling the stylesheet. This error is not thrown in cases where
-	 *         stylesheets are not supported.
+	 * @param stylesheetUrl The URL of the stylesheet to be used to style the results.
+	 * @throws QueryResultHandlerException If there was an error handling the stylesheet. This error is not thrown in
+	 *                                     cases where stylesheets are not supported.
 	 */
-	void handleStylesheet(String stylesheetUrl)
-		throws QueryResultHandlerException;
+	void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException;
 
 	/**
 	 * Indicates the start of the header.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head">SPARQL Query Results XML
-	 *      Format documentation for head element.</a>
-	 * @throws QueryResultHandlerException
-	 *         If there was an error writing the start of the header.
+	 * @see <a href="http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head">SPARQL Query Results XML Format
+	 *      documentation for head element.</a>
+	 * @throws QueryResultHandlerException If there was an error writing the start of the header.
 	 */
-	void startHeader()
-		throws QueryResultHandlerException;
+	void startHeader() throws QueryResultHandlerException;
 
 	/**
 	 * Indicates the end of the header. This must be called after {@link #startHeader} and before any calls to
 	 * {@link #handleSolution}.
 	 * 
-	 * @throws QueryResultHandlerException
-	 *         If there was an error writing the end of the header.
+	 * @throws QueryResultHandlerException If there was an error writing the end of the header.
 	 */
-	void endHeader()
-		throws QueryResultHandlerException;
+	void endHeader() throws QueryResultHandlerException;
 
 	/**
 	 * Sets all supplied writer configuration options.
 	 * 
-	 * @param config
-	 *        a writer configuration object.
+	 * @param config a writer configuration object.
 	 */
 	public void setWriterConfig(WriterConfig config);
 

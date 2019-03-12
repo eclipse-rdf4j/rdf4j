@@ -18,14 +18,12 @@ public class ASTSelectQuery extends ASTTupleQuery {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTSelect getSelectClause() {
-		return (ASTSelect)children.get(0);
+		return (ASTSelect) children.get(0);
 	}
 
 	public boolean hasQueryBody() {
@@ -34,7 +32,7 @@ public class ASTSelectQuery extends ASTTupleQuery {
 
 	public ASTQueryBody getQueryBody() {
 		if (hasQueryBody()) {
-			return (ASTQueryBody)children.get(1);
+			return (ASTQueryBody) children.get(1);
 		}
 
 		return null;

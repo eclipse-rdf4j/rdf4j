@@ -12,9 +12,9 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.Statement;
 
 /**
- * A representation of a query result as a sequence of {@link Statement} objects. Each query result consists
- * of zero or more Statements and additionaly carries information about relevant namespace declarations. Note:
- * take care to always close a GraphQueryResult after use to free any resources it keeps hold of.
+ * A representation of a query result as a sequence of {@link Statement} objects. Each query result consists of zero or
+ * more Statements and additionaly carries information about relevant namespace declarations. Note: take care to always
+ * close a GraphQueryResult after use to free any resources it keeps hold of.
  * 
  * @author Jeen Broekstra
  */
@@ -22,13 +22,12 @@ public interface GraphQueryResult extends QueryResult<Statement> {
 
 	/**
 	 * Retrieves relevant namespaces from the query result. <br/>
-	 * The contents of the Map may be modified after it is returned, as the initial return may be performed
-	 * when the first RDF Statement is encountered.
+	 * The contents of the Map may be modified after it is returned, as the initial return may be performed when the
+	 * first RDF Statement is encountered.
 	 * 
 	 * @return a Map<String, String> object containing (prefix, namespace) pairs.
 	 * @throws QueryEvaluationException
 	 */
-	public Map<String, String> getNamespaces()
-		throws QueryEvaluationException;
+	public Map<String, String> getNamespaces() throws QueryEvaluationException;
 
 }

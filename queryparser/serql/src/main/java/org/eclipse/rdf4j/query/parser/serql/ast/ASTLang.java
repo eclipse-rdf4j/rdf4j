@@ -18,13 +18,11 @@ public class ASTLang extends ASTValueExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTVar getOperand() {
-		return (ASTVar)children.get(0);
+		return (ASTVar) children.get(0);
 	}
 }

@@ -18,9 +18,7 @@ public class ASTFrom extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -32,13 +30,13 @@ public class ASTFrom extends SimpleNode {
 		Node firstNode = children.get(0);
 
 		if (firstNode instanceof ASTValueExpr) {
-			return (ASTValueExpr)firstNode;
+			return (ASTValueExpr) firstNode;
 		}
 
 		return null;
 	}
 
 	public ASTPathExpr getPathExpr() {
-		return (ASTPathExpr)children.get(children.size() - 1);
+		return (ASTPathExpr) children.get(children.size() - 1);
 	}
 }
