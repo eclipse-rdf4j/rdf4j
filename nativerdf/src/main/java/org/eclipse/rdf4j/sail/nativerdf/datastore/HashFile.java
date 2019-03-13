@@ -424,8 +424,8 @@ public class HashFile implements Closeable {
 
 				bucket.clear();
 			} // Rehash items in overflow buckets. This might trigger the creation of
-				// new overflow buckets so we can't optimize this in the same way as we
-				// rehash the normal buckets.
+			// new overflow buckets so we can't optimize this in the same way as we
+			// rehash the normal buckets.
 			long tmpFileSize = tmpChannel.size();
 			for (long bucketOffset = 0L; bucketOffset < tmpFileSize; bucketOffset += recordSize) {
 				tmpChannel.read(bucket, bucketOffset);
