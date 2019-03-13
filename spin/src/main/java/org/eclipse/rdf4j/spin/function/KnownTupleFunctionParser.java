@@ -22,9 +22,7 @@ public class KnownTupleFunctionParser implements TupleFunctionParser {
 	}
 
 	@Override
-	public TupleFunction parse(IRI funcUri, TripleSource store)
-		throws RDF4JException
-	{
+	public TupleFunction parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		return functionRegistry.get(funcUri.stringValue()).orElse(null);
 	}
 }

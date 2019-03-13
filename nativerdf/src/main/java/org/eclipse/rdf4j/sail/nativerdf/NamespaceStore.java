@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
- * An in-memory store for namespace prefix information that uses a file for persistence. Namespaces are
- * encoded in the file as records as follows:
+ * An in-memory store for namespace prefix information that uses a file for persistence. Namespaces are encoded in the
+ * file as records as follows:
  * 
  * <pre>
  *   byte 1 - 2     : the length of the encoded namespace name
@@ -45,8 +45,8 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	private static final String FILE_NAME = "namespaces.dat";
 
 	/**
-	 * Magic number "Native Namespace File" to detect whether the file is actually a namespace file. The first
-	 * three bytes of the file should be equal to this magic number.
+	 * Magic number "Native Namespace File" to detect whether the file is actually a namespace file. The first three
+	 * bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'n', 'f' };
 
@@ -78,17 +78,14 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * Constructors *
 	 *--------------*/
 
-	public NamespaceStore(File dataDir)
-		throws IOException
-	{
+	public NamespaceStore(File dataDir) throws IOException {
 		file = new File(dataDir, FILE_NAME);
 
 		namespacesMap = new LinkedHashMap<>(16);
 
 		if (file.exists()) {
 			readNamespacesFromFile();
-		}
-		else {
+		} else {
 			// Make sure the file exists
 			writeNamespacesToFile();
 		}
@@ -117,8 +114,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 				ns.setName(name);
 				contentsChanged = true;
 			}
-		}
-		else {
+		} else {
 			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
 			contentsChanged = true;
 		}
@@ -144,9 +140,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
-	public void sync()
-		throws IOException
-	{
+	public void sync() throws IOException {
 		if (contentsChanged) {
 			// Flush the changes to disk
 			writeNamespacesToFile();
@@ -161,9 +155,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * File I/O *
 	 *----------*/
 
-	private void writeNamespacesToFile()
-		throws IOException
-	{
+	private void writeNamespacesToFile() throws IOException {
 		synchronized (file) {
 			try (DataOutputStream out = new DataOutputStream(new FileOutputStream(file))) {
 				out.write(MAGIC_NUMBER);
@@ -177,9 +169,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
-	private void readNamespacesFromFile()
-		throws IOException
-	{
+	private void readNamespacesFromFile() throws IOException {
 		synchronized (file) {
 			try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
 				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
@@ -190,10 +180,8 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 				byte version = in.readByte();
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read namespace file; it uses a newer file format");
-				}
-				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException(
-							"Unable to read namespace file; invalid file format version: " + version);
+				} else if (version != FILE_FORMAT_VERSION) {
+					throw new IOException("Unable to read namespace file; invalid file format version: " + version);
 				}
 
 				while (true) {
@@ -203,8 +191,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 
 						SimpleNamespace ns = new SimpleNamespace(prefix, name);
 						namespacesMap.put(prefix, ns);
-					}
-					catch (EOFException e) {
+					} catch (EOFException e) {
 						break;
 					}
 				}
@@ -216,9 +203,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * Debugging methods *
 	 *-------------------*/
 
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		NamespaceStore nsStore = new NamespaceStore(new File(args[0]));
 
 		for (Namespace ns : nsStore) {

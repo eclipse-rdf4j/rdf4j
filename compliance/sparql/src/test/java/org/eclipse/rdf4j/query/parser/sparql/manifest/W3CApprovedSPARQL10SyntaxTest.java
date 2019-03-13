@@ -22,28 +22,21 @@ import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11SyntaxTest;
  */
 public class W3CApprovedSPARQL10SyntaxTest extends SPARQL11SyntaxTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return SPARQL11SyntaxTest.suite(new Factory() {
 
-			public SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName,
-					String testAction, boolean positiveTest)
-			{
+			public SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName, String testAction,
+					boolean positiveTest) {
 				return new W3CApprovedSPARQL10SyntaxTest(testURI, testName, testAction, positiveTest);
 			}
 		}, false);
 	}
 
-	public W3CApprovedSPARQL10SyntaxTest(String testURI, String name, String queryFileURL,
-			boolean positiveTest)
-	{
+	public W3CApprovedSPARQL10SyntaxTest(String testURI, String name, String queryFileURL, boolean positiveTest) {
 		super(testURI, name, queryFileURL, positiveTest);
 	}
 
-	protected ParsedOperation parseOperation(String operation, String fileURL)
-		throws MalformedQueryException
-	{
+	protected ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException {
 		return QueryParserUtil.parseOperation(QueryLanguage.SPARQL, operation, fileURL);
 	}
 

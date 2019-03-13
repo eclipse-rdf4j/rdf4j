@@ -35,9 +35,7 @@ public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
 	}
 
 	@Override
-	public Function parse(IRI funcUri, TripleSource store)
-		throws RDF4JException
-	{
+	public Function parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		Statement magicPropStmt = TripleSources.single(funcUri, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS, store);
 		if (magicPropStmt == null) {
 			return null;
@@ -56,21 +54,17 @@ public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
 			}
 
 			@Override
-			public Value evaluate(ValueFactory valueFactory, Value... args)
-				throws ValueExprEvaluationException
-			{
+			public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 				try {
-					try (CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = tupleFunc.evaluate(
-						valueFactory, args)) {
+					try (CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = tupleFunc
+							.evaluate(valueFactory, args)) {
 						if (iter.hasNext()) {
 							return iter.next().get(0);
-						}
-						else {
+						} else {
 							return null;
 						}
 					}
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					throw new ValueExprEvaluationException(e);
 				}
 			}

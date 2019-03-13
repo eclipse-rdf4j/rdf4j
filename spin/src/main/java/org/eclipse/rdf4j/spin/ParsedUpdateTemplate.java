@@ -21,7 +21,7 @@ public class ParsedUpdateTemplate extends ParsedUpdate implements ParsedTemplate
 	private final BindingSet args;
 
 	public ParsedUpdateTemplate(Template template, BindingSet args) {
-		this(template, (ParsedUpdate)template.getParsedOperation(), args);
+		this(template, (ParsedUpdate) template.getParsedOperation(), args);
 	}
 
 	private ParsedUpdateTemplate(Template template, ParsedUpdate update, BindingSet args) {

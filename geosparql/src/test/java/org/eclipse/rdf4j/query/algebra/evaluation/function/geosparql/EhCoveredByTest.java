@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
-public class EhCoveredByTest extends  GeometricRelationFunctionTest {
+public class EhCoveredByTest extends GeometricRelationFunctionTest {
 
 	@Override
 	protected GeometricRelationFunction testedFunction() {

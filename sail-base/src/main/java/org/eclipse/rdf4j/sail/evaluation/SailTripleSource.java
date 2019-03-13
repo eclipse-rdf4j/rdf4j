@@ -34,13 +34,11 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-			IRI pred, Value obj, Resource... contexts)
-		throws QueryEvaluationException
-	{
+	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement, SailException> iter = null;
 		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
-		
+
 		boolean allGood = false;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
@@ -53,19 +51,16 @@ public class SailTripleSource implements TripleSource {
 			};
 			allGood = true;
 			return result;
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
-		}
-		finally {
-			if(!allGood) {
+		} finally {
+			if (!allGood) {
 				try {
-					if(result != null) {
+					if (result != null) {
 						result.close();
 					}
-				}
-				finally {
-					if(iter != null) {
+				} finally {
+					if (iter != null) {
 						iter.close();
 					}
 				}

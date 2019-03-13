@@ -14,17 +14,14 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 
 public class IteratorCloseableIteration<E, X extends Exception> extends IteratorIteration<E, X>
-		implements CloseableIteration<E, X>
-{
+		implements CloseableIteration<E, X> {
 
 	public IteratorCloseableIteration(Iterator<? extends E> iter) {
 		super(iter);
 	}
 
 	@Override
-	public void close()
-		throws X
-	{
+	public void close() throws X {
 		// nothing to do
 	}
 }

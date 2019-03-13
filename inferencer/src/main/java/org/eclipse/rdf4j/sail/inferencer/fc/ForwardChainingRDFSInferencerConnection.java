@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
  * Forward-chaining RDF Schema inferencer, using the rules from the
- * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February
- * 2004)</a>. This inferencer can be used to add RDF Schema semantics to any Sail that returns
- * {@link InferencerConnection}s from their {@link Sail#getConnection()} method.
+ * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February 2004)</a>. This
+ * inferencer can be used to add RDF Schema semantics to any Sail that returns {@link InferencerConnection}s from their
+ * {@link Sail#getConnection()} method.
  * 
  * @deprecated since 2.5. This inferencer implementation will be phased out. Consider switching to the
  *             {@link SchemaCachingRDFSInferencer} instead.
@@ -72,13 +72,10 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	/**
-	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying
-	 * Sail.
+	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying Sail.
 	 */
 	@Override
-	protected void addAxiomStatements()
-		throws SailException
-	{
+	protected void addAxiomStatements() throws SailException {
 		logger.debug("Inserting axiom statements");
 
 		// RDF axiomatic triples (from RDF Semantics, section 3.1):
@@ -143,9 +140,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	@Override
-	protected void doInferencing()
-		throws SailException
-	{
+	protected void doInferencing() throws SailException {
 		// All rules need to be checked:
 		for (int i = 0; i < RDFSRules.RULECOUNT; i++) {
 			ruleCount[i] = 0;
@@ -164,9 +159,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	@Override
-	protected int applyRules(Model iteration)
-		throws SailException
-	{
+	protected int applyRules(Model iteration) throws SailException {
 		newThisIteration = iteration;
 		int nofInferred = 0;
 		nofInferred += applyRule(RDFSRules.Rdf1);
@@ -220,9 +213,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		}
 	}
 
-	protected int applyRule(int rule)
-		throws SailException
-	{
+	protected int applyRule(int rule) throws SailException {
 		if (!checkRule[rule]) {
 			return 0;
 		}
@@ -235,77 +226,75 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		return nofInferred;
 	}
 
-	protected int applyRuleInternal(int rule)
-		throws SailException
-	{
+	protected int applyRuleInternal(int rule) throws SailException {
 		int result = 0;
 
 		switch (rule) {
-			case RDFSRules.Rdf1:
-				result = applyRuleRdf1();
-				break;
-			case RDFSRules.Rdfs2_1:
-				result = applyRuleRdfs2_1();
-				break;
-			case RDFSRules.Rdfs2_2:
-				result = applyRuleRdfs2_2();
-				break;
-			case RDFSRules.Rdfs3_1:
-				result = applyRuleRdfs3_1();
-				break;
-			case RDFSRules.Rdfs3_2:
-				result = applyRuleRdfs3_2();
-				break;
-			case RDFSRules.Rdfs4a:
-				result = applyRuleRdfs4a();
-				break;
-			case RDFSRules.Rdfs4b:
-				result = applyRuleRdfs4b();
-				break;
-			case RDFSRules.Rdfs5_1:
-				result = applyRuleRdfs5_1();
-				break;
-			case RDFSRules.Rdfs5_2:
-				result = applyRuleRdfs5_2();
-				break;
-			case RDFSRules.Rdfs6:
-				result = applyRuleRdfs6();
-				break;
-			case RDFSRules.Rdfs7_1:
-				result = applyRuleRdfs7_1();
-				break;
-			case RDFSRules.Rdfs7_2:
-				result = applyRuleRdfs7_2();
-				break;
-			case RDFSRules.Rdfs8:
-				result = applyRuleRdfs8();
-				break;
-			case RDFSRules.Rdfs9_1:
-				result = applyRuleRdfs9_1();
-				break;
-			case RDFSRules.Rdfs9_2:
-				result = applyRuleRdfs9_2();
-				break;
-			case RDFSRules.Rdfs10:
-				result = applyRuleRdfs10();
-				break;
-			case RDFSRules.Rdfs11_1:
-				result = applyRuleRdfs11_1();
-				break;
-			case RDFSRules.Rdfs11_2:
-				result = applyRuleRdfs11_2();
-				break;
-			case RDFSRules.Rdfs12:
-				result = applyRuleRdfs12();
-				break;
-			case RDFSRules.Rdfs13:
-				result = applyRuleRdfs13();
-				break;
-			case RDFSRules.RX1:
-				result = applyRuleX1();
-				break;
-			default:
-				throw new AssertionError("Unexpected rule: " + rule);
+		case RDFSRules.Rdf1:
+			result = applyRuleRdf1();
+			break;
+		case RDFSRules.Rdfs2_1:
+			result = applyRuleRdfs2_1();
+			break;
+		case RDFSRules.Rdfs2_2:
+			result = applyRuleRdfs2_2();
+			break;
+		case RDFSRules.Rdfs3_1:
+			result = applyRuleRdfs3_1();
+			break;
+		case RDFSRules.Rdfs3_2:
+			result = applyRuleRdfs3_2();
+			break;
+		case RDFSRules.Rdfs4a:
+			result = applyRuleRdfs4a();
+			break;
+		case RDFSRules.Rdfs4b:
+			result = applyRuleRdfs4b();
+			break;
+		case RDFSRules.Rdfs5_1:
+			result = applyRuleRdfs5_1();
+			break;
+		case RDFSRules.Rdfs5_2:
+			result = applyRuleRdfs5_2();
+			break;
+		case RDFSRules.Rdfs6:
+			result = applyRuleRdfs6();
+			break;
+		case RDFSRules.Rdfs7_1:
+			result = applyRuleRdfs7_1();
+			break;
+		case RDFSRules.Rdfs7_2:
+			result = applyRuleRdfs7_2();
+			break;
+		case RDFSRules.Rdfs8:
+			result = applyRuleRdfs8();
+			break;
+		case RDFSRules.Rdfs9_1:
+			result = applyRuleRdfs9_1();
+			break;
+		case RDFSRules.Rdfs9_2:
+			result = applyRuleRdfs9_2();
+			break;
+		case RDFSRules.Rdfs10:
+			result = applyRuleRdfs10();
+			break;
+		case RDFSRules.Rdfs11_1:
+			result = applyRuleRdfs11_1();
+			break;
+		case RDFSRules.Rdfs11_2:
+			result = applyRuleRdfs11_2();
+			break;
+		case RDFSRules.Rdfs12:
+			result = applyRuleRdfs12();
+			break;
+		case RDFSRules.Rdfs13:
+			result = applyRuleRdfs13();
+			break;
+		case RDFSRules.RX1:
+			result = applyRuleX1();
+			break;
+		default:
+			throw new AssertionError("Unexpected rule: " + rule);
 		}
 		// ThreadLog.trace("Rule " + RDFSRules.RULENAMES[rule] + " inferred " +
 		// result + " new triples.");
@@ -313,9 +302,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa yyy --> aaa rdf:type rdf:Property
-	private int applyRuleRdf1()
-		throws SailException
-	{
+	private int applyRuleRdf1() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, null, null);
@@ -332,9 +319,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa yyy (nt) && aaa rdfs:domain zzz (t1) --> xxx rdf:type zzz
-	private int applyRuleRdfs2_1()
-		throws SailException
-	{
+	private int applyRuleRdfs2_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, null, null);
@@ -364,9 +349,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// aaa rdfs:domain zzz (nt) && xxx aaa yyy (t1) --> xxx rdf:type zzz
-	private int applyRuleRdfs2_2()
-		throws SailException
-	{
+	private int applyRuleRdfs2_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.DOMAIN, null);
@@ -377,7 +360,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (aaa instanceof IRI && zzz instanceof Resource) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI)aaa, null, true);
+				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
@@ -396,9 +379,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa uuu (nt) && aaa rdfs:range zzz (t1) --> uuu rdf:type zzz
-	private int applyRuleRdfs3_1()
-		throws SailException
-	{
+	private int applyRuleRdfs3_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, null, null);
@@ -416,7 +397,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 					Value zzz = t1.getObject();
 					if (zzz instanceof Resource) {
-						boolean added = addInferredStatement((Resource)uuu, RDF.TYPE, zzz);
+						boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
 						if (added) {
 							nofInferred++;
 						}
@@ -429,9 +410,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// aaa rdfs:range zzz (nt) && xxx aaa uuu (t1) --> uuu rdf:type zzz
-	private int applyRuleRdfs3_2()
-		throws SailException
-	{
+	private int applyRuleRdfs3_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.RANGE, null);
@@ -442,14 +421,14 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (aaa instanceof IRI && zzz instanceof Resource) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI)aaa, null, true);
+				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
 
 					Value uuu = t1.getObject();
 					if (uuu instanceof Resource) {
-						boolean added = addInferredStatement((Resource)uuu, RDF.TYPE, zzz);
+						boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
 						if (added) {
 							nofInferred++;
 						}
@@ -464,9 +443,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa yyy --> xxx rdf:type rdfs:Resource
-	private int applyRuleRdfs4a()
-		throws SailException
-	{
+	private int applyRuleRdfs4a() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, null, null);
@@ -482,9 +459,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa uuu --> uuu rdf:type rdfs:Resource
-	private int applyRuleRdfs4b()
-		throws SailException
-	{
+	private int applyRuleRdfs4b() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, null, null);
@@ -492,7 +467,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		for (Statement st : iter) {
 			Value uuu = st.getObject();
 			if (uuu instanceof Resource) {
-				boolean added = addInferredStatement((Resource)uuu, RDF.TYPE, RDFS.RESOURCE);
+				boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, RDFS.RESOURCE);
 				if (added) {
 					nofInferred++;
 				}
@@ -504,9 +479,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	// aaa rdfs:subPropertyOf bbb (nt) && bbb rdfs:subPropertyOf ccc (t1)
 	// --> aaa rdfs:subPropertyOf ccc
-	private int applyRuleRdfs5_1()
-		throws SailException
-	{
+	private int applyRuleRdfs5_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
@@ -517,7 +490,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (bbb instanceof Resource) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource)bbb, RDFS.SUBPROPERTYOF, null, true);
+				t1Iter = getWrappedConnection().getStatements((Resource) bbb, RDFS.SUBPROPERTYOF, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
@@ -540,9 +513,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	// bbb rdfs:subPropertyOf ccc (nt) && aaa rdfs:subPropertyOf bbb (t1)
 	// --> aaa rdfs:subPropertyOf ccc
-	private int applyRuleRdfs5_2()
-		throws SailException
-	{
+	private int applyRuleRdfs5_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
@@ -572,9 +543,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx rdf:type rdf:Property --> xxx rdfs:subPropertyOf xxx
-	private int applyRuleRdfs6()
-		throws SailException
-	{
+	private int applyRuleRdfs6() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDF.PROPERTY);
@@ -591,9 +560,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx aaa yyy (nt) && aaa rdfs:subPropertyOf bbb (t1) --> xxx bbb yyy
-	private int applyRuleRdfs7_1()
-		throws SailException
-	{
+	private int applyRuleRdfs7_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, null, null);
@@ -611,7 +578,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 				Value bbb = t1.getObject();
 				if (bbb instanceof IRI) {
-					boolean added = addInferredStatement(xxx, (IRI)bbb, yyy);
+					boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
 					if (added) {
 						nofInferred++;
 					}
@@ -624,9 +591,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// aaa rdfs:subPropertyOf bbb (nt) && xxx aaa yyy (t1) --> xxx bbb yyy
-	private int applyRuleRdfs7_2()
-		throws SailException
-	{
+	private int applyRuleRdfs7_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
@@ -637,7 +602,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (aaa instanceof IRI && bbb instanceof IRI) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI)aaa, null, true);
+				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
@@ -645,7 +610,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 					Resource xxx = t1.getSubject();
 					Value yyy = t1.getObject();
 
-					boolean added = addInferredStatement(xxx, (IRI)bbb, yyy);
+					boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
 					if (added) {
 						nofInferred++;
 					}
@@ -658,9 +623,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx rdf:type rdfs:Class --> xxx rdfs:subClassOf rdfs:Resource
-	private int applyRuleRdfs8()
-		throws SailException
-	{
+	private int applyRuleRdfs8() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CLASS);
@@ -678,9 +641,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx rdfs:subClassOf yyy (nt) && aaa rdf:type xxx (t1) --> aaa rdf:type yyy
-	private int applyRuleRdfs9_1()
-		throws SailException
-	{
+	private int applyRuleRdfs9_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
@@ -711,9 +672,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// aaa rdf:type xxx (nt) && xxx rdfs:subClassOf yyy (t1) --> aaa rdf:type yyy
-	private int applyRuleRdfs9_2()
-		throws SailException
-	{
+	private int applyRuleRdfs9_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDF.TYPE, null);
@@ -724,7 +683,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (xxx instanceof Resource) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource)xxx, RDFS.SUBCLASSOF, null, true);
+				t1Iter = getWrappedConnection().getStatements((Resource) xxx, RDFS.SUBCLASSOF, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
@@ -746,9 +705,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx rdf:type rdfs:Class --> xxx rdfs:subClassOf xxx
-	private int applyRuleRdfs10()
-		throws SailException
-	{
+	private int applyRuleRdfs10() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CLASS);
@@ -767,9 +724,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	// xxx rdfs:subClassOf yyy (nt) && yyy rdfs:subClassOf zzz (t1)
 	// --> xxx rdfs:subClassOf zzz
-	private int applyRuleRdfs11_1()
-		throws SailException
-	{
+	private int applyRuleRdfs11_1() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
@@ -780,7 +735,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 			if (yyy instanceof Resource) {
 				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource)yyy, RDFS.SUBCLASSOF, null, true);
+				t1Iter = getWrappedConnection().getStatements((Resource) yyy, RDFS.SUBCLASSOF, null, true);
 
 				while (t1Iter.hasNext()) {
 					Statement t1 = t1Iter.next();
@@ -803,9 +758,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	// yyy rdfs:subClassOf zzz (nt) && xxx rdfs:subClassOf yyy (t1)
 	// --> xxx rdfs:subClassOf zzz
-	private int applyRuleRdfs11_2()
-		throws SailException
-	{
+	private int applyRuleRdfs11_2() throws SailException {
 		int nofInferred = 0;
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
@@ -837,9 +790,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	// xxx rdf:type rdfs:ContainerMembershipProperty
 	// --> xxx rdfs:subPropertyOf rdfs:member
-	private int applyRuleRdfs12()
-		throws SailException
-	{
+	private int applyRuleRdfs12() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY);
@@ -857,9 +808,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	// xxx rdf:type rdfs:Datatype --> xxx rdfs:subClassOf rdfs:Literal
-	private int applyRuleRdfs13()
-		throws SailException
-	{
+	private int applyRuleRdfs13() throws SailException {
 		int nofInferred = 0;
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.DATATYPE);
@@ -879,9 +828,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	// xxx rdf:_* yyy --> rdf:_* rdf:type rdfs:ContainerMembershipProperty
 	// This is an extra rule for list membership properties (_1, _2, _3, ...).
 	// The RDF MT does not specificy a production for this.
-	private int applyRuleX1()
-		throws SailException
-	{
+	private int applyRuleX1() throws SailException {
 		int nofInferred = 0;
 
 		String prefix = RDF.NAMESPACE + "_";

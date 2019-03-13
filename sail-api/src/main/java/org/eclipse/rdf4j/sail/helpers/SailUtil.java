@@ -16,13 +16,11 @@ import org.eclipse.rdf4j.sail.StackableSail;
 public class SailUtil {
 
 	/**
-	 * Searches a stack of Sails from top to bottom for a Sail that is an instance of the suppied class or
-	 * interface. The first Sail that matches (i.e. the one closest to the top) is returned.
+	 * Searches a stack of Sails from top to bottom for a Sail that is an instance of the suppied class or interface.
+	 * The first Sail that matches (i.e. the one closest to the top) is returned.
 	 * 
-	 * @param topSail
-	 *        The top of the Sail stack.
-	 * @param sailClass
-	 *        A class or interface.
+	 * @param topSail   The top of the Sail stack.
+	 * @param sailClass A class or interface.
 	 * @return A Sail that is an instance of sailClass, or null if no such Sail was found.
 	 */
 	@SuppressWarnings("unchecked")
@@ -43,14 +41,13 @@ public class SailUtil {
 			// Current Sail is not an instance of sailClass, check the
 			// rest of the stack
 			if (currentSail instanceof StackableSail) {
-				currentSail = ((StackableSail)currentSail).getBaseSail();
-			}
-			else {
+				currentSail = ((StackableSail) currentSail).getBaseSail();
+			} else {
 				// We've reached the bottom of the stack
 				currentSail = null;
 			}
 		}
 
-		return (C)currentSail;
+		return (C) currentSail;
 	}
 }

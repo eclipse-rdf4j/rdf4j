@@ -22,9 +22,7 @@ public class ReplaceAll implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 3) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
@@ -34,9 +32,9 @@ public class ReplaceAll implements Function {
 		if (!(args[1] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Second argument must be a string");
 		}
-		Literal s = (Literal)args[0];
-		Literal regex = (Literal)args[1];
-		Literal replacement = (Literal)args[2];
+		Literal s = (Literal) args[0];
+		Literal regex = (Literal) args[1];
+		Literal replacement = (Literal) args[2];
 		return valueFactory.createLiteral(s.getLabel().replaceAll(regex.getLabel(), replacement.getLabel()));
 	}
 }

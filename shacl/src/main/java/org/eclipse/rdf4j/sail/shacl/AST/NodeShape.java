@@ -30,7 +30,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property nodeShapes, which are the restrictions for everything that matches the NodeShape.
+ * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
+ * nodeShapes, which are the restrictions for everything that matches the NodeShape.
  *
  * @author Heshan Jayasinghe
  */
@@ -46,19 +47,22 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection
+				.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection
+				.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
@@ -67,11 +71,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		throw new IllegalStateException();
 	}
 
-	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
+	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			boolean printPlans) {
 		return propertyShapes.stream()
-			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
-			.collect(Collectors.toList());
+				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
+						shaclSailConnection.getRemovedStatements()))
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+				.collect(Collectors.toList());
 	}
 
 	@Override
@@ -80,19 +86,20 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return subjectVariable+" ?b "+objectVariable;
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		return subjectVariable + " ?b " + objectVariable;
 	}
 
 	public Resource getId() {
 		return id;
 	}
 
-
 	public static class Factory {
 
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
+			try (Stream<Statement> stream = Iterations
+					.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
 				return stream.map(Statement::getSubject).map(shapeId -> {
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
@@ -102,18 +109,17 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					} else if (!shaclProperties.targetNode.isEmpty()) {
 						return new TargetNode(shapeId, connection, shaclProperties.targetNode);
 					} else {
-						if(sail.isUndefinedTargetValidatesAllSubjects()) {
-							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
+						if (sail.isUndefinedTargetValidatesAllSubjects()) {
+							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported
+																		// nodeShapes
 						}
 					}
 					return null;
-				})
-					.filter(Objects::nonNull)
-					.collect(Collectors.toList());
+				}).filter(Objects::nonNull).collect(Collectors.toList());
 			}
 		}
 
-		}
+	}
 
 	@Override
 	public String toString() {

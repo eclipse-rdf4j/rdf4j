@@ -17,10 +17,9 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 /**
- * Registry for currently active {@link EvaluationStrategy} objects. The internal registry uses soft
- * references to allow entries to be garbage-collected when no longer used. Currently, the primary purpose of
- * this is to support (de)serialization of objects (over the lifetime of the VM) that depend on an
- * EvaluationStrategy
+ * Registry for currently active {@link EvaluationStrategy} objects. The internal registry uses soft references to allow
+ * entries to be garbage-collected when no longer used. Currently, the primary purpose of this is to support
+ * (de)serialization of objects (over the lifetime of the VM) that depend on an EvaluationStrategy
  * 
  * @author Jeen Broekstra
  */
@@ -31,10 +30,8 @@ public class EvaluationStrategies {
 	/**
 	 * Retrieve the EvaluationStrategy registered with the supplied key.
 	 * 
-	 * @param key
-	 *        the key
-	 * @return the registered EvaluationStrategy, or <code>null</code> if no matching EvaluationStrategy can
-	 *         be found.
+	 * @param key the key
+	 * @return the registered EvaluationStrategy, or <code>null</code> if no matching EvaluationStrategy can be found.
 	 */
 	public static final EvaluationStrategy get(UUID key) {
 		return registry.getIfPresent(key);
@@ -43,10 +40,9 @@ public class EvaluationStrategies {
 	/**
 	 * Retrieve the registry key for the given EvaluationStrategy
 	 * 
-	 * @param strategy
-	 *        the EvaluationStrategy for which to retrieve the registry key
-	 * @return the registry key with which the supplied strategy can be retrieved, or <code>null</code> if the
-	 *         supplied strategy is not in the registry.
+	 * @param strategy the EvaluationStrategy for which to retrieve the registry key
+	 * @return the registry key with which the supplied strategy can be retrieved, or <code>null</code> if the supplied
+	 *         strategy is not in the registry.
 	 */
 	public static final UUID getKey(EvaluationStrategy strategy) {
 		final Map<UUID, EvaluationStrategy> map = registry.asMap();
@@ -66,22 +62,20 @@ public class EvaluationStrategies {
 	}
 
 	/**
-	 * Add a strategy to the registry and returns the registry key. If the strategy is already present, the
-	 * operation simply returns the key with which it is currently registered.
+	 * Add a strategy to the registry and returns the registry key. If the strategy is already present, the operation
+	 * simply returns the key with which it is currently registered.
 	 * 
-	 * @param strategy
-	 *        the EvaluationStrategy to register
+	 * @param strategy the EvaluationStrategy to register
 	 * @return the key with which the strategy is registered.
 	 */
 	public static final UUID register(EvaluationStrategy strategy) {
 		UUID key;
 		if (strategy instanceof UUIDable) {
-			key = ((UUIDable)strategy).getUUID();
+			key = ((UUIDable) strategy).getUUID();
 			if (get(key) == null) {
 				registry.put(key, strategy);
 			}
-		}
-		else {
+		} else {
 			key = getKey(strategy);
 			if (key == null) {
 				key = UUID.randomUUID();

@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.sail;
 
 /**
- * Event object that is send to {@link SailChangedListener}s to indicate that the contents of the Sail that
- * sent the event have changed.
+ * Event object that is send to {@link SailChangedListener}s to indicate that the contents of the Sail that sent the
+ * event have changed.
  */
 public interface SailChangedEvent {
 

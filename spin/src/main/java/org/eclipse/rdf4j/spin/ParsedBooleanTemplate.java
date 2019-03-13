@@ -17,7 +17,7 @@ public class ParsedBooleanTemplate extends ParsedBooleanQuery implements ParsedT
 	private final BindingSet args;
 
 	public ParsedBooleanTemplate(Template template, BindingSet args) {
-		this(template, (ParsedBooleanQuery)template.getParsedOperation(), args);
+		this(template, (ParsedBooleanQuery) template.getParsedOperation(), args);
 	}
 
 	private ParsedBooleanTemplate(Template template, ParsedBooleanQuery query, BindingSet args) {

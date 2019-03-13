@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -28,23 +27,21 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	private final Literal minExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
-	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal minExclusive) {
+	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
+			Literal minExclusive) {
 		super(id, connection, nodeShape);
 
 		this.minExclusive = minExclusive;
 
 	}
 
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,
+				overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

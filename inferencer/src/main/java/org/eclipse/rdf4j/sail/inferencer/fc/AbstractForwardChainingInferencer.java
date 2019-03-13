@@ -40,8 +40,7 @@ public abstract class AbstractForwardChainingInferencer extends NotifyingSailWra
 		IsolationLevel level = super.getDefaultIsolationLevel();
 		if (level.isCompatibleWith(READ_COMMITTED)) {
 			return level;
-		}
-		else {
+		} else {
 			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
 			return IsolationLevels.getCompatibleIsolationLevel(READ_COMMITTED, supported);
 		}

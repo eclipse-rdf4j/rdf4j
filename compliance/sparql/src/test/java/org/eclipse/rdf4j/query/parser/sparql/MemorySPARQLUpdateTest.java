@@ -20,9 +20,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class MemorySPARQLUpdateTest extends SPARQLUpdateTest {
 
 	@Override
-	protected Repository newRepository()
-		throws Exception
-	{
+	protected Repository newRepository() throws Exception {
 		return new SailRepository(new MemoryStore());
 	}
 

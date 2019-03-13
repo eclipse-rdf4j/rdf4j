@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -47,14 +46,16 @@ public class Select implements PlanNode {
 
 			{
 
-				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
+						.get(QueryLanguage.SPARQL)
+						.get();
 
 				ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 
-				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
+				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+						new MapBindingSet(), true);
 
 			}
-
 
 			@Override
 			public void close() throws SailException {
@@ -85,16 +86,19 @@ public class Select implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
+			stringBuilder
+					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
+					.append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
-
 
 	}
 
@@ -110,9 +114,7 @@ public class Select implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Select{" +
-			"query='" + query + '\'' +
-			'}';
+		return "Select{" + "query='" + query + '\'' + '}';
 	}
 
 	@Override
@@ -125,12 +127,13 @@ public class Select implements PlanNode {
 		}
 		Select select = (Select) o;
 
-		return
-			Objects.equals(
-				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail() : connection,
-				select.connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) select.connection).getSail() : select.connection
-			) &&
-				query.equals(select.query);
+		return Objects.equals(
+				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
+						: connection,
+				select.connection instanceof MemoryStoreConnection
+						? ((MemoryStoreConnection) select.connection).getSail()
+						: select.connection)
+				&& query.equals(select.query);
 	}
 
 	@Override

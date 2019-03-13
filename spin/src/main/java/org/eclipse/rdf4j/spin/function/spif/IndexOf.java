@@ -22,9 +22,7 @@ public class IndexOf implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 2 || args.length > 3) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
@@ -37,9 +35,9 @@ public class IndexOf implements Function {
 		if (args.length == 3 && !(args[2] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Third argument must be an integer");
 		}
-		Literal s = (Literal)args[0];
-		Literal t = (Literal)args[1];
-		int pos = (args.length == 3) ? ((Literal)args[2]).intValue() : 0;
+		Literal s = (Literal) args[0];
+		Literal t = (Literal) args[1];
+		int pos = (args.length == 3) ? ((Literal) args[2]).intValue() : 0;
 		int index = s.getLabel().indexOf(t.getLabel(), pos);
 		if (index == -1) {
 			throw new ValueExprEvaluationException("Substring not found");

@@ -39,18 +39,14 @@ public class SolrSailExample {
 	 * 
 	 * @param args
 	 */
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		createSimple();
 	}
 
 	/**
 	 * Create a LuceneSail and add some triples to it, ask a query.
 	 */
-	public static void createSimple()
-		throws Exception
-	{
+	public static void createSimple() throws Exception {
 		// create a sesame memory sail
 		MemoryStore memoryStore = new MemoryStore();
 
@@ -67,11 +63,10 @@ public class SolrSailExample {
 		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
-			SailRepositoryConnection connection = repository.getConnection()) {
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
-			connection.add(
-					SolrSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
-					"", RDFFormat.RDFXML);
+			connection.add(SolrSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"), "",
+					RDFFormat.RDFXML);
 			connection.commit();
 
 			// search for resources that mention "person"
@@ -104,21 +99,18 @@ public class SolrSailExample {
 			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
 					+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
 					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
-					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n"
-					+ "?x rdfs:domain foaf:Person . \n" + "?x search:matches ?match . \n"
-					+ "?match search:query \"homepage\" ; \n" + "       search:property ?property ; \n"
-					+ "       search:score ?score ; \n" + "       search:snippet ?snippet . \n"
-					+ "} LIMIT 3 \n";
+					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n" + "?x rdfs:domain foaf:Person . \n"
+					+ "?x search:matches ?match . \n" + "?match search:query \"homepage\" ; \n"
+					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
+					+ "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
 			graphQuery(queryString, connection);
-		}
-		finally {
+		} finally {
 			repository.shutDown();
 		}
 	}
 
 	private static void tupleQuery(String queryString, RepositoryConnection connection)
-		throws QueryEvaluationException, RepositoryException, MalformedQueryException
-	{
+			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		System.out.println("Running query: \n" + queryString);
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
@@ -135,8 +127,7 @@ public class SolrSailExample {
 	}
 
 	private static void graphQuery(String queryString, RepositoryConnection connection)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		System.out.println("Running query: \n" + queryString);
 		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, queryString);
 		try (GraphQueryResult result = query.evaluate()) {

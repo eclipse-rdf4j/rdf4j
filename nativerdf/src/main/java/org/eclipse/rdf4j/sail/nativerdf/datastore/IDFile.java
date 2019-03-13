@@ -15,9 +15,9 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
- * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long
- * integers). There is a direct correlation between IDs and the position at which the file pointers are
- * stored; the file pointer for ID X is stored at position 8*X.
+ * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long integers). There
+ * is a direct correlation between IDs and the position at which the file pointers are stored; the file pointer for ID X
+ * is stored at position 8*X.
  * 
  * @author Arjohn Kampman
  */
@@ -28,8 +28,8 @@ public class IDFile implements Closeable {
 	 *-----------*/
 
 	/**
-	 * Magic number "Native ID File" to detect whether the file is actually an ID file. The first three bytes
-	 * of the file should be equal to this magic number.
+	 * Magic number "Native ID File" to detect whether the file is actually an ID file. The first three bytes of the
+	 * file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'i', 'f' };
 
@@ -39,8 +39,8 @@ public class IDFile implements Closeable {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	/**
-	 * The size of the file header in bytes. The file header contains the following data: magic number (3
-	 * bytes) file format version (1 byte) and 4 dummy bytes to align data at 8-byte offsets.
+	 * The size of the file header in bytes. The file header contains the following data: magic number (3 bytes) file
+	 * format version (1 byte) and 4 dummy bytes to align data at 8-byte offsets.
 	 */
 	private static final long HEADER_LENGTH = 8;
 
@@ -58,15 +58,11 @@ public class IDFile implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public IDFile(File file)
-		throws IOException
-	{
+	public IDFile(File file) throws IOException {
 		this(file, false);
 	}
 
-	public IDFile(File file, boolean forceSync)
-		throws IOException
-	{
+	public IDFile(File file, boolean forceSync) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
 
@@ -78,11 +74,9 @@ public class IDFile implements Closeable {
 				nioFile.writeBytes(new byte[] { 0, 0, 0, 0 }, 4);
 
 				sync();
-			}
-			else if (nioFile.size() < HEADER_LENGTH) {
+			} else if (nioFile.size() < HEADER_LENGTH) {
 				throw new IOException("File too small to be a compatible ID file");
-			}
-			else {
+			} else {
 				// Verify file header
 				if (!Arrays.equals(MAGIC_NUMBER, nioFile.readBytes(0, MAGIC_NUMBER.length))) {
 					throw new IOException("File doesn't contain compatible ID records");
@@ -91,13 +85,11 @@ public class IDFile implements Closeable {
 				byte version = nioFile.readByte(MAGIC_NUMBER.length);
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read ID file; it uses a newer file format");
-				}
-				else if (version != FILE_FORMAT_VERSION) {
+				} else if (version != FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read ID file; invalid file format version: " + version);
 				}
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			this.nioFile.close();
 			throw e;
 		}
@@ -115,37 +107,28 @@ public class IDFile implements Closeable {
 	 * Gets the largest ID that is stored in this ID file.
 	 * 
 	 * @return The largest ID, or <tt>0</tt> if the file does not contain any data.
-	 * @throws IOException
-	 *         If an I/O error occurs.
+	 * @throws IOException If an I/O error occurs.
 	 */
-	public int getMaxID()
-		throws IOException
-	{
-		return (int)(nioFile.size() / ITEM_SIZE) - 1;
+	public int getMaxID() throws IOException {
+		return (int) (nioFile.size() / ITEM_SIZE) - 1;
 	}
 
 	/**
 	 * Stores the offset of a new data entry, returning the ID under which is stored.
 	 */
-	public int storeOffset(long offset)
-		throws IOException
-	{
+	public int storeOffset(long offset) throws IOException {
 		long fileSize = nioFile.size();
 		nioFile.writeLong(offset, fileSize);
-		return (int)(fileSize / ITEM_SIZE);
+		return (int) (fileSize / ITEM_SIZE);
 	}
 
 	/**
 	 * Sets or updates the stored offset for the specified ID.
 	 * 
-	 * @param id
-	 *        The ID to set the offset for, must be larger than 0.
-	 * @param offset
-	 *        The (new) offset for the specified ID.
+	 * @param id     The ID to set the offset for, must be larger than 0.
+	 * @param offset The (new) offset for the specified ID.
 	 */
-	public void setOffset(int id, long offset)
-		throws IOException
-	{
+	public void setOffset(int id, long offset) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 		nioFile.writeLong(offset, ITEM_SIZE * id);
 	}
@@ -153,13 +136,10 @@ public class IDFile implements Closeable {
 	/**
 	 * Gets the offset of the data entry with the specified ID.
 	 * 
-	 * @param id
-	 *        The ID to get the offset for, must be larger than 0.
+	 * @param id The ID to get the offset for, must be larger than 0.
 	 * @return The offset for the ID.
 	 */
-	public long getOffset(int id)
-		throws IOException
-	{
+	public long getOffset(int id) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 		return nioFile.readLong(ITEM_SIZE * id);
 	}
@@ -167,21 +147,16 @@ public class IDFile implements Closeable {
 	/**
 	 * Discards all stored data.
 	 * 
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear()
-		throws IOException
-	{
+	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 	}
 
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync()
-		throws IOException
-	{
+	public void sync() throws IOException {
 		if (forceSync) {
 			nioFile.force(false);
 		}
@@ -193,9 +168,7 @@ public class IDFile implements Closeable {
 	 * @throws IOException
 	 */
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		nioFile.close();
 	}
 }

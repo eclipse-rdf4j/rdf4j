@@ -17,9 +17,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService}
  */
 @Deprecated
-public class SPARQLFederatedService
-		extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService
-{
+public class SPARQLFederatedService extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService {
 
 	public SPARQLFederatedService(String serviceUrl, HttpClientSessionManager client) {
 		super(serviceUrl, client);

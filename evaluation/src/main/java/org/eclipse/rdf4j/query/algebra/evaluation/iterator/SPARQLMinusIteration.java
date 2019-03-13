@@ -18,10 +18,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 
 /**
- * An Iteration that returns the results of an Iteration (the left argument) MINUS any results that are
- * compatible with results of another Iteration (the right argument) or that have no shared variables. This
- * iteration uses the formal definition of the SPARQL 1.1 MINUS operator to determine which BindingSets to
- * return.
+ * An Iteration that returns the results of an Iteration (the left argument) MINUS any results that are compatible with
+ * results of another Iteration (the right argument) or that have no shared variables. This iteration uses the formal
+ * definition of the SPARQL 1.1 MINUS operator to determine which BindingSets to return.
  * 
  * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  * @author Jeen
@@ -45,32 +44,25 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 *--------------*/
 
 	/**
-	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the
-	 * right argument. By default, duplicates are <em>not</em> filtered from the results.
+	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
+	 * argument. By default, duplicates are <em>not</em> filtered from the results.
 	 * 
-	 * @param leftArg
-	 *        An Iteration containing the main set of elements.
-	 * @param rightArg
-	 *        An Iteration containing the set of elements that should be filtered from the main set.
+	 * @param leftArg  An Iteration containing the main set of elements.
+	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
 	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg) {
 		this(leftArg, rightArg, false);
 	}
 
 	/**
-	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the
-	 * right argument.
+	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
+	 * argument.
 	 * 
-	 * @param leftArg
-	 *        An Iteration containing the main set of elements.
-	 * @param rightArg
-	 *        An Iteration containing the set of elements that should be filtered from the main set.
-	 * @param distinct
-	 *        Flag indicating whether duplicate elements should be filtered from the result.
+	 * @param leftArg  An Iteration containing the main set of elements.
+	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
+	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg,
-			boolean distinct)
-	{
+	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -86,11 +78,9 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	// implements LookAheadIteration.getNextElement()
 	@Override
-	protected boolean accept(BindingSet object)
-		throws X
-	{
+	protected boolean accept(BindingSet object) throws X {
 		if (!initialized) {
-			synchronized(this) {
+			synchronized (this) {
 				if (!initialized) {
 					// Build set of elements-to-exclude from right argument
 					excludeSet = makeSet(getRightArg());
@@ -126,32 +116,23 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		return !compatible;
 	}
 
-	protected Set<BindingSet> makeSet()
-		throws X
-	{
+	protected Set<BindingSet> makeSet() throws X {
 		return new LinkedHashSet<>();
 	}
 
-	protected Set<String> makeSet(Set<String> set)
-		throws X
-	{
+	protected Set<String> makeSet(Set<String> set) throws X {
 		return new HashSet<>(set);
 	}
 
-	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2)
-		throws X
-	{
+	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2) throws X {
 		return Iterations.addAll(rightArg, makeSet());
 	}
 
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(getRightArg());
 		}
 	}

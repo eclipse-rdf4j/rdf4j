@@ -20,7 +20,7 @@ class SingleValueToListTransformer<E> implements Function<E, List<? extends E>> 
 
 	@SuppressWarnings("unchecked")
 	static <E> Iterator<List<? extends E>> transform(Iterator<E> iter) {
-		return Iterators.transform(iter, (SingleValueToListTransformer<E>)INSTANCE);
+		return Iterators.transform(iter, (SingleValueToListTransformer<E>) INSTANCE);
 	}
 
 	@Override

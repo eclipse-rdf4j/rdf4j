@@ -144,20 +144,17 @@ public class NativeStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public void parse(Model m, Resource implNode)
-		throws SailConfigException
-	{
+	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
 
 		try {
 
-			Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null)).ifPresent(
-					lit -> setTripleIndexes(lit.getLabel()));
+			Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null))
+					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
 			Models.objectLiteral(m.filter(implNode, FORCE_SYNC, null)).ifPresent(lit -> {
 				try {
 					setForceSync(lit.booleanValue());
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
 							"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
 				}
@@ -166,8 +163,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.filter(implNode, VALUE_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setValueCacheSize(lit.intValue());
-				}
-				catch (NumberFormatException e) {
+				} catch (NumberFormatException e) {
 					throw new SailConfigException(
 							"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
 				}
@@ -176,8 +172,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.filter(implNode, VALUE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setValueIDCacheSize(lit.intValue());
-				}
-				catch (NumberFormatException e) {
+				} catch (NumberFormatException e) {
 					throw new SailConfigException(
 							"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
 				}
@@ -186,8 +181,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.filter(implNode, NAMESPACE_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setNamespaceCacheSize(lit.intValue());
-				}
-				catch (NumberFormatException e) {
+				} catch (NumberFormatException e) {
 					throw new SailConfigException(
 							"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
 				}
@@ -196,14 +190,12 @@ public class NativeStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.filter(implNode, NAMESPACE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setNamespaceIDCacheSize(lit.intValue());
-				}
-				catch (NumberFormatException e) {
-					throw new SailConfigException("Integer value required for " + NAMESPACE_ID_CACHE_SIZE
-							+ " property, found " + lit);
+				} catch (NumberFormatException e) {
+					throw new SailConfigException(
+							"Integer value required for " + NAMESPACE_ID_CACHE_SIZE + " property, found " + lit);
 				}
 			});
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

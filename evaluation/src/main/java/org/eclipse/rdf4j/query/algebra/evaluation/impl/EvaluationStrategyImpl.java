@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 public class EvaluationStrategyImpl extends StrictEvaluationStrategy {
 
 	public EvaluationStrategyImpl(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver)
-	{
+			FederatedServiceResolver serviceResolver) {
 		super(tripleSource, dataset, serviceResolver);
 	}
 }

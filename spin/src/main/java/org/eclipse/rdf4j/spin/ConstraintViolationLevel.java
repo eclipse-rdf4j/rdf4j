@@ -14,29 +14,21 @@ import org.eclipse.rdf4j.model.vocabulary.SPIN;
  * Enum of possible SPIN constraint violation levels.
  */
 public enum ConstraintViolationLevel {
-	INFO,
-	WARNING,
-	ERROR,
-	FATAL;
+	INFO, WARNING, ERROR, FATAL;
 
 	public static ConstraintViolationLevel valueOf(URI levelValue) {
 		ConstraintViolationLevel level;
 		if (levelValue == null) {
 			level = ConstraintViolationLevel.ERROR;
-		}
-		else if (SPIN.INFO_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.INFO_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.INFO;
-		}
-		else if (SPIN.WARNING_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.WARNING_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.WARNING;
-		}
-		else if (SPIN.ERROR_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.ERROR_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.ERROR;
-		}
-		else if (SPIN.FATAL_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.FATAL_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.FATAL;
-		}
-		else {
+		} else {
 			level = null;
 		}
 		return level;

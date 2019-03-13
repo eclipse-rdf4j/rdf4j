@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.base;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A Backing {@link SailSource} that does not respond to {@link #close()} {@link #prepare()} or
- * {@link #flush()}. These methods have no effect.
+ * A Backing {@link SailSource} that does not respond to {@link #close()} {@link #prepare()} or {@link #flush()}. These
+ * methods have no effect.
  * 
  * @author James Leigh
  */
@@ -23,23 +23,17 @@ public abstract class BackingSailSource implements SailSource {
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		// no-op
 	}
 
 	@Override
-	public void prepare()
-		throws SailException
-	{
+	public void prepare() throws SailException {
 		// no-op
 	}
 
 	@Override
-	public void flush()
-		throws SailException
-	{
+	public void flush() throws SailException {
 		// no-op
 	}
 

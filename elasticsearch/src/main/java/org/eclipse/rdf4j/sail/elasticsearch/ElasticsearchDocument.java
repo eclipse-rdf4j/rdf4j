@@ -49,15 +49,12 @@ public class ElasticsearchDocument implements SearchDocument {
 		this(hit, null);
 	}
 
-	public ElasticsearchDocument(SearchHit hit,
-			Function<? super String, ? extends SpatialContext> geoContextMapper)
-	{
+	public ElasticsearchDocument(SearchHit hit, Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getVersion(), hit.getSource(), geoContextMapper);
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
-			Function<? super String, ? extends SpatialContext> geoContextMapper)
-	{
+			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this(id, type, index, Versions.MATCH_ANY, new HashMap<String, Object>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
 		if (context != null) {
@@ -65,10 +62,8 @@ public class ElasticsearchDocument implements SearchDocument {
 		}
 	}
 
-	public ElasticsearchDocument(String id, String type, String index, long version,
-			Map<String, Object> fields,
-			Function<? super String, ? extends SpatialContext> geoContextMapper)
-	{
+	public ElasticsearchDocument(String id, String type, String index, long version, Map<String, Object> fields,
+			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this.id = id;
 		this.type = type;
 		this.version = version;
@@ -100,12 +95,12 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	@Override
 	public String getResource() {
-		return (String)fields.get(SearchFields.URI_FIELD_NAME);
+		return (String) fields.get(SearchFields.URI_FIELD_NAME);
 	}
 
 	@Override
 	public String getContext() {
-		return (String)fields.get(SearchFields.CONTEXT_FIELD_NAME);
+		return (String) fields.get(SearchFields.CONTEXT_FIELD_NAME);
 	}
 
 	@Override
@@ -145,16 +140,13 @@ public class ElasticsearchDocument implements SearchDocument {
 		try {
 			Shape shape = geoContextMapper.apply(name).readShapeFromWkt(text);
 			if (shape instanceof Point) {
-				Point p = (Point)shape;
-				fields.put(ElasticsearchIndex.toGeoPointFieldName(name),
-						GeoHashUtils.stringEncode(p.getX(), p.getY()));
-			}
-			else {
+				Point p = (Point) shape;
+				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), GeoHashUtils.stringEncode(p.getX(), p.getY()));
+			} else {
 				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),
 						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
 			}
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			// ignore
 		}
 	}
@@ -187,8 +179,7 @@ public class ElasticsearchDocument implements SearchDocument {
 			List<String> newList = makeModifiable(asStringList(oldValue));
 			newList.add(value);
 			newValue = newList;
-		}
-		else {
+		} else {
 			newValue = value;
 		}
 		document.put(name, newValue);
@@ -199,8 +190,7 @@ public class ElasticsearchDocument implements SearchDocument {
 		if (!(l instanceof ArrayList<?>)) {
 			modList = new ArrayList<>(l.size() + 1);
 			modList.addAll(l);
-		}
-		else {
+		} else {
 			modList = l;
 		}
 		return modList;
@@ -211,12 +201,10 @@ public class ElasticsearchDocument implements SearchDocument {
 		List<String> l;
 		if (value == null) {
 			l = null;
-		}
-		else if (value instanceof List<?>) {
-			l = (List<String>)value;
-		}
-		else {
-			l = Collections.singletonList((String)value);
+		} else if (value instanceof List<?>) {
+			l = (List<String>) value;
+		} else {
+			l = Collections.singletonList((String) value);
 		}
 		return l;
 	}

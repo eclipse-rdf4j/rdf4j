@@ -29,8 +29,8 @@ class AllocatedNodesList implements Closeable {
 	 *-----------*/
 
 	/**
-	 * Magic number "Allocated Nodes File" to detect whether the file is actually an allocated nodes file. The
-	 * first three bytes of the file should be equal to this magic number.
+	 * Magic number "Allocated Nodes File" to detect whether the file is actually an allocated nodes file. The first
+	 * three bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'a', 'n', 'f' };
 
@@ -77,9 +77,7 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Creates a new AllocatedNodelist for the specified BTree.
 	 */
-	public AllocatedNodesList(File allocNodesFile, BTree btree, boolean forceSync)
-		throws IOException
-	{
+	public AllocatedNodesList(File allocNodesFile, BTree btree, boolean forceSync) throws IOException {
 		if (allocNodesFile == null) {
 			throw new IllegalArgumentException("allocNodesFile must not be null");
 		}
@@ -104,9 +102,7 @@ class AllocatedNodesList implements Closeable {
 	}
 
 	@Override
-	public synchronized void close()
-		throws IOException
-	{
+	public synchronized void close() throws IOException {
 		close(true);
 	}
 
@@ -115,16 +111,12 @@ class AllocatedNodesList implements Closeable {
 	 * 
 	 * @return <tt>true</tt> if the file was deleted.
 	 */
-	public synchronized boolean delete()
-		throws IOException
-	{
+	public synchronized boolean delete() throws IOException {
 		close(false);
 		return nioFile.delete();
 	}
 
-	public synchronized void close(boolean syncChanges)
-		throws IOException
-	{
+	public synchronized void close(boolean syncChanges) throws IOException {
 		if (syncChanges) {
 			sync();
 		}
@@ -138,9 +130,7 @@ class AllocatedNodesList implements Closeable {
 	 * 
 	 * @throws IOException
 	 */
-	public synchronized void sync()
-		throws IOException
-	{
+	public synchronized void sync() throws IOException {
 		if (needsSync) {
 			// Trim bit set
 			BitSet bitSet = allocatedNodes;
@@ -165,9 +155,7 @@ class AllocatedNodesList implements Closeable {
 		}
 	}
 
-	private void scheduleSync()
-		throws IOException
-	{
+	private void scheduleSync() throws IOException {
 		if (needsSync == false) {
 			nioFile.truncate(0);
 			needsSync = true;
@@ -177,16 +165,12 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Clears the allocated nodes list.
 	 * 
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
-	public synchronized void clear()
-		throws IOException
-	{
+	public synchronized void clear() throws IOException {
 		if (allocatedNodes != null) {
 			allocatedNodes.clear();
-		}
-		else {
+		} else {
 			// bit set has not yet been initialized
 			allocatedNodes = new BitSet();
 		}
@@ -194,9 +178,7 @@ class AllocatedNodesList implements Closeable {
 		scheduleSync();
 	}
 
-	public synchronized int allocateNode()
-		throws IOException
-	{
+	public synchronized int allocateNode() throws IOException {
 		initAllocatedNodes();
 
 		int newNodeID = allocatedNodes.nextClearBit(1);
@@ -207,9 +189,7 @@ class AllocatedNodesList implements Closeable {
 		return newNodeID;
 	}
 
-	public synchronized void freeNode(int nodeID)
-		throws IOException
-	{
+	public synchronized void freeNode(int nodeID) throws IOException {
 		initAllocatedNodes();
 		allocatedNodes.clear(nodeID);
 		scheduleSync();
@@ -218,9 +198,7 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Returns the highest allocated node ID.
 	 */
-	public synchronized int getMaxNodeID()
-		throws IOException
-	{
+	public synchronized int getMaxNodeID() throws IOException {
 		initAllocatedNodes();
 		return Math.max(0, allocatedNodes.length() - 1);
 	}
@@ -228,57 +206,43 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Returns the number of allocated nodes.
 	 */
-	public synchronized int getNodeCount()
-		throws IOException
-	{
+	public synchronized int getNodeCount() throws IOException {
 		initAllocatedNodes();
 		return allocatedNodes.cardinality();
 	}
 
-	private void initAllocatedNodes()
-		throws IOException
-	{
+	private void initAllocatedNodes() throws IOException {
 		if (allocatedNodes == null) {
 			if (nioFile.size() > 0L) {
 				loadAllocatedNodesInfo();
-			}
-			else {
+			} else {
 				crawlAllocatedNodes();
 			}
 		}
 	}
 
-	private void loadAllocatedNodesInfo()
-		throws IOException
-	{
+	private void loadAllocatedNodesInfo() throws IOException {
 		byte[] data;
 
-		if (nioFile.size() >= HEADER_LENGTH
-				&& Arrays.equals(MAGIC_NUMBER, nioFile.readBytes(0, MAGIC_NUMBER.length)))
-		{
+		if (nioFile.size() >= HEADER_LENGTH && Arrays.equals(MAGIC_NUMBER, nioFile.readBytes(0, MAGIC_NUMBER.length))) {
 			byte version = nioFile.readByte(MAGIC_NUMBER.length);
 			if (version > FILE_FORMAT_VERSION) {
 				throw new IOException("Unable to read allocated nodes file; it uses a newer file format");
-			}
-			else if (version != FILE_FORMAT_VERSION) {
-				throw new IOException(
-						"Unable to read allocated nodes file; invalid file format version: " + version);
+			} else if (version != FILE_FORMAT_VERSION) {
+				throw new IOException("Unable to read allocated nodes file; invalid file format version: " + version);
 			}
 
-			data = nioFile.readBytes(HEADER_LENGTH, (int)(nioFile.size() - HEADER_LENGTH));
-		}
-		else {
+			data = nioFile.readBytes(HEADER_LENGTH, (int) (nioFile.size() - HEADER_LENGTH));
+		} else {
 			// assume header is missing (old file format)
-			data = nioFile.readBytes(0, (int)nioFile.size());
+			data = nioFile.readBytes(0, (int) nioFile.size());
 			scheduleSync();
 		}
 
 		allocatedNodes = ByteArrayUtil.toBitSet(data);
 	}
 
-	private void crawlAllocatedNodes()
-		throws IOException
-	{
+	private void crawlAllocatedNodes() throws IOException {
 		allocatedNodes = new BitSet();
 
 		Node rootNode = btree.readRootNode();
@@ -289,9 +253,7 @@ class AllocatedNodesList implements Closeable {
 		scheduleSync();
 	}
 
-	private void crawlAllocatedNodes(Node node)
-		throws IOException
-	{
+	private void crawlAllocatedNodes(Node node) throws IOException {
 		try {
 			allocatedNodes.set(node.getID());
 
@@ -301,8 +263,7 @@ class AllocatedNodesList implements Closeable {
 				}
 			}
 
-		}
-		finally {
+		} finally {
 			node.release();
 		}
 	}

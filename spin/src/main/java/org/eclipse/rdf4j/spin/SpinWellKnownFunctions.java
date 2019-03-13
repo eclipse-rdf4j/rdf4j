@@ -49,14 +49,10 @@ final class SpinWellKnownFunctions {
 		stringToUri.put(FN.MONTH_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "month"));
 		stringToUri.put(FN.DAY_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "day"));
 		stringToUri.put(FN.HOURS_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "hours"));
-		stringToUri.put(FN.MINUTES_FROM_DATETIME.stringValue(),
-				valueFactory.createIRI(SP.NAMESPACE, "minutes"));
-		stringToUri.put(FN.SECONDS_FROM_DATETIME.stringValue(),
-				valueFactory.createIRI(SP.NAMESPACE, "seconds"));
-		stringToUri.put(FN.TIMEZONE_FROM_DATETIME.stringValue(),
-				valueFactory.createIRI(SP.NAMESPACE, "timezone"));
-		stringToUri.put(FN.ENCODE_FOR_URI.stringValue(),
-				valueFactory.createIRI(SP.NAMESPACE, "encode_for_uri"));
+		stringToUri.put(FN.MINUTES_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "minutes"));
+		stringToUri.put(FN.SECONDS_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "seconds"));
+		stringToUri.put(FN.TIMEZONE_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "timezone"));
+		stringToUri.put(FN.ENCODE_FOR_URI.stringValue(), valueFactory.createIRI(SP.NAMESPACE, "encode_for_uri"));
 		stringToUri.put("NOW", valueFactory.createIRI(SP.NAMESPACE, "now"));
 		stringToUri.put("RAND", valueFactory.createIRI(SP.NAMESPACE, "rand"));
 		stringToUri.put("STRDT", valueFactory.createIRI(SP.NAMESPACE, "strdt"));

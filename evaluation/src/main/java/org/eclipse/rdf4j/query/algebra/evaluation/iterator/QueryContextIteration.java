@@ -25,73 +25,59 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	private final QueryContext queryContext;
 
 	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
-			QueryContext queryContext)
-	{
+			QueryContext queryContext) {
 		this.iter = iter;
 		this.queryContext = queryContext;
 	}
 
 	@Override
-	public boolean hasNext()
-		throws QueryEvaluationException
-	{
+	public boolean hasNext() throws QueryEvaluationException {
 		if (isClosed()) {
 			return false;
 		}
 		queryContext.begin();
 		try {
 			return iter.hasNext();
-		}
-		finally {
+		} finally {
 			queryContext.end();
 		}
 	}
 
 	@Override
-	public BindingSet next()
-		throws QueryEvaluationException
-	{
+	public BindingSet next() throws QueryEvaluationException {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
 		queryContext.begin();
 		try {
 			return iter.next();
-		}
-		finally {
+		} finally {
 			queryContext.end();
 		}
 	}
 
 	@Override
-	public void remove()
-		throws QueryEvaluationException
-	{
+	public void remove() throws QueryEvaluationException {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
 		queryContext.begin();
 		try {
 			iter.remove();
-		}
-		finally {
+		} finally {
 			queryContext.end();
 		}
 	}
 
 	@Override
-	public void handleClose()
-		throws QueryEvaluationException
-	{
+	public void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			queryContext.begin();
 			try {
 				iter.close();
-			}
-			finally {
+			} finally {
 				queryContext.end();
 			}
 		}

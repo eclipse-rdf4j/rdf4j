@@ -111,9 +111,7 @@ import com.google.common.base.Function;
 public class SpinRenderer {
 
 	public enum Output {
-		TEXT_AND_RDF(true, true),
-		TEXT_ONLY(true, false),
-		RDF_ONLY(false, true);
+		TEXT_AND_RDF(true, true), TEXT_ONLY(true, false), RDF_ONLY(false, true);
 
 		final boolean text, rdf;
 
@@ -152,52 +150,40 @@ public class SpinRenderer {
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,
-			Function<String, IRI> wellKnownFuncMapper, ValueFactory vf)
-	{
+			Function<String, IRI> wellKnownFuncMapper, ValueFactory vf) {
 		this.output = output;
 		this.wellKnownVars = wellKnownVarMapper;
 		this.wellKnownFunctions = wellKnownFuncMapper;
 		this.valueFactory = vf;
 	}
 
-	public void render(ParsedOperation operation, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedOperation operation, RDFHandler handler) throws RDFHandlerException {
 		if (operation instanceof ParsedQuery) {
-			render((ParsedQuery)operation, handler);
-		}
-		else if (operation instanceof ParsedUpdate) {
-			render((ParsedUpdate)operation, handler);
-		}
-		else {
+			render((ParsedQuery) operation, handler);
+		} else if (operation instanceof ParsedUpdate) {
+			render((ParsedUpdate) operation, handler);
+		} else {
 			throw new AssertionError("Unrecognised ParsedOperation: " + operation.getClass());
 		}
 	}
 
-	public void render(ParsedQuery query, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedQuery query, RDFHandler handler) throws RDFHandlerException {
 		if (query instanceof ParsedBooleanQuery) {
-			render((ParsedBooleanQuery)query, handler);
-		}
-		else if (query instanceof ParsedTupleQuery) {
-			render((ParsedTupleQuery)query, handler);
+			render((ParsedBooleanQuery) query, handler);
+		} else if (query instanceof ParsedTupleQuery) {
+			render((ParsedTupleQuery) query, handler);
 		}
 		// order matters as subclass of ParsedGraphQuery
 		else if (query instanceof ParsedDescribeQuery) {
-			render((ParsedDescribeQuery)query, handler);
-		}
-		else if (query instanceof ParsedGraphQuery) {
-			render((ParsedGraphQuery)query, handler);
-		}
-		else {
+			render((ParsedDescribeQuery) query, handler);
+		} else if (query instanceof ParsedGraphQuery) {
+			render((ParsedGraphQuery) query, handler);
+		} else {
 			throw new AssertionError("Unrecognised ParsedQuery: " + query.getClass());
 		}
 	}
 
-	public void render(ParsedBooleanQuery query, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedBooleanQuery query, RDFHandler handler) throws RDFHandlerException {
 		handler.startRDF();
 		Resource querySubj = valueFactory.createBNode();
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.ASK_CLASS));
@@ -216,9 +202,7 @@ public class SpinRenderer {
 		handler.endRDF();
 	}
 
-	public void render(ParsedTupleQuery query, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedTupleQuery query, RDFHandler handler) throws RDFHandlerException {
 		handler.startRDF();
 		Resource querySubj = valueFactory.createBNode();
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.SELECT_CLASS));
@@ -235,9 +219,7 @@ public class SpinRenderer {
 		handler.endRDF();
 	}
 
-	public void render(ParsedDescribeQuery query, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedDescribeQuery query, RDFHandler handler) throws RDFHandlerException {
 		handler.startRDF();
 		Resource querySubj = valueFactory.createBNode();
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.DESCRIBE_CLASS));
@@ -254,9 +236,7 @@ public class SpinRenderer {
 		handler.endRDF();
 	}
 
-	public void render(ParsedGraphQuery query, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedGraphQuery query, RDFHandler handler) throws RDFHandlerException {
 		handler.startRDF();
 		Resource querySubj = valueFactory.createBNode();
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.CONSTRUCT_CLASS));
@@ -273,9 +253,7 @@ public class SpinRenderer {
 		handler.endRDF();
 	}
 
-	public void render(ParsedUpdate update, RDFHandler handler)
-		throws RDFHandlerException
-	{
+	public void render(ParsedUpdate update, RDFHandler handler) throws RDFHandlerException {
 		handler.startRDF();
 
 		for (Map.Entry<String, String> entry : update.getNamespaces().entrySet()) {
@@ -291,30 +269,23 @@ public class SpinRenderer {
 			Dataset dataset = datasets.get(updateExpr);
 			IRI updateClass;
 			if (updateExpr instanceof Modify) {
-				Modify modify = (Modify)updateExpr;
+				Modify modify = (Modify) updateExpr;
 				if (modify.getInsertExpr() == null && modify.getWhereExpr().equals(modify.getDeleteExpr())) {
 					updateClass = SP.DELETE_WHERE_CLASS;
-				}
-				else {
+				} else {
 					updateClass = SP.MODIFY_CLASS;
 				}
-			}
-			else if (updateExpr instanceof InsertData) {
+			} else if (updateExpr instanceof InsertData) {
 				updateClass = SP.INSERT_DATA_CLASS;
-			}
-			else if (updateExpr instanceof DeleteData) {
+			} else if (updateExpr instanceof DeleteData) {
 				updateClass = SP.DELETE_DATA_CLASS;
-			}
-			else if (updateExpr instanceof Load) {
+			} else if (updateExpr instanceof Load) {
 				updateClass = SP.LOAD_CLASS;
-			}
-			else if (updateExpr instanceof Clear) {
+			} else if (updateExpr instanceof Clear) {
 				updateClass = SP.CLEAR_CLASS;
-			}
-			else if (updateExpr instanceof Create) {
+			} else if (updateExpr instanceof Create) {
 				updateClass = SP.CREATE_CLASS;
-			}
-			else {
+			} else {
 				throw new RDFHandlerException("Unrecognised UpdateExpr: " + updateExpr.getClass());
 			}
 			handler.handleStatement(valueFactory.createStatement(updateSubj, RDF.TYPE, updateClass));
@@ -338,13 +309,10 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Slice node)
-			throws RDFHandlerException
-		{
+		public void meet(Slice node) throws RDFHandlerException {
 			if (!isSubQuery) { // ignore root slice
 				node.getArg().visit(this);
-			}
-			else {
+			} else {
 				super.meet(node);
 			}
 		}
@@ -357,16 +325,12 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(ProjectionElemList node)
-			throws RDFHandlerException
-		{
+		public void meet(ProjectionElemList node) throws RDFHandlerException {
 			if (isSubQuery) {
 				super.meet(node);
-			}
-			else {
+			} else {
 				Resource elemListBNode = valueFactory.createBNode();
-				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.RESULT_NODES_PROPERTY, elemListBNode));
+				handler.handleStatement(valueFactory.createStatement(subject, SP.RESULT_NODES_PROPERTY, elemListBNode));
 				ListContext ctx = newList(elemListBNode);
 				meetNode(node);
 				endList(ctx);
@@ -381,29 +345,22 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Reduced node)
-			throws RDFHandlerException
-		{
+		public void meet(Reduced node) throws RDFHandlerException {
 			if (!isSubQuery) { // ignore root reduced
 				node.getArg().visit(this);
-			}
-			else {
+			} else {
 				super.meet(node);
 			}
 		}
 
 		@Override
-		public void meet(ProjectionElemList node)
-			throws RDFHandlerException
-		{
+		public void meet(ProjectionElemList node) throws RDFHandlerException {
 			if (isSubQuery) {
 				super.meet(node);
-			}
-			else if (isMultiProjection) {
+			} else if (isMultiProjection) {
 				listEntry();
 				meetNode(node);
-			}
-			else {
+			} else {
 				ListContext ctx = startTemplateList();
 				listEntry();
 				meetNode(node);
@@ -412,29 +369,23 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(ProjectionElem node)
-			throws RDFHandlerException
-		{
+		public void meet(ProjectionElem node) throws RDFHandlerException {
 			if (isSubQuery) {
 				super.meet(node);
-			}
-			else {
+			} else {
 				String varName = node.getSourceName();
 				ValueExpr valueExpr = inlineBindings.getValueExpr(varName);
-				Value value = (valueExpr instanceof ValueConstant) ? ((ValueConstant)valueExpr).getValue()
+				Value value = (valueExpr instanceof ValueConstant) ? ((ValueConstant) valueExpr).getValue()
 						: getVar(varName);
 				String targetName = node.getTargetName();
 				IRI pred;
 				if ("subject".equals(targetName)) {
 					pred = SP.SUBJECT_PROPERTY;
-				}
-				else if ("predicate".equals(targetName)) {
+				} else if ("predicate".equals(targetName)) {
 					pred = SP.PREDICATE_PROPERTY;
-				}
-				else if ("object".equals(targetName)) {
+				} else if ("object".equals(targetName)) {
 					pred = SP.OBJECT_PROPERTY;
-				}
-				else {
+				} else {
 					throw new AssertionError("Unexpected ProjectionElem: " + node);
 				}
 				handler.handleStatement(valueFactory.createStatement(subject, pred, value));
@@ -504,15 +455,11 @@ public class SpinRenderer {
 			return ctx;
 		}
 
-		void listEntry()
-			throws RDFHandlerException
-		{
+		void listEntry() throws RDFHandlerException {
 			listEntry(null);
 		}
 
-		void listEntry(Value entry)
-			throws RDFHandlerException
-		{
+		void listEntry(Value entry) throws RDFHandlerException {
 			if (list == null) {
 				list = valueFactory.createBNode();
 			}
@@ -524,35 +471,28 @@ public class SpinRenderer {
 			}
 			handler.handleStatement(valueFactory.createStatement(list, RDF.FIRST, entry));
 			if (entry instanceof Resource) {
-				subject = (Resource)entry;
-			}
-			else {
+				subject = (Resource) entry;
+			} else {
 				// in this case, actual value doesn't matter, only that it is
 				// not null
 				subject = RDF.NIL;
 			}
 		}
 
-		void endList(ListContext ctx)
-			throws RDFHandlerException
-		{
+		void endList(ListContext ctx) throws RDFHandlerException {
 			nextListEntry(RDF.NIL);
 			if (ctx != null) {
 				restore(ctx);
 			}
 		}
 
-		private void nextListEntry(Resource nextEntry)
-			throws RDFHandlerException
-		{
+		private void nextListEntry(Resource nextEntry) throws RDFHandlerException {
 			handler.handleStatement(valueFactory.createStatement(list, RDF.REST, nextEntry));
 			list = nextEntry;
 			subject = null;
 		}
 
-		Resource getVar(String name)
-			throws RDFHandlerException
-		{
+		Resource getVar(String name) throws RDFHandlerException {
 			Resource res = (wellKnownVars != null) ? wellKnownVars.apply(name) : null;
 			if (res == null) {
 				res = varBNodes.get(name);
@@ -565,25 +505,20 @@ public class SpinRenderer {
 			return res;
 		}
 
-		ListContext getNamedGraph(Var context)
-			throws RDFHandlerException
-		{
+		ListContext getNamedGraph(Var context) throws RDFHandlerException {
 			ListContext currentCtx;
 			namedGraphContext = namedGraphLists.get(context.getName());
 			if (namedGraphContext == null) {
 				listEntry();
-				handler.handleStatement(
-						valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
+				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
 				predicate = SP.GRAPH_NAME_NODE_PROPERTY;
 				context.visit(this);
 				Resource elementsList = valueFactory.createBNode();
-				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+				handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 				currentCtx = newList(elementsList);
 				namedGraphContext = save();
 				namedGraphLists.put(context.getName(), namedGraphContext);
-			}
-			else {
+			} else {
 				currentCtx = save();
 				restore(namedGraphContext);
 			}
@@ -595,9 +530,7 @@ public class SpinRenderer {
 			restore(ctx);
 		}
 
-		public void end()
-			throws RDFHandlerException
-		{
+		public void end() throws RDFHandlerException {
 			if (list != null) {
 				endList(null);
 			}
@@ -617,9 +550,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(MultiProjection node)
-			throws RDFHandlerException
-		{
+		public void meet(MultiProjection node) throws RDFHandlerException {
 			ExtensionContext oldInlineBindings = meetExtension(node.getArg());
 			ListContext ctx = startTemplateList();
 			isMultiProjection = true;
@@ -632,25 +563,18 @@ public class SpinRenderer {
 			inlineBindings = oldInlineBindings;
 		}
 
-		ListContext startTemplateList()
-			throws RDFHandlerException
-		{
+		ListContext startTemplateList() throws RDFHandlerException {
 			Resource elemListBNode = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.TEMPLATES_PROPERTY, elemListBNode));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.TEMPLATES_PROPERTY, elemListBNode));
 			return newList(elemListBNode);
 		}
 
-		void endTemplateList(ListContext ctx)
-			throws RDFHandlerException
-		{
+		void endTemplateList(ListContext ctx) throws RDFHandlerException {
 			endList(ctx);
 		}
 
 		@Override
-		public void meet(Projection node)
-			throws RDFHandlerException
-		{
+		public void meet(Projection node) throws RDFHandlerException {
 			ExtensionContext oldInlineBindings = meetExtension(node.getArg());
 			if (isSubQuery) {
 				listEntry();
@@ -668,9 +592,7 @@ public class SpinRenderer {
 			hasGroup = false;
 		}
 
-		private void visitWhere(TupleExpr where)
-			throws RDFHandlerException
-		{
+		private void visitWhere(TupleExpr where) throws RDFHandlerException {
 			Resource whereBNode = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereBNode));
 
@@ -683,21 +605,16 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(ProjectionElemList node)
-			throws RDFHandlerException
-		{
+		public void meet(ProjectionElemList node) throws RDFHandlerException {
 			Resource elemListBNode = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.RESULT_VARIABLES_PROPERTY, elemListBNode));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.RESULT_VARIABLES_PROPERTY, elemListBNode));
 			ListContext ctx = newList(elemListBNode);
 			super.meet(node);
 			endList(ctx);
 		}
 
 		@Override
-		public void meet(ProjectionElem node)
-			throws RDFHandlerException
-		{
+		public void meet(ProjectionElem node) throws RDFHandlerException {
 			ValueExpr valueExpr = null;
 			if (inlineBindings != null) {
 				String varName = node.getSourceName();
@@ -708,24 +625,20 @@ public class SpinRenderer {
 			if (valueExpr != null && !(valueExpr instanceof Var)) {
 				Resource currentSubj = subject;
 				subject = valueFactory.createBNode();
-				handler.handleStatement(
-						valueFactory.createStatement(targetVar, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(targetVar, SP.EXPRESSION_PROPERTY, subject));
 				valueExpr.visit(new ExtensionVisitor());
 				subject = currentSubj;
 			}
 		}
 
 		@Override
-		public void meet(Extension node)
-			throws RDFHandlerException
-		{
+		public void meet(Extension node) throws RDFHandlerException {
 			if (inlineBindings != null && inlineBindings.extension == node) {
 				// this is the first Extension node and has already been handled
 				// by meetExtension()
 				// to produce inline bindings in SELECT so we can skip it here
 				node.getArg().visit(this);
-			}
-			else {
+			} else {
 				// any further Extension nodes produce BIND() clauses
 				node.getArg().visit(this);
 				for (ExtensionElem elem : node.getElements()) {
@@ -735,9 +648,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(ExtensionElem node)
-			throws RDFHandlerException
-		{
+		public void meet(ExtensionElem node) throws RDFHandlerException {
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.BIND_CLASS));
 			Resource var = getVar(node.getName());
@@ -745,9 +656,7 @@ public class SpinRenderer {
 			meet(node.getExpr());
 		}
 
-		private void meet(ValueExpr node)
-			throws RDFHandlerException
-		{
+		private void meet(ValueExpr node) throws RDFHandlerException {
 			predicate = SP.EXPRESSION_PROPERTY;
 			ListContext ctx = save();
 			list = null;
@@ -755,9 +664,7 @@ public class SpinRenderer {
 			restore(ctx);
 		}
 
-		private void flushPendingStatement()
-			throws RDFHandlerException
-		{
+		private void flushPendingStatement() throws RDFHandlerException {
 			if (predicate != null) {
 				Resource res = valueFactory.createBNode();
 				handler.handleStatement(valueFactory.createStatement(subject, predicate, res));
@@ -766,9 +673,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-			throws RDFHandlerException
-		{
+		public void meet(StatementPattern node) throws RDFHandlerException {
 			ListContext ctxList = null;
 			if (StatementPattern.Scope.NAMED_CONTEXTS == node.getScope()) {
 				ctxList = getNamedGraph(node.getContextVar());
@@ -787,30 +692,23 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Var node)
-			throws RDFHandlerException
-		{
+		public void meet(Var node) throws RDFHandlerException {
 			Value value;
 			if (node.isConstant()) {
 				value = node.getValue();
-			}
-			else {
+			} else {
 				value = getVar(node.getName());
 			}
 			handler.handleStatement(valueFactory.createStatement(subject, predicate, value));
 		}
 
 		@Override
-		public void meet(ValueConstant node)
-			throws RDFHandlerException
-		{
+		public void meet(ValueConstant node) throws RDFHandlerException {
 			handler.handleStatement(valueFactory.createStatement(subject, predicate, node.getValue()));
 		}
 
 		@Override
-		public void meet(Filter node)
-			throws RDFHandlerException
-		{
+		public void meet(Filter node) throws RDFHandlerException {
 			hasGroup = false;
 			node.getArg().visit(this);
 			if (!hasGroup) {
@@ -821,13 +719,10 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Compare node)
-			throws RDFHandlerException
-		{
+		public void meet(Compare node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, RDF.TYPE, toValue(node.getOperator())));
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, toValue(node.getOperator())));
 			predicate = SP.ARG1_PROPERTY;
 			node.getLeftArg().visit(this);
 			predicate = SP.ARG2_PROPERTY;
@@ -838,30 +733,27 @@ public class SpinRenderer {
 
 		private Value toValue(CompareOp op) {
 			switch (op) {
-				case EQ:
-					return SP.EQ;
-				case NE:
-					return SP.NE;
-				case LT:
-					return SP.LT;
-				case LE:
-					return SP.LE;
-				case GE:
-					return SP.GE;
-				case GT:
-					return SP.GT;
+			case EQ:
+				return SP.EQ;
+			case NE:
+				return SP.NE;
+			case LT:
+				return SP.LT;
+			case LE:
+				return SP.LE;
+			case GE:
+				return SP.GE;
+			case GT:
+				return SP.GT;
 			}
 			throw new AssertionError("Unrecognised CompareOp: " + op);
 		}
 
 		@Override
-		public void meet(MathExpr node)
-			throws RDFHandlerException
-		{
+		public void meet(MathExpr node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, RDF.TYPE, toValue(node.getOperator())));
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, toValue(node.getOperator())));
 			predicate = SP.ARG1_PROPERTY;
 			node.getLeftArg().visit(this);
 			predicate = SP.ARG2_PROPERTY;
@@ -871,9 +763,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(And node)
-			throws RDFHandlerException
-		{
+		public void meet(And node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.AND));
@@ -886,9 +776,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Or node)
-			throws RDFHandlerException
-		{
+		public void meet(Or node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.OR));
@@ -901,9 +789,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Bound node)
-			throws RDFHandlerException
-		{
+		public void meet(Bound node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.BOUND));
@@ -914,9 +800,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(If node)
-			throws RDFHandlerException
-		{
+		public void meet(If node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IF));
@@ -931,9 +815,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Coalesce node)
-			throws RDFHandlerException
-		{
+		public void meet(Coalesce node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.COALESCE));
@@ -947,9 +829,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(IsURI node)
-			throws RDFHandlerException
-		{
+		public void meet(IsURI node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IS_IRI));
@@ -960,9 +840,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(IsBNode node)
-			throws RDFHandlerException
-		{
+		public void meet(IsBNode node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IS_BLANK));
@@ -973,9 +851,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(IsLiteral node)
-			throws RDFHandlerException
-		{
+		public void meet(IsLiteral node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IS_LITERAL));
@@ -986,9 +862,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(IsNumeric node)
-			throws RDFHandlerException
-		{
+		public void meet(IsNumeric node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IS_NUMERIC));
@@ -999,9 +873,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Str node)
-			throws RDFHandlerException
-		{
+		public void meet(Str node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.STR));
@@ -1012,9 +884,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Lang node)
-			throws RDFHandlerException
-		{
+		public void meet(Lang node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.LANG));
@@ -1025,9 +895,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Datatype node)
-			throws RDFHandlerException
-		{
+		public void meet(Datatype node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.DATATYPE));
@@ -1038,9 +906,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(IRIFunction node)
-			throws RDFHandlerException
-		{
+		public void meet(IRIFunction node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.IRI));
@@ -1051,9 +917,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(BNodeGenerator node)
-			throws RDFHandlerException
-		{
+		public void meet(BNodeGenerator node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.BNODE));
@@ -1066,9 +930,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Regex node)
-			throws RDFHandlerException
-		{
+		public void meet(Regex node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.REGEX));
@@ -1081,9 +943,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(LocalName node)
-			throws RDFHandlerException
-		{
+		public void meet(LocalName node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, AFN.LOCALNAME));
@@ -1095,22 +955,20 @@ public class SpinRenderer {
 
 		private Value toValue(MathOp op) {
 			switch (op) {
-				case PLUS:
-					return SP.ADD;
-				case MINUS:
-					return SP.SUB;
-				case MULTIPLY:
-					return SP.MUL;
-				case DIVIDE:
-					return SP.DIVIDE;
+			case PLUS:
+				return SP.ADD;
+			case MINUS:
+				return SP.SUB;
+			case MULTIPLY:
+				return SP.MUL;
+			case DIVIDE:
+				return SP.DIVIDE;
 			}
 			throw new AssertionError("Unrecognised MathOp: " + op);
 		}
 
 		@Override
-		public void meet(FunctionCall node)
-			throws RDFHandlerException
-		{
+		public void meet(FunctionCall node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, toValue(node)));
@@ -1134,29 +992,26 @@ public class SpinRenderer {
 
 		private IRI toArgProperty(int i) {
 			switch (i) {
-				case 1:
-					return SP.ARG1_PROPERTY;
-				case 2:
-					return SP.ARG2_PROPERTY;
-				case 3:
-					return SP.ARG3_PROPERTY;
-				case 4:
-					return SP.ARG4_PROPERTY;
-				case 5:
-					return SP.ARG5_PROPERTY;
-				default:
-					return valueFactory.createIRI(SP.NAMESPACE, "arg" + i);
+			case 1:
+				return SP.ARG1_PROPERTY;
+			case 2:
+				return SP.ARG2_PROPERTY;
+			case 3:
+				return SP.ARG3_PROPERTY;
+			case 4:
+				return SP.ARG4_PROPERTY;
+			case 5:
+				return SP.ARG5_PROPERTY;
+			default:
+				return valueFactory.createIRI(SP.NAMESPACE, "arg" + i);
 			}
 		}
 
 		@Override
-		public void meet(Not node)
-			throws RDFHandlerException
-		{
+		public void meet(Not node) throws RDFHandlerException {
 			if (node.getArg() instanceof Exists) {
 				super.meet(node);
-			}
-			else {
+			} else {
 				Resource currentSubj = subject;
 				flushPendingStatement();
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.NOT));
@@ -1168,16 +1023,13 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Exists node)
-			throws RDFHandlerException
-		{
+		public void meet(Exists node) throws RDFHandlerException {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			Resource op = (node.getParentNode() instanceof Not) ? SP.NOT_EXISTS : SP.EXISTS;
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, op));
 			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
 			node.getSubQuery().visit(this);
 			endList(elementsCtx);
@@ -1186,26 +1038,20 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Group node)
-			throws RDFHandlerException
-		{
+		public void meet(Group node) throws RDFHandlerException {
 			// skip over GroupElem - leave this to the GroupVisitor later
 			node.getArg().visit(this);
 			hasGroup = true;
 		}
 
 		@Override
-		public void meet(Order node)
-			throws RDFHandlerException
-		{
+		public void meet(Order node) throws RDFHandlerException {
 			// skip over OrderElem - leave this to the OrderVisitor later
 			node.getArg().visit(this);
 		}
 
 		@Override
-		public void meet(Slice node)
-			throws RDFHandlerException
-		{
+		public void meet(Slice node) throws RDFHandlerException {
 			node.getArg().visit(this);
 			if (node.hasLimit()) {
 				handler.handleStatement(valueFactory.createStatement(subject, SP.LIMIT_PROPERTY,
@@ -1218,32 +1064,23 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Distinct node)
-			throws RDFHandlerException
-		{
+		public void meet(Distinct node) throws RDFHandlerException {
 			node.getArg().visit(this);
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 		}
 
 		@Override
-		public void meet(Reduced node)
-			throws RDFHandlerException
-		{
+		public void meet(Reduced node) throws RDFHandlerException {
 			node.getArg().visit(this);
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.REDUCED_PROPERTY, BooleanLiteral.TRUE));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.REDUCED_PROPERTY, BooleanLiteral.TRUE));
 		}
 
 		@Override
-		public void meet(Join node)
-			throws RDFHandlerException
-		{
+		public void meet(Join node) throws RDFHandlerException {
 			boolean isGroupGraphPattern = (node.getRightArg() instanceof Join);
 			if (!isGroupGraphPattern) {
 				super.meet(node);
-			}
-			else {
+			} else {
 				listEntry();
 				ListContext leftGroupCtx = newList(subject);
 				node.getLeftArg().visit(this);
@@ -1256,29 +1093,23 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(LeftJoin node)
-			throws RDFHandlerException
-		{
+		public void meet(LeftJoin node) throws RDFHandlerException {
 			node.getLeftArg().visit(this);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.OPTIONAL_CLASS));
 			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
 			node.getRightArg().visit(this);
 			endList(elementsCtx);
 		}
 
 		@Override
-		public void meet(Union node)
-			throws RDFHandlerException
-		{
+		public void meet(Union node) throws RDFHandlerException {
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.UNION_CLASS));
 			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
 			listEntry();
 			ListContext leftCtx = newList(subject);
@@ -1293,41 +1124,33 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Difference node)
-			throws RDFHandlerException
-		{
+		public void meet(Difference node) throws RDFHandlerException {
 			node.getLeftArg().visit(this);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MINUS_CLASS));
 			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
 			node.getRightArg().visit(this);
 			endList(elementsCtx);
 		}
 
 		@Override
-		public void meet(Service node)
-			throws RDFHandlerException
-		{
+		public void meet(Service node) throws RDFHandlerException {
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SERVICE_CLASS));
 			predicate = SP.SERVICE_URI_PROPERTY;
 			node.getServiceRef().visit(this);
 			predicate = null;
 			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
 			node.getArg().visit(this);
 			endList(elementsCtx);
 		}
 
 		@Override
-		public void meet(BindingSetAssignment node)
-			throws RDFHandlerException
-		{
+		public void meet(BindingSetAssignment node) throws RDFHandlerException {
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.VALUES_CLASS));
 			Resource bindingList = valueFactory.createBNode();
@@ -1349,8 +1172,7 @@ public class SpinRenderer {
 			endList(bindingCtx);
 
 			Resource varNameList = valueFactory.createBNode();
-			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.VAR_NAMES_PROPERTY, varNameList));
+			handler.handleStatement(valueFactory.createStatement(subject, SP.VAR_NAMES_PROPERTY, varNameList));
 			ListContext varnameCtx = newList(varNameList);
 			for (String varName : bindingVars) {
 				listEntry(valueFactory.createLiteral(varName));
@@ -1359,17 +1181,14 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Modify node)
-			throws RDFHandlerException
-		{
+		public void meet(Modify node) throws RDFHandlerException {
 			TupleExpr insertExpr = node.getInsertExpr();
 			TupleExpr deleteExpr = node.getDeleteExpr();
 			TupleExpr whereExpr = node.getWhereExpr();
 			if (insertExpr == null && whereExpr.equals(deleteExpr)) {
 				// DELETE WHERE
 				visitWhere(whereExpr);
-			}
-			else {
+			} else {
 				if (insertExpr != null) {
 					Resource insertList = valueFactory.createBNode();
 					handler.handleStatement(
@@ -1388,8 +1207,7 @@ public class SpinRenderer {
 				}
 				if (whereExpr != null) {
 					Resource whereList = valueFactory.createBNode();
-					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereList));
+					handler.handleStatement(valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereList));
 					ListContext whereCtx = newList(whereList);
 					whereExpr.visit(this);
 					endList(whereCtx);
@@ -1398,9 +1216,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(InsertData node)
-			throws RDFHandlerException
-		{
+		public void meet(InsertData node) throws RDFHandlerException {
 			Resource dataList = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.DATA_PROPERTY, dataList));
 			ListContext dataCtx = newList(dataList);
@@ -1409,9 +1225,7 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(DeleteData node)
-			throws RDFHandlerException
-		{
+		public void meet(DeleteData node) throws RDFHandlerException {
 			Resource dataList = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.DATA_PROPERTY, dataList));
 			ListContext dataCtx = newList(dataList);
@@ -1419,9 +1233,7 @@ public class SpinRenderer {
 			endList(dataCtx);
 		}
 
-		private void renderDataBlock(String data)
-			throws RDFHandlerException
-		{
+		private void renderDataBlock(String data) throws RDFHandlerException {
 			SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(valueFactory);
 			parser.setAllowBlankNodes(false); // no blank nodes allowed
 			parser.setRDFHandler(new RDFHandlerBase() {
@@ -1431,9 +1243,7 @@ public class SpinRenderer {
 				ListContext namedGraphContext;
 
 				@Override
-				public void handleStatement(Statement st)
-					throws RDFHandlerException
-				{
+				public void handleStatement(Statement st) throws RDFHandlerException {
 					ListContext ctxList = null;
 					if (st.getContext() != null) {
 						ctxList = getNamedGraph(st.getContext());
@@ -1443,31 +1253,25 @@ public class SpinRenderer {
 							valueFactory.createStatement(subject, SP.SUBJECT_PROPERTY, st.getSubject()));
 					handler.handleStatement(
 							valueFactory.createStatement(subject, SP.PREDICATE_PROPERTY, st.getPredicate()));
-					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.OBJECT_PROPERTY, st.getObject()));
+					handler.handleStatement(valueFactory.createStatement(subject, SP.OBJECT_PROPERTY, st.getObject()));
 					if (ctxList != null) {
 						restoreNamedGraph(ctxList);
 					}
 				}
 
 				@Override
-				public void endRDF()
-					throws RDFHandlerException
-				{
+				public void endRDF() throws RDFHandlerException {
 					for (ListContext ctxList : namedGraphLists.values()) {
 						endList(ctxList);
 					}
 				}
 
-				private ListContext getNamedGraph(Resource context)
-					throws RDFHandlerException
-				{
+				private ListContext getNamedGraph(Resource context) throws RDFHandlerException {
 					ListContext currentCtx;
 					namedGraphContext = namedGraphLists.get(context);
 					if (namedGraphContext == null) {
 						listEntry();
-						handler.handleStatement(
-								valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
+						handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
 						handler.handleStatement(
 								valueFactory.createStatement(subject, SP.GRAPH_NAME_NODE_PROPERTY, context));
 						Resource elementsList = valueFactory.createBNode();
@@ -1476,8 +1280,7 @@ public class SpinRenderer {
 						currentCtx = newList(elementsList);
 						namedGraphContext = save();
 						namedGraphLists.put(context, namedGraphContext);
-					}
-					else {
+					} else {
 						currentCtx = save();
 						restore(namedGraphContext);
 					}
@@ -1491,19 +1294,15 @@ public class SpinRenderer {
 			});
 			try {
 				parser.parse(new StringReader(data), "");
-			}
-			catch (RDFParseException e) {
+			} catch (RDFParseException e) {
 				throw new RDFHandlerException(e);
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new RDFHandlerException(e);
 			}
 		}
 
 		@Override
-		public void meet(Load node)
-			throws RDFHandlerException
-		{
+		public void meet(Load node) throws RDFHandlerException {
 			handler.handleStatement(
 					valueFactory.createStatement(subject, SP.DOCUMENT_PROPERTY, node.getSource().getValue()));
 			handler.handleStatement(
@@ -1511,57 +1310,46 @@ public class SpinRenderer {
 		}
 
 		@Override
-		public void meet(Clear node)
-			throws RDFHandlerException
-		{
+		public void meet(Clear node) throws RDFHandlerException {
 			if (node.isSilent()) {
-				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.SILENT_PROPERTY, BooleanLiteral.TRUE));
+				handler.handleStatement(valueFactory.createStatement(subject, SP.SILENT_PROPERTY, BooleanLiteral.TRUE));
 			}
 
 			if (node.getGraph() != null) {
-				handler.handleStatement(valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY,
-						node.getGraph().getValue()));
-			}
-			else if (node.getScope() != null) {
-				switch (node.getScope()) {
-					case DEFAULT_CONTEXTS:
-						handler.handleStatement(valueFactory.createStatement(subject, SP.DEFAULT_PROPERTY,
-								BooleanLiteral.TRUE));
-						break;
-					case NAMED_CONTEXTS:
-						handler.handleStatement(valueFactory.createStatement(subject, SP.NAMED_PROPERTY,
-								BooleanLiteral.TRUE));
-						break;
-				}
-			}
-			else {
 				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.ALL_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
+			} else if (node.getScope() != null) {
+				switch (node.getScope()) {
+				case DEFAULT_CONTEXTS:
+					handler.handleStatement(
+							valueFactory.createStatement(subject, SP.DEFAULT_PROPERTY, BooleanLiteral.TRUE));
+					break;
+				case NAMED_CONTEXTS:
+					handler.handleStatement(
+							valueFactory.createStatement(subject, SP.NAMED_PROPERTY, BooleanLiteral.TRUE));
+					break;
+				}
+			} else {
+				handler.handleStatement(valueFactory.createStatement(subject, SP.ALL_PROPERTY, BooleanLiteral.TRUE));
 			}
 		}
 
 		@Override
-		public void meet(Create node)
-			throws RDFHandlerException
-		{
+		public void meet(Create node) throws RDFHandlerException {
 			if (node.isSilent()) {
-				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.SILENT_PROPERTY, BooleanLiteral.TRUE));
+				handler.handleStatement(valueFactory.createStatement(subject, SP.SILENT_PROPERTY, BooleanLiteral.TRUE));
 			}
 
 			if (node.getGraph() != null) {
-				handler.handleStatement(valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY,
-						node.getGraph().getValue()));
+				handler.handleStatement(
+						valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
 			}
 		}
 
 		private final class ExtensionVisitor extends QueryModelVisitorBase<RDFHandlerException> {
 
 			@Override
-			public void meet(Count node)
-				throws RDFHandlerException
-			{
+			public void meet(Count node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.COUNT_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1569,15 +1357,12 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Max node)
-				throws RDFHandlerException
-			{
+			public void meet(Max node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MAX_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1585,15 +1370,12 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Min node)
-				throws RDFHandlerException
-			{
+			public void meet(Min node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MIN_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1601,15 +1383,12 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Sum node)
-				throws RDFHandlerException
-			{
+			public void meet(Sum node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SUM_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1617,15 +1396,12 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Avg node)
-				throws RDFHandlerException
-			{
+			public void meet(Avg node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.AVG_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1633,32 +1409,25 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(GroupConcat node)
-				throws RDFHandlerException
-			{
-				handler.handleStatement(
-						valueFactory.createStatement(subject, RDF.TYPE, SP.GROUP_CONCAT_CLASS));
+			public void meet(GroupConcat node) throws RDFHandlerException {
+				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.GROUP_CONCAT_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
 							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Sample node)
-				throws RDFHandlerException
-			{
+			public void meet(Sample node) throws RDFHandlerException {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SAMPLE_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
@@ -1666,15 +1435,12 @@ public class SpinRenderer {
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
-				handler.handleStatement(
-						valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
+				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}
 
 			@Override
-			public void meet(Var node)
-				throws RDFHandlerException
-			{
+			public void meet(Var node) throws RDFHandlerException {
 				subject = getVar(node.getName());
 			}
 		}
@@ -1684,29 +1450,22 @@ public class SpinRenderer {
 			Group group;
 
 			@Override
-			public void meet(Order node)
-				throws RDFHandlerException
-			{
+			public void meet(Order node) throws RDFHandlerException {
 				node.getArg().visit(this);
 			}
 
 			@Override
-			public void meet(Extension node)
-				throws RDFHandlerException
-			{
+			public void meet(Extension node) throws RDFHandlerException {
 				node.getArg().visit(this);
 			}
 
 			@Override
-			public void meet(Group node)
-				throws RDFHandlerException
-			{
+			public void meet(Group node) throws RDFHandlerException {
 				group = node;
 				Set<String> groupNames = node.getGroupBindingNames();
 				if (!groupNames.isEmpty()) {
 					Resource groupByList = valueFactory.createBNode();
-					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.GROUP_BY_PROPERTY, groupByList));
+					handler.handleStatement(valueFactory.createStatement(subject, SP.GROUP_BY_PROPERTY, groupByList));
 					ListContext groupByCtx = newList(groupByList);
 					for (String groupName : groupNames) {
 						Resource var = getVar(groupName);
@@ -1717,14 +1476,11 @@ public class SpinRenderer {
 			}
 
 			@Override
-			public void meet(Filter node)
-				throws RDFHandlerException
-			{
+			public void meet(Filter node) throws RDFHandlerException {
 				node.getArg().visit(this);
 				if (group != null) {
 					Resource havingList = valueFactory.createBNode();
-					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.HAVING_PROPERTY, havingList));
+					handler.handleStatement(valueFactory.createStatement(subject, SP.HAVING_PROPERTY, havingList));
 					ListContext havingCtx = newList(havingList);
 					listEntry();
 					node.getCondition().visit(SpinVisitor.this);
@@ -1741,12 +1497,9 @@ public class SpinRenderer {
 		private final class OrderVisitor extends QueryModelVisitorBase<RDFHandlerException> {
 
 			@Override
-			public void meet(Order node)
-				throws RDFHandlerException
-			{
+			public void meet(Order node) throws RDFHandlerException {
 				Resource orderByList = valueFactory.createBNode();
-				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.ORDER_BY_PROPERTY, orderByList));
+				handler.handleStatement(valueFactory.createStatement(subject, SP.ORDER_BY_PROPERTY, orderByList));
 				ListContext orderByCtx = newList(orderByList);
 				for (OrderElem elem : node.getElements()) {
 					elem.visit(this);
@@ -1755,9 +1508,7 @@ public class SpinRenderer {
 			}
 
 			@Override
-			public void meet(OrderElem node)
-				throws RDFHandlerException
-			{
+			public void meet(OrderElem node) throws RDFHandlerException {
 				IRI asc = node.isAscending() ? SP.ASC_CLASS : SP.DESC_CLASS;
 				listEntry();
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, asc));

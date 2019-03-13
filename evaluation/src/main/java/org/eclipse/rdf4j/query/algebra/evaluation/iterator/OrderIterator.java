@@ -43,9 +43,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationException> {
 
-	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E>
-			implements Closeable
-	{
+	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E> implements Closeable {
 
 		private final File file;
 
@@ -59,15 +57,11 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 
 		private E last;
 
-		public SerializedQueue(String prefix)
-			throws IOException
-		{
+		public SerializedQueue(String prefix) throws IOException {
 			this(prefix, null);
 		}
 
-		public SerializedQueue(String prefix, File directory)
-			throws IOException
-		{
+		public SerializedQueue(String prefix, File directory) throws IOException {
 			file = File.createTempFile(prefix, "", directory);
 			output = new ObjectOutputStream(new FileOutputStream(file));
 		}
@@ -86,8 +80,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 				last = e;
 				size++;
 				return true;
-			}
-			catch (IOException exc) {
+			} catch (IOException exc) {
 				return false;
 			}
 		}
@@ -98,18 +91,15 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			try {
 				if (next != null) {
 					return next;
-				}
-				else if (input == null) {
+				} else if (input == null) {
 					output.close();
 					input = new ObjectInputStream(new FileInputStream(file));
 				}
 				size--;
-				return (E)input.readObject();
-			}
-			catch (IOException | ClassNotFoundException exc) {
+				return (E) input.readObject();
+			} catch (IOException | ClassNotFoundException exc) {
 				return null;
-			}
-			finally {
+			} finally {
 				next = null;
 			}
 		}
@@ -118,11 +108,9 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		public E peek() {
 			if (size <= 0) {
 				return null;
-			}
-			else if (next != null) {
+			} else if (next != null) {
 				return next;
-			}
-			else {
+			} else {
 				return next = poll();
 			}
 		}
@@ -146,17 +134,14 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		@Override
 		public int size() {
 			if (next == null) {
-				return (int)size;
-			}
-			else {
-				return (int)size + 1;
+				return (int) size;
+			} else {
+				return (int) size + 1;
 			}
 		}
 
 		@Override
-		public void close()
-			throws IOException
-		{
+		public void close() throws IOException {
 			if (output != null) {
 				output.close();
 			}
@@ -188,8 +173,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		public boolean hasNext() {
 			if (next != null) {
 				return true;
-			}
-			else {
+			} else {
 				next = next();
 				return next != null;
 			}
@@ -200,8 +184,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			if (next != null) {
 				try {
 					return next;
-				}
-				finally {
+				} finally {
 					next = null;
 				}
 			}
@@ -212,8 +195,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			}
 			if (head.isEmpty()) {
 				return null;
-			}
-			else {
+			} else {
 				Entry<E, List<Integer>> e = head.firstEntry();
 				advance(e.getValue().remove(0));
 				if (e.getValue().isEmpty()) {
@@ -229,8 +211,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 				if (!head.containsKey(key)) {
 					head.put(key, new LinkedList<>(Arrays.asList(i)));
 					break;
-				}
-				else if (!distinct) {
+				} else if (!distinct) {
 					head.get(key).add(i);
 					break;
 				}
@@ -254,8 +235,8 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	private final List<SerializedQueue<BindingSet>> serialized = new LinkedList<>();
 
 	/**
-	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is
-	 * done and all internal caching is kept in memory.
+	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is done and all
+	 * internal caching is kept in memory.
 	 */
 	private final long iterationSyncThreshold;
 
@@ -264,20 +245,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *--------------*/
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Comparator<BindingSet> comparator)
-	{
+			Comparator<BindingSet> comparator) {
 		this(iter, comparator, Long.MAX_VALUE, false);
 	}
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Comparator<BindingSet> comparator, long limit, boolean distinct)
-	{
+			Comparator<BindingSet> comparator, long limit, boolean distinct) {
 		this(iter, comparator, limit, distinct, Integer.MAX_VALUE);
 	}
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold)
-	{
+			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
 		this.iter = iter;
 		this.comparator = comparator;
 		this.limit = limit;
@@ -290,13 +268,11 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *---------*/
 
 	@Override
-	protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-		throws QueryEvaluationException
-	{
+	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
 		List<BindingSet> list = new LinkedList<>();
-		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int)limit * 2;
-		int syncThreshold = (int)Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
+		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
+		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
 			while (iter.hasNext()) {
 				if (list.size() >= syncThreshold && list.size() < limit) {
@@ -309,8 +285,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 						Stream<BindingSet> stream = serialized.stream().map(q -> q.peekLast());
 						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().get();
 					}
-				}
-				else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
+				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
 					List<BindingSet> sorted = new ArrayList<>(limit2);
 					sort(list).forEach(bs -> sorted.add(bs));
 					decrement(list.size() - sorted.size());
@@ -325,11 +300,9 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 					increment();
 				}
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
-		}
-		finally {
+		} finally {
 			iter.close();
 		}
 		SortedIterators<BindingSet> iterator;
@@ -362,30 +335,23 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	}
 
 	@Override
-	public void remove()
-		throws QueryEvaluationException
-	{
+	public void remove() throws QueryEvaluationException {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				iter.close();
-			}
-			finally {
+			} finally {
 				serialized.stream().map(queue -> {
 					try {
 						queue.close();
 						return null;
-					}
-					catch (IOException e) {
+					} catch (IOException e) {
 						return e;
 					}
 				}).filter(exec -> exec != null).findFirst().ifPresent(exec -> {

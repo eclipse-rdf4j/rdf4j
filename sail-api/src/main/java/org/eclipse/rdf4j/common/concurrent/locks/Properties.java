@@ -9,16 +9,16 @@
 package org.eclipse.rdf4j.common.concurrent.locks;
 
 /**
- * Class controlling various logging properties such as the amount of lock tracking that is done for debugging
- * (at the cost of performance).
+ * Class controlling various logging properties such as the amount of lock tracking that is done for debugging (at the
+ * cost of performance).
  * 
  * @author Arjohn Kampman
  */
 public class Properties {
 
 	/**
-	 * The system property "info.aduna.concurrent.locks.trackLocks" that can be used to enable lock tracking
-	 * by giving it a (non-null) value.
+	 * The system property "info.aduna.concurrent.locks.trackLocks" that can be used to enable lock tracking by giving
+	 * it a (non-null) value.
 	 */
 	public static final String TRACK_LOCKS = "info.aduna.concurrent.locks.trackLocks";
 
@@ -28,8 +28,7 @@ public class Properties {
 	public static void setLockTrackingEnabled(boolean trackLocks) {
 		if (trackLocks) {
 			System.setProperty(TRACK_LOCKS, "");
-		}
-		else {
+		} else {
 			System.clearProperty(TRACK_LOCKS);
 		}
 	}
@@ -37,8 +36,7 @@ public class Properties {
 	public static boolean lockTrackingEnabled() {
 		try {
 			return System.getProperty(TRACK_LOCKS) != null;
-		}
-		catch (SecurityException e) {
+		} catch (SecurityException e) {
 			// Thrown when not allowed to read system properties, for example when
 			// running in applets
 			return false;

@@ -36,24 +36,19 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail()
-		throws SailException
-	{
+	protected NotifyingSail createSail() throws SailException {
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
 			sail.init();
 			return sail;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 	}
 
 	// Test for SES-542
 	@Test()
-	public void testGetNamespacePersistence()
-		throws Exception
-	{
+	public void testGetNamespacePersistence() throws Exception {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();

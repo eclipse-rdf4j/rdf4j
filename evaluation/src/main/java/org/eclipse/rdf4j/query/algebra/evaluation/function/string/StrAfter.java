@@ -32,20 +32,17 @@ public class StrAfter implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for STRAFTER: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for STRAFTER: " + args.length);
 		}
 
 		Value leftArg = args[0];
 		Value rightArg = args[1];
 
 		if (leftArg instanceof Literal && rightArg instanceof Literal) {
-			Literal leftLit = (Literal)leftArg;
-			Literal rightLit = (Literal)rightArg;
+			Literal leftLit = (Literal) leftArg;
+			Literal rightLit = (Literal) rightArg;
 
 			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
 				String lexicalValue = leftLit.getLabel();
@@ -60,8 +57,7 @@ public class StrAfter implements Function {
 				if (index > -1) {
 					index += substring.length() - 1;
 					substringAfter = lexicalValue.substring(index + 1, lexicalValue.length());
-				}
-				else {
+				} else {
 					// no match, return empty string with no language or datatype
 					leftLanguage = Optional.empty();
 					leftDt = null;
@@ -69,22 +65,17 @@ public class StrAfter implements Function {
 
 				if (leftLanguage.isPresent()) {
 					return valueFactory.createLiteral(substringAfter, leftLanguage.get());
-				}
-				else if (leftDt != null) {
+				} else if (leftDt != null) {
 					return valueFactory.createLiteral(substringAfter, leftDt);
-				}
-				else {
+				} else {
 					return valueFactory.createLiteral(substringAfter);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException(
 						"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 			}
-		}
-		else {
-			throw new ValueExprEvaluationException(
-					"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
+		} else {
+			throw new ValueExprEvaluationException("incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 		}
 	}
 }

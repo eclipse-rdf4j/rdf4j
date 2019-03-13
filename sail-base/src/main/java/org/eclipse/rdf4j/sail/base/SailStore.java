@@ -27,8 +27,7 @@ public interface SailStore extends SailClosable {
 	/**
 	 * Used by {@link SailSourceConnection} to determine query join order.
 	 * 
-	 * @return a {@link EvaluationStatistics} that is aware of the data distribution of this {@link SailStore}
-	 *         .
+	 * @return a {@link EvaluationStatistics} that is aware of the data distribution of this {@link SailStore} .
 	 */
 	EvaluationStatistics getEvaluationStatistics();
 

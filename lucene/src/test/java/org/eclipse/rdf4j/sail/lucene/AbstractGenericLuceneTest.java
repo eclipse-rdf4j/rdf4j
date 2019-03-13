@@ -111,13 +111,10 @@ public abstract class AbstractGenericLuceneTest {
 		QUERY_STRING = buffer.toString();
 	}
 
-	protected abstract void configure(LuceneSail sail)
-		throws IOException;
+	protected abstract void configure(LuceneSail sail) throws IOException;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
 		// TODO: disable logging for org.eclipse.rdf4j.query.parser.serql.SeRQLParser,
@@ -152,15 +149,12 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@After
-	public void tearDown()
-		throws IOException, RepositoryException
-	{
+	public void tearDown() throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
 			}
-		}
-		finally {
+		} finally {
 			if (repository != null) {
 				repository.shutDown();
 			}
@@ -168,9 +162,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testComplexQueryTwo()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+	public void testComplexQueryTwo() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT Resource, Matching, Score ");
@@ -188,8 +180,8 @@ public abstract class AbstractGenericLuceneTest {
 			// check the results
 			assertTrue(result.hasNext());
 			BindingSet bindings = result.next();
-			assertEquals(SUBJECT_3, (IRI)bindings.getValue("Resource"));
-			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Matching"));
+			assertEquals(SUBJECT_3, (IRI) bindings.getValue("Resource"));
+			assertEquals(SUBJECT_1, (IRI) bindings.getValue("Matching"));
 			assertNotNull(bindings.getValue("Score"));
 
 			assertFalse(result.hasNext());
@@ -197,8 +189,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	private void evaluate(String[] queries, ArrayList<List<Map<String, String>>> expectedResults)
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		for (int queryID = 0; queryID < queries.length; queryID++) {
 			String serql = queries[queryID];
 			List<Map<String, String>> expectedResultSet = expectedResults.get(queryID);
@@ -227,8 +218,7 @@ public abstract class AbstractGenericLuceneTest {
 						matches = true;
 
 						// get the result we compare with now
-						Map<String, String> expectedResult = new HashMap<>(
-								expectedResultSet.get(resultSetID));
+						Map<String, String> expectedResult = new HashMap<>(expectedResultSet.get(resultSetID));
 
 						// get all var names
 						Collection<String> vars = new ArrayList<>(expectedResult.keySet());
@@ -245,12 +235,9 @@ public abstract class AbstractGenericLuceneTest {
 									matches = false;
 									break;
 								}
-							}
-							else {
+							} else {
 								// compare the values
-								if ((actualVal == null)
-										|| (expectedVal.compareTo(actualVal.stringValue()) != 0))
-								{
+								if ((actualVal == null) || (expectedVal.compareTo(actualVal.stringValue()) != 0)) {
 									matches = false;
 									break;
 								}
@@ -277,23 +264,22 @@ public abstract class AbstractGenericLuceneTest {
 			// of actual results
 			assertEquals("How many expected results were retrieved for query #" + queryID + "?",
 					expectedResultSet.size(), matched.size());
-			assertEquals("How many actual results were retrieved for query #" + queryID + "?",
-					expectedResultSet.size(), actualResults);
+			assertEquals("How many actual results were retrieved for query #" + queryID + "?", expectedResultSet.size(),
+					actualResults);
 		}
 	}
 
 	@Test
 	public void testPredicateLuceneQueries()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		String[] queries = new String[] {
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES
-						+ "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {Score}; \n"
-						+ "    <" + SNIPPET + "> {Snippet}",
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES
-						+ "> {} \n" + "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n"
-						+ "    <" + SNIPPET + "> {Snippet}" };
+				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
+						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
+						+ "> {Snippet}",
+				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
+						+ "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
+						+ "> {Snippet}" };
 
 		ArrayList<List<Map<String, String>>> allResults = new ArrayList<>();
 
@@ -341,9 +327,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testSnippetQueries()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+	public void testSnippetQueries() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		// search for the term "one", but only in predicate 1
 		StringBuilder buffer = new StringBuilder();
@@ -388,25 +372,21 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	/**
-	 * Test if the snippets do not accidentially come from the "text" field while we actually expect them to
-	 * come from the predicate field.
+	 * Test if the snippets do not accidentially come from the "text" field while we actually expect them to come from
+	 * the predicate field.
 	 */
 	@Test
 	public void testSnippetLimitedToPredicate()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
 			// we use the string 'charly' as test-case. the snippets should contain
 			// "come" and "unicorn"
 			// and 'poor' should not be returned if we limit on predicate1
 			// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
-			localConnection.add(SUBJECT_1, PREDICATE_1,
-					vf.createLiteral("come charly lets go to candy mountain"));
-			localConnection.add(SUBJECT_1, PREDICATE_1,
-					vf.createLiteral("but the unicorn charly said to goaway"));
-			localConnection.add(SUBJECT_1, PREDICATE_2,
-					vf.createLiteral("there was poor charly without a kidney"));
+			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("come charly lets go to candy mountain"));
+			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("but the unicorn charly said to goaway"));
+			localConnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral("there was poor charly without a kidney"));
 			localConnection.commit();
 		}
 
@@ -442,7 +422,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				String snippet = ((Literal)bindings.getValue("Snippet")).stringValue();
+				String snippet = ((Literal) bindings.getValue("Snippet")).stringValue();
 				boolean foundexpected = false;
 				for (Iterator<String> i = expectedSnippetPart.iterator(); i.hasNext();) {
 					String expected = i.next();
@@ -456,8 +436,8 @@ public abstract class AbstractGenericLuceneTest {
 							+ PREDICATE_2);
 				}
 				if (!foundexpected) {
-					fail("did not find any of the expected strings " + expectedSnippetPart
-							+ " in the snippet " + snippet);
+					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
+							+ snippet);
 				}
 
 				// there should be a score
@@ -465,17 +445,14 @@ public abstract class AbstractGenericLuceneTest {
 			}
 
 			// we found all
-			assertTrue("These were expected but not found: " + expectedSnippetPart,
-					expectedSnippetPart.isEmpty());
+			assertTrue("These were expected but not found: " + expectedSnippetPart, expectedSnippetPart.isEmpty());
 
 			assertEquals("there should have been 2 results", 2, results);
 		}
 	}
 
 	@Test
-	public void testCharlyTerm()
-		throws Exception
-	{
+	public void testCharlyTerm() throws Exception {
 
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
@@ -483,12 +460,9 @@ public abstract class AbstractGenericLuceneTest {
 			// "come" and "unicorn"
 			// and 'poor' should not be returned if we limit on predicate1
 			// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
-			localConnection.add(SUBJECT_1, PREDICATE_1,
-					vf.createLiteral("come charly lets go to candy mountain"));
-			localConnection.add(SUBJECT_1, PREDICATE_1,
-					vf.createLiteral("but the unicorn charly said to goaway"));
-			localConnection.add(SUBJECT_1, PREDICATE_2,
-					vf.createLiteral("there was poor charly without a kidney"));
+			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("come charly lets go to candy mountain"));
+			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("but the unicorn charly said to goaway"));
+			localConnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral("there was poor charly without a kidney"));
 			localConnection.commit();
 		}
 		// search for the term "charly" in all predicates
@@ -522,7 +496,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				String snippet = ((Literal)bindings.getValue("Snippet")).stringValue();
+				String snippet = ((Literal) bindings.getValue("Snippet")).stringValue();
 				boolean foundexpected = false;
 				for (Iterator<String> i = expectedSnippetPart.iterator(); i.hasNext();) {
 					String expected = i.next();
@@ -532,8 +506,8 @@ public abstract class AbstractGenericLuceneTest {
 					}
 				}
 				if (!foundexpected) {
-					fail("did not find any of the expected strings " + expectedSnippetPart
-							+ " in the snippet " + snippet);
+					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
+							+ snippet);
 				}
 
 				// there should be a score
@@ -541,17 +515,14 @@ public abstract class AbstractGenericLuceneTest {
 			}
 
 			// we found all
-			assertTrue("These were expected but not found: " + expectedSnippetPart,
-					expectedSnippetPart.isEmpty());
+			assertTrue("These were expected but not found: " + expectedSnippetPart, expectedSnippetPart.isEmpty());
 
 			assertEquals("there should have been 3 results", 3, results);
 		}
 	}
 
 	@Test
-	public void testGraphQuery()
-		throws QueryEvaluationException, MalformedQueryException, RepositoryException
-	{
+	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
 		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
 		StringBuilder query = new StringBuilder();
 
@@ -576,14 +547,12 @@ public abstract class AbstractGenericLuceneTest {
 				n++;
 
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_1))
-				{
+						&& statement.getObject().equals(SUBJECT_1)) {
 					r |= 1;
 					continue;
 				}
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_2))
-				{
+						&& statement.getObject().equals(SUBJECT_2)) {
 					r |= 2;
 					continue;
 				}
@@ -602,8 +571,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testQueryWithSpecifiedSubject()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
 		query.setBinding("Subject", SUBJECT_1);
@@ -613,16 +581,14 @@ public abstract class AbstractGenericLuceneTest {
 			// check that this subject and only this subject is returned
 			assertTrue(result.hasNext());
 			BindingSet bindings = result.next();
-			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Subject"));
+			assertEquals(SUBJECT_1, (IRI) bindings.getValue("Subject"));
 			assertNotNull(bindings.getValue("Score"));
 			assertFalse(result.hasNext());
 		}
 	}
 
 	@Test
-	public void testUnionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+	public void testUnionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		String queryStr = "";
 		queryStr += "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> ";
 		queryStr += "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
@@ -651,9 +617,7 @@ public abstract class AbstractGenericLuceneTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextHandling()
-		throws Exception
-	{
+	public void testContextHandling() throws Exception {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"), CONTEXT_1);
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"), CONTEXT_1);
@@ -687,9 +651,7 @@ public abstract class AbstractGenericLuceneTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testNullContextHandling()
-		throws Exception
-	{
+	public void testNullContextHandling() throws Exception {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"));
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"));
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"));
@@ -708,7 +670,7 @@ public abstract class AbstractGenericLuceneTest {
 		// blind test to see if this method works:
 		assertNoQueryResult("johannesgrenzfurthner");
 		// remove a context
-		connection.clear((Resource)null);
+		connection.clear((Resource) null);
 		connection.commit();
 		assertNoQueryResult("sfourponecone");
 		assertNoQueryResult("sfourptwocone");
@@ -718,9 +680,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testFuzzyQuery()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+	public void testFuzzyQuery() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		// search for the term "one" with 80% fuzzyness
 		StringBuilder buffer = new StringBuilder();
@@ -751,7 +711,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				assertTrue(expectedSubject.remove((IRI)bindings.getValue("Resource")));
+				assertTrue(expectedSubject.remove((IRI) bindings.getValue("Resource")));
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -768,17 +728,13 @@ public abstract class AbstractGenericLuceneTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testReindexing()
-		throws Exception
-	{
+	public void testReindexing() throws Exception {
 		sail.reindex();
 		testComplexQueryTwo();
 	}
 
 	@Test
-	public void testPropertyVar()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+	public void testPropertyVar() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT \n");
 		buffer.append("  Resource, Property \n");
@@ -813,9 +769,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	@Test
-	public void testMultithreadedAdd()
-		throws InterruptedException
-	{
+	public void testMultithreadedAdd() throws InterruptedException {
 		int numThreads = 3;
 		final CountDownLatch startLatch = new CountDownLatch(1);
 		final CountDownLatch endLatch = new CountDownLatch(numThreads);
@@ -830,15 +784,12 @@ public abstract class AbstractGenericLuceneTest {
 					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();
 						for (long i = 0; i < iterationCount; i++) {
-							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
-									vf.createLiteral(i));
+							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3), vf.createLiteral(i));
 						}
-					}
-					catch (Throwable e) {
+					} catch (Throwable e) {
 						exceptions.add(e);
 						throw new AssertionError(e);
-					}
-					finally {
+					} finally {
 						endLatch.countDown();
 					}
 				}
@@ -849,8 +800,7 @@ public abstract class AbstractGenericLuceneTest {
 		for (Throwable e : exceptions) {
 			e.printStackTrace(System.err);
 		}
-		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0,
-				exceptions.size());
+		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0, exceptions.size());
 	}
 
 	@Test
@@ -865,22 +815,20 @@ public abstract class AbstractGenericLuceneTest {
 		}
 		conn.close();
 		conn = repository.getConnection();
-		conn.clear();	// make sure this can be executed multiple times
+		conn.clear(); // make sure this can be executed multiple times
 		conn.add(FOAF.PERSON, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("abc"));
 		conn.close();
 	}
 
-	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
-		throws Exception
-	{
+	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
 		// fire a query for all subjects with a given term
-		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-				+ "> {\"" + literal + "\"} ";
+		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
+				+ literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
-			assertTrue("query for literal '" + literal + " did not return any results, expected was "
-					+ resultUri, result.hasNext());
+			assertTrue("query for literal '" + literal + " did not return any results, expected was " + resultUri,
+					result.hasNext());
 			BindingSet bindings = result.next();
 			assertEquals("query for literal '" + literal + " did not return the expected resource", resultUri,
 					bindings.getValue("Resource"));
@@ -888,12 +836,10 @@ public abstract class AbstractGenericLuceneTest {
 		}
 	}
 
-	protected void assertNoQueryResult(String literal)
-		throws Exception
-	{
+	protected void assertNoQueryResult(String literal) throws Exception {
 		// fire a query for all subjects with a given term
-		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-				+ "> {\"" + literal + "\"} ";
+		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
+				+ literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result

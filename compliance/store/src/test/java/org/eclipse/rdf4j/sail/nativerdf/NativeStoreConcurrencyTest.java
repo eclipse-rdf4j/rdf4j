@@ -32,13 +32,10 @@ public class NativeStoreConcurrencyTest extends SailConcurrencyTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail()
-		throws SailException
-	{
+	protected NotifyingSail createSail() throws SailException {
 		try {
 			return new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 	}

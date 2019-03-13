@@ -21,23 +21,15 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class LimitedSizeIteratorUtil {
 
 	/**
-	 * @param arg2
-	 *        the iteration with elements to add to the includeSet
-	 * @param includeSet
-	 *        the set that should have all unique elements of arg2
-	 * @param used
-	 *        the collection size counter of all collections used in answering a query
-	 * @param maxSize
-	 *        the point at which we throw a new query exception
+	 * @param arg2       the iteration with elements to add to the includeSet
+	 * @param includeSet the set that should have all unique elements of arg2
+	 * @param used       the collection size counter of all collections used in answering a query
+	 * @param maxSize    the point at which we throw a new query exception
 	 * @return the includeSet
-	 * @throws QueryEvaluationException
-	 *         trigerred when maxSize is smaller than the used value
+	 * @throws QueryEvaluationException trigerred when maxSize is smaller than the used value
 	 */
-	public static Set<BindingSet> addAll(
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
-			Set<BindingSet> includeSet, AtomicLong used, long maxSize)
-		throws QueryEvaluationException
-	{
+	public static Set<BindingSet> addAll(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
+			Set<BindingSet> includeSet, AtomicLong used, long maxSize) throws QueryEvaluationException {
 		while (arg2.hasNext()) {
 			if (includeSet.add(arg2.next()) && used.incrementAndGet() > maxSize)
 				throw new QueryEvaluationException("Size limited reached inside intersect operator");
@@ -46,20 +38,15 @@ public class LimitedSizeIteratorUtil {
 	}
 
 	/**
-	 * @param object
-	 *        object to put in set if not there already.
-	 * @param excludeSet
-	 *        set that we need to store object in.
-	 * @param used
-	 *        AtomicLong tracking how many elements we have in storage.
+	 * @param object     object to put in set if not there already.
+	 * @param excludeSet set that we need to store object in.
+	 * @param used       AtomicLong tracking how many elements we have in storage.
 	 * @param maxSize
-	 * @throws QueryEvaluationException
-	 *         when the object is added to the set and the total elements in all limited size collections
-	 *         exceed the allowed maxSize.
+	 * @throws QueryEvaluationException when the object is added to the set and the total elements in all limited size
+	 *                                  collections exceed the allowed maxSize.
 	 */
 	public static <V> boolean add(V object, Collection<V> excludeSet, AtomicLong used, long maxSize)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		boolean add = excludeSet.add(object);
 		if (add && used.incrementAndGet() > maxSize)
 			throw new QueryEvaluationException("Size limited reached inside query operator.");

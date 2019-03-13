@@ -38,7 +38,7 @@ public class ShaclSailFactoryTest {
 	@Test
 	public void getSailWithDefaultConfigSetsConfigurationCorrectly() {
 		ShaclSailConfig config = new ShaclSailConfig();
-		ShaclSail sail = (ShaclSail)subject.getSail(config);
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 
@@ -59,20 +59,19 @@ public class ShaclSailFactoryTest {
 		config.setUndefinedTargetValidatesAllSubjects(!config.isUndefinedTargetValidatesAllSubjects());
 		config.setValidationEnabled(!config.isValidationEnabled());
 
-		ShaclSail sail = (ShaclSail)subject.getSail(config);
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 
 	private void assertMatchesConfig(ShaclSail sail, ShaclSailConfig config) {
 		assertThat(sail.isCacheSelectNodes()).isEqualTo(config.isCacheSelectNodes());
 		assertThat(sail.isGlobalLogValidationExecution()).isEqualTo(config.isGlobalLogValidationExecution());
-		assertThat(sail.isIgnoreNoShapesLoadedException()).isEqualTo(
-				config.isIgnoreNoShapesLoadedException());
+		assertThat(sail.isIgnoreNoShapesLoadedException()).isEqualTo(config.isIgnoreNoShapesLoadedException());
 		assertThat(sail.isLogValidationPlans()).isEqualTo(config.isLogValidationPlans());
 		assertThat(sail.isLogValidationViolations()).isEqualTo(config.isLogValidationViolations());
 		assertThat(sail.isParallelValidation()).isEqualTo(config.isParallelValidation());
-		assertThat(sail.isUndefinedTargetValidatesAllSubjects()).isEqualTo(
-				config.isUndefinedTargetValidatesAllSubjects());
+		assertThat(sail.isUndefinedTargetValidatesAllSubjects())
+				.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
 		assertThat(sail.isValidationEnabled()).isEqualTo(config.isValidationEnabled());
 	}
 

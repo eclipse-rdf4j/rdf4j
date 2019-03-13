@@ -6,9 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-
 package org.eclipse.rdf4j.sail.shacl.planNodes;
-
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -21,7 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.AST.NodeKindPropertyShape;
  */
 public class NodeKindFilter extends FilterPlanNode {
 
-	private final NodeKindPropertyShape.NodeKind  nodeKind;
+	private final NodeKindPropertyShape.NodeKind nodeKind;
 
 	public NodeKindFilter(PlanNode parent, NodeKindPropertyShape.NodeKind nodeKind) {
 		super(parent);
@@ -32,41 +30,32 @@ public class NodeKindFilter extends FilterPlanNode {
 	boolean checkTuple(Tuple t) {
 
 		Value value = t.line.get(1);
-/*
-		BlankNode(SHACL.BLANK_NODE),
-			IRI(SHACL.IRI),
-			Literal(SHACL.LITERAL),
-			BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
-			BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL),
-			IRIOrLiteral(SHACL.IRI_OR_LITERAL),
-*/
+		/*
+		 * BlankNode(SHACL.BLANK_NODE), IRI(SHACL.IRI), Literal(SHACL.LITERAL), BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
+		 * BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL), IRIOrLiteral(SHACL.IRI_OR_LITERAL),
+		 */
 
-
-
-	switch (nodeKind) {
+		switch (nodeKind) {
 		case IRI:
 			return value instanceof IRI;
 		case Literal:
-			return value instanceof  Literal;
+			return value instanceof Literal;
 		case BlankNode:
 			return value instanceof BNode;
 		case IRIOrLiteral:
 			return value instanceof IRI || value instanceof Literal;
 		case BlankNodeOrIRI:
-			return value instanceof BNode || value instanceof  IRI;
+			return value instanceof BNode || value instanceof IRI;
 		case BlankNodeOrLiteral:
-			return value instanceof BNode || value instanceof  Literal;
+			return value instanceof BNode || value instanceof Literal;
+		}
+
+		throw new IllegalStateException("Unknown nodeKind");
+
 	}
-
-	throw new IllegalStateException("Unknown nodeKind");
-
-	}
-
 
 	@Override
 	public String toString() {
-		return "NodeKindFilter{" +
-			"nodeKind=" + nodeKind +
-			'}';
+		return "NodeKindFilter{" + "nodeKind=" + nodeKind + '}';
 	}
 }

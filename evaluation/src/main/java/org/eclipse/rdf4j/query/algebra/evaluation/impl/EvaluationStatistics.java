@@ -92,11 +92,11 @@ public class EvaluationStatistics {
 			if ((subjVar != null && subjVar.hasValue()) || (objVar != null && objVar.hasValue())) {
 				// subj = obj
 				cardinality = 1.0;
-			}
-			else {
+			} else {
 				// actual cardinality = count(union(subjs, objs))
 				// but cost is equivalent to ?s ?p ?o ?c (impl scans all statements)
-				// so due to the lower actual cardinality we value it in preference to a fully unbound statement pattern.
+				// so due to the lower actual cardinality we value it in preference to a fully unbound statement
+				// pattern.
 				cardinality = getSubjectCardinality(subjVar) * getObjectCardinality(objVar)
 						* getContextCardinality(node.getContextVar());
 			}
@@ -106,12 +106,12 @@ public class EvaluationStatistics {
 		public void meet(ArbitraryLengthPath node) {
 			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
 			pathVar.setAnonymous(true);
-			// cardinality of ALP is determined based on the cost of a 
+			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
-			// the length of the path is unknown but expected to be _at least_ twice that of a normal 
+			// the length of the path is unknown but expected to be _at least_ twice that of a normal
 			// statement pattern.
-			cardinality = 2.0 * getCardinality(new StatementPattern(node.getSubjectVar(), pathVar,
-					node.getObjectVar(), node.getContextVar()));
+			cardinality = 2.0 * getCardinality(
+					new StatementPattern(node.getSubjectVar(), pathVar, node.getObjectVar(), node.getContextVar()));
 		}
 
 		@Override
@@ -121,8 +121,7 @@ public class EvaluationStatistics {
 				// query
 				// => use high cost to order the SERVICE node late in the query plan
 				cardinality = UNBOUND_SERVICE_CARDINALITY;
-			}
-			else {
+			} else {
 				ServiceNodeAnalyzer serviceAnalyzer = new ServiceNodeAnalyzer();
 				node.visitChildren(serviceAnalyzer);
 				int count = serviceAnalyzer.getStatementCount();
@@ -134,8 +133,7 @@ public class EvaluationStatistics {
 																		// than other
 																		// simple
 																		// stmts)
-				}
-				else {
+				} else {
 					// only very selective statements should be better than this
 					// => evaluate service expressions first
 					cardinality = 1 + (node.getServiceVars().size() * 0.1);
@@ -154,8 +152,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not only on the subjectVar itself
-		 * but also the other vars (e.g. the predicate value might determine a subject subset).
+		 * Override this if you are able to determine the cardinality based not only on the subjectVar itself but also
+		 * the other vars (e.g. the predicate value might determine a subject subset).
 		 */
 		protected double getSubjectCardinality(StatementPattern sp) {
 			return getSubjectCardinality(sp.getSubjectVar());
@@ -166,8 +164,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not only on the predicateVar
-		 * itself but also the other vars (e.g. the subject value might determine a predicate subset).
+		 * Override this if you are able to determine the cardinality based not only on the predicateVar itself but also
+		 * the other vars (e.g. the subject value might determine a predicate subset).
 		 */
 		protected double getPredicateCardinality(StatementPattern sp) {
 			return getPredicateCardinality(sp.getPredicateVar());
@@ -178,8 +176,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not only on the objectVar itself
-		 * but also the other vars (e.g. the predicate value might determine an object subset).
+		 * Override this if you are able to determine the cardinality based not only on the objectVar itself but also
+		 * the other vars (e.g. the predicate value might determine an object subset).
 		 */
 		protected double getObjectCardinality(StatementPattern sp) {
 			return getObjectCardinality(sp.getObjectVar());
@@ -190,8 +188,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not only on the contextVar itself
-		 * but also the other vars (e.g. the subject value might determine a context subset).
+		 * Override this if you are able to determine the cardinality based not only on the contextVar itself but also
+		 * the other vars (e.g. the subject value might determine a context subset).
 		 */
 		protected double getContextCardinality(StatementPattern sp) {
 			return getContextCardinality(sp.getContextVar());
@@ -258,9 +256,8 @@ public class EvaluationStatistics {
 		@Override
 		protected void meetNode(QueryModelNode node) {
 			if (node instanceof ExternalSet) {
-				meetExternalSet((ExternalSet)node);
-			}
-			else {
+				meetExternalSet((ExternalSet) node);
+			} else {
 				throw new IllegalArgumentException("Unhandled node type: " + node.getClass());
 			}
 		}
@@ -280,9 +277,7 @@ public class EvaluationStatistics {
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-			throws RuntimeException
-		{
+		public void meet(StatementPattern node) throws RuntimeException {
 			count++;
 		}
 	};

@@ -29,7 +29,6 @@ import static junit.framework.TestCase.assertEquals;
  */
 public class TestPlanNodeOrdering {
 
-
 	@Test
 	public void testSelect() {
 		MemoryStore repository = new MemoryStore();
@@ -42,7 +41,6 @@ public class TestPlanNodeOrdering {
 			connection.addStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
-
 			Select select = new Select(connection, "?a <" + RDF.TYPE + "> []");
 			List<Tuple> tuples = new MockConsumePlanNode(select).asList();
 
@@ -51,7 +49,6 @@ public class TestPlanNodeOrdering {
 			Collections.sort(tuples);
 
 			String expected = Arrays.toString(tuples.toArray());
-
 
 			assertEquals(expected, actual);
 		}

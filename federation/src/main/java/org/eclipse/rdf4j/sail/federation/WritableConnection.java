@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Statements are only written to a single member. Statements that have a {@link IllegalStatementException}
- * throw when added to a member are tried against all other members until it is accepted. If no members accept
- * a statement the original exception is re-thrown.
+ * Statements are only written to a single member. Statements that have a {@link IllegalStatementException} throw when
+ * added to a member are tried against all other members until it is accepted. If no members accept a statement the
+ * original exception is re-thrown.
  * 
  * @author James Leigh
  */
@@ -28,9 +28,7 @@ class WritableConnection extends AbstractEchoWriteConnection {
 
 	private int addIndex;
 
-	public WritableConnection(Federation federation, List<RepositoryConnection> members)
-		throws SailException
-	{
+	public WritableConnection(Federation federation, List<RepositoryConnection> members) throws SailException {
 		super(federation, members);
 		int size = members.size();
 		int rnd = (new Random().nextInt() % size + size) % size;
@@ -40,35 +38,28 @@ class WritableConnection extends AbstractEchoWriteConnection {
 				if (members.get(i % size).getRepository().isWritable()) {
 					addIndex = i % size;
 				}
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new SailException(e);
 			}
 		}
 	}
 
 	@Override
-	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		add(members.get(addIndex), subj, pred, obj, contexts);
 	}
 
 	private void add(RepositoryConnection member, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		try {
 			member.add(subj, pred, obj, contexts);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
 	}
 
 	@Override
-	protected void clearInternal(Resource... contexts)
-		throws SailException
-	{
+	protected void clearInternal(Resource... contexts) throws SailException {
 		removeStatementsInternal(null, null, null, contexts);
 	}
 

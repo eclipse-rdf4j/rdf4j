@@ -34,16 +34,14 @@ public class Timezone implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("TIMEZONE requires 1 argument, got " + args.length);
 		}
 
 		Value argValue = args[0];
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
 			IRI datatype = literal.getDatatype();
 
@@ -75,21 +73,16 @@ public class Timezone implements Function {
 							tzDuration.append("0S");
 						}
 						return valueFactory.createLiteral(tzDuration.toString(), XMLSchema.DAYTIMEDURATION);
+					} else {
+						throw new ValueExprEvaluationException("can not determine timezone from value: " + argValue);
 					}
-					else {
-						throw new ValueExprEvaluationException(
-								"can not determine timezone from value: " + argValue);
-					}
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + argValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 	}

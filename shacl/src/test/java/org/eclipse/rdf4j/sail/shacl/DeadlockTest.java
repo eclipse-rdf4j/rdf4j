@@ -34,11 +34,17 @@ public class DeadlockTest {
 			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
 				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.prepareUpdate(IOUtil.readString(DeadlockTest.class.getClassLoader().getResourceAsStream(shaclPath + "transaction1.qr"))).execute();
+				connection
+						.prepareUpdate(IOUtil.readString(
+								DeadlockTest.class.getClassLoader().getResourceAsStream(shaclPath + "transaction1.qr")))
+						.execute();
 				connection.commit();
 
 				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.prepareUpdate(IOUtil.readString(DeadlockTest.class.getClassLoader().getResourceAsStream(shaclPath + "transaction2.qr"))).execute();
+				connection
+						.prepareUpdate(IOUtil.readString(
+								DeadlockTest.class.getClassLoader().getResourceAsStream(shaclPath + "transaction2.qr")))
+						.execute();
 				connection.commit();
 			}
 		}

@@ -37,22 +37,19 @@ public abstract class AbstractSpinFunction {
 	}
 
 	protected QueryPreparer getCurrentQueryPreparer() {
-		QueryPreparer qp = (queryPreparer != null) ? queryPreparer
-				: QueryContext.getQueryContext().getQueryPreparer();
+		QueryPreparer qp = (queryPreparer != null) ? queryPreparer : QueryContext.getQueryContext().getQueryPreparer();
 		if (qp == null) {
 			throw new IllegalStateException("No QueryPreparer!");
 		}
 		return qp;
 	}
 
-	protected static void addBindings(Query query, Value... args)
-		throws ValueExprEvaluationException
-	{
+	protected static void addBindings(Query query, Value... args) throws ValueExprEvaluationException {
 		for (int i = 1; i < args.length; i += 2) {
 			if (!(args[i] instanceof Literal)) {
 				throw new ValueExprEvaluationException("Argument " + i + " must be a literal");
 			}
-			query.setBinding(((Literal)args[i]).getLabel(), args[i + 1]);
+			query.setBinding(((Literal) args[i]).getLabel(), args[i + 1]);
 		}
 	}
 }

@@ -31,15 +31,14 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 
 /**
- * An implementation of the Sail interface that stores its data in main memory and that can use a file for
- * persistent storage. This Sail implementation supports single, isolated transactions. This means that
- * changes to the data are not visible until a transaction is committed and that concurrent transactions are
- * not possible. When another transaction is active, calls to <tt>startTransaction()</tt> will block until the
- * active transaction is committed or rolled back.
+ * An implementation of the Sail interface that stores its data in main memory and that can use a file for persistent
+ * storage. This Sail implementation supports single, isolated transactions. This means that changes to the data are not
+ * visible until a transaction is committed and that concurrent transactions are not possible. When another transaction
+ * is active, calls to <tt>startTransaction()</tt> will block until the active transaction is committed or rolled back.
  * 
- * The MemoryStore is designed for datasets with fewer than 100,000 triples.
- * The MemoryStore uses hash tables, and when these hash tables fill up it copies the values to larger hash tables. 
- * This can cause strain on the garbage collector due to lots of memory being allocated and freed.
+ * The MemoryStore is designed for datasets with fewer than 100,000 triples. The MemoryStore uses hash tables, and when
+ * these hash tables fill up it copies the values to larger hash tables. This can cause strain on the garbage collector
+ * due to lots of memory being allocated and freed.
  * 
  * @author Arjohn Kampman
  * @author jeen
@@ -128,17 +127,16 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Creates a new MemoryStore.
 	 */
 	public MemoryStore() {
-		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
-				IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 	}
 
 	/**
-	 * Creates a new persistent MemoryStore. If the specified data directory contains an existing store, its
-	 * contents will be restored upon initialization.
+	 * Creates a new persistent MemoryStore. If the specified data directory contains an existing store, its contents
+	 * will be restored upon initialization.
 	 * 
-	 * @param dataDir
-	 *        the data directory to be used for persistence.
+	 * @param dataDir the data directory to be used for persistence.
 	 */
 	public MemoryStore(File dataDir) {
 		this();
@@ -163,17 +161,16 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Sets the time (in milliseconds) to wait after a transaction was commited before writing the changed
-	 * data to file. Setting this variable to 0 will force a file sync immediately after each commit. A
-	 * negative value will deactivate file synchronization until the Sail is shut down. A positive value will
-	 * postpone the synchronization for at least that amount of milliseconds. If in the meantime a new
-	 * transaction is started, the file synchronization will be rescheduled to wait for another
-	 * <tt>syncDelay</tt> ms. This way, bursts of transaction events can be combined in one file sync.
+	 * Sets the time (in milliseconds) to wait after a transaction was commited before writing the changed data to file.
+	 * Setting this variable to 0 will force a file sync immediately after each commit. A negative value will deactivate
+	 * file synchronization until the Sail is shut down. A positive value will postpone the synchronization for at least
+	 * that amount of milliseconds. If in the meantime a new transaction is started, the file synchronization will be
+	 * rescheduled to wait for another <tt>syncDelay</tt> ms. This way, bursts of transaction events can be combined in
+	 * one file sync.
 	 * <p>
 	 * The default value for this parameter is <tt>0</tt> (immediate synchronization).
 	 * 
-	 * @param syncDelay
-	 *        The sync delay in milliseconds.
+	 * @param syncDelay The sync delay in milliseconds.
 	 */
 	public void setSyncDelay(long syncDelay) {
 		if (isInitialized()) {
@@ -225,31 +222,26 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
-	 * shutDown when this instance is.
+	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
+	 * this instance is.
 	 * 
-	 * @param resolver
-	 *        The SERVICE resolver to set.
+	 * @param resolver The SERVICE resolver to set.
 	 */
 	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)evalStratFactory).setFederatedServiceResolver(resolver);
+			((FederatedServiceResolverClient) evalStratFactory).setFederatedServiceResolver(resolver);
 		}
 	}
 
 	/**
-	 * Initializes this repository. If a persistence file is defined for the store, the contents will be
-	 * restored.
+	 * Initializes this repository. If a persistence file is defined for the store, the contents will be restored.
 	 * 
-	 * @throws SailException
-	 *         when initialization of the store failed.
+	 * @throws SailException when initialization of the store failed.
 	 */
 	@Override
-	protected void initializeInternal()
-		throws SailException
-	{
+	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing MemoryStore...");
 
 		this.store = new MemorySailStore(debugEnabled());
@@ -277,19 +269,16 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 				// IOException, and the file doesn't contain any data anyway.
 				if (dataFile.length() == 0L) {
 					logger.warn("Ignoring empty data file: {}", dataFile);
-				}
-				else {
+				} else {
 					SailSink explicit = store.getExplicitSailSource().sink(IsolationLevels.NONE);
 					SailSink inferred = store.getInferredSailSource().sink(IsolationLevels.NONE);
 					try {
 						new FileIO(store.getValueFactory()).read(dataFile, explicit, inferred);
 						logger.debug("Data file read successfully");
-					}
-					catch (IOException e) {
+					} catch (IOException e) {
 						logger.error("Failed to read data file", e);
 						throw new SailException(e);
-					}
-					finally {
+					} finally {
 						explicit.prepare();
 						explicit.flush();
 						explicit.close();
@@ -298,8 +287,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 						inferred.close();
 					}
 				}
-			}
-			else {
+			} else {
 				// file specified that does not exist yet, create it
 				try {
 					File dir = dataFile.getParentFile();
@@ -318,19 +306,16 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT);
 					try {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
-					}
-					finally {
+					} finally {
 						explicit.close();
 						inferred.close();
 
 					}
 					logger.debug("Data file initialized");
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					logger.debug("Failed to initialize data file", e);
 					throw new SailException("Failed to initialize data file " + dataFile, e);
-				}
-				catch (SailException e) {
+				} catch (SailException e) {
 					logger.debug("Failed to initialize data file", e);
 					throw new SailException("Failed to initialize data file " + dataFile, e);
 				}
@@ -343,9 +328,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal()
-		throws SailException
-	{
+	protected void shutDownInternal() throws SailException {
 		try {
 			cancelSyncTimer();
 			sync();
@@ -353,8 +336,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 			store.close();
 			dataFile = null;
 			syncFile = null;
-		}
-		finally {
+		} finally {
 			if (dirLock != null) {
 				dirLock.release();
 			}
@@ -365,8 +347,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Checks whether this Sail object is writable. A MemoryStore is not writable if a read-only data file is
-	 * used.
+	 * Checks whether this Sail object is writable. A MemoryStore is not writable if a read-only data file is used.
 	 */
 	@Override
 	public boolean isWritable() {
@@ -375,9 +356,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal()
-		throws SailException
-	{
+	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new MemoryStoreConnection(this);
 	}
 
@@ -398,9 +377,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
-	protected void scheduleSyncTask()
-		throws SailException
-	{
+	protected void scheduleSyncTask() throws SailException {
 		if (!persist) {
 			return;
 		}
@@ -408,8 +385,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		if (syncDelay == 0L) {
 			// Sync immediately
 			sync();
-		}
-		else if (syncDelay > 0L) {
+		} else if (syncDelay > 0L) {
 			synchronized (syncTimerSemaphore) {
 				// Sync in syncDelay milliseconds
 				if (syncTimer == null) {
@@ -418,7 +394,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 				}
 
 				if (syncTimerTask != null) {
-					// sync task from (concurrent) other transaction exists. 
+					// sync task from (concurrent) other transaction exists.
 					// cancel and replace with newly scheduled sync task.
 					syncTimerTask.cancel();
 				}
@@ -429,8 +405,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					public void run() {
 						try {
 							sync();
-						}
-						catch (SailException e) {
+						} catch (SailException e) {
 							logger.warn("Unable to sync on timer", e);
 						}
 					}
@@ -460,12 +435,10 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Synchronizes the contents of this repository with the data that is stored on disk. Data will only be
-	 * written when the contents of the repository and data in the file are out of sync.
+	 * Synchronizes the contents of this repository with the data that is stored on disk. Data will only be written when
+	 * the contents of the repository and data in the file are out of sync.
 	 */
-	public void sync()
-		throws SailException
-	{
+	public void sync() throws SailException {
 		// syncSemaphore prevents concurrent file synchronizations
 		synchronized (syncSemaphore) {
 			if (persist && contentsChanged) {
@@ -476,15 +449,13 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					SailDataset inferred = store.getInferredSailSource().dataset(level);
 					try {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
-					}
-					finally {
+					} finally {
 						explicit.close();
 						inferred.close();
 					}
 					contentsChanged = false;
 					logger.debug("Data synced to file");
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					logger.error("Failed to sync to file", e);
 					throw new SailException(e);
 				}

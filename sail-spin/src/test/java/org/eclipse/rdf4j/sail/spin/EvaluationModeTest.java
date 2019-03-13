@@ -29,22 +29,17 @@ import org.junit.Test;
 public class EvaluationModeTest {
 
 	@Test
-	public void testServiceEvaluationMode()
-		throws RDFParseException, RepositoryException, IOException
-	{
+	public void testServiceEvaluationMode() throws RDFParseException, RepositoryException, IOException {
 		testEvaluationMode(TupleFunctionEvaluationMode.SERVICE);
 	}
 
 	@Test
-	public void testTripleSourceEvaluationMode()
-		throws RDFParseException, RepositoryException, IOException
-	{
+	public void testTripleSourceEvaluationMode() throws RDFParseException, RepositoryException, IOException {
 		testEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 	}
 
 	private void testEvaluationMode(TupleFunctionEvaluationMode mode)
-		throws RDFParseException, RepositoryException, IOException
-	{
+			throws RDFParseException, RepositoryException, IOException {
 		NotifyingSail baseSail = new MemoryStore();
 		SpinSail spinSail = new SpinSail(baseSail);
 		spinSail.setEvaluationMode(mode);
@@ -53,7 +48,7 @@ public class EvaluationModeTest {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(getClass().getResource("/testcases/testEvaluationMode.ttl"), null, null);
 			TupleQuery tq = conn.prepareTupleQuery(
-				"prefix spin: <http://spinrdf.org/spin#> prefix ex: <ex:> select ?s where {?s ex:prop ?t. ?s a ex:TestClass. ?t a ex:TestClass. ex:Query spin:select ?t}");
+					"prefix spin: <http://spinrdf.org/spin#> prefix ex: <ex:> select ?s where {?s ex:prop ?t. ?s a ex:TestClass. ?t a ex:TestClass. ex:Query spin:select ?t}");
 			Set<String> results = new HashSet<>();
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {

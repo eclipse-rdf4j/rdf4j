@@ -57,8 +57,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  * @author Arjohn Kampman
  */
 public class Federation implements Sail, Executor, FederatedServiceResolverClient, RepositoryResolverClient,
-		HttpClientDependent, SessionManagerDependent
-{
+		HttpClientDependent, SessionManagerDependent {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
@@ -66,8 +65,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
-	private final ExecutorService executor = Executors.newCachedThreadPool(
-			new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
+	private final ExecutorService executor = Executors
+			.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
 
 	private PrefixHashSet localPropertySpace; // NOPMD
 
@@ -99,9 +98,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public boolean isWritable()
-		throws SailException
-	{
+	public boolean isWritable() throws SailException {
 		return !isReadOnly();
 	}
 
@@ -122,8 +119,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	/**
 	 * Sets an optional {@link RepositoryBloomFilter} to use with the given {@link Repository}.
 	 * 
-	 * @param filter
-	 *        the filter to use or null to not use a filter.
+	 * @param filter the filter to use or null to not use a filter.
 	 */
 	public void setBloomFilter(Repository member, RepositoryBloomFilter filter) {
 		bloomFilters.put(member, filter);
@@ -149,8 +145,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setLocalPropertySpace(Collection<String> localPropertySpace) { // NOPMD
 		if (localPropertySpace.isEmpty()) {
 			this.localPropertySpace = null; // NOPMD
-		}
-		else {
+		} else {
 			this.localPropertySpace = new PrefixHashSet(localPropertySpace);
 		}
 	}
@@ -185,18 +180,17 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	/**
-	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
-	 * shutDown when this instance is.
+	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
+	 * this instance is.
 	 * 
-	 * @param reslover
-	 *        The SERVICE resolver to set.
+	 * @param reslover The SERVICE resolver to set.
 	 */
 	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 		for (Repository member : members) {
 			if (member instanceof FederatedServiceResolverClient) {
-				((FederatedServiceResolverClient)member).setFederatedServiceResolver(resolver);
+				((FederatedServiceResolverClient) member).setFederatedServiceResolver(resolver);
 			}
 		}
 	}
@@ -205,7 +199,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		for (Repository member : members) {
 			if (member instanceof RepositoryResolverClient) {
-				((RepositoryResolverClient)member).setRepositoryResolver(resolver);
+				((RepositoryResolverClient) member).setRepositoryResolver(resolver);
 			}
 		}
 	}
@@ -214,7 +208,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public HttpClientSessionManager getHttpClientSessionManager() {
 		for (Repository member : members) {
 			if (member instanceof SessionManagerDependent) {
-				HttpClientSessionManager client = ((SessionManagerDependent)member).getHttpClientSessionManager();
+				HttpClientSessionManager client = ((SessionManagerDependent) member).getHttpClientSessionManager();
 				if (client != null) {
 					return client;
 				}
@@ -227,7 +221,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		for (Repository member : members) {
 			if (member instanceof SessionManagerDependent) {
-				((SessionManagerDependent)member).setHttpClientSessionManager(client);
+				((SessionManagerDependent) member).setHttpClientSessionManager(client);
 			}
 		}
 	}
@@ -236,7 +230,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public HttpClient getHttpClient() {
 		for (Repository member : members) {
 			if (member instanceof HttpClientDependent) {
-				HttpClient client = ((HttpClientDependent)member).getHttpClient();
+				HttpClient client = ((HttpClientDependent) member).getHttpClient();
 				if (client != null) {
 					return client;
 				}
@@ -249,68 +243,54 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setHttpClient(HttpClient client) {
 		for (Repository member : members) {
 			if (member instanceof HttpClientDependent) {
-				((HttpClientDependent)member).setHttpClient(client);
+				((HttpClientDependent) member).setHttpClient(client);
 			}
 		}
 	}
 
 	@Deprecated
-	public void initialize()
-		throws SailException
-	{
+	public void initialize() throws SailException {
 		init();
 	}
 
-
 	@Override
-	public void init()
-		throws SailException
-	{
+	public void init() throws SailException {
 		for (Repository member : members) {
 			try {
 				member.initialize();
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new SailException(e);
 			}
 		}
 	}
-	
+
 	@Override
-	public void shutDown()
-		throws SailException
-	{
+	public void shutDown() throws SailException {
 		List<SailException> toThrowExceptions = new ArrayList<>();
 		try {
 			for (Repository member : members) {
 				try {
 					member.shutDown();
-				}
-				catch (SailException e) {
+				} catch (SailException e) {
 					toThrowExceptions.add(e);
-				}
-				catch (RDF4JException e) {
+				} catch (RDF4JException e) {
 					toThrowExceptions.add(new SailException(e));
 				}
 			}
-		}
-		finally {
+		} finally {
 			try {
 				SPARQLServiceResolver toCloseServiceResolver = dependentServiceResolver;
 				dependentServiceResolver = null;
 				if (toCloseServiceResolver != null) {
 					toCloseServiceResolver.shutDown();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					executor.shutdown();
 					executor.awaitTermination(10, TimeUnit.SECONDS);
-				}
-				catch (InterruptedException e) {
+				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
-				}
-				finally {
+				} finally {
 					if (!executor.isShutdown()) {
 						executor.shutdownNow();
 					}
@@ -331,9 +311,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public SailConnection getConnection()
-		throws SailException
-	{
+	public SailConnection getConnection() throws SailException {
 		List<RepositoryConnection> connections = new ArrayList<>(members.size());
 		boolean allGood = false;
 		try {
@@ -344,11 +322,9 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 					: new WritableConnection(this, connections);
 			allGood = true;
 			return result;
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new SailException(e);
-		}
-		finally {
+		} finally {
 			if (!allGood) {
 				closeAll(connections);
 			}
@@ -357,8 +333,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver resolver)
-	{
+			FederatedServiceResolver resolver) {
 		return new FederationStrategy(this, tripleSource, dataset, getFederatedServiceResolver());
 	}
 
@@ -366,8 +341,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		for (RepositoryConnection con : connections) {
 			try {
 				con.close();
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				LOGGER.error(e.getMessage(), e);
 			}
 		}

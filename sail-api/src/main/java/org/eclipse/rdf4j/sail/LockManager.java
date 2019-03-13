@@ -37,11 +37,9 @@ public interface LockManager {
 	 * Creates a lock in a SAIL if it does not yet exist.
 	 * 
 	 * @return a newly acquired lock.
-	 * @throws SailLockedException
-	 *         if the directory is already locked.
+	 * @throws SailLockedException if the directory is already locked.
 	 */
-	Lock lockOrFail()
-		throws SailLockedException;
+	Lock lockOrFail() throws SailLockedException;
 
 	/**
 	 * Revokes a lock owned by another process.

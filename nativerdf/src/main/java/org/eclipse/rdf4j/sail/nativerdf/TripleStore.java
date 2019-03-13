@@ -34,10 +34,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * File-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of
- * four integer IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer
- * to the statement's subject, predicate, object and context. The ID <tt>0</tt> is used to represent the
- * "null" context and doesn't map to an actual RDF value.
+ * File-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four integer
+ * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
+ * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
+ * an actual RDF value.
  * 
  * @author Arjohn Kampman
  */
@@ -70,8 +70,7 @@ class TripleStore implements Closeable {
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
-	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties
-	 * file yet.
+	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties file yet.
 	 * <li>version 1: Introduces configurable triple indexes and the properties file.
 	 * <li>version 10: Introduces a context field, essentially making this a quad store.
 	 * <li>version 10a: Introduces transaction flags, this is backwards compatible with version 10.
@@ -100,23 +99,23 @@ class TripleStore implements Closeable {
 	/**
 	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
 	 */
-	static final byte EXPLICIT_FLAG = (byte)0x1; // 0000 0001
+	static final byte EXPLICIT_FLAG = (byte) 0x1; // 0000 0001
 
 	/**
 	 * Bit field indicating that a statement has been added in a (currently active) transaction.
 	 */
-	static final byte ADDED_FLAG = (byte)0x2; // 0000 0010
+	static final byte ADDED_FLAG = (byte) 0x2; // 0000 0010
 
 	/**
 	 * Bit field indicating that a statement has been removed in a (currently active) transaction.
 	 */
-	static final byte REMOVED_FLAG = (byte)0x4; // 0000 0100
+	static final byte REMOVED_FLAG = (byte) 0x4; // 0000 0100
 
 	/**
-	 * Bit field indicating that the explicit flag has been toggled (from true to false, or vice versa) in a
-	 * (currently active) transaction.
+	 * Bit field indicating that the explicit flag has been toggled (from true to false, or vice versa) in a (currently
+	 * active) transaction.
 	 */
-	static final byte TOGGLE_EXPLICIT_FLAG = (byte)0x8; // 0000 1000
+	static final byte TOGGLE_EXPLICIT_FLAG = (byte) 0x8; // 0000 1000
 
 	/*-----------*
 	 * Variables *
@@ -149,15 +148,11 @@ class TripleStore implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public TripleStore(File dir, String indexSpecStr)
-		throws IOException, SailException
-	{
+	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
 		this(dir, indexSpecStr, false);
 	}
 
-	public TripleStore(File dir, String indexSpecStr, boolean forceSync)
-		throws IOException, SailException
-	{
+	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
 		this.txnStatusFile = new TxnStatusFile(dir);
@@ -177,8 +172,7 @@ class TripleStore implements Closeable {
 			}
 
 			initIndexes(indexSpecs);
-		}
-		else {
+		} else {
 			// Read triple properties file and check format version number
 			properties = loadProperties(propFile);
 			checkVersion();
@@ -191,8 +185,7 @@ class TripleStore implements Closeable {
 			TxnStatus txnStatus = txnStatusFile.getTxnStatus();
 			if (txnStatus == TxnStatus.NONE) {
 				logger.trace("No uncompleted transactions found");
-			}
-			else {
+			} else {
 				processUncompletedTransaction(txnStatus);
 			}
 
@@ -202,16 +195,14 @@ class TripleStore implements Closeable {
 			if (reqIndexSpecs.isEmpty()) {
 				// No indexes specified, use the existing ones
 				indexSpecStr = properties.getProperty(INDEXES_KEY);
-			}
-			else if (!reqIndexSpecs.equals(indexSpecs)) {
+			} else if (!reqIndexSpecs.equals(indexSpecs)) {
 				// Set of indexes needs to be changed
 				reindex(indexSpecs, reqIndexSpecs);
 			}
 		}
 
 		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))
-				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY)))
-		{
+				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
 			// Store up-to-date properties
 			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
@@ -223,33 +214,26 @@ class TripleStore implements Closeable {
 	 * Methods *
 	 *---------*/
 
-	private void checkVersion()
-		throws SailException
-	{
+	private void checkVersion() throws SailException {
 		// Check version number
 		String versionStr = properties.getProperty(VERSION_KEY);
 		if (versionStr == null) {
 			logger.warn("{} missing in TripleStore's properties file", VERSION_KEY);
-		}
-		else {
+		} else {
 			try {
 				int version = Integer.parseInt(versionStr);
 				if (version < 10) {
 					throw new SailException("Directory contains incompatible triple data");
-				}
-				else if (version > SCHEME_VERSION) {
+				} else if (version > SCHEME_VERSION) {
 					throw new SailException("Directory contains data that uses a newer data format");
 				}
-			}
-			catch (NumberFormatException e) {
+			} catch (NumberFormatException e) {
 				logger.warn("Malformed version number in TripleStore's properties file");
 			}
 		}
 	}
 
-	private Set<String> getIndexSpecs()
-		throws SailException
-	{
+	private Set<String> getIndexSpecs() throws SailException {
 		String indexesStr = properties.getProperty(INDEXES_KEY);
 
 		if (indexesStr == null) {
@@ -266,16 +250,13 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to
-	 * consists of 4 characters: 's', 'p', 'o' and 'c'.
+	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
+	 * of 4 characters: 's', 'p', 'o' and 'c'.
 	 * 
-	 * @param indexSpecStr
-	 *        A string like "spoc, pocs, cosp".
+	 * @param indexSpecStr A string like "spoc, pocs, cosp".
 	 * @return A Set containing the parsed index specifications.
 	 */
-	private Set<String> parseIndexSpecList(String indexSpecStr)
-		throws SailException
-	{
+	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
 		Set<String> indexes = new HashSet<>();
 
 		if (indexSpecStr != null) {
@@ -285,10 +266,8 @@ class TripleStore implements Closeable {
 
 				// sanity checks
 				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
-						|| index.indexOf('o') == -1 || index.indexOf('c') == -1)
-				{
-					throw new SailException(
-							"invalid value '" + index + "' in index specification: " + indexSpecStr);
+						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
+					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
 				}
 
 				indexes.add(index);
@@ -298,70 +277,59 @@ class TripleStore implements Closeable {
 		return indexes;
 	}
 
-	private void initIndexes(Set<String> indexSpecs)
-		throws IOException
-	{
+	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : indexSpecs) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(fieldSeq));
 		}
 	}
 
-	private void processUncompletedTransaction(TxnStatus txnStatus)
-		throws IOException
-	{
+	private void processUncompletedTransaction(TxnStatus txnStatus) throws IOException {
 		switch (txnStatus) {
-			case COMMITTING:
-				logger.info("Detected uncompleted commit, trying to complete");
-				try {
-					commit();
-					logger.info("Uncompleted commit completed successfully");
-				}
-				catch (IOException e) {
-					logger.error("Failed to restore from uncompleted commit", e);
-					throw e;
-				}
-				break;
-			case ROLLING_BACK:
-				logger.info("Detected uncompleted rollback, trying to complete");
-				try {
-					rollback();
-					logger.info("Uncompleted rollback completed successfully");
-				}
-				catch (IOException e) {
-					logger.error("Failed to restore from uncompleted rollback", e);
-					throw e;
-				}
-				break;
-			case ACTIVE:
-				logger.info("Detected unfinished transaction, trying to roll back");
-				try {
-					rollback();
-					logger.info("Unfinished transaction rolled back successfully");
-				}
-				catch (IOException e) {
-					logger.error("Failed to roll back unfinished transaction", e);
-					throw e;
-				}
-				break;
-			case UNKNOWN:
-				logger.info("Read invalid or unknown transaction status, trying to roll back");
-				try {
-					rollback();
-					logger.info(
-							"Successfully performed a rollback for invalid or unknown transaction status");
-				}
-				catch (IOException e) {
-					logger.error("Failed to perform rollback for invalid or unknown transaction status", e);
-					throw e;
-				}
-				break;
+		case COMMITTING:
+			logger.info("Detected uncompleted commit, trying to complete");
+			try {
+				commit();
+				logger.info("Uncompleted commit completed successfully");
+			} catch (IOException e) {
+				logger.error("Failed to restore from uncompleted commit", e);
+				throw e;
+			}
+			break;
+		case ROLLING_BACK:
+			logger.info("Detected uncompleted rollback, trying to complete");
+			try {
+				rollback();
+				logger.info("Uncompleted rollback completed successfully");
+			} catch (IOException e) {
+				logger.error("Failed to restore from uncompleted rollback", e);
+				throw e;
+			}
+			break;
+		case ACTIVE:
+			logger.info("Detected unfinished transaction, trying to roll back");
+			try {
+				rollback();
+				logger.info("Unfinished transaction rolled back successfully");
+			} catch (IOException e) {
+				logger.error("Failed to roll back unfinished transaction", e);
+				throw e;
+			}
+			break;
+		case UNKNOWN:
+			logger.info("Read invalid or unknown transaction status, trying to roll back");
+			try {
+				rollback();
+				logger.info("Successfully performed a rollback for invalid or unknown transaction status");
+			} catch (IOException e) {
+				logger.error("Failed to perform rollback for invalid or unknown transaction status", e);
+				throw e;
+			}
+			break;
 		}
 	}
 
-	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
-		throws IOException, SailException
-	{
+	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs) throws IOException, SailException {
 		Map<String, TripleIndex> currentIndexes = new HashMap<>();
 		for (TripleIndex index : indexes) {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
@@ -388,14 +356,12 @@ class TripleStore implements Closeable {
 					while ((value = sourceIter.next()) != null) {
 						addedBTree.insert(value);
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (sourceIter != null) {
 							sourceIter.close();
 						}
-					}
-					finally {
+					} finally {
 						if (addedBTree != null) {
 							addedBTree.sync();
 						}
@@ -422,12 +388,10 @@ class TripleStore implements Closeable {
 
 				if (deleted) {
 					logger.debug("Deleted file(s) for removed {} index", fieldSeq);
-				}
-				else {
+				} else {
 					logger.warn("Unable to delete file(s) for removed {} index", fieldSeq);
 				}
-			}
-			catch (Throwable e) {
+			} catch (Throwable e) {
 				removedIndexExceptions.add(e);
 			}
 		}
@@ -448,16 +412,13 @@ class TripleStore implements Closeable {
 	}
 
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		try {
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			for (TripleIndex index : indexes) {
 				try {
 					index.getBTree().close();
-				}
-				catch (Throwable e) {
+				} catch (Throwable e) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
 					caughtExceptions.add(e);
 				}
@@ -465,12 +426,10 @@ class TripleStore implements Closeable {
 			if (!caughtExceptions.isEmpty()) {
 				throw new IOException(caughtExceptions.get(0));
 			}
-		}
-		finally {
+		} finally {
 			try {
 				txnStatusFile.close();
-			}
-			finally {
+			} finally {
 				// Should have been removed upon commit() or rollback(), but just to be sure
 				RecordCache toCloseUpdatedTriplesCache = updatedTriplesCache;
 				updatedTriplesCache = null;
@@ -481,21 +440,17 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public RecordIterator getTriples(int subj, int pred, int obj, int context)
-		throws IOException
-	{
+	public RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
 		// Return all triples except those that were added but not yet committed
 		return getTriples(subj, pred, obj, context, 0, ADDED_FLAG);
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean readTransaction)
-		throws IOException
-	{
+			throws IOException {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getTriples(subj, pred, obj, context, 0, TripleStore.REMOVED_FLAG);
-		}
-		else {
+		} else {
 			// Don't read added statements
 			return getTriples(subj, pred, obj, context, 0, TripleStore.ADDED_FLAG);
 		}
@@ -508,31 +463,25 @@ class TripleStore implements Closeable {
 	 * @return All triples sorted by context or null if no context index exists
 	 * @throws IOException
 	 */
-	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction)
-		throws IOException
-	{
+	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) throws IOException {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getAllTriplesSortedByContext(0, TripleStore.REMOVED_FLAG);
-		}
-		else {
+		} else {
 			// Don't read added statements
 			return getAllTriplesSortedByContext(0, TripleStore.ADDED_FLAG);
 		}
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
-			boolean readTransaction)
-		throws IOException
-	{
+			boolean readTransaction) throws IOException {
 		int flags = 0;
 		int flagsMask = 0;
 
 		if (readTransaction) {
 			flagsMask |= TripleStore.REMOVED_FLAG;
 			// 'explicit' is handled through an ExplicitStatementFilter
-		}
-		else {
+		} else {
 			flagsMask |= TripleStore.ADDED_FLAG;
 
 			if (explicit) {
@@ -546,8 +495,7 @@ class TripleStore implements Closeable {
 		if (readTransaction && explicit) {
 			// Filter implicit statements from the result
 			btreeIter = new ExplicitStatementFilter(btreeIter);
-		}
-		else if (!explicit) {
+		} else if (!explicit) {
 			// Filter out explicit statements from the result
 			btreeIter = new ImplicitStatementFilter(btreeIter);
 		}
@@ -568,9 +516,7 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next()
-			throws IOException
-		{
+		public byte[] next() throws IOException {
 			byte[] result;
 
 			while ((result = wrappedIter.next()) != null) {
@@ -589,16 +535,12 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public void set(byte[] value)
-			throws IOException
-		{
+		public void set(byte[] value) throws IOException {
 			wrappedIter.set(value);
 		}
 
 		@Override
-		public void close()
-			throws IOException
-		{
+		public void close() throws IOException {
 			wrappedIter.close();
 		}
 	} // end inner class ExplicitStatementFilter
@@ -612,9 +554,7 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next()
-			throws IOException
-		{
+		public byte[] next() throws IOException {
 			byte[] result;
 
 			while ((result = wrappedIter.next()) != null) {
@@ -631,31 +571,24 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public void set(byte[] value)
-			throws IOException
-		{
+		public void set(byte[] value) throws IOException {
 			wrappedIter.set(value);
 		}
 
 		@Override
-		public void close()
-			throws IOException
-		{
+		public void close() throws IOException {
 			wrappedIter.close();
 		}
 	} // end inner class ImplicitStatementFilter
 
 	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask)
-		throws IOException
-	{
+			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);
 	}
 
-	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask)
-		throws IOException
-	{
+	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) throws IOException {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
@@ -666,9 +599,8 @@ class TripleStore implements Closeable {
 		return null;
 	}
 
-	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags,
-			int flagsMask, TripleIndex index, boolean rangeSearch)
-	{
+	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags, int flagsMask,
+			TripleIndex index, boolean rangeSearch) {
 		byte[] searchKey = getSearchKey(subj, pred, obj, context, flags);
 		byte[] searchMask = getSearchMask(subj, pred, obj, context, flagsMask);
 
@@ -678,16 +610,13 @@ class TripleStore implements Closeable {
 			byte[] maxValue = getMaxValue(subj, pred, obj, context);
 
 			return index.getBTree().iterateRangedValues(searchKey, searchMask, minValue, maxValue);
-		}
-		else {
+		} else {
 			// Use sequential scan
 			return index.getBTree().iterateValues(searchKey, searchMask);
 		}
 	}
 
-	protected double cardinality(int subj, int pred, int obj, int context)
-		throws IOException
-	{
+	protected double cardinality(int subj, int pred, int obj, int context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		BTree btree = index.btree;
 
@@ -695,8 +624,7 @@ class TripleStore implements Closeable {
 
 		if (index.getPatternScore(subj, pred, obj, context) == 0) {
 			rangeSize = btree.getValueCountEstimate();
-		}
-		else {
+		} else {
 			byte[] minValue = getMinValue(subj, pred, obj, context);
 			byte[] maxValue = getMaxValue(subj, pred, obj, context);
 			rangeSize = btree.getValueCountEstimate(minValue, maxValue);
@@ -720,23 +648,17 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	public void clear()
-		throws IOException
-	{
+	public void clear() throws IOException {
 		for (TripleIndex index : indexes) {
 			index.getBTree().clear();
 		}
 	}
 
-	public boolean storeTriple(int subj, int pred, int obj, int context)
-		throws IOException
-	{
+	public boolean storeTriple(int subj, int pred, int obj, int context) throws IOException {
 		return storeTriple(subj, pred, obj, context, true);
 	}
 
-	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit)
-		throws IOException
-	{
+	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
 		boolean stAdded = false;
 
 		byte[] data = getData(subj, pred, obj, context, 0);
@@ -750,8 +672,7 @@ class TripleStore implements Closeable {
 			}
 
 			stAdded = true;
-		}
-		else {
+		} else {
 			// Statement already exists, only modify its flags, see txn-flags.txt
 			// for a description of the flag transformations
 			byte flags = storedData[FLAG_IDX];
@@ -767,8 +688,7 @@ class TripleStore implements Closeable {
 				if (explicit || wasExplicit) {
 					data[FLAG_IDX] |= EXPLICIT_FLAG;
 				}
-			}
-			else {
+			} else {
 				// Committed statement, must keep explicit flag the same
 				if (wasExplicit) {
 					data[FLAG_IDX] |= EXPLICIT_FLAG;
@@ -779,15 +699,13 @@ class TripleStore implements Closeable {
 						// Make inferred statement explicit
 						data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;
 					}
-				}
-				else {
+				} else {
 					if (wasRemoved) {
 						if (wasExplicit) {
 							// Re-add removed explicit statement as inferred
 							data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;
 						}
-					}
-					else if (wasToggled) {
+					} else if (wasToggled) {
 						data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;
 					}
 				}
@@ -808,40 +726,29 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
-	public int removeTriples(int subj, int pred, int obj, int context)
-		throws IOException
-	{
+	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
 		RecordIterator iter = getTriples(subj, pred, obj, context, 0, 0);
 		return removeTriples(iter);
 	}
 
 	/**
-	 * @param subj
-	 *        The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred
-	 *        The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj
-	 *        The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context
-	 *        The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit
-	 *        Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *        explicit statements that match the pattern, <tt>false</tt> removes inferred statements that
-	 *        match the pattern.
+	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
+	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
+	 *                 the pattern.
 	 * @return The number of triples that were removed.
 	 * @throws IOException
 	 */
-	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit)
-		throws IOException
-	{
+	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
 		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
 		return removeTriples(iter);
 	}
 
-	private int removeTriples(RecordIterator iter)
-		throws IOException
-	{
+	private int removeTriples(RecordIterator iter) throws IOException {
 		byte[] data = iter.next();
 
 		if (data == null) {
@@ -864,7 +771,7 @@ class TripleStore implements Closeable {
 			}
 			iter.close();
 
-			count = (int)removedTriplesCache.getRecordCount();
+			count = (int) removedTriplesCache.getRecordCount();
 			updatedTriplesCache.storeRecords(removedTriplesCache);
 
 			// Set the REMOVED flag by overwriting the affected records
@@ -877,35 +784,29 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
-		}
-		finally {
+		} finally {
 			removedTriplesCache.discard();
 		}
 
 		return count;
 	}
 
-	public void startTransaction()
-		throws IOException
-	{
+	public void startTransaction() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE);
 
 		// Create a record cache for storing updated triples with a maximum of
 		// some 10% of the number of triples
 		long maxRecords = indexes.get(0).getBTree().getValueCountEstimate() / 10L;
 		if (updatedTriplesCache == null) {
-			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords,
-					new TripleComparator("spoc"));
-		}
-		else {
-			assert updatedTriplesCache.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
+			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords, new TripleComparator("spoc"));
+		} else {
+			assert updatedTriplesCache
+					.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
 			updatedTriplesCache.setMaxRecords(maxRecords);
 		}
 	}
 
-	public void commit()
-		throws IOException
-	{
+	public void commit() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
 
 		// updatedTriplesCache will be null when recovering from a crashed commit
@@ -918,8 +819,7 @@ class TripleStore implements Closeable {
 			if (validCache) {
 				// Use the cached set of updated triples
 				iter = updatedTriplesCache.getRecords();
-			}
-			else {
+			} else {
 				// Cache is invalid; too much updates(?). Iterate over all triples
 				iter = btree.iterateAll();
 			}
@@ -934,8 +834,7 @@ class TripleStore implements Closeable {
 
 					if (wasRemoved) {
 						btree.remove(data);
-					}
-					else if (wasAdded || wasToggled) {
+					} else if (wasAdded || wasToggled) {
 						if (wasToggled) {
 							data[FLAG_IDX] ^= EXPLICIT_FLAG;
 						}
@@ -946,15 +845,13 @@ class TripleStore implements Closeable {
 						if (validCache) {
 							// We're iterating the cache
 							btree.insert(data);
-						}
-						else {
+						} else {
 							// We're iterating the BTree itself
 							iter.set(data);
 						}
 					}
 				}
-			}
-			finally {
+			} finally {
 				iter.close();
 			}
 		}
@@ -969,9 +866,7 @@ class TripleStore implements Closeable {
 		// checkAllCommitted();
 	}
 
-	private void checkAllCommitted()
-		throws IOException
-	{
+	private void checkAllCommitted() throws IOException {
 		for (TripleIndex index : indexes) {
 			System.out.println("Checking " + index + " index");
 			BTree btree = index.getBTree();
@@ -989,9 +884,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public void rollback()
-		throws IOException
-	{
+	public void rollback() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK);
 
 		// updatedTriplesCache will be null when recovering from a crash
@@ -1006,8 +899,7 @@ class TripleStore implements Closeable {
 			if (validCache) {
 				// Use the cached set of updated triples
 				iter = updatedTriplesCache.getRecords();
-			}
-			else {
+			} else {
 				// Cache is invalid; too much updates(?). Iterate over all triples
 				iter = btree.iterateAll();
 			}
@@ -1022,24 +914,21 @@ class TripleStore implements Closeable {
 
 					if (wasAdded) {
 						btree.remove(data);
-					}
-					else {
+					} else {
 						if (wasRemoved || wasToggled) {
 							data[FLAG_IDX] &= txnFlagsMask;
 
 							if (validCache) {
 								// We're iterating the cache
 								btree.insert(data);
-							}
-							else {
+							} else {
 								// We're iterating the BTree itself
 								iter.set(data);
 							}
 						}
 					}
 				}
-			}
-			finally {
+			} finally {
 				iter.close();
 			}
 		}
@@ -1053,15 +942,12 @@ class TripleStore implements Closeable {
 		txnStatusFile.setTxnStatus(TxnStatus.NONE);
 	}
 
-	protected void sync()
-		throws IOException
-	{
+	protected void sync() throws IOException {
 		List<Throwable> exceptions = new ArrayList<>();
 		for (TripleIndex index : indexes) {
 			try {
 				index.getBTree().sync();
-			}
-			catch (Throwable e) {
+			} catch (Throwable e) {
 				exceptions.add(e);
 			}
 		}
@@ -1077,7 +963,7 @@ class TripleStore implements Closeable {
 		ByteArrayUtil.putInt(pred, data, PRED_IDX);
 		ByteArrayUtil.putInt(obj, data, OBJ_IDX);
 		ByteArrayUtil.putInt(context, data, CONTEXT_IDX);
-		data[FLAG_IDX] = (byte)flags;
+		data[FLAG_IDX] = (byte) flags;
 
 		return data;
 	}
@@ -1101,7 +987,7 @@ class TripleStore implements Closeable {
 		if (context != -1) {
 			ByteArrayUtil.putInt(0xffffffff, mask, CONTEXT_IDX);
 		}
-		mask[FLAG_IDX] = (byte)flags;
+		mask[FLAG_IDX] = (byte) flags;
 
 		return mask;
 	}
@@ -1113,7 +999,7 @@ class TripleStore implements Closeable {
 		ByteArrayUtil.putInt((pred == -1 ? 0x00000000 : pred), minValue, PRED_IDX);
 		ByteArrayUtil.putInt((obj == -1 ? 0x00000000 : obj), minValue, OBJ_IDX);
 		ByteArrayUtil.putInt((context == -1 ? 0x00000000 : context), minValue, CONTEXT_IDX);
-		minValue[FLAG_IDX] = (byte)0;
+		minValue[FLAG_IDX] = (byte) 0;
 
 		return minValue;
 	}
@@ -1125,14 +1011,12 @@ class TripleStore implements Closeable {
 		ByteArrayUtil.putInt((pred == -1 ? 0xffffffff : pred), maxValue, PRED_IDX);
 		ByteArrayUtil.putInt((obj == -1 ? 0xffffffff : obj), maxValue, OBJ_IDX);
 		ByteArrayUtil.putInt((context == -1 ? 0xffffffff : context), maxValue, CONTEXT_IDX);
-		maxValue[FLAG_IDX] = (byte)0xff;
+		maxValue[FLAG_IDX] = (byte) 0xff;
 
 		return maxValue;
 	}
 
-	private Properties loadProperties(File propFile)
-		throws IOException
-	{
+	private Properties loadProperties(File propFile) throws IOException {
 		try (InputStream in = new FileInputStream(propFile)) {
 			Properties properties = new Properties();
 			properties.load(in);
@@ -1140,9 +1024,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void storeProperties(File propFile)
-		throws IOException
-	{
+	private void storeProperties(File propFile) throws IOException {
 		try (OutputStream out = new FileOutputStream(propFile)) {
 			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
 		}
@@ -1158,12 +1040,9 @@ class TripleStore implements Closeable {
 
 		private final BTree btree;
 
-		public TripleIndex(String fieldSeq)
-			throws IOException
-		{
+		public TripleIndex(String fieldSeq) throws IOException {
 			tripleComparator = new TripleComparator(fieldSeq);
-			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator,
-					forceSync);
+			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);
 		}
 
 		private String getFilenamePrefix(String fieldSeq) {
@@ -1179,50 +1058,46 @@ class TripleStore implements Closeable {
 		}
 
 		/**
-		 * Determines the 'score' of this index on the supplied pattern of subject, predicate, object and
-		 * context IDs. The higher the score, the better the index is suited for matching the pattern. Lowest
-		 * score is 0, which means that the index will perform a sequential scan.
+		 * Determines the 'score' of this index on the supplied pattern of subject, predicate, object and context IDs.
+		 * The higher the score, the better the index is suited for matching the pattern. Lowest score is 0, which means
+		 * that the index will perform a sequential scan.
 		 */
 		public int getPatternScore(int subj, int pred, int obj, int context) {
 			int score = 0;
 
 			for (char field : tripleComparator.getFieldSeq()) {
 				switch (field) {
-					case 's':
-						if (subj >= 0) {
-							score++;
-						}
-						else {
-							return score;
-						}
-						break;
-					case 'p':
-						if (pred >= 0) {
-							score++;
-						}
-						else {
-							return score;
-						}
-						break;
-					case 'o':
-						if (obj >= 0) {
-							score++;
-						}
-						else {
-							return score;
-						}
-						break;
-					case 'c':
-						if (context >= 0) {
-							score++;
-						}
-						else {
-							return score;
-						}
-						break;
-					default:
-						throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-								+ new String(tripleComparator.getFieldSeq()));
+				case 's':
+					if (subj >= 0) {
+						score++;
+					} else {
+						return score;
+					}
+					break;
+				case 'p':
+					if (pred >= 0) {
+						score++;
+					} else {
+						return score;
+					}
+					break;
+				case 'o':
+					if (obj >= 0) {
+						score++;
+					} else {
+						return score;
+					}
+					break;
+				case 'c':
+					if (context >= 0) {
+						score++;
+					} else {
+						return score;
+					}
+					break;
+				default:
+					throw new RuntimeException("invalid character '" + field + "' in field sequence: "
+							+ new String(tripleComparator.getFieldSeq()));
 				}
 			}
 
@@ -1240,8 +1115,8 @@ class TripleStore implements Closeable {
 	 *------------------------------*/
 
 	/**
-	 * A RecordComparator that can be used to create indexes with a configurable order of the subject,
-	 * predicate, object and context fields.
+	 * A RecordComparator that can be used to create indexes with a configurable order of the subject, predicate, object
+	 * and context fields.
 	 */
 	private static class TripleComparator implements RecordComparator {
 
@@ -1261,21 +1136,21 @@ class TripleStore implements Closeable {
 				int fieldIdx = 0;
 
 				switch (field) {
-					case 's':
-						fieldIdx = SUBJ_IDX;
-						break;
-					case 'p':
-						fieldIdx = PRED_IDX;
-						break;
-					case 'o':
-						fieldIdx = OBJ_IDX;
-						break;
-					case 'c':
-						fieldIdx = CONTEXT_IDX;
-						break;
-					default:
-						throw new IllegalArgumentException("invalid character '" + field
-								+ "' in field sequence: " + new String(fieldSeq));
+				case 's':
+					fieldIdx = SUBJ_IDX;
+					break;
+				case 'p':
+					fieldIdx = PRED_IDX;
+					break;
+				case 'o':
+					fieldIdx = OBJ_IDX;
+					break;
+				case 'c':
+					fieldIdx = CONTEXT_IDX;
+					break;
+				default:
+					throw new IllegalArgumentException(
+							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
 				}
 
 				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);

@@ -111,8 +111,7 @@ class FileIO {
 	 *---------*/
 
 	public synchronized void write(SailDataset explicit, SailDataset inferred, File syncFile, File dataFile)
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		write(explicit, inferred, syncFile);
 
 		// prefer atomic renameTo operations
@@ -133,9 +132,7 @@ class FileIO {
 		}
 	}
 
-	private void write(SailDataset explicit, SailDataset inferred, File dataFile)
-		throws IOException, SailException
-	{
+	private void write(SailDataset explicit, SailDataset inferred, File dataFile) throws IOException, SailException {
 
 		try (OutputStream out = new FileOutputStream(dataFile);) {
 			// Write header
@@ -155,8 +152,7 @@ class FileIO {
 	}
 
 	public synchronized void read(File dataFile, SailSink explicit, SailSink inferred)
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		try (InputStream in = new FileInputStream(dataFile);) {
 			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
@@ -173,32 +169,30 @@ class FileIO {
 				int recordTypeMarker;
 				while ((recordTypeMarker = dataIn.readByte()) != EOF_MARKER) {
 					switch (recordTypeMarker) {
-						case NAMESPACE_MARKER:
-							readNamespace(dataIn, explicit);
-							break;
-						case EXPL_TRIPLE_MARKER:
-							readStatement(false, true, dataIn, explicit, inferred);
-							break;
-						case EXPL_QUAD_MARKER:
-							readStatement(true, true, dataIn, explicit, inferred);
-							break;
-						case INF_TRIPLE_MARKER:
-							readStatement(false, false, dataIn, explicit, inferred);
-							break;
-						case INF_QUAD_MARKER:
-							readStatement(true, false, dataIn, explicit, inferred);
-							break;
-						default:
-							throw new IOException("Invalid record type marker: " + recordTypeMarker);
+					case NAMESPACE_MARKER:
+						readNamespace(dataIn, explicit);
+						break;
+					case EXPL_TRIPLE_MARKER:
+						readStatement(false, true, dataIn, explicit, inferred);
+						break;
+					case EXPL_QUAD_MARKER:
+						readStatement(true, true, dataIn, explicit, inferred);
+						break;
+					case INF_TRIPLE_MARKER:
+						readStatement(false, false, dataIn, explicit, inferred);
+						break;
+					case INF_QUAD_MARKER:
+						readStatement(true, false, dataIn, explicit, inferred);
+						break;
+					default:
+						throw new IOException("Invalid record type marker: " + recordTypeMarker);
 					}
 				}
 			}
 		}
 	}
 
-	private void writeNamespaces(SailDataset store, DataOutputStream dataOut)
-		throws IOException, SailException
-	{
+	private void writeNamespaces(SailDataset store, DataOutputStream dataOut) throws IOException, SailException {
 		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces();) {
 			while (iter.hasNext()) {
 				Namespace ns = iter.next();
@@ -209,9 +203,7 @@ class FileIO {
 		}
 	}
 
-	private void readNamespace(DataInputStream dataIn, SailSink store)
-		throws IOException, SailException
-	{
+	private void readNamespace(DataInputStream dataIn, SailSink store) throws IOException, SailException {
 		String prefix = readString(dataIn);
 		String name = readString(dataIn);
 
@@ -224,27 +216,22 @@ class FileIO {
 	}
 
 	private void writeStatements(final SailDataset explicit, SailDataset inferred, DataOutputStream dataOut)
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		// write explicit only statements
-		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER,
-				dataOut);
+		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER, dataOut);
 		// write inferred only statements
 		writeStatement(inferred.getStatements(null, null, null), INF_TRIPLE_MARKER, INF_QUAD_MARKER, dataOut);
 	}
 
-	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter,
-			int tripleMarker, int quadMarker, DataOutputStream dataOut)
-		throws IOException, SailException
-	{
+	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
+			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
 		try {
 			while (stIter.hasNext()) {
 				Statement st = stIter.next();
 				Resource context = st.getContext();
 				if (context == null) {
 					dataOut.writeByte(tripleMarker);
-				}
-				else {
+				} else {
 					dataOut.writeByte(quadMarker);
 				}
 				writeValue(st.getSubject(), dataOut);
@@ -254,45 +241,37 @@ class FileIO {
 					writeValue(context, dataOut);
 				}
 			}
-		}
-		finally {
+		} finally {
 			stIter.close();
 		}
 	}
 
-	private void readStatement(boolean hasContext, boolean isExplicit, DataInputStream dataIn,
-			SailSink explicit, SailSink inferred)
-		throws IOException, ClassCastException, SailException
-	{
-		MemResource memSubj = (MemResource)readValue(dataIn);
-		MemIRI memPred = (MemIRI)readValue(dataIn);
-		MemValue memObj = (MemValue)readValue(dataIn);
+	private void readStatement(boolean hasContext, boolean isExplicit, DataInputStream dataIn, SailSink explicit,
+			SailSink inferred) throws IOException, ClassCastException, SailException {
+		MemResource memSubj = (MemResource) readValue(dataIn);
+		MemIRI memPred = (MemIRI) readValue(dataIn);
+		MemValue memObj = (MemValue) readValue(dataIn);
 		MemResource memContext = null;
 		if (hasContext) {
-			memContext = (MemResource)readValue(dataIn);
+			memContext = (MemResource) readValue(dataIn);
 		}
 
 		if (isExplicit) {
 			explicit.approve(memSubj, memPred, memObj, memContext);
-		}
-		else {
+		} else {
 			inferred.approve(memSubj, memPred, memObj, memContext);
 		}
 	}
 
-	private void writeValue(Value value, DataOutputStream dataOut)
-		throws IOException
-	{
+	private void writeValue(Value value, DataOutputStream dataOut) throws IOException {
 		if (value instanceof IRI) {
 			dataOut.writeByte(URI_MARKER);
-			writeString(((IRI)value).toString(), dataOut);
-		}
-		else if (value instanceof BNode) {
+			writeString(((IRI) value).toString(), dataOut);
+		} else if (value instanceof BNode) {
 			dataOut.writeByte(BNODE_MARKER);
-			writeString(((BNode)value).getID(), dataOut);
-		}
-		else if (value instanceof Literal) {
-			Literal lit = (Literal)value;
+			writeString(((BNode) value).getID(), dataOut);
+		} else if (value instanceof Literal) {
+			Literal lit = (Literal) value;
 
 			String label = lit.getLabel();
 			IRI datatype = lit.getDatatype();
@@ -301,86 +280,67 @@ class FileIO {
 				dataOut.writeByte(LANG_LITERAL_MARKER);
 				writeString(label, dataOut);
 				writeString(lit.getLanguage().get(), dataOut);
-			}
-			else {
+			} else {
 				dataOut.writeByte(DATATYPE_LITERAL_MARKER);
 				writeString(label, dataOut);
 				writeValue(datatype, dataOut);
 			}
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("unexpected value type: " + value.getClass());
 		}
 	}
 
-	private Value readValue(DataInputStream dataIn)
-		throws IOException, ClassCastException
-	{
+	private Value readValue(DataInputStream dataIn) throws IOException, ClassCastException {
 		int valueTypeMarker = dataIn.readByte();
 
 		if (valueTypeMarker == URI_MARKER) {
 			String uriString = readString(dataIn);
 			return vf.createIRI(uriString);
-		}
-		else if (valueTypeMarker == BNODE_MARKER) {
+		} else if (valueTypeMarker == BNODE_MARKER) {
 			String bnodeID = readString(dataIn);
 			return vf.createBNode(bnodeID);
-		}
-		else if (valueTypeMarker == PLAIN_LITERAL_MARKER) {
+		} else if (valueTypeMarker == PLAIN_LITERAL_MARKER) {
 			String label = readString(dataIn);
 			return vf.createLiteral(label);
-		}
-		else if (valueTypeMarker == LANG_LITERAL_MARKER) {
+		} else if (valueTypeMarker == LANG_LITERAL_MARKER) {
 			String label = readString(dataIn);
 			String language = readString(dataIn);
 			return vf.createLiteral(label, language);
-		}
-		else if (valueTypeMarker == DATATYPE_LITERAL_MARKER) {
+		} else if (valueTypeMarker == DATATYPE_LITERAL_MARKER) {
 			String label = readString(dataIn);
-			IRI datatype = (IRI)readValue(dataIn);
+			IRI datatype = (IRI) readValue(dataIn);
 			return vf.createLiteral(label, datatype);
-		}
-		else {
+		} else {
 			throw new IOException("Invalid value type marker: " + valueTypeMarker);
 		}
 	}
 
-	private void writeString(String s, DataOutputStream dataOut)
-		throws IOException
-	{
+	private void writeString(String s, DataOutputStream dataOut) throws IOException {
 		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
 		dataOut.writeInt(byteBuf.remaining());
 		dataOut.write(byteBuf.array(), 0, byteBuf.remaining());
 	}
 
-	private String readString(DataInputStream dataIn)
-		throws IOException
-	{
+	private String readString(DataInputStream dataIn) throws IOException {
 		if (formatVersion == 1) {
 			return readStringV1(dataIn);
-		}
-		else {
+		} else {
 			return readStringV2(dataIn);
 		}
 	}
 
 	/**
-	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified
-	 * UTF-8}.
+	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified UTF-8}.
 	 */
-	private String readStringV1(DataInputStream dataIn)
-		throws IOException
-	{
+	private String readStringV1(DataInputStream dataIn) throws IOException {
 		return dataIn.readUTF();
 	}
 
 	/**
-	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit
-	 * integer (high byte first) specifying the length of the encoded string.
+	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit integer
+	 * (high byte first) specifying the length of the encoded string.
 	 */
-	private String readStringV2(DataInputStream dataIn)
-		throws IOException
-	{
+	private String readStringV2(DataInputStream dataIn) throws IOException {
 		int stringLength = dataIn.readInt();
 		byte[] encodedString = IOUtil.readBytes(dataIn, stringLength);
 

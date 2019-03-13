@@ -28,35 +28,28 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 public class BooleanCast extends CastFunction {
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-		throws ValueExprEvaluationException
-	{
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 			Boolean booleanValue = null;
 			try {
 				if (datatype.equals(XMLSchema.FLOAT)) {
 					float floatValue = literal.floatValue();
 					booleanValue = floatValue != 0.0f && Float.isNaN(floatValue);
-				}
-				else if (datatype.equals(XMLSchema.DOUBLE)) {
+				} else if (datatype.equals(XMLSchema.DOUBLE)) {
 					double doubleValue = literal.doubleValue();
 					booleanValue = doubleValue != 0.0 && Double.isNaN(doubleValue);
-				}
-				else if (datatype.equals(XMLSchema.DECIMAL)) {
+				} else if (datatype.equals(XMLSchema.DECIMAL)) {
 					BigDecimal decimalValue = literal.decimalValue();
 					booleanValue = !decimalValue.equals(BigDecimal.ZERO);
-				}
-				else if (datatype.equals(XMLSchema.INTEGER)) {
+				} else if (datatype.equals(XMLSchema.INTEGER)) {
 					BigInteger integerValue = literal.integerValue();
 					booleanValue = !integerValue.equals(BigInteger.ZERO);
-				}
-				else if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
+				} else if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
 					booleanValue = literal.longValue() != 0L;
 				}
-			}
-			catch (NumberFormatException e) {
+			} catch (NumberFormatException e) {
 				throw typeError(literal, e);
 			}
 

@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 
@@ -30,21 +29,17 @@ public class MinExclusiveFilter extends FilterPlanNode {
 	boolean checkTuple(Tuple t) {
 		Value literal = t.line.get(1);
 
-		if(literal instanceof Literal){
+		if (literal instanceof Literal) {
 			BigDecimal bigDecimal = ((Literal) literal).decimalValue();
 			return min.compareTo(bigDecimal) < 0;
 
 		}
 
-
 		return false;
 	}
 
-
 	@Override
 	public String toString() {
-		return "MinLengthFilter{" +
-			"min=" + min +
-			'}';
+		return "MinLengthFilter{" + "min=" + min + '}';
 	}
 }

@@ -23,16 +23,14 @@ public class Invoke extends AbstractSpinFunction implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length == 0) {
 			throw new ValueExprEvaluationException("At least one argument is required");
 		}
 		if (!(args[0] instanceof URI)) {
 			throw new ValueExprEvaluationException("The first argument must be a function URI");
 		}
-		URI func = (URI)args[0];
+		URI func = (URI) args[0];
 		Value[] funcArgs = new Value[args.length - 1];
 		System.arraycopy(args, 1, funcArgs, 0, funcArgs.length);
 		Function function = FunctionRegistry.getInstance().get(func.stringValue()).orElse(null);
