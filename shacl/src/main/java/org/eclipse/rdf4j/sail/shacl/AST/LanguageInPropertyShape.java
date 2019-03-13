@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -29,19 +30,22 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	private final List<String> languageIn;
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
-	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			Resource languageIn) {
+	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource languageIn) {
 		super(id, connection, nodeShape);
 
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toList());
 	}
 
-	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
-				(parent) -> new LanguageInFilter(parent, languageIn), this, overrideTargetNode);
+	@Override
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
+			shaclSailConnection,
+			nodeShape,
+			(parent) -> new LanguageInFilter(parent, languageIn),
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

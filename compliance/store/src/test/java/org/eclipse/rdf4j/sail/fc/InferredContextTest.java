@@ -24,6 +24,7 @@ public class InferredContextTest {
 	BNode type = vf.createBNode();
 	BNode context = vf.createBNode();
 
+
 	@Test
 	public void testInferrecContextNull() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
@@ -57,8 +58,7 @@ public class InferredContextTest {
 
 			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, true, context));
 
-			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(bNode,
-					RDF.TYPE, RDFS.RESOURCE, true)) {
+			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true)) {
 				while (statements.hasNext()) {
 					Statement next = statements.next();
 					assertEquals("Context should be equal", context, next.getContext());
@@ -72,8 +72,10 @@ public class InferredContextTest {
 	public void testDefaultBehaviour() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
 
-		assertTrue("Current default behaviour should be to add all statements to default context",
-				sail.isAddInferredStatementsToDefaultContext());
+		assertTrue(
+			"Current default behaviour should be to add all statements to default context",
+			sail.isAddInferredStatementsToDefaultContext()
+		);
 
 	}
 

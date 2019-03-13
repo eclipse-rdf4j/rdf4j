@@ -8,12 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * @author Håvard Ottestad
@@ -22,12 +24,14 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(FilterPlanNode.class);
 
+
 	PlanNode parent;
 
 	PushablePlanNode trueNode;
 	PushablePlanNode falseNode;
 
 	private CloseableIteration<Tuple, SailException> iterator;
+
 
 	abstract boolean checkTuple(Tuple t);
 
@@ -63,6 +67,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		return falseNode;
 	}
 
+
 	public CloseableIteration<Tuple, SailException> iterator() {
 
 		return new CloseableIteration<Tuple, SailException>() {
@@ -86,8 +91,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
 							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";trueNode: " + " "
-										+ temp.toString());
+								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
 							}
 							trueNode.push(temp);
 
@@ -95,8 +99,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 					} else {
 						if (falseNode != null) {
 							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";falseNode: " + " "
-										+ temp.toString());
+								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
 							}
 							falseNode.push(temp);
 
@@ -143,6 +146,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		};
 	}
 
+
 	boolean printed = false;
 
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
@@ -150,19 +154,19 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
-		if (trueNode != null) {
-			stringBuilder.append(getId() + " -> " + trueNode.getId() + " [label=\"true values\"]").append("\n");
+		if(trueNode != null){
+			stringBuilder.append(getId()+" -> "+trueNode.getId()+ " [label=\"true values\"]").append("\n");
 
 		}
-		if (falseNode != null) {
-			stringBuilder.append(getId() + " -> " + falseNode.getId() + " [label=\"false values\"]").append("\n");
+		if(falseNode != null){
+			stringBuilder.append(getId()+" -> "+falseNode.getId()+ " [label=\"false values\"]").append("\n");
 
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
+
 
 	}
 
@@ -175,6 +179,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
+
 	private String leadingSpace() {
 		return StringUtils.leftPad("", parent.depth() + 1, "    ");
 	}
@@ -186,9 +191,13 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+
 	@Override
 	public void close() {
-		if ((trueNode == null || trueNode.isClosed()) && (falseNode == null || falseNode.isClosed())) {
+		if (
+			(trueNode == null || trueNode.isClosed()) &&
+				(falseNode == null || falseNode.isClosed())
+		) {
 			iterator.close();
 			iterator = null;
 		}

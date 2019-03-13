@@ -33,7 +33,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
+public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
+		extends RDFSchemaRepositoryConnectionTest
+{
 
 	private File dataDir;
 
@@ -42,7 +44,9 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	}
 
 	@Override
-	protected Repository createRepository() throws IOException {
+	protected Repository createRepository()
+		throws IOException
+	{
 		dataDir = FileUtil.createTempDir("nativestore");
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true);
 		sail.setAddInferredStatementsToDefaultContext(false);
@@ -50,10 +54,13 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	}
 
 	@Override
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 		try {
 			super.tearDown();
-		} finally {
+		}
+		finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}
@@ -61,33 +68,44 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 	@Override
 	@Test
 	@Ignore
-	public void testQueryDefaultGraph() throws Exception {
+	public void testQueryDefaultGraph()
+		throws Exception
+	{
+		// ignore
+	}
+
+
+	@Override
+	@Test
+	@Ignore
+	public void testDeleteDefaultGraph()
+		throws Exception
+	{
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testDeleteDefaultGraph() throws Exception {
+	public void testContextStatementsNotDuplicated()
+		throws Exception
+	{
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated() throws Exception {
+	public void testContextStatementsNotDuplicated2()
+		throws Exception
+	{
 		// ignore
 	}
 
-	@Override
-	@Test
-	@Ignore
-	public void testContextStatementsNotDuplicated2() throws Exception {
-		// ignore
-	}
 
 	@Test
-	public void testContextTbox() {
+	public void testContextTbox()
+	{
 
 //		Man subClassOf Human g1
 //		Human subClassOf Animal g2
@@ -102,25 +120,31 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 		IRI graph2 = vf.createIRI("http://example.org/graph2");
 		IRI graph3 = vf.createIRI("http://example.org/graph3");
 
+
 		testCon.add(man, RDFS.SUBCLASSOF, human, graph1);
 		testCon.add(human, RDFS.SUBCLASSOF, animal, graph2);
 		testCon.add(bob, RDF.TYPE, man, graph3);
 
+
 		/*
-		 * The SchemaCachingRDFSInferencer correctly adds inferred A-box statements to the correct graph, but does not
-		 * add inferred T-box statements to the correct graph.
+		The SchemaCachingRDFSInferencer correctly adds inferred A-box statements to the correct graph,
+		but does not add inferred T-box statements to the correct graph.
 		 */
 
+
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null, true))) {
+		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null,true))) {
 			stream.forEach(System.out::println);
 		}
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
-			stream.peek(statement -> assertEquals(statement.getContext(), graph3)).forEach(System.out::println);
+		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null,true))) {
+			stream
+				.peek(statement -> assertEquals(statement.getContext(), graph3))
+				.forEach(System.out::println);
 		}
 
 		System.out.println("-----------");
+
 
 	}
 

@@ -23,7 +23,8 @@ public class LowerTitleCase extends AbstractStringReplacer {
 			char ch = s.charAt(i);
 			if (prev == ' ') {
 				buf.append(Character.toUpperCase(ch));
-			} else {
+			}
+			else {
 				buf.append(ch);
 			}
 			prev = ch;

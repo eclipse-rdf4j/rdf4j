@@ -6,7 +6,9 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
+
 package org.eclipse.rdf4j.sail.shacl.planNodes;
+
 
 import org.eclipse.rdf4j.model.Value;
 
@@ -29,8 +31,11 @@ public class MaxLengthFilter extends FilterPlanNode {
 		return literal.stringValue().length() <= maxLength;
 	}
 
+
 	@Override
 	public String toString() {
-		return "MaxLengthFilter{" + "maxLength=" + maxLength + '}';
+		return "MaxLengthFilter{" +
+			"maxLength=" + maxLength +
+			'}';
 	}
 }

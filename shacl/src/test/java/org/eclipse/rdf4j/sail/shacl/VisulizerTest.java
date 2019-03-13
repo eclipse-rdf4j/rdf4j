@@ -22,6 +22,7 @@ public class VisulizerTest {
 	@Test
 	public void datatype() throws Exception {
 
+
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
@@ -43,10 +44,12 @@ public class VisulizerTest {
 			connection.commit();
 		}
 
+
 	}
 
 	@Test
 	public void maxCount() throws Exception {
+
 
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMax.ttl");
 
@@ -68,10 +71,12 @@ public class VisulizerTest {
 			connection.commit();
 		}
 
+
 	}
 
 	@Test(expected = SailException.class)
 	public void minCount() throws Exception {
+
 
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 
@@ -92,6 +97,7 @@ public class VisulizerTest {
 
 			connection.commit();
 		}
+
 
 	}
 }

@@ -32,17 +32,20 @@ public class StrBefore implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException("Incorrect number of arguments for STRBEFORE: " + args.length);
+			throw new ValueExprEvaluationException(
+					"Incorrect number of arguments for STRBEFORE: " + args.length);
 		}
 
 		Value leftArg = args[0];
 		Value rightArg = args[1];
 
 		if (leftArg instanceof Literal && rightArg instanceof Literal) {
-			Literal leftLit = (Literal) leftArg;
-			Literal rightLit = (Literal) rightArg;
+			Literal leftLit = (Literal)leftArg;
+			Literal rightLit = (Literal)rightArg;
 
 			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
 				Optional<String> leftLanguage = leftLit.getLanguage();
@@ -56,7 +59,8 @@ public class StrBefore implements Function {
 				String substringBefore = "";
 				if (index > -1) {
 					substringBefore = lexicalValue.substring(0, index);
-				} else {
+				}
+				else {
 					// no match, return empty string with no language or datatype
 					leftLanguage = Optional.empty();
 					leftDt = null;
@@ -64,17 +68,22 @@ public class StrBefore implements Function {
 
 				if (leftLanguage.isPresent()) {
 					return valueFactory.createLiteral(substringBefore, leftLanguage.get());
-				} else if (leftDt != null) {
+				}
+				else if (leftDt != null) {
 					return valueFactory.createLiteral(substringBefore, leftDt);
-				} else {
+				}
+				else {
 					return valueFactory.createLiteral(substringBefore);
 				}
-			} else {
+			}
+			else {
 				throw new ValueExprEvaluationException(
 						"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 			}
-		} else {
-			throw new ValueExprEvaluationException("incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
+		}
+		else {
+			throw new ValueExprEvaluationException(
+					"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 		}
 	}
 }

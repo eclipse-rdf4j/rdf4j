@@ -18,7 +18,9 @@ public class MD5Test extends HashFunctionTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		setHashFunction(new MD5());
 		setToHash("abc");
 		setExpectedDigest("900150983cd24fb0d6963f7d28e17f72");

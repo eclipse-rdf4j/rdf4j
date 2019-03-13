@@ -25,7 +25,9 @@ public class MemURITest {
 	 * Verifies that MemURI's hash code is the same as the hash code of an equivalent URIImpl.
 	 */
 	@Test
-	public void testEqualsAndHash() throws Exception {
+	public void testEqualsAndHash()
+		throws Exception
+	{
 		compareURIs(RDF.NAMESPACE);
 		compareURIs(RDF.TYPE.toString());
 		compareURIs("foo:bar");
@@ -33,11 +35,14 @@ public class MemURITest {
 		compareURIs("http://www.example.org/foo#bar");
 	}
 
-	private void compareURIs(String uri) throws Exception {
+	private void compareURIs(String uri)
+		throws Exception
+	{
 		IRI uriImpl = SimpleValueFactory.getInstance().createIRI(uri);
 		MemIRI memURI = new MemIRI(this, uriImpl.getNamespace(), uriImpl.getLocalName());
 
 		assertEquals("MemURI not equal to URIImpl for: " + uri, uriImpl, memURI);
-		assertEquals("MemURI has different hash code than URIImpl for: " + uri, uriImpl.hashCode(), memURI.hashCode());
+		assertEquals("MemURI has different hash code than URIImpl for: " + uri, uriImpl.hashCode(),
+				memURI.hashCode());
 	}
 }

@@ -40,7 +40,9 @@ public class LuceneSailFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config) throws SailConfigException {
+	public Sail getSail(SailImplConfig config)
+		throws SailConfigException
+	{
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
@@ -49,7 +51,7 @@ public class LuceneSailFactory implements SailFactory {
 		luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneIndex.class.getName());
 
 		if (config instanceof AbstractLuceneSailConfig) {
-			AbstractLuceneSailConfig luceneConfig = (AbstractLuceneSailConfig) config;
+			AbstractLuceneSailConfig luceneConfig = (AbstractLuceneSailConfig)config;
 			luceneSail.setParameter(LuceneSail.LUCENE_DIR_KEY, luceneConfig.getIndexDir());
 			for (String key : luceneConfig.getParameterNames()) {
 				luceneSail.setParameter(key, luceneConfig.getParameter(key));

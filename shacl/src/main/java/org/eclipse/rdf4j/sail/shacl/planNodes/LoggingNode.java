@@ -47,6 +47,7 @@ public class LoggingNode implements PlanNode {
 		} else {
 			return new CloseableIteration<Tuple, SailException>() {
 
+
 				CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 				{
@@ -55,14 +56,14 @@ public class LoggingNode implements PlanNode {
 					}
 				}
 
-				private CloseableIteration<Tuple, SailException> cachedIterator(
-						CloseableIteration<Tuple, SailException> fromIterator) {
+				private CloseableIteration<Tuple, SailException> cachedIterator(CloseableIteration<Tuple, SailException> fromIterator) {
 					Stream<Tuple> stream = Iterations.stream(fromIterator);
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
 					return new CloseableIteration<Tuple, SailException>() {
 
 						Iterator<Tuple> iterator = collect.iterator();
+
 
 						@Override
 						public void close() throws SailException {
@@ -85,7 +86,9 @@ public class LoggingNode implements PlanNode {
 						}
 					};
 
+
 				}
+
 
 				@Override
 				public void close() throws SailException {
@@ -104,15 +107,13 @@ public class LoggingNode implements PlanNode {
 
 				@Override
 				public Tuple next() throws SailException {
-					assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName()
-							+ " does not have any more items but next was still called!!!";
+					assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName() + " does not have any more items but next was still called!!!";
 
 					Tuple next = parentIterator.next();
 
 					assert next != null;
 
-					logger.info(leadingSpace() + message + parent.getClass().getSimpleName() + ".next(): " + " "
-							+ next.toString());
+					logger.info(leadingSpace() + message + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
 
 					return next;
 				}

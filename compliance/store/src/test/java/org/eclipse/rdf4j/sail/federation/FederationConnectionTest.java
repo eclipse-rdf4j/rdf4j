@@ -33,7 +33,9 @@ public class FederationConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	protected Repository createRepository() throws IOException {
+	protected Repository createRepository()
+		throws IOException
+	{
 		Federation sail = new Federation();
 		sail.addMember(new SailRepository(new MemoryStore()));
 		sail.addMember(new SailRepository(new MemoryStore()));

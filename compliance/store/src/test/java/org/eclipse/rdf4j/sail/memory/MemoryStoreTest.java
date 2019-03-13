@@ -12,7 +12,8 @@ import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * An extension of RDFStoreTest for testing the class <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
+ * An extension of RDFStoreTest for testing the class
+ * <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
  */
 public class MemoryStoreTest extends RDFNotifyingStoreTest {
 
@@ -21,7 +22,9 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected NotifyingSail createSail()
+		throws SailException
+	{
 		NotifyingSail sail = new MemoryStore();
 		sail.init();
 		return sail;

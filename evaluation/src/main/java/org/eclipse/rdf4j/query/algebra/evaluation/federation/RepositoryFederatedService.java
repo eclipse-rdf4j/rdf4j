@@ -17,7 +17,8 @@ import org.eclipse.rdf4j.repository.Repository;
  */
 @Deprecated
 public class RepositoryFederatedService
-		extends org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService {
+		extends org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService
+{
 
 	public RepositoryFederatedService(Repository repo, boolean shutDown) {
 		super(repo, shutDown);

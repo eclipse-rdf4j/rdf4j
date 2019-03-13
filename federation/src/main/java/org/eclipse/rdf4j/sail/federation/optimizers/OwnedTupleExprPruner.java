@@ -20,7 +20,9 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * 
  * @author James Leigh
  */
-public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
+public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeException>
+		implements QueryOptimizer
+{
 
 	private OwnedTupleExpr owned;
 
@@ -33,8 +35,9 @@ public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeExcep
 	@Override
 	public void meetOther(QueryModelNode node) {
 		if (node instanceof OwnedTupleExpr) {
-			meetOwnedTupleExpr((OwnedTupleExpr) node);
-		} else {
+			meetOwnedTupleExpr((OwnedTupleExpr)node);
+		}
+		else {
 			super.meetOther(node);
 		}
 	}
@@ -44,7 +47,8 @@ public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeExcep
 			owned = node;
 			super.meetOther(node);
 			owned = null; // NOPMD
-		} else {
+		}
+		else {
 			// no nested OwnedTupleExpr
 			TupleExpr replacement = node.getArg().clone();
 			node.replaceWith(replacement);

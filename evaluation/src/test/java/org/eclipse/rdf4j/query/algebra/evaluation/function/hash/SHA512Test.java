@@ -18,7 +18,9 @@ public class SHA512Test extends HashFunctionTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		setHashFunction(new SHA512());
 		setToHash("abc");
 		setExpectedDigest(

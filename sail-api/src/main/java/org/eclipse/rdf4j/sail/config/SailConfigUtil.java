@@ -17,9 +17,12 @@ import org.eclipse.rdf4j.model.util.Models;
 
 public class SailConfigUtil {
 
-	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode) throws SailConfigException {
+	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode)
+		throws SailConfigException
+	{
 		try {
-			Optional<Literal> typeLit = Models.objectLiteral(m.filter(implNode, SailConfigSchema.SAILTYPE, null));
+			Optional<Literal> typeLit = Models.objectLiteral(
+					m.filter(implNode, SailConfigSchema.SAILTYPE, null));
 
 			if (typeLit.isPresent()) {
 				Optional<SailFactory> factory = SailRegistry.getInstance().get(typeLit.get().getLabel());
@@ -28,13 +31,15 @@ public class SailConfigUtil {
 					SailImplConfig implConfig = factory.get().getConfig();
 					implConfig.parse(m, implNode);
 					return implConfig;
-				} else {
+				}
+				else {
 					throw new SailConfigException("Unsupported Sail type: " + typeLit.get().getLabel());
 				}
 			}
 
 			return null;
-		} catch (ModelException e) {
+		}
+		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

@@ -8,9 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
 
 /**
  * @author Håvard Ottestad
@@ -32,7 +34,9 @@ public class TrimTuple implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
+
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+
 
 			@Override
 			public void close() throws SailException {
@@ -68,6 +72,7 @@ public class TrimTuple implements PlanNode {
 			}
 		};
 
+
 	}
 
 	@Override
@@ -77,29 +82,29 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
-			return;
+		if(printed) return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
-		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override
 	public String toString() {
-		return "TrimTuple{" + "newLength=" + newLength + ", startIndex=" + startIndex + '}';
+		return "TrimTuple{" +
+			"newLength=" + newLength +
+			", startIndex=" + startIndex +
+			'}';
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this) + "";
+		return System.identityHashCode(this)+"";
 	}
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		if (newLength == 1)
-			return IteratorData.tripleBased;
+		if(newLength == 1) return IteratorData.tripleBased;
 		return parent.getIteratorDataType();
 	}
 }

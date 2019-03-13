@@ -27,6 +27,7 @@ public class ModifyTuple implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
+
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			@Override
@@ -58,24 +59,23 @@ public class ModifyTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
-			return;
+		if(printed) return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
-		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this) + "";
+		return System.identityHashCode(this)+"";
 	}
 
 	@Override
 	public String toString() {
 		return "ModifyTuple";
 	}
+
 
 	@Override
 	public IteratorData getIteratorDataType() {
@@ -87,3 +87,9 @@ public class ModifyTuple implements PlanNode {
 
 	}
 }
+
+
+
+
+
+

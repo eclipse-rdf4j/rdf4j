@@ -58,7 +58,9 @@ public class EarlReport {
 
 	private static Logger logger = LoggerFactory.getLogger(EarlReport.class);
 
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args)
+		throws Exception
+	{
 		earlRepository = new SailRepository(new MemoryStore());
 		earlRepository.initialize();
 		vf = earlRepository.getValueFactory();
@@ -103,15 +105,15 @@ public class EarlReport {
 
 		con.commit();
 
-		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
-				.get(RDFFormat.TURTLE)
-				.orElseThrow(Rio.unsupportedFormat(RDFFormat.TURTLE));
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(RDFFormat.TURTLE).orElseThrow(
+				Rio.unsupportedFormat(RDFFormat.TURTLE));
 		File outFile = File.createTempFile("sesame-sparql-compliance",
 				"." + RDFFormat.TURTLE.getDefaultFileExtension());
 		FileOutputStream out = new FileOutputStream(outFile);
 		try {
 			con.export(factory.getWriter(out));
-		} finally {
+		}
+		finally {
 			out.close();
 		}
 
@@ -135,12 +137,15 @@ public class EarlReport {
 			String testURI = null;
 			;
 			if (test instanceof SPARQLQueryTest) {
-				testURI = ((SPARQLQueryTest) test).testURI;
-			} else if (test instanceof SPARQL11SyntaxTest) {
-				testURI = ((SPARQL11SyntaxTest) test).testURI;
-			} else if (test instanceof SPARQLUpdateConformanceTest) {
-				testURI = ((SPARQLUpdateConformanceTest) test).testURI;
-			} else {
+				testURI = ((SPARQLQueryTest)test).testURI;
+			}
+			else if (test instanceof SPARQL11SyntaxTest) {
+				testURI = ((SPARQL11SyntaxTest)test).testURI;
+			}
+			else if (test instanceof SPARQLUpdateConformanceTest) {
+				testURI = ((SPARQLUpdateConformanceTest)test).testURI;
+			}
+			else {
 				throw new RuntimeException("Unexpected test type: " + test.getClass());
 			}
 
@@ -157,12 +162,15 @@ public class EarlReport {
 
 				if (errorCount > 0) {
 					con.add(resultNode, EARL.OUTCOME, EARL.FAIL);
-				} else if (failureCount > 0) {
+				}
+				else if (failureCount > 0) {
 					con.add(resultNode, EARL.OUTCOME, EARL.FAIL);
-				} else {
+				}
+				else {
 					con.add(resultNode, EARL.OUTCOME, EARL.PASS);
 				}
-			} catch (RepositoryException e) {
+			}
+			catch (RepositoryException e) {
 				throw new RuntimeException(e);
 			}
 		}

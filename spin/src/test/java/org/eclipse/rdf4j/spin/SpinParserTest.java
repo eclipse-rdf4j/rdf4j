@@ -65,7 +65,9 @@ public class SpinParserTest {
 	}
 
 	@Test
-	public void testSpinParser() throws IOException, RDF4JException {
+	public void testSpinParser()
+		throws IOException, RDF4JException
+	{
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
@@ -88,9 +90,12 @@ public class SpinParserTest {
 		ParsedOperation rdfParsedOp = rdfParser.parse(queryResource, store);
 
 		if (textParsedOp instanceof ParsedQuery) {
-			assertEquals(((ParsedQuery) textParsedOp).getTupleExpr(), ((ParsedQuery) rdfParsedOp).getTupleExpr());
-		} else {
-			assertEquals(((ParsedUpdate) textParsedOp).getUpdateExprs(), ((ParsedUpdate) rdfParsedOp).getUpdateExprs());
+			assertEquals(((ParsedQuery)textParsedOp).getTupleExpr(),
+					((ParsedQuery)rdfParsedOp).getTupleExpr());
+		}
+		else {
+			assertEquals(((ParsedUpdate)textParsedOp).getUpdateExprs(),
+					((ParsedUpdate)rdfParsedOp).getUpdateExprs());
 		}
 	}
 }

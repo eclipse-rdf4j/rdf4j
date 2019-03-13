@@ -22,6 +22,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	private boolean closed;
 	private boolean printed;
 
+
 	BufferedPlanNode(T parent) {
 		this.parent = parent;
 	}
@@ -81,8 +82,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 		printed = true;
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 	}
 
 	@Override

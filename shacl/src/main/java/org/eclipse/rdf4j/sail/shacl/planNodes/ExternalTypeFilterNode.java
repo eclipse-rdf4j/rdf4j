@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
@@ -31,8 +32,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private final boolean returnMatching;
 	private boolean printed = false;
 
-	public ExternalTypeFilterNode(SailConnection connection, Resource filterOnType, PlanNode parent, int index,
-			boolean returnMatching) {
+
+	public ExternalTypeFilterNode(SailConnection connection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
@@ -40,17 +41,21 @@ public class ExternalTypeFilterNode implements PlanNode {
 		this.returnMatching = returnMatching;
 	}
 
+
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
+
 			Tuple next = null;
+
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
+
 
 					Value subject = temp.line.get(index);
 
@@ -111,19 +116,16 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
-			return;
+		if(printed) return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
+
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
-					.append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -131,7 +133,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" + "filterOnType=" + filterOnType + '}';
+		return "ExternalTypeFilterNode{" +
+			"filterOnType=" + filterOnType +
+			'}';
 	}
 
 	@Override

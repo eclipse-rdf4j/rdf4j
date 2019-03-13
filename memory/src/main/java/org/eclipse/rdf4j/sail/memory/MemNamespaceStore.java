@@ -47,7 +47,8 @@ class MemNamespaceStore implements Iterable<SimpleNamespace> {
 
 		if (ns != null) {
 			ns.setName(name);
-		} else {
+		}
+		else {
 			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
 		}
 	}

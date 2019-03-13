@@ -42,7 +42,9 @@ public class SailUpdate extends AbstractParserUpdate {
 	}
 
 	@Override
-	public void execute() throws UpdateExecutionException {
+	public void execute()
+		throws UpdateExecutionException
+	{
 		ParsedUpdate parsedUpdate = getParsedUpdate();
 		List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
 		Map<UpdateExpr, Dataset> datasetMapping = parsedUpdate.getDatasetMapping();
@@ -63,12 +65,14 @@ public class SailUpdate extends AbstractParserUpdate {
 				try {
 					executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
 							getMaxExecutionTime());
-				} catch (RDF4JException e) {
+				}
+				catch (RDF4JException e) {
 					logger.warn("exception during update execution: ", e);
 					if (!updateExpr.isSilent()) {
 						throw new UpdateExecutionException(e);
 					}
-				} catch (IOException e) {
+				}
+				catch (IOException e) {
 					logger.warn("exception during update execution: ", e);
 					if (!updateExpr.isSilent()) {
 						throw new UpdateExecutionException(e);
@@ -80,23 +84,30 @@ public class SailUpdate extends AbstractParserUpdate {
 				commitLocalTransaction();
 				localTransaction = false;
 			}
-		} finally {
+		}
+		finally {
 			if (localTransaction) {
 				rollbackLocalTransaction();
 			}
 		}
 	}
 
-	private void beginLocalTransaction() throws RepositoryException {
+	private void beginLocalTransaction()
+		throws RepositoryException
+	{
 		getConnection().begin();
 	}
 
-	private void commitLocalTransaction() throws RepositoryException {
+	private void commitLocalTransaction()
+		throws RepositoryException
+	{
 		getConnection().commit();
 
 	}
 
-	private void rollbackLocalTransaction() throws RepositoryException {
+	private void rollbackLocalTransaction()
+		throws RepositoryException
+	{
 		getConnection().rollback();
 
 	}

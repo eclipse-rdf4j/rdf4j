@@ -39,10 +39,11 @@ public interface MemResource extends MemValue, Resource {
 	public void removeSubjectStatement(MemStatement st);
 
 	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
-	 * this MemValue's list of statements for which it is the subject.
+	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot
+	 * version) from this MemValue's list of statements for which it is the subject.
 	 * 
-	 * @param currentSnapshot The current snapshot version.
+	 * @param currentSnapshot
+	 *        The current snapshot version.
 	 */
 	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot);
 
@@ -71,10 +72,11 @@ public interface MemResource extends MemValue, Resource {
 	public void removeContextStatement(MemStatement st);
 
 	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
-	 * this MemValue's list of statements for which it is the context.
+	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot
+	 * version) from this MemValue's list of statements for which it is the context.
 	 * 
-	 * @param currentSnapshot The current snapshot version.
+	 * @param currentSnapshot
+	 *        The current snapshot version.
 	 */
 	public void cleanSnapshotsFromContextStatements(int currentSnapshot);
 }

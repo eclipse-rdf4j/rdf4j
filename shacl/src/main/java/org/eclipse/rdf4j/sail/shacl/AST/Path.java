@@ -11,8 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
- * support for complex paths.
+ * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no support for complex paths.
  *
  * @author Heshan Jayasinghe
  */
@@ -20,10 +19,12 @@ abstract public class Path implements RequiresEvalutation, QueryGenerator {
 
 	private Resource id;
 
+
 	Path(Resource id) {
 		this.id = id;
 
 	}
+
 
 	public Resource getId() {
 		return id;

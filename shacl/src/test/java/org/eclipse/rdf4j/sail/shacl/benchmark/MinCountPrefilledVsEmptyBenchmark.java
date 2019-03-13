@@ -41,14 +41,16 @@ import java.util.concurrent.TimeUnit;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@BenchmarkMode({Mode.AverageTime})
+@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MinCountPrefilledVsEmptyBenchmark {
 
+
 	private List<List<Statement>> allStatements;
 	private SailRepository shaclRepo;
+
 
 	@Setup(Level.Invocation)
 	public void setUp() throws Exception {
@@ -57,8 +59,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		allStatements = new ArrayList<>(10);
 
-		if (shaclRepo != null)
-			shaclRepo.shutDown();
+		if(shaclRepo != null) shaclRepo.shutDown();
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -67,9 +68,11 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			allStatements.add(statements);
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
-						vf.createLiteral("label" + i)));
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
+				);
+				statements.add(
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL, vf.createLiteral("label" + i))
+				);
 			}
 		}
 
@@ -77,10 +80,13 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		for (int i = 0; i < 1; i++) {
 			allStatements2.add(
-					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
-			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL,
-					vf.createLiteral("label" + i)));
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE)
+			);
+			allStatements2.add(
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL, vf.createLiteral("label" + i))
+			);
 		}
+
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
@@ -99,8 +105,10 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		allStatements.clear();
 	}
 
+
 	@Benchmark
 	public void shaclPrefilled() {
+
 
 		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
 			connection.begin();
@@ -116,6 +124,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		}
 
 	}
+
 
 	@Benchmark
 	public void shaclEmpty() throws Exception {
@@ -144,7 +153,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 
+
 	}
+
 
 	@Benchmark
 	public void shaclEmptyJustInitializeAndEmptyTransaction() throws Exception {
@@ -157,6 +168,8 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			connection.commit();
 		}
 
+
 	}
+
 
 }

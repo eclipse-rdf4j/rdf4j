@@ -44,11 +44,12 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@BenchmarkMode({Mode.AverageTime})
+@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ClassBenchmarkEmpty {
+
 
 	private List<List<Statement>> allStatements;
 
@@ -59,6 +60,7 @@ public class ClassBenchmarkEmpty {
 
 		allStatements = new ArrayList<>(10);
 
+
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (int j = 0; j < 10; j++) {
@@ -66,11 +68,14 @@ public class ClassBenchmarkEmpty {
 			allStatements.add(statements);
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, FOAF.PERSON));
-				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.KNOWS,
-						vf.createIRI("http://example.com/friend" + i + "_" + j)));
-				statements.add(vf.createStatement(vf.createIRI("http://example.com/friend" + i + "_" + j), RDF.TYPE,
-						FOAF.PERSON));
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, FOAF.PERSON)
+				);
+				statements.add(
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.KNOWS, vf.createIRI("http://example.com/friend" + i + "_" + j))
+				);
+				statements.add(
+					vf.createStatement(vf.createIRI("http://example.com/friend" + i + "_" + j), RDF.TYPE, FOAF.PERSON)
+				);
 			}
 		}
 		System.gc();
@@ -82,10 +87,12 @@ public class ClassBenchmarkEmpty {
 		allStatements.clear();
 	}
 
+
 	@Benchmark
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclClassBenchmark.ttl"));
+
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -101,6 +108,7 @@ public class ClassBenchmarkEmpty {
 		}
 
 	}
+
 
 	@Benchmark
 	public void noShacl() {
@@ -123,6 +131,7 @@ public class ClassBenchmarkEmpty {
 
 	}
 
+
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
 
@@ -138,9 +147,7 @@ public class ClassBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations
-						.stream(connection.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
-								+ FOAF.KNOWS + "> ?c. FILTER(NOT EXISTS{?c a <" + FOAF.PERSON + ">})}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <" + FOAF.KNOWS + "> ?c. FILTER(NOT EXISTS{?c a <"+FOAF.PERSON+">})}").evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordComparator;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file is
- * deleted upon calling {@link #discard()}.
+ * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file
+ * is deleted upon calling {@link #discard()}.
  * 
  * @author Arjohn Kampman
  */
@@ -32,12 +32,15 @@ final class SortedRecordCache extends RecordCache {
 	 * Constructors *
 	 *--------------*/
 
-	public SortedRecordCache(File cacheDir, int recordSize, RecordComparator comparator) throws IOException {
+	public SortedRecordCache(File cacheDir, int recordSize, RecordComparator comparator)
+		throws IOException
+	{
 		this(cacheDir, recordSize, Long.MAX_VALUE, comparator);
 	}
 
 	public SortedRecordCache(File cacheDir, int recordSize, long maxRecords, RecordComparator comparator)
-			throws IOException {
+		throws IOException
+	{
 		super(maxRecords);
 		btree = new BTree(cacheDir, "txncache", 4096, recordSize, comparator);
 	}
@@ -47,7 +50,9 @@ final class SortedRecordCache extends RecordCache {
 	 *---------*/
 
 	@Override
-	protected void storeRecordInternal(byte[] record) throws IOException {
+	protected void storeRecordInternal(byte[] record)
+		throws IOException
+	{
 		btree.insert(record);
 	}
 
@@ -57,12 +62,16 @@ final class SortedRecordCache extends RecordCache {
 	}
 
 	@Override
-	protected void clearInternal() throws IOException {
+	protected void clearInternal()
+		throws IOException
+	{
 		btree.clear();
 	}
 
 	@Override
-	public void discard() throws IOException {
+	public void discard()
+		throws IOException
+	{
 		btree.delete();
 	}
 }

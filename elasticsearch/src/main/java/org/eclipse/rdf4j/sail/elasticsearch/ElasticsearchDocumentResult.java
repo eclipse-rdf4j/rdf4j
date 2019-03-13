@@ -23,7 +23,8 @@ public class ElasticsearchDocumentResult implements DocumentResult {
 	private ElasticsearchDocument fullDoc;
 
 	public ElasticsearchDocumentResult(SearchHit hit,
-			Function<? super String, ? extends SpatialContext> geoContextMapper) {
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
+	{
 		this.hit = hit;
 		this.geoContextMapper = geoContextMapper;
 	}

@@ -32,7 +32,8 @@ class PropertyCache {
 		Set<String> cachedValues = getCachedValues(name);
 		if (cachedValues != null) {
 			found = cachedValues.contains(value);
-		} else {
+		}
+		else {
 			found = false;
 			List<String> docValues = doc.getProperty(name);
 			if (docValues != null) {
@@ -44,7 +45,8 @@ class PropertyCache {
 						// don't break - cache all docValues
 					}
 				}
-			} else {
+			}
+			else {
 				cachedValues = Collections.emptySet();
 			}
 			setCachedValues(name, cachedValues);

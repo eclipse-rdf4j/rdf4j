@@ -34,12 +34,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
- * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation does not
- * yet cover all query node types.
+ * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation
+ * does not yet cover all query node types.
  * 
  * @author Arjohn Kampman
  */
-public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
+public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException>
+		implements QueryOptimizer
+{
 
 	public QueryModelNormalizer() {
 	}
@@ -58,36 +60,42 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
 			join.replaceWith(new EmptySet());
-		} else if (leftArg instanceof SingletonSet) {
+		}
+		else if (leftArg instanceof SingletonSet) {
 			join.replaceWith(rightArg);
-		} else if (rightArg instanceof SingletonSet) {
+		}
+		else if (rightArg instanceof SingletonSet) {
 			join.replaceWith(leftArg);
-		} else if (leftArg instanceof Union) {
+		}
+		else if (leftArg instanceof Union) {
 			// sort unions above joins
-			Union union = (Union) leftArg;
+			Union union = (Union)leftArg;
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (rightArg instanceof Union) {
+		}
+		else if (rightArg instanceof Union) {
 			// sort unions above joins
-			Union union = (Union) rightArg;
+			Union union = (Union)rightArg;
 			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (leftArg instanceof LeftJoin && isWellDesigned(((LeftJoin) leftArg))) {
+		}
+		else if (leftArg instanceof LeftJoin && isWellDesigned(((LeftJoin)leftArg))) {
 			// sort left join above normal joins
-			LeftJoin leftJoin = (LeftJoin) leftArg;
+			LeftJoin leftJoin = (LeftJoin)leftArg;
 			join.replaceWith(leftJoin);
 			join.setLeftArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
 			leftJoin.visit(this);
-		} else if (rightArg instanceof LeftJoin && isWellDesigned(((LeftJoin) rightArg))) {
+		}
+		else if (rightArg instanceof LeftJoin && isWellDesigned(((LeftJoin)rightArg))) {
 			// sort left join above normal joins
-			LeftJoin leftJoin = (LeftJoin) rightArg;
+			LeftJoin leftJoin = (LeftJoin)rightArg;
 			join.replaceWith(leftJoin);
 			join.setRightArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
@@ -105,22 +113,28 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		if (leftArg instanceof EmptySet) {
 			leftJoin.replaceWith(leftArg);
-		} else if (rightArg instanceof EmptySet) {
+		}
+		else if (rightArg instanceof EmptySet) {
 			leftJoin.replaceWith(leftArg);
-		} else if (rightArg instanceof SingletonSet) {
+		}
+		else if (rightArg instanceof SingletonSet) {
 			leftJoin.replaceWith(leftArg);
-		} else if (condition instanceof ValueConstant) {
+		}
+		else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
-			} catch (ValueExprEvaluationException e) {
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+						((ValueConstant)condition).getValue());
+			}
+			catch (ValueExprEvaluationException e) {
 				conditionValue = false;
 			}
 
 			if (conditionValue == false) {
 				// Constraint is always false
 				leftJoin.replaceWith(leftArg);
-			} else {
+			}
+			else {
 				leftJoin.setCondition(null);
 			}
 		}
@@ -135,9 +149,11 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		if (leftArg instanceof EmptySet) {
 			union.replaceWith(rightArg);
-		} else if (rightArg instanceof EmptySet) {
+		}
+		else if (rightArg instanceof EmptySet) {
 			union.replaceWith(leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
+		}
+		else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
 			union.replaceWith(leftArg);
 		}
 	}
@@ -151,9 +167,11 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		if (leftArg instanceof EmptySet) {
 			difference.replaceWith(leftArg);
-		} else if (rightArg instanceof EmptySet) {
+		}
+		else if (rightArg instanceof EmptySet) {
 			difference.replaceWith(leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
+		}
+		else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
 			difference.replaceWith(new EmptySet());
 		}
 	}
@@ -188,18 +206,22 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		if (arg instanceof EmptySet) {
 			// see #meetUnaryTupleOperator
-		} else if (condition instanceof ValueConstant) {
+		}
+		else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
-			} catch (ValueExprEvaluationException e) {
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+						((ValueConstant)condition).getValue());
+			}
+			catch (ValueExprEvaluationException e) {
 				conditionValue = false;
 			}
 
 			if (conditionValue == false) {
 				// Constraint is always false
 				node.replaceWith(new EmptySet());
-			} else {
+			}
+			else {
 				node.replaceWith(arg);
 			}
 		}
@@ -224,8 +246,8 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	/**
-	 * Checks whether the left join is "well designed" as defined in section 4.2 of "Semantics and Complexity of
-	 * SPARQL", 2006, Jorge Pérez et al.
+	 * Checks whether the left join is "well designed" as defined in section 4.2 of
+	 * "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 	 */
 	private boolean isWellDesigned(LeftJoin leftJoin) {
 		VarNameCollector optionalVarCollector = new VarNameCollector();
@@ -274,7 +296,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 		@Override
 		protected void meetNode(QueryModelNode node) {
 			if (node instanceof TupleExpr && node != nodeToIgnore) {
-				TupleExpr tupleExpr = (TupleExpr) node;
+				TupleExpr tupleExpr = (TupleExpr)node;
 				bindingNames.addAll(tupleExpr.getBindingNames());
 			}
 		}

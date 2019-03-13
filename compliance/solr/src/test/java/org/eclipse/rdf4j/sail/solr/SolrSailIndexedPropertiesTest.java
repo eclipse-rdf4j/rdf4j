@@ -26,7 +26,9 @@ public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedProp
 	}
 
 	@Override
-	public void tearDown() throws IOException, RepositoryException {
+	public void tearDown()
+		throws IOException, RepositoryException
+	{
 		super.tearDown();
 		FileUtils.deleteDirectory(new File(DATA_DIR));
 	}

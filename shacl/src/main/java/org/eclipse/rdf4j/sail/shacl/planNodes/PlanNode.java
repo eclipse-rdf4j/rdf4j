@@ -20,10 +20,13 @@ public interface PlanNode {
 
 	int depth();
 
+
 	void getPlanAsGraphvizDot(StringBuilder stringBuilder);
 
 	String getId();
 
+
 	IteratorData getIteratorDataType();
+
 
 }

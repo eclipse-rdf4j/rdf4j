@@ -79,7 +79,9 @@ public class SPARQLEmbeddedServer {
 		return "http://" + HOST + ":" + PORT + SERVER_CONTEXT;
 	}
 
-	public void start() throws Exception {
+	public void start()
+		throws Exception
+	{
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
@@ -89,12 +91,16 @@ public class SPARQLEmbeddedServer {
 		createTestRepositories();
 	}
 
-	public void stop() throws Exception {
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
+	public void stop()
+		throws Exception
+	{
+		Repository systemRepo = new HTTPRepository(
+				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 		RepositoryConnection con = systemRepo.getConnection();
 		try {
 			con.clear();
-		} finally {
+		}
+		finally {
 			con.close();
 			systemRepo.shutDown();
 		}
@@ -103,8 +109,11 @@ public class SPARQLEmbeddedServer {
 		System.clearProperty("org.mortbay.log.class");
 	}
 
-	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
+	private void createTestRepositories()
+		throws RepositoryException, RepositoryConfigException
+	{
+		Repository systemRep = new HTTPRepository(
+				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 
 		// create a memory store for each provided repository id
 		for (String repId : repositoryIds) {

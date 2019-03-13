@@ -31,7 +31,9 @@ public class ReplaceTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		replaceFunc = new Replace();
 	}
 
@@ -39,7 +41,9 @@ public class ReplaceTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 	}
 
 	@Test
@@ -53,7 +57,8 @@ public class ReplaceTest {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 
 			assertEquals("fooZr", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -69,7 +74,8 @@ public class ReplaceTest {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 
 			assertEquals("foobar", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -86,7 +92,8 @@ public class ReplaceTest {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement, flags);
 
 			assertEquals("fooZr", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -102,7 +109,8 @@ public class ReplaceTest {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 
 			fail("error expected on incompatible operand");
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
@@ -117,7 +125,8 @@ public class ReplaceTest {
 		try {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 			assertEquals("fooZrfooZrZrfoo", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -132,7 +141,8 @@ public class ReplaceTest {
 		try {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 			assertEquals("fooZfooZZfooba", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -148,7 +158,8 @@ public class ReplaceTest {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 			assertEquals("---", result.getLabel());
 			assertEquals("ja", result.getLanguage().orElse(null));
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

@@ -32,6 +32,7 @@ public class RuntimeModifyShapesTest {
 			connection.commit();
 		}
 
+
 	}
 
 	@Test()
@@ -45,6 +46,7 @@ public class RuntimeModifyShapesTest {
 			connection.commit();
 		}
 
+
 	}
 
 	@Test(expected = IllegalStateException.class)
@@ -55,14 +57,13 @@ public class RuntimeModifyShapesTest {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
-			connection.add(RuntimeModifyShapesTest.class.getClassLoader().getResourceAsStream("shaclDatatype.ttl"),
-					"http://example.com/", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(RuntimeModifyShapesTest.class.getClassLoader().getResourceAsStream("shaclDatatype.ttl"), "http://example.com/", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 			connection.begin();
-			connection.add(RuntimeModifyShapesTest.class.getClassLoader().getResourceAsStream("shacl.ttl"),
-					"http://example.com/", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(RuntimeModifyShapesTest.class.getClassLoader().getResourceAsStream("shacl.ttl"), "http://example.com/", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 		}
+
 
 	}
 

@@ -6,7 +6,9 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
+
 package org.eclipse.rdf4j.sail.shacl.planNodes;
+
 
 import org.eclipse.rdf4j.model.Value;
 
@@ -19,6 +21,7 @@ import java.util.regex.Pattern;
 public class PatternFilter extends FilterPlanNode {
 
 	private final Pattern pattern;
+
 
 	public PatternFilter(PlanNode parent, String pattern, Optional<String> flags) {
 		super(parent);
@@ -72,8 +75,11 @@ public class PatternFilter extends FilterPlanNode {
 		return pattern.matcher(literal.stringValue()).matches();
 	}
 
+
 	@Override
 	public String toString() {
-		return "PatternFilter{" + "pattern=" + pattern + '}';
+		return "PatternFilter{" +
+			"pattern=" + pattern +
+			'}';
 	}
 }

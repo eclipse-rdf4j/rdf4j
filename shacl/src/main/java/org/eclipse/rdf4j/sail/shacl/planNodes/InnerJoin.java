@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -17,16 +18,18 @@ import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 import java.util.List;
 
+
 /**
  * @author Håvard Ottestad
- *         <p>
- *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
- *         value at index 0. The right iterator is allowed to contain duplicates.
+ * <p>
+ * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
+ * The right iterator is allowed to contain duplicates.
  */
 public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
 	private boolean printed = false;
+
 
 	private PlanNode left;
 	private PlanNode right;
@@ -40,9 +43,11 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		this.right = right;
 	}
 
+
 	public List<PlanNode> parent() {
 		return Arrays.asList(left, right);
 	}
+
 
 	public PlanNode getJoined(Class<? extends PushablePlanNode> type) {
 		if (joined != null) {
@@ -93,6 +98,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		InnerJoin that = this;
 		return new CloseableIteration<Tuple, SailException>() {
 
+
 			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
 			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
 
@@ -109,6 +115,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 					nextLeft = leftIterator.next();
 				}
 
+
 				if (nextRight == null && rightIterator.hasNext()) {
 					nextRight = rightIterator.next();
 				}
@@ -117,8 +124,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 					if (discardedRight != null) {
 						while (nextRight != null) {
 							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";discardedRight: " + " "
-										+ nextRight.toString());
+								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";discardedRight: " + " " + nextRight.toString());
 							}
 							discardedRight.push(nextRight);
 							if (rightIterator.hasNext()) {
@@ -131,22 +137,22 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 					return;
 				}
 
+
 				while (next == null) {
 					if (nextRight != null) {
 
-						if (nextLeft.line.get(0) == nextRight.line.get(0)
-								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
+						if (nextLeft.line.get(0) == nextRight.line.get(0) || nextLeft.line.get(0).equals(nextRight.line.get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
 							nextRight = null;
 						} else {
+
 
 							int compareTo = nextLeft.compareTo(nextRight);
 
 							if (compareTo < 0) {
 								if (discardedLeft != null) {
 									if (LoggingNode.loggingEnabled) {
-										logger.info(leadingSpace() + that.getClass().getSimpleName()
-												+ ";discardedLeft: " + " " + nextLeft.toString());
+										logger.info(leadingSpace() + that.getClass().getSimpleName() + ";discardedLeft: " + " " + nextLeft.toString());
 									}
 									discardedLeft.push(nextLeft);
 								}
@@ -159,8 +165,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 							} else {
 								if (discardedRight != null) {
 									if (LoggingNode.loggingEnabled) {
-										logger.info(leadingSpace() + that.getClass().getSimpleName()
-												+ ";discardedRight: " + " " + nextRight.toString());
+										logger.info(leadingSpace() + that.getClass().getSimpleName() + ";discardedRight: " + " " + nextRight.toString());
 									}
 									discardedRight.push(nextRight);
 								}
@@ -177,6 +182,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 						return;
 					}
 				}
+
 
 			}
 
@@ -207,9 +213,11 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		};
 	}
 
+
 	public int depth() {
 		return Math.max(left.depth(), right.depth());
 	}
+
 
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		if (printed) {
@@ -218,20 +226,17 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 		if (discardedRight != null) {
-			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];")
-					.append("\n");
+			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];").append("\n");
 
 		}
 		if (discardedLeft != null) {
-			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];")
-					.append("\n");
+			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];").append("\n");
 		}
 
 		if (joined != null) {
@@ -239,9 +244,11 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
+
 
 	public IteratorData getIteratorDataType() {
 		if (left.getIteratorDataType() == right.getIteratorDataType()) {
@@ -268,11 +275,15 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+
 	@Override
 	public void close() {
 
-		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed())
-				&& (joined == null || joined.isClosed())) {
+		if (
+			(discardedLeft == null || discardedLeft.isClosed()) &&
+				(discardedRight == null || discardedRight.isClosed()) &&
+				(joined == null || joined.isClosed())
+		) {
 			iterator.close();
 			iterator = null;
 		}
@@ -294,3 +305,6 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	}
 
 }
+
+
+

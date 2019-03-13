@@ -23,7 +23,8 @@ public class CompatibleBindingSetFilter extends FilterIteration<BindingSet, Quer
 	private final BindingSet inputBindings;
 
 	public CompatibleBindingSetFilter(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			BindingSet inputBindings) {
+			BindingSet inputBindings)
+	{
 		super(iter);
 
 		assert inputBindings != null;
@@ -31,7 +32,9 @@ public class CompatibleBindingSetFilter extends FilterIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected boolean accept(BindingSet outputBindings) throws QueryEvaluationException {
+	protected boolean accept(BindingSet outputBindings)
+		throws QueryEvaluationException
+	{
 		return QueryResults.bindingSetsCompatible(inputBindings, outputBindings);
 	}
 }

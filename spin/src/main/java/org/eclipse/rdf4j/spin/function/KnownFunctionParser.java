@@ -27,7 +27,8 @@ public class KnownFunctionParser implements FunctionParser {
 
 	@Override
 	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parse(IRI funcUri, TripleSource store)
-			throws RDF4JException {
+		throws RDF4JException
+	{
 		{
 			String name = null;
 			if (wellKnownFunctions != null) {

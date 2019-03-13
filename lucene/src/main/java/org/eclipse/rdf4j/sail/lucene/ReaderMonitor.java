@@ -15,8 +15,9 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.Directory;
 
 /**
- * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader and
- * IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was read.
+ * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader
+ * and IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was
+ * read.
  * 
  * @author Tomasz Trela, DFKI Gmbh
  */
@@ -33,14 +34,16 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	 * If exception occur when create indexReader it will be thrown on getIndexReader or get IndexSearcher
 	 * 
 	 * @param index
-	 * @param directory Initializes IndexReader
+	 * @param directory
+	 *        Initializes IndexReader
 	 */
 	public ReaderMonitor(final LuceneIndex index, Directory directory) {
 		super(index);
 		try {
 			IndexReader indexReader = DirectoryReader.open(directory);
 			indexSearcher = new IndexSearcher(indexReader);
-		} catch (IOException e) {
+		}
+		catch (IOException e) {
 			indexSearcherCreateException = e;
 		}
 	}
@@ -49,19 +52,24 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	 * @throws IOException
 	 */
 	@Override
-	protected void handleClose() throws IOException {
+	protected void handleClose()
+		throws IOException
+	{
 		try {
 			if (indexSearcher != null) {
 				indexSearcher.getIndexReader().close();
 			}
-		} finally {
+		}
+		finally {
 			indexSearcher = null;
 		}
 	}
 
 	// //////////////////////////////Methods for controlled index access
 
-	protected IndexSearcher getIndexSearcher() throws IOException {
+	protected IndexSearcher getIndexSearcher()
+		throws IOException
+	{
 		if (indexSearcherCreateException != null)
 			throw indexSearcherCreateException;
 		return indexSearcher;

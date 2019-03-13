@@ -35,7 +35,9 @@ import com.google.common.base.MoreObjects;
  * 
  * @author James Leigh
  */
-public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {
+public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException>
+		implements QueryOptimizer
+{
 	private final Collection<? extends RepositoryConnection> members;
 
 	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
@@ -45,7 +47,8 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
-			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters) {
+			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
+	{
 		this.members = members;
 		this.bloomFilters = bloomFilters;
 	}
@@ -54,19 +57,23 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
 		try {
 			query.visit(this);
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			throw new UndeclaredThrowableException(e);
 		}
 	}
 
 	@Override
-	public void meet(StatementPattern node) throws RepositoryException {
-		Resource subj = (Resource) node.getSubjectVar().getValue();
-		IRI pred = (IRI) node.getPredicateVar().getValue();
+	public void meet(StatementPattern node)
+		throws RepositoryException
+	{
+		Resource subj = (Resource)node.getSubjectVar().getValue();
+		IRI pred = (IRI)node.getPredicateVar().getValue();
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(bloomFilters.apply(member.getRepository()),
+			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
+					bloomFilters.apply(member.getRepository()),
 					AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 			if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
@@ -76,7 +83,8 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private Resource[] getContexts(Var var) {
-		return (var == null || !var.hasValue()) ? new Resource[0] : new Resource[] { (Resource) var.getValue() };
+		return (var == null || !var.hasValue()) ? new Resource[0]
+				: new Resource[] { (Resource)var.getValue() };
 	}
 
 }

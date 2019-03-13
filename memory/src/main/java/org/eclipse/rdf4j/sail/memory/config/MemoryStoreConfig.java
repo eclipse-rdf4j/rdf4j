@@ -76,7 +76,9 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public void parse(Model graph, Resource implNode) throws SailConfigException {
+	public void parse(Model graph, Resource implNode)
+		throws SailConfigException
+	{
 		super.parse(graph, implNode);
 
 		try {
@@ -84,7 +86,8 @@ public class MemoryStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(graph.filter(implNode, PERSIST, null)).ifPresent(persistValue -> {
 				try {
 					setPersist((persistValue).booleanValue());
-				} catch (IllegalArgumentException e) {
+				}
+				catch (IllegalArgumentException e) {
 					throw new SailConfigException(
 							"Boolean value required for " + PERSIST + " property, found " + persistValue);
 				}
@@ -93,12 +96,14 @@ public class MemoryStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(graph.filter(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
 				try {
 					setSyncDelay((syncDelayValue).longValue());
-				} catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
+				}
+				catch (NumberFormatException e) {
+					throw new SailConfigException("Long integer value required for " + SYNC_DELAY
+							+ " property, found " + syncDelayValue);
 				}
 			});
-		} catch (ModelException e) {
+		}
+		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

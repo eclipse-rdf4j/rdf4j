@@ -22,10 +22,13 @@ public class TimeMillis extends UnaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException {
+	protected Value evaluate(ValueFactory valueFactory, Value arg)
+		throws ValueExprEvaluationException
+	{
 		if (!(arg instanceof Literal)) {
 			throw new ValueExprEvaluationException("Argument must be a literal");
 		}
-		return valueFactory.createLiteral(((Literal) arg).calendarValue().toGregorianCalendar().getTimeInMillis());
+		return valueFactory.createLiteral(
+				((Literal)arg).calendarValue().toGregorianCalendar().getTimeInMillis());
 	}
 }

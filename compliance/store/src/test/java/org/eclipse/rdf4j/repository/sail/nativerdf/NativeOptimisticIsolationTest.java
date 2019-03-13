@@ -18,7 +18,9 @@ import org.junit.BeforeClass;
 public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass()
+		throws Exception
+	{
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
@@ -28,7 +30,9 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 	}
 
 	@AfterClass
-	public static void tearDown() throws Exception {
+	public static void tearDown()
+		throws Exception
+	{
 		setRepositoryFactory(null);
 	}
 }

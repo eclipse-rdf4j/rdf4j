@@ -42,6 +42,7 @@ public class ValidationResult implements ModelInterface {
 
 	}
 
+
 	public void setDetail(ValidationResult detail) {
 		this.detail = detail;
 	}
@@ -56,12 +57,12 @@ public class ValidationResult implements ModelInterface {
 	/**
 	 * @return all ValidationResult(s) with more information as to what failed. Usually for nested Shapes in eg. sh:or.
 	 */
-	public List<ValidationResult> getDetails() {
+	public List<ValidationResult> getDetails(){
 
 		ArrayList<ValidationResult> validationResults = new ArrayList<>();
 
 		ValidationResult temp = detail;
-		while (temp != null) {
+		while(temp != null){
 			validationResults.add(temp);
 			temp = temp.detail;
 		}
@@ -83,7 +84,7 @@ public class ValidationResult implements ModelInterface {
 			model.add(getId(), SHACL.RESULT_PATH, ((SimplePath) getPath()).getPath());
 		}
 
-		if (detail != null) {
+		if(detail != null){
 			model.add(getId(), SHACL.DETAIL, detail.getId());
 			detail.asModel(model);
 		}
@@ -105,6 +106,7 @@ public class ValidationResult implements ModelInterface {
 		return sourceShape.getId();
 	}
 
+
 	/**
 	 * @return the focus node, aka. the subject, that caused the violation
 	 */
@@ -116,6 +118,7 @@ public class ValidationResult implements ModelInterface {
 	public Resource getId() {
 		return id;
 	}
+
 
 	/**
 	 * @return the type of the source constraint that caused the violation

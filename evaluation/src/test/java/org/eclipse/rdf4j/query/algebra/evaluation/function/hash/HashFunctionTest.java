@@ -40,7 +40,8 @@ public abstract class HashFunctionTest {
 			assertEquals(XMLSchema.STRING, hash.getDatatype());
 
 			assertEquals(hash.getLabel(), getExpectedDigest());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -55,7 +56,8 @@ public abstract class HashFunctionTest {
 			assertEquals(XMLSchema.STRING, hash.getDatatype());
 
 			assertEquals(hash.getLabel(), getExpectedDigest());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -67,13 +69,15 @@ public abstract class HashFunctionTest {
 			getHashFunction().evaluate(f, f.createLiteral("4", XMLSchema.INTEGER));
 
 			fail("incompatible operand should have resulted in type error.");
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
 
 	/**
-	 * @param hashFunction The hashFunction to set.
+	 * @param hashFunction
+	 *        The hashFunction to set.
 	 */
 	public void setHashFunction(HashFunction hashFunction) {
 		this.hashFunction = hashFunction;
@@ -87,7 +91,8 @@ public abstract class HashFunctionTest {
 	}
 
 	/**
-	 * @param expectedDigest The expectedDigest to set.
+	 * @param expectedDigest
+	 *        The expectedDigest to set.
 	 */
 	public void setExpectedDigest(String expectedDigest) {
 		this.expectedDigest = expectedDigest;
@@ -101,7 +106,8 @@ public abstract class HashFunctionTest {
 	}
 
 	/**
-	 * @param toHash The toHash to set.
+	 * @param toHash
+	 *        The toHash to set.
 	 */
 	public void setToHash(String toHash) {
 		this.toHash = toHash;

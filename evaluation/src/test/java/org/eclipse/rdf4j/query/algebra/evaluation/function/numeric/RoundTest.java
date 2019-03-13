@@ -34,7 +34,9 @@ public class RoundTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		round = new Round();
 	}
 
@@ -42,7 +44,9 @@ public class RoundTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 	}
 
 	@Test
@@ -53,8 +57,9 @@ public class RoundTest {
 
 			double roundValue = rounded.doubleValue();
 
-			assertEquals((double) 2.0, roundValue, 0.001d);
-		} catch (ValueExprEvaluationException e) {
+			assertEquals((double)2.0, roundValue, 0.001d);
+		}
+		catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -69,7 +74,8 @@ public class RoundTest {
 			int roundValue = rounded.intValue();
 
 			assertEquals(iVal, roundValue);
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -85,7 +91,8 @@ public class RoundTest {
 			BigDecimal roundValue = rounded.decimalValue();
 
 			assertEquals(new BigDecimal(1234568.0), roundValue);
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}

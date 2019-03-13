@@ -14,5 +14,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 
 public interface TupleFunctionParser {
 
-	TupleFunction parse(IRI uri, TripleSource store) throws RDF4JException;
+	TupleFunction parse(IRI uri, TripleSource store)
+		throws RDF4JException;
 }

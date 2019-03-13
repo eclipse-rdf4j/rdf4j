@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -16,12 +17,13 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+
 /**
  * @author Håvard Ottestad
- *         <p>
- *         Allows the iterator of one planNode to be used by multiple other nodes by buffering all results from the
- *         parent iterator. This will potentially take a fair bit of memory, but maybe be useful for perfomance so that
- *         we don't query the underlying datastores for the same data multiple times.
+ * <p>
+ * Allows the iterator of one planNode to be used by multiple other nodes by buffering all results from the parent iterator.
+ * This will potentially take a fair bit of memory, but maybe be useful for perfomance so that we don't query the underlying
+ * datastores for the same data multiple times.
  */
 public class BufferedSplitter {
 
@@ -50,12 +52,14 @@ public class BufferedSplitter {
 
 	public PlanNode getPlanNode() {
 
+
 		return new PlanNode() {
 			@Override
 			public CloseableIteration<Tuple, SailException> iterator() {
 
 				init();
 				Iterator<Tuple> iterator = tuplesBuffer.iterator();
+
 
 				return new CloseableIteration<Tuple, SailException>() {
 
@@ -88,18 +92,18 @@ public class BufferedSplitter {
 
 			@Override
 			public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-				if (printed)
-					return;
+				if(printed) return;
 				printed = true;
-				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-						.append("\n");
-				stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+				stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 				parent.getPlanAsGraphvizDot(stringBuilder);
 			}
 
+
+
 			@Override
 			public String getId() {
-				return System.identityHashCode(that) + "";
+				return System.identityHashCode(that)+"";
 			}
 
 			@Override
@@ -115,3 +119,4 @@ public class BufferedSplitter {
 
 	}
 }
+

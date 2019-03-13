@@ -50,7 +50,9 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 	private Filter filter;
 
-	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar, Filter filter) {
+	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar,
+			Filter filter)
+	{
 		this.distanceFunction = distanceFunction;
 		this.distanceExpr = distanceExpr;
 		this.distanceVar = distVar;
@@ -60,7 +62,8 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 			this.from = getLiteral(args.get(0));
 			this.geoVar = getVarName(args.get(1));
 			this.units = getURI(args.get(2));
-		} else {
+		}
+		else {
 			this.from = null;
 			this.geoVar = null;
 			this.units = null;
@@ -68,13 +71,15 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		if (distanceExpr != null) {
 			Literal dist = getLiteral(distanceExpr);
 			this.distance = (dist != null) ? dist.doubleValue() : Double.NaN;
-		} else {
+		}
+		else {
 			this.distance = Double.NaN;
 		}
 	}
 
-	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty, String geoVar,
-			String subjectVar, Var contextVar) {
+	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty,
+			String geoVar, String subjectVar, Var contextVar)
+	{
 		this.from = from;
 		this.units = units;
 		this.distance = dist;
@@ -136,7 +141,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		this.geoStatement = sp;
 		this.subjectVar = sp.getSubjectVar().getName();
 		this.contextVar = sp.getContextVar();
-		this.geoProperty = (IRI) sp.getPredicateVar().getValue();
+		this.geoProperty = (IRI)sp.getPredicateVar().getValue();
 	}
 
 	public String getSubjectVar() {
@@ -187,17 +192,19 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 		if (hasResult) {
 			filter.replaceWith(filter.getArg());
-		} else {
+		}
+		else {
 			filter.replaceWith(new EmptySet());
 		}
 
 		QueryModelNode functionParent = distanceFunction.getParentNode();
 		if (functionParent instanceof ExtensionElem) {
-			Extension extension = (Extension) functionParent.getParentNode();
+			Extension extension = (Extension)functionParent.getParentNode();
 			List<ExtensionElem> elements = extension.getElements();
 			if (elements.size() > 1) {
 				elements.remove(functionParent);
-			} else {
+			}
+			else {
 				extension.replaceWith(extension.getArg());
 			}
 		}
@@ -210,7 +217,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 	static Literal getLiteral(ValueExpr v) {
 		Value value = getValue(v);
 		if (value instanceof Literal) {
-			return (Literal) value;
+			return (Literal)value;
 		}
 		return null;
 	}
@@ -218,7 +225,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 	static IRI getURI(ValueExpr v) {
 		Value value = getValue(v);
 		if (value instanceof IRI) {
-			return (IRI) value;
+			return (IRI)value;
 		}
 		return null;
 	}
@@ -226,16 +233,17 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 	static Value getValue(ValueExpr v) {
 		Value value = null;
 		if (v instanceof ValueConstant) {
-			value = ((ValueConstant) v).getValue();
-		} else if (v instanceof Var) {
-			value = ((Var) v).getValue();
+			value = ((ValueConstant)v).getValue();
+		}
+		else if (v instanceof Var) {
+			value = ((Var)v).getValue();
 		}
 		return value;
 	}
 
 	static String getVarName(ValueExpr v) {
 		if (v instanceof Var) {
-			Var var = (Var) v;
+			Var var = (Var)v;
 			if (!var.isConstant()) {
 				return var.getName();
 			}

@@ -26,7 +26,8 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	protected EvaluationStrategy strategy;
 
 	/**
-	 * Construct a service join iteration to use vectored evaluation. The constructor automatically starts evaluation.
+	 * Construct a service join iteration to use vectored evaluation. The constructor automatically starts
+	 * evaluation.
 	 * 
 	 * @param leftIter
 	 * @param service
@@ -34,8 +35,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	 * @param strategy
 	 * @throws QueryEvaluationException
 	 */
-	public ServiceJoinIterator(CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Service service,
-			BindingSet bindings, EvaluationStrategy strategy) throws QueryEvaluationException {
+	public ServiceJoinIterator(CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			Service service, BindingSet bindings, EvaluationStrategy strategy)
+		throws QueryEvaluationException
+	{
 		super(leftIter, service, bindings);
 		this.service = service;
 		this.strategy = strategy;
@@ -43,7 +46,9 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	}
 
 	@Override
-	protected void handleBindings() throws Exception {
+	protected void handleBindings()
+		throws Exception
+	{
 		Var serviceRef = service.getServiceRef();
 
 		String serviceUri;

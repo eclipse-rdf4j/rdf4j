@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
 
 /**
  * An implementation of the {@link BindingSet} interface that is used to evalate query object models. This
- * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
- * Binding objects are created lazily.
+ * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that
+ * the Binding objects are created lazily.
  */
 public class QueryBindingSet extends AbstractBindingSet {
 
@@ -49,8 +49,9 @@ public class QueryBindingSet extends AbstractBindingSet {
 
 	public void addAll(BindingSet bindingSet) {
 		if (bindingSet instanceof QueryBindingSet) {
-			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
-		} else {
+			bindings.putAll(((QueryBindingSet)bindingSet).bindings);
+		}
+		else {
 			for (Binding binding : bindingSet) {
 				this.addBinding(binding);
 			}
@@ -60,7 +61,8 @@ public class QueryBindingSet extends AbstractBindingSet {
 	/**
 	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
-	 * @param binding The binding to add this this BindingSet.
+	 * @param binding
+	 *        The binding to add this this BindingSet.
 	 */
 	public void addBinding(Binding binding) {
 		addBinding(binding.getName(), binding.getValue());
@@ -69,8 +71,10 @@ public class QueryBindingSet extends AbstractBindingSet {
 	/**
 	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
-	 * @param name  The binding's name, must not be bound in this binding set already.
-	 * @param value The binding's value.
+	 * @param name
+	 *        The binding's name, must not be bound in this binding set already.
+	 * @param value
+	 *        The binding's value.
 	 */
 	public void addBinding(String name, Value value) {
 		assert !bindings.containsKey(name) : "variable already bound: " + name;
@@ -125,10 +129,8 @@ public class QueryBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Iterator<Binding> iterator() {
-		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet()
-				.stream()
-				.filter(entry -> entry.getValue() != null)
-				.iterator();
+		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().stream().filter(
+				entry -> entry.getValue() != null).iterator();
 
 		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
 
@@ -147,8 +149,9 @@ public class QueryBindingSet extends AbstractBindingSet {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof QueryBindingSet) {
-			return bindings.equals(((QueryBindingSet) other).bindings);
-		} else {
+			return bindings.equals(((QueryBindingSet)other).bindings);
+		}
+		else {
 			return super.equals(other);
 		}
 	}

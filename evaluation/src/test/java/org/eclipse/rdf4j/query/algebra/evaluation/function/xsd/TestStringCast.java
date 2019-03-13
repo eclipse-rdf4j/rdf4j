@@ -35,7 +35,9 @@ public class TestStringCast {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		stringCast = new StringCast();
 	}
 
@@ -43,7 +45,9 @@ public class TestStringCast {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 	}
 
 	@Test
@@ -53,7 +57,8 @@ public class TestStringCast {
 			Literal result = stringCast.evaluate(f, plainLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -64,7 +69,8 @@ public class TestStringCast {
 		try {
 			Literal result = stringCast.evaluate(f, langLit);
 			fail("casting of language-tagged literal to xsd:string should result in type error");
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
@@ -78,7 +84,8 @@ public class TestStringCast {
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals("10", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -93,7 +100,8 @@ public class TestStringCast {
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -108,7 +116,8 @@ public class TestStringCast {
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

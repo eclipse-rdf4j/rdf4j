@@ -44,7 +44,11 @@ public class Tuple implements Comparable<Tuple> {
 	}
 
 	public Tuple(BindingSet bindingset) {
-		bindingset.getBindingNames().stream().sorted().forEach(name -> line.add(bindingset.getValue(name)));
+		bindingset
+			.getBindingNames()
+			.stream()
+			.sorted()
+			.forEach(name -> line.add(bindingset.getValue(name)));
 
 	}
 
@@ -54,6 +58,7 @@ public class Tuple implements Comparable<Tuple> {
 		causedByPropertyShapes = new ArrayDeque<>(causedByPropertyShapes);
 	}
 
+
 	public List<Value> getlist() {
 		return line;
 	}
@@ -61,21 +66,18 @@ public class Tuple implements Comparable<Tuple> {
 	@Override
 	public String toString() {
 		String propertyShapeDescrption = "";
-		if (causedByPropertyShapes != null) {
+		if(causedByPropertyShapes != null){
 
-			String join = String.join(" , ",
-					causedByPropertyShapes.stream()
-							.map(p -> p.getClass().getSimpleName() + " <" + p.getId() + ">")
-							.collect(Collectors.toList()));
+			String join = String.join(" , ", causedByPropertyShapes.stream().map(p -> p.getClass().getSimpleName() + " <" + p.getId() + ">").collect(Collectors.toList()));
 
-			propertyShapeDescrption = ", propertyShapes= " + join;
+			propertyShapeDescrption = ", propertyShapes= "+ join;
 		}
 
-		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) + propertyShapeDescrption + "}";
+		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) +propertyShapeDescrption+"}";
 	}
 
 	public void addCausedByPropertyShape(PropertyShape propertyShape) {
-		if (causedByPropertyShapes == null) {
+		if(causedByPropertyShapes == null){
 			causedByPropertyShapes = new ArrayDeque<>();
 		}
 		causedByPropertyShapes.addFirst(propertyShape);
@@ -129,10 +131,9 @@ public class Tuple implements Comparable<Tuple> {
 		return 0;
 	}
 
-	public String getCause() {
-		return " [ "
-				+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))
-				+ " ]";
+
+	public String getCause(){
+		return " [ "+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))+" ]";
 	}
 
 	public void addHistory(Tuple tuple) {
@@ -141,7 +142,7 @@ public class Tuple implements Comparable<Tuple> {
 	}
 
 	public void addAllCausedByPropertyShape(Deque<PropertyShape> causedByPropertyShapes) {
-		if (causedByPropertyShapes != null) {
+		if(causedByPropertyShapes != null) {
 
 			this.causedByPropertyShapes.addAll(causedByPropertyShapes);
 		}

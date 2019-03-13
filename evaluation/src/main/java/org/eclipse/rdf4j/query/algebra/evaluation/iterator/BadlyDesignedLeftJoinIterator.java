@@ -34,7 +34,9 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 *--------------*/
 
 	public BadlyDesignedLeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet inputBindings,
-			Set<String> problemVars) throws QueryEvaluationException {
+			Set<String> problemVars)
+		throws QueryEvaluationException
+	{
 		super(strategy, join, getFilteredBindings(inputBindings, problemVars));
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
@@ -45,7 +47,9 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	protected BindingSet getNextElement()
+		throws QueryEvaluationException
+	{
 		BindingSet result = super.getNextElement();
 
 		// Ignore all results that are not compatible with the input bindings

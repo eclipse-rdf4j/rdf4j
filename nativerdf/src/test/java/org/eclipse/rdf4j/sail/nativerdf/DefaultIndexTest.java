@@ -20,7 +20,9 @@ import org.junit.Test;
 public class DefaultIndexTest {
 
 	@Test
-	public void testDefaultIndex() throws Exception {
+	public void testDefaultIndex()
+		throws Exception
+	{
 		File dir = FileUtil.createTempDir("nativerdf");
 		TripleStore store = new TripleStore(dir, null);
 		store.close();
@@ -30,7 +32,9 @@ public class DefaultIndexTest {
 	}
 
 	@Test
-	public void testExistingIndex() throws Exception {
+	public void testExistingIndex()
+		throws Exception
+	{
 		File dir = FileUtil.createTempDir("nativerdf");
 		// set a non-default index
 		TripleStore store = new TripleStore(dir, "spoc,opsc");
@@ -43,13 +47,15 @@ public class DefaultIndexTest {
 		FileUtil.deleteDir(dir);
 	}
 
-	private String findIndex(File dir) throws Exception {
+	private String findIndex(File dir)
+		throws Exception
+	{
 		Properties properties = new Properties();
 		try (InputStream in = new FileInputStream(new File(dir, "triples.prop"))) {
 			properties.clear();
 			properties.load(in);
 		}
-		return (String) properties.get("triple-indexes");
+		return (String)properties.get("triple-indexes");
 	}
 
 }

@@ -33,9 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link TreeModel} until more than 10KB statements are added and the estimated
- * memory usage is more than the amount of free memory available. Once the threshold is cross this implementation
- * seamlessly changes to a disk based {@link SailSourceModel}.
+ * Model implementation that stores in a {@link TreeModel} until more than 10KB statements are added and the
+ * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
+ * implementation seamlessly changes to a disk based {@link SailSourceModel}.
  * 
  * @author James Leigh
  */
@@ -160,8 +160,9 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-					Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
+					Value obj, Resource... contexts)
+			{
 				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -169,15 +170,19 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+			Resource... contexts)
+	{
 		if (disk == null) {
 			memory.removeTermIteration(iter, subj, pred, obj, contexts);
-		} else {
+		}
+		else {
 			disk.removeTermIteration(iter, subj, pred, obj, contexts);
 		}
 	}
 
-	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
+	protected abstract SailStore createSailStore(File dataDir)
+		throws IOException,
+		SailException;
 
 	synchronized Model getDelegate() {
 		if (disk == null)
@@ -185,7 +190,9 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return disk;
 	}
 
-	private void writeObject(ObjectOutputStream s) throws IOException {
+	private void writeObject(ObjectOutputStream s)
+		throws IOException
+	{
 		// Write out any hidden serialization magic
 		s.defaultWriteObject();
 		// Write in size
@@ -201,14 +208,17 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
-	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
+	private void readObject(ObjectInputStream s)
+		throws IOException,
+		ClassNotFoundException
+	{
 		// Read in any hidden serialization magic
 		s.defaultReadObject();
 		// Read in size
 		int size = s.readInt();
 		// Read in all elements
 		for (int i = 0; i < size; i++) {
-			add((Statement) s.readObject());
+			add((Statement)s.readObject());
 		}
 	}
 
@@ -218,20 +228,20 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
 				// maximum heap size the JVM can allocate
 				long maxMemory = RUNTIME.maxMemory();
-
+				
 				// total currently allocated JVM memory
 				long totalMemory = RUNTIME.totalMemory();
-
+								
 				// amount of memory free in the currently allocated JVM memory
 				long freeMemory = RUNTIME.freeMemory();
-
+				
 				// estimated memory used
 				long used = totalMemory - freeMemory;
-
+				
 				// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
 				long freeToAllocateMemory = maxMemory - used;
 
-				if (baseline > 0) {
+        if (baseline > 0) {
 					long blockSize = used - baseline;
 					if (blockSize > maxBlockSize) {
 						maxBlockSize = blockSize;
@@ -257,14 +267,18 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			disk = new SailSourceModel(store) {
 
 				@Override
-				protected void finalize() throws Throwable {
+				protected void finalize()
+					throws Throwable
+				{
 					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
 							store.close();
-						} catch (SailException e) {
+						}
+						catch (SailException e) {
 							logger.error(e.toString(), e);
-						} finally {
+						}
+						finally {
 							FileUtil.deltree(dataDir);
 							dataDir = null;
 							store = null;
@@ -277,13 +291,16 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			disk.addAll(memory);
 			memory = new TreeModel(memory.getNamespaces());
 			logger.debug("overflow synced to disk");
-		} catch (IOException | SailException e) {
+		}
+		catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
 			logger.error("Error while writing to overflow directory " + path, e);
 		}
 	}
 
-	private File createTempDir(String name) throws IOException {
+	private File createTempDir(String name)
+		throws IOException
+	{
 		String tmpDirStr = System.getProperty("java.io.tmpdir");
 		if (tmpDirStr != null) {
 			File tmpDir = new File(tmpDirStr);

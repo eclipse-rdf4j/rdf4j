@@ -38,7 +38,8 @@ public class BindingSetHashKey implements Serializable {
 				keyValues[i] = value;
 			}
 			key = new BindingSetHashKey(keyValues);
-		} else {
+		}
+		else {
 			key = BindingSetHashKey.EMPTY;
 		}
 		return key;
@@ -57,7 +58,7 @@ public class BindingSetHashKey implements Serializable {
 			return false;
 		}
 
-		BindingSetHashKey jk = (BindingSetHashKey) o;
+		BindingSetHashKey jk = (BindingSetHashKey)o;
 		if (this.values.length != jk.values.length) {
 			return false;
 		}
@@ -70,7 +71,8 @@ public class BindingSetHashKey implements Serializable {
 				if (v2 != null) {
 					return false;
 				}
-			} else {
+			}
+			else {
 				if (!v1.equals(v2)) {
 					return false;
 				}

@@ -23,7 +23,8 @@ public class TitleCase extends AbstractStringReplacer {
 			char ch = s.charAt(i);
 			if (i == 0 || prev == ' ') {
 				buf.append(Character.toUpperCase(ch));
-			} else {
+			}
+			else {
 				buf.append(ch);
 			}
 			prev = ch;

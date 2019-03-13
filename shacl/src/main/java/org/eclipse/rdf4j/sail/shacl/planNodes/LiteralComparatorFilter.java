@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -37,12 +38,13 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 		this.function = function;
 		this.compareTo = compareTo;
 		IRI datatype = compareTo.getDatatype();
-		numericDatatype = XMLDatatypeUtil.isNumericDatatype(datatype);
-		calendarDatatype = XMLDatatypeUtil.isCalendarDatatype(datatype);
-		durationDatatype = XMLDatatypeUtil.isDurationDatatype(datatype);
-		booleanDatatype = XMLSchema.BOOLEAN.equals(datatype);
-		timeDatatype = XMLSchema.TIME.equals(datatype);
+		 numericDatatype = XMLDatatypeUtil.isNumericDatatype(datatype);
+		 calendarDatatype = XMLDatatypeUtil.isCalendarDatatype(datatype);
+		 durationDatatype = XMLDatatypeUtil.isDurationDatatype(datatype);
+		 booleanDatatype = XMLSchema.BOOLEAN.equals(datatype);
+		 timeDatatype = XMLSchema.TIME.equals(datatype);
 		dateDatatype = XMLSchema.DATE.equals(datatype);
+
 
 	}
 
@@ -50,15 +52,14 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	boolean checkTuple(Tuple t) {
 		Value literal = t.line.get(1);
 
-		if (literal instanceof Literal) {
+		if(literal instanceof Literal){
 
 			IRI datatype = ((Literal) literal).getDatatype();
 
-			if (datatypesMatch(datatype)) {
+			if(datatypesMatch(datatype)){
 
-				if (dateDatatype && XMLSchema.DATETIME.equals(datatype)) {
-					literal = SimpleValueFactory.getInstance()
-							.createLiteral(literal.stringValue().split("T")[0], XMLSchema.DATE);
+				if(dateDatatype && XMLSchema.DATETIME.equals(datatype)){
+					literal = SimpleValueFactory.getInstance().createLiteral(literal.stringValue().split("T")[0], XMLSchema.DATE);
 				}
 
 				int compare = new ValueComparator().compare(compareTo, literal);
@@ -66,22 +67,27 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 				return function.apply(compare);
 			}
 
+
 		}
+
 
 		return false;
 	}
 
 	private boolean datatypesMatch(IRI datatype) {
-		return (numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype))
-				|| (calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
-						&& (timeDatatype || !XMLSchema.TIME.equals(datatype)))
-				|| (durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype))
-				|| (booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
+		return
+			(numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype)) ||
+				(calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype) && (timeDatatype || !XMLSchema.TIME.equals(datatype)) ) ||
+				(durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype)) ||
+				(booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
 
 	}
 
+
 	@Override
 	public String toString() {
-		return "LiteralComparatorFilter{" + "function=" + function + '}';
+		return "LiteralComparatorFilter{" +
+			"function=" + function +
+			'}';
 	}
 }

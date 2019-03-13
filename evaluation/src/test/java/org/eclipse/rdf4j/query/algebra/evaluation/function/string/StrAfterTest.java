@@ -34,7 +34,9 @@ public class StrAfterTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		strAfterFunc = new StrAfter();
 	}
 
@@ -42,7 +44,9 @@ public class StrAfterTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 	}
 
 	@Test
@@ -55,7 +59,8 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("r", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -70,7 +75,8 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("", result.getLabel());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -87,7 +93,8 @@ public class StrAfterTest {
 			assertEquals("ar", result.getLabel());
 			assertEquals("en", result.getLanguage().orElse(null));
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -104,7 +111,8 @@ public class StrAfterTest {
 			assertEquals("ar", result.getLabel());
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -121,7 +129,8 @@ public class StrAfterTest {
 			assertEquals("ar", result.getLabel());
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -136,7 +145,8 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand with incompatible datatype, should have resulted in error");
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			assertEquals(
 					"incompatible operands for STRAFTER: \"foobar\", \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
 					e.getMessage());
@@ -153,8 +163,10 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand with incompatible datatype, should have resulted in error");
-		} catch (ValueExprEvaluationException e) {
-			assertEquals("incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
+		}
+		catch (ValueExprEvaluationException e) {
+			assertEquals(
+					"incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
 					e.getMessage());
 		}
 	}
@@ -169,8 +181,11 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		} catch (ValueExprEvaluationException e) {
-			assertEquals("incompatible operands for STRAFTER: http://example.org/foobar, \"b\"", e.getMessage());
+		}
+		catch (ValueExprEvaluationException e) {
+			assertEquals(
+					"incompatible operands for STRAFTER: http://example.org/foobar, \"b\"",
+					e.getMessage());
 		}
 	}
 
@@ -183,7 +198,8 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			assertEquals("incompatible operands for STRAFTER: \"foobar\"@en, \"b\"@nl", e.getMessage());
 		}
 	}
@@ -197,8 +213,11 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		} catch (ValueExprEvaluationException e) {
-			assertEquals("incompatible operands for STRAFTER: \"foobar\", \"b\"@nl", e.getMessage());
+		}
+		catch (ValueExprEvaluationException e) {
+			assertEquals(
+					"incompatible operands for STRAFTER: \"foobar\", \"b\"@nl",
+					e.getMessage());
 		}
 	}
 
@@ -214,7 +233,8 @@ public class StrAfterTest {
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
 			assertEquals("en", result.getLanguage().orElse(null));
 
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -231,7 +251,8 @@ public class StrAfterTest {
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
 			assertEquals("nl", result.getLanguage().orElse(null));
 
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

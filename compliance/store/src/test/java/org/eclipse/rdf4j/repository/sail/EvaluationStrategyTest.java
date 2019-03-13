@@ -37,15 +37,17 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
- * implementations.
+ * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base
+ * Sail implementations.
  * 
  * @author Jeen Broekstra
  */
 public abstract class EvaluationStrategyTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass()
+		throws Exception
+	{
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -62,16 +64,20 @@ public abstract class EvaluationStrategyTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		manager = RepositoryProvider.getRepositoryManager(tempDir.newFolder());
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();
-		strictStoreConfig.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
+		strictStoreConfig.setEvaluationStrategyFactoryClassName(
+				StrictEvaluationStrategyFactory.class.getName());
 
 		strictRepo = createRepo(strictStoreConfig, "test-strict");
 
 		BaseSailConfig extendedStoreConfig = getBaseSailConfig();
-		extendedStoreConfig.setEvaluationStrategyFactoryClassName(ExtendedEvaluationStrategyFactory.class.getName());
+		extendedStoreConfig.setEvaluationStrategyFactoryClassName(
+				ExtendedEvaluationStrategyFactory.class.getName());
 
 		extendedRepo = createRepo(extendedStoreConfig, "test-extended");
 	}

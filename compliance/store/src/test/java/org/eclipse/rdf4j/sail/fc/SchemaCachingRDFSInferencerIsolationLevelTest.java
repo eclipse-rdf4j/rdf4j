@@ -23,7 +23,9 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 	 *---------*/
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Sail createSail()
+		throws SailException
+	{
 		// TODO we are testing the inferencer, not the store. We should use a mock here instead of a real memory store.
 		return new SchemaCachingRDFSInferencer(new MemoryStore());
 	}

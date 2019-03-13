@@ -24,38 +24,40 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 
 	protected final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	protected abstract T getCastFunction();
-
+	protected abstract T getCastFunction(); 
+	
 	protected abstract Optional<BigInteger> getMaxValue();
-
+	
 	protected abstract Optional<BigInteger> getMinValue();
 
-	@Test
+	@Test 
 	public void testCastBelowMinValue() {
 		getMinValue().ifPresent((min) -> {
 			BigInteger below = min.subtract(BigInteger.ONE);
 			try {
 				getCastFunction().evaluate(vf, vf.createLiteral(below));
 				fail("should have result in type error");
-			} catch (ValueExprEvaluationException e) {
+			}
+			catch (ValueExprEvaluationException e) {
 				// fall through, expected
 			}
 		});
 	}
-
-	@Test
+	
+	@Test 
 	public void testCastAboveMaxValue() {
 		getMaxValue().ifPresent((max) -> {
 			BigInteger above = max.add(BigInteger.ONE);
 			try {
 				getCastFunction().evaluate(vf, vf.createLiteral(above));
 				fail("should have result in type error");
-			} catch (ValueExprEvaluationException e) {
+			}
+			catch (ValueExprEvaluationException e) {
 				// fall through, expected
 			}
 		});
 	}
-
+	
 	protected boolean isInRange(BigInteger value) {
 		BigInteger max = getMaxValue().orElse(null);
 		if (max != null) {
@@ -64,7 +66,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 				return false;
 			}
 		}
-
+		
 		BigInteger min = getMinValue().orElse(null);
 		if (min != null) {
 			if (min.compareTo(value) > 0) {
@@ -72,10 +74,10 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 				return false;
 			}
 		}
-
+		
 		return true;
 	}
-
+	
 	@Test
 	public void testCastPositiveDouble() {
 		if (!isInRange(new BigInteger("100"))) {
@@ -87,7 +89,8 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 			assertNotNull(result);
 			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
 			assertEquals(100, result.intValue());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -103,7 +106,8 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 			assertNotNull(result);
 			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
 			assertEquals(100, result.intValue());
-		} catch (ValueExprEvaluationException e) {
+		}
+		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

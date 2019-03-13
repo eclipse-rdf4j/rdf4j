@@ -35,8 +35,11 @@ import org.junit.Test;
 public class ConstantOptimizerTest {
 
 	@Test
-	public void testAndOptimization() throws RDF4JException {
-		String query = "prefix ex: <ex:>" + "select ?a ?b ?c\n" + "where {\n" + " bind((?a && ?b) as ?c) \n" + "}";
+	public void testAndOptimization()
+		throws RDF4JException
+	{
+		String query = "prefix ex: <ex:>" + "select ?a ?b ?c\n" + "where {\n" + " bind((?a && ?b) as ?c) \n"
+				+ "}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
@@ -70,9 +73,11 @@ public class ConstantOptimizerTest {
 	}
 
 	@Test
-	public void testFunctionOptimization() throws RDF4JException {
-		String query = "prefix ex: <ex:>" + "select ?a ?b ?c \n " + "where {\n" + " bind(concat(?a, ?b) as ?c) \n"
-				+ "}";
+	public void testFunctionOptimization()
+		throws RDF4JException
+	{
+		String query = "prefix ex: <ex:>" + "select ?a ?b ?c \n " + "where {\n"
+				+ " bind(concat(?a, ?b) as ?c) \n" + "}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);

@@ -20,7 +20,8 @@ public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E>
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
 	 * 
-	 * @param capacity the capacity of this queue
+	 * @param capacity
+	 *        the capacity of this queue
 	 */
 	public QueueCursor(int capacity) {
 		this(capacity, false);
@@ -29,9 +30,11 @@ public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E>
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
 	 * 
-	 * @param capacity the capacity of this queue
-	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
-	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
+	 * @param capacity
+	 *        the capacity of this queue
+	 * @param fair
+	 *        if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
+	 *        in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
 	public QueueCursor(int capacity, boolean fair) {
 		super(capacity, fair);

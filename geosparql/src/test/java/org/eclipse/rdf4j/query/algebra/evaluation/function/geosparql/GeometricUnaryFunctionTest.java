@@ -22,12 +22,13 @@ public abstract class GeometricUnaryFunctionTest {
 	Literal amsterdam = SimpleValueFactory.getInstance().createLiteral("POINT(4.9 52.37)", GEO.WKT_LITERAL);
 
 	protected abstract GeometricUnaryFunction testedFunction();
-
+	
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testRelationExceptionHandling() {
 		GeometricUnaryFunction testedFunction = Mockito.spy(testedFunction());
 		Mockito.doThrow(new RuntimeException("forsooth!")).when(testedFunction).operation(Mockito.any());
 		testedFunction.evaluate(SimpleValueFactory.getInstance(), amsterdam);
 	}
+
 
 }

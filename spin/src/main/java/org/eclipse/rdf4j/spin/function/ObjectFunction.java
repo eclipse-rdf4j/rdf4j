@@ -26,7 +26,9 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
@@ -42,15 +44,17 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 		}
 
 		try {
-			try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource()
-					.getStatements((Resource) subj, (IRI) pred, null)) {
+			try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource().getStatements(
+				(Resource)subj, (IRI)pred, null)) {
 				if (stmts.hasNext()) {
 					return stmts.next().getObject();
-				} else {
+				}
+				else {
 					throw new ValueExprEvaluationException("No value");
 				}
 			}
-		} catch (QueryEvaluationException e) {
+		}
+		catch (QueryEvaluationException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}

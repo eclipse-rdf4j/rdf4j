@@ -61,7 +61,8 @@ class SailSourceModel extends AbstractModel {
 					return true;
 				stmts.close();
 				return false;
-			} catch (SailException e) {
+			}
+			catch (SailException e) {
 				throw new ModelException(e);
 			}
 		}
@@ -74,7 +75,8 @@ class SailSourceModel extends AbstractModel {
 					stmts.close();
 				}
 				return last;
-			} catch (SailException e) {
+			}
+			catch (SailException e) {
 				throw new ModelException(e);
 			}
 		}
@@ -111,8 +113,9 @@ class SailSourceModel extends AbstractModel {
 		super.closeIterator(iter);
 		if (iter instanceof StatementIterator) {
 			try {
-				((StatementIterator) iter).stmts.close();
-			} catch (SailException e) {
+				((StatementIterator)iter).stmts.close();
+			}
+			catch (SailException e) {
 				throw new ModelException(e);
 			}
 		}
@@ -136,7 +139,8 @@ class SailSourceModel extends AbstractModel {
 				sb.append(',').append(' ');
 			}
 			return sb.toString();
-		} finally {
+		}
+		finally {
 			closeIterator(it);
 		}
 	}
@@ -152,17 +156,20 @@ class SailSourceModel extends AbstractModel {
 						iter.next();
 						size++;
 					}
-				} finally {
+				}
+				finally {
 					iter.close();
 				}
-			} catch (SailException e) {
+			}
+			catch (SailException e) {
 				throw new ModelException(e);
 			}
 		}
 		if (size > Integer.MAX_VALUE) {
 			return Integer.MAX_VALUE;
-		} else {
-			return (int) size;
+		}
+		else {
+			return (int)size;
 		}
 	}
 
@@ -176,10 +183,12 @@ class SailSourceModel extends AbstractModel {
 				while (spaces.hasNext()) {
 					set.add(spaces.next());
 				}
-			} finally {
+			}
+			finally {
 				spaces.close();
 			}
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 		return set;
@@ -190,7 +199,8 @@ class SailSourceModel extends AbstractModel {
 		try {
 			String name = dataset().getNamespace(prefix);
 			return Optional.of(new SimpleNamespace(prefix, name));
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
@@ -199,7 +209,8 @@ class SailSourceModel extends AbstractModel {
 	public Namespace setNamespace(String prefix, String name) {
 		try {
 			sink().setNamespace(prefix, name);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 		return new SimpleNamespace(prefix, name);
@@ -215,7 +226,8 @@ class SailSourceModel extends AbstractModel {
 		Optional<Namespace> ret = getNamespace(prefix);
 		try {
 			sink().removeNamespace(prefix);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 		return ret;
@@ -227,7 +239,8 @@ class SailSourceModel extends AbstractModel {
 			if (!isEmptyOrResourcePresent(contexts))
 				return false;
 			return contains(dataset(), subj, pred, obj, contexts);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
@@ -246,13 +259,15 @@ class SailSourceModel extends AbstractModel {
 			}
 			if (contexts == null || contexts.length == 0) {
 				sink().approve(subj, pred, obj, null);
-			} else {
+			}
+			else {
 				for (Resource ctx : contexts) {
 					sink().approve(subj, pred, obj, ctx);
 				}
 			}
 			return true;
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
@@ -265,7 +280,8 @@ class SailSourceModel extends AbstractModel {
 				size = -1;
 				return true;
 			}
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 		return false;
@@ -283,12 +299,14 @@ class SailSourceModel extends AbstractModel {
 						Statement st = stmts.next();
 						sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 					}
-				} finally {
+				}
+				finally {
 					stmts.close();
 				}
 				return true;
 			}
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 		return false;
@@ -298,7 +316,8 @@ class SailSourceModel extends AbstractModel {
 	public Iterator<Statement> iterator() {
 		try {
 			return new StatementIterator(dataset().getStatements(null, null, null));
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
@@ -323,11 +342,13 @@ class SailSourceModel extends AbstractModel {
 									return Integer.MAX_VALUE;
 								}
 							}
-							return (int) size;
-						} finally {
+							return (int)size;
+						}
+						finally {
 							iter.close();
 						}
-					} catch (SailException e) {
+					}
+					catch (SailException e) {
 						throw new ModelException(e);
 					}
 				}
@@ -338,14 +359,16 @@ class SailSourceModel extends AbstractModel {
 			public Iterator<Statement> iterator() {
 				try {
 					return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
-				} catch (SailException e) {
+				}
+				catch (SailException e) {
 					throw new ModelException(e);
 				}
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-					Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
+					Value obj, Resource... contexts)
+			{
 				SailSourceModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -353,7 +376,8 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+			Resource... contexts)
+	{
 		try {
 			CloseableIteration<? extends Statement, SailException> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
@@ -362,27 +386,34 @@ class SailSourceModel extends AbstractModel {
 					Statement st = stmts.next();
 					sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 				}
-			} finally {
+			}
+			finally {
 				stmts.close();
 			}
 			size = -1;
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
 
-	private synchronized SailSink sink() throws SailException {
+	private synchronized SailSink sink()
+		throws SailException
+	{
 		if (sink == null) {
 			sink = source.sink(level);
 		}
 		return sink;
 	}
 
-	private synchronized SailDataset dataset() throws SailException {
+	private synchronized SailDataset dataset()
+		throws SailException
+	{
 		if (sink != null) {
 			try {
 				sink.flush();
-			} finally {
+			}
+			finally {
 				sink.close();
 				sink = null;
 			}
@@ -398,7 +429,8 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException
+	{
 		if (dataset == null) {
 			return false;
 		}
@@ -406,7 +438,8 @@ class SailSourceModel extends AbstractModel {
 		stmts = dataset.getStatements(subj, pred, obj, contexts);
 		try {
 			return stmts.hasNext();
-		} finally {
+		}
+		finally {
 			stmts.close();
 		}
 	}
@@ -428,7 +461,7 @@ class SailSourceModel extends AbstractModel {
 
 	Resource[] cast(Value[] contexts) {
 		if (contexts instanceof Resource[])
-			return (Resource[]) contexts;
+			return (Resource[])contexts;
 		if (contexts == null)
 			return new Resource[] { null };
 		if (contexts.length == 0)
@@ -436,12 +469,13 @@ class SailSourceModel extends AbstractModel {
 		Resource[] result = new Resource[contexts.length];
 		for (int i = 0; i < result.length; i++) {
 			if (contexts[i] == null || contexts[i] instanceof Resource) {
-				result[i] = (Resource) contexts[i];
-			} else {
+				result[i] = (Resource)contexts[i];
+			}
+			else {
 				List<Resource> list = new ArrayList<>();
 				for (Value v : contexts) {
 					if (v == null || v instanceof Resource) {
-						list.add((Resource) v);
+						list.add((Resource)v);
 					}
 				}
 				return list.toArray(new Resource[list.size()]);

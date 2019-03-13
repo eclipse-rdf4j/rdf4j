@@ -47,8 +47,10 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	/**
 	 * Creates a new MemBNode for a bnode ID.
 	 * 
-	 * @param creator The object that is creating this MemBNode.
-	 * @param id      bnode ID.
+	 * @param creator
+	 *        The object that is creating this MemBNode.
+	 * @param id
+	 *        bnode ID.
 	 */
 	public MemBNode(Object creator, String id) {
 		super(id);
@@ -73,7 +75,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public MemStatementList getSubjectStatementList() {
 		if (subjectStatements == null) {
 			return EMPTY_LIST;
-		} else {
+		}
+		else {
 			return subjectStatements;
 		}
 	}
@@ -82,7 +85,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public int getSubjectStatementCount() {
 		if (subjectStatements == null) {
 			return 0;
-		} else {
+		}
+		else {
 			return subjectStatements.size();
 		}
 	}
@@ -120,7 +124,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public MemStatementList getObjectStatementList() {
 		if (objectStatements == null) {
 			return EMPTY_LIST;
-		} else {
+		}
+		else {
 			return objectStatements;
 		}
 	}
@@ -129,7 +134,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public int getObjectStatementCount() {
 		if (objectStatements == null) {
 			return 0;
-		} else {
+		}
+		else {
 			return objectStatements.size();
 		}
 	}
@@ -167,7 +173,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public MemStatementList getContextStatementList() {
 		if (contextStatements == null) {
 			return EMPTY_LIST;
-		} else {
+		}
+		else {
 			return contextStatements;
 		}
 	}
@@ -176,7 +183,8 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public int getContextStatementCount() {
 		if (contextStatements == null) {
 			return 0;
-		} else {
+		}
+		else {
 			return contextStatements.size();
 		}
 	}

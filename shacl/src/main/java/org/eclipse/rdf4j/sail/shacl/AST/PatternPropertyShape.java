@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -44,12 +45,16 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 	}
 
-	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
-				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode);
+	@Override
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
+			shaclSailConnection,
+			nodeShape,
+			(parent) -> new PatternFilter(parent, pattern, flags),
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

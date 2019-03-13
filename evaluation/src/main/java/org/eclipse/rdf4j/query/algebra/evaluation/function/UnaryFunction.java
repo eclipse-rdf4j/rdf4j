@@ -14,7 +14,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public abstract class UnaryFunction implements Function {
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					String.format("%s requires 1 argument, got %d", getURI(), args.length));
@@ -23,5 +25,6 @@ public abstract class UnaryFunction implements Function {
 		return evaluate(valueFactory, args[0]);
 	}
 
-	protected abstract Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException;
+	protected abstract Value evaluate(ValueFactory valueFactory, Value arg)
+		throws ValueExprEvaluationException;
 }
