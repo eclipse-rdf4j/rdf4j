@@ -37,7 +37,7 @@ public class Federate extends ConsoleCommand {
 	public String getName() {
 		return "federate";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Federate existing repositories";
@@ -46,22 +46,22 @@ public class Federate extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "federate [distinct=<true|false>] [readonly=<true|false>] <fedID> <repoID_1> <repoID_2> [<repoID_n>]*\n"
-			+ "  [distinct=<true|false>]  If true, uses a DISTINCT filter that suppresses duplicate results for identical quads\n"
-			+ "                           from different federation members. Default is false.\n"
-			+ "  [readonly=<true|false>]  If true, sets the fedearated repository as read-only. If any member is read-only, then\n"
-			+ "                           this may only be set to true. Default is true. \n"
-			+ "  <fedId>                  The id to assign the federated repository.\n"
-			+ "  <repoID1> <repoID2>      The id's of at least 2 repositories to federate.\n"
-			+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
-			+ "You will be prompted to enter a description for the federated repository as well.";
+				+ "federate [distinct=<true|false>] [readonly=<true|false>] <fedID> <repoID_1> <repoID_2> [<repoID_n>]*\n"
+				+ "  [distinct=<true|false>]  If true, uses a DISTINCT filter that suppresses duplicate results for identical quads\n"
+				+ "                           from different federation members. Default is false.\n"
+				+ "  [readonly=<true|false>]  If true, sets the fedearated repository as read-only. If any member is read-only, then\n"
+				+ "                           this may only be set to true. Default is true. \n"
+				+ "  <fedId>                  The id to assign the federated repository.\n"
+				+ "  <repoID1> <repoID2>      The id's of at least 2 repositories to federate.\n"
+				+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
+				+ "You will be prompted to enter a description for the federated repository as well.";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param state 
+	 * @param state
 	 */
 	public Federate(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -71,7 +71,7 @@ public class Federate extends ConsoleCommand {
 	 * Executes a 'federate' command for the RDF4J Console.
 	 *
 	 * @param parameters the expectations for the tokens in this array are fully documented in
-	 * {@link PrintHelp#FEDERATE} .
+	 *                   {@link PrintHelp#FEDERATE} .
 	 * @throws java.io.IOException
 	 */
 	@Override
@@ -83,7 +83,7 @@ public class Federate extends ConsoleCommand {
 			plist.remove(); // "federate"
 			boolean distinct = getOptionalParamValue(plist, "distinct", false);
 			boolean readonly = getOptionalParamValue(plist, "readonly", true);
-			
+
 			if (distinctValues(plist)) {
 				String fedID = plist.pop();
 				federate(distinct, readonly, fedID, plist);
@@ -97,7 +97,7 @@ public class Federate extends ConsoleCommand {
 	 * Check if all values are distinct
 	 * 
 	 * @param plist
-	 * @return true if all values are distinct 
+	 * @return true if all values are distinct
 	 */
 	private boolean distinctValues(Deque<String> plist) {
 		return plist.size() == new HashSet<>(plist).size();
@@ -107,7 +107,7 @@ public class Federate extends ConsoleCommand {
 	 * Add one or more repositories to a repository federation
 	 * 
 	 * @param distinct
-	 * @param readonly true when all 
+	 * @param readonly  true when all
 	 * @param fedID
 	 * @param memberIDs list of member
 	 */
@@ -135,8 +135,8 @@ public class Federate extends ConsoleCommand {
 	/**
 	 * Validate members of a federation
 	 * 
-	 * @param manager repository manager
-	 * @param readonly set to true if read-only repositories are OK
+	 * @param manager   repository manager
+	 * @param readonly  set to true if read-only repositories are OK
 	 * @param memberIDs IDs of the federated repositories
 	 * @return true when all members are present
 	 */
@@ -168,25 +168,29 @@ public class Federate extends ConsoleCommand {
 	 * @param distinct
 	 * @param readonly
 	 * @param fedID
-	 * @param memberIDs 
+	 * @param memberIDs
 	 */
 	private void logCallDetails(boolean distinct, boolean readonly, String fedID, Deque<String> memberIDs) {
 		StringBuilder builder = new StringBuilder();
 		builder.append("Federate called with federation ID = " + fedID + ", and member ID's = ");
-		
+
 		for (String member : memberIDs) {
 			builder.append("[").append(member).append("]");
 		}
-		builder.append(".\n  Distinct set to ").append(distinct).append(", and readonly set to ").append(
-				readonly).append(".\n");
+		builder.append(".\n  Distinct set to ")
+				.append(distinct)
+				.append(", and readonly set to ")
+				.append(
+						readonly)
+				.append(".\n");
 		LOGGER.debug(builder.toString());
 	}
 
 	/**
 	 * Get the value of an optional boolean parameter or the default
 	 * 
-	 * @param parameters set of parameters
-	 * @param name name of the parameter
+	 * @param parameters   set of parameters
+	 * @param name         name of the parameter
 	 * @param defaultValue default value
 	 * @return value or default
 	 */
@@ -197,19 +201,19 @@ public class Federate extends ConsoleCommand {
 	/**
 	 * Get the value of an optional string parameter or the default
 	 * 
-	 * @param parameters set of parameters
-	 * @param name parameter name
+	 * @param parameters   set of parameters
+	 * @param name         parameter name
 	 * @param defaultValue default string value
 	 * @return value or default
 	 */
 	private String getOptionalParamValue(Deque<String> parameters, String name, String defaultValue) {
 		String result = defaultValue;
-		
+
 		for (String parameter : parameters) {
 			if (parameter.length() >= name.length()
 					&& parameter.substring(0, name.length()).equalsIgnoreCase(name)) {
 				String[] parsed = parameter.split("=");
-		
+
 				if (parsed.length == 2 && parsed[0].equalsIgnoreCase(name)) {
 					result = parsed[1].toLowerCase();
 					parameters.remove(parameter);

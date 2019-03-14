@@ -41,7 +41,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
-	private final Map<String,ConsoleSetting> settings;
+	private final Map<String, ConsoleSetting> settings;
 
 	private static final ParserConfig nonVerifyingParserConfig;
 
@@ -57,7 +57,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param parameters 
+	 * @param parameters
 	 */
 	@Deprecated
 	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
@@ -71,10 +71,10 @@ public class TupleAndGraphQueryEvaluator {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param settings 
+	 * @param settings
 	 */
-	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, 
-															Map<String,ConsoleSetting> settings) {
+	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state,
+			Map<String, ConsoleSetting> settings) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.settings = settings;
@@ -88,12 +88,12 @@ public class TupleAndGraphQueryEvaluator {
 	protected ConsoleIO getConsoleIO() {
 		return this.consoleIO;
 	}
-	
+
 	/**
 	 * Get console State
 	 * 
 	 * @return console state
-	 */	
+	 */
 	protected ConsoleState getConsoleState() {
 		return this.state;
 	}
@@ -102,35 +102,35 @@ public class TupleAndGraphQueryEvaluator {
 	 * Get console settings
 	 * 
 	 * @return console settings
-	 */	
-	protected Map<String,ConsoleSetting> getConsoleSettings() {
+	 */
+	protected Map<String, ConsoleSetting> getConsoleSettings() {
 		return this.settings;
 	}
-	
+
 	/**
-	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer.
-	 * If writer is null, the console will be used for output.
+	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer. If writer is null, the console will be used
+	 * for output.
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn     query language
 	 * @param queryString query string
-	 * @param writer result writer or null
+	 * @param writer      result writer or null
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
-	 * @throws RepositoryException 
+	 * @throws RepositoryException
 	 */
 	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-					RepositoryException {
+			RepositoryException {
 		Repository repository = state.getRepository();
-		
+
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 		int resultCount = 0;
-		long startTime = System.nanoTime();	
-	
+		long startTime = System.nanoTime();
+
 		try (RepositoryConnection con = repository.getConnection();
-			TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
-	
+				TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
+
 			List<String> bindingNames = res.getBindingNames();
 			if (bindingNames.isEmpty()) {
 				while (res.hasNext()) {
@@ -142,7 +142,7 @@ public class TupleAndGraphQueryEvaluator {
 				writer.startHeader();
 				writer.startQueryResult(bindingNames);
 				writer.endHeader();
-				
+
 				while (res.hasNext()) {
 					writer.handleSolution(res.next());
 					resultCount++;
@@ -157,25 +157,25 @@ public class TupleAndGraphQueryEvaluator {
 	/**
 	 * Evaluate SPARQL or SERQL graph query
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @param writer
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
-	 * @throws RepositoryException 
+	 * @throws RepositoryException
 	 */
 	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-					RepositoryException {
+			RepositoryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 		int resultCount = 0;
 		long startTime = System.nanoTime();
-			
-		try(RepositoryConnection con = repository.getConnection();
-			GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
+
+		try (RepositoryConnection con = repository.getConnection();
+				GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
 
 			con.setParserConfig(nonVerifyingParserConfig);
 
@@ -190,50 +190,50 @@ public class TupleAndGraphQueryEvaluator {
 		long endTime = System.nanoTime();
 		consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1_000_000 + " ms)");
 	}
-	
+
 	/**
 	 * Evaluate a boolean SPARQL or SERQL query
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @param writer
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
-	 * @throws RepositoryException 
+	 * @throws RepositoryException
 	 */
 	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-					RepositoryException {
+			RepositoryException {
 		Repository repository = state.getRepository();
-		
+
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 		long startTime = System.nanoTime();
-		
+
 		try (RepositoryConnection con = repository.getConnection()) {
 			boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();
-			
+
 			writer.startDocument();
 			writer.handleBoolean(result);
 			writer.endQueryResult();
 		}
 		long endTime = System.nanoTime();
-		consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1_000_000 + " ms");	
+		consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1_000_000 + " ms");
 	}
 
 	/**
 	 * Execute a SPARQL or SERQL update
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @throws RepositoryException
 	 * @throws UpdateExecutionException
-	 * @throws MalformedQueryException 
+	 * @throws MalformedQueryException
 	 */
 	protected void executeUpdate(QueryLanguage queryLn, String queryString)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		Repository repository = state.getRepository();
-		
+
 		consoleIO.writeln("Executing update...");
 		long startTime = System.nanoTime();
 
@@ -242,6 +242,6 @@ public class TupleAndGraphQueryEvaluator {
 		}
 
 		long endTime = System.nanoTime();
-		consoleIO.writeln("Update executed in " + (endTime - startTime) / 1_000_000 + " ms");		
+		consoleIO.writeln("Update executed in " + (endTime - startTime) / 1_000_000 + " ms");
 	}
 }

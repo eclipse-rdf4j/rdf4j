@@ -46,15 +46,14 @@ public class SimpleCustomResponseView implements View {
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		int sc = DEFAULT_SC;
 		if (model.containsKey(SC_KEY)) {
-			sc = (Integer)model.get(SC_KEY);
+			sc = (Integer) model.get(SC_KEY);
 		}
-		String contentType = (String)model.get(CONTENT_TYPE_KEY);
-		Integer contentLength = (Integer)model.get(CONTENT_LENGTH_KEY);
-		InputStream content = (InputStream)model.get(CONTENT_KEY);
+		String contentType = (String) model.get(CONTENT_TYPE_KEY);
+		Integer contentLength = (Integer) model.get(CONTENT_LENGTH_KEY);
+		InputStream content = (InputStream) model.get(CONTENT_KEY);
 
 		try {
 			response.setStatus(sc);
@@ -68,13 +67,11 @@ public class SimpleCustomResponseView implements View {
 						response.setContentLength(contentLength);
 					}
 					IOUtil.transfer(content, out);
-				}
-				else {
+				} else {
 					response.setContentLength(0);
 				}
 			}
-		}
-		finally {
+		} finally {
 			if (content != null) {
 				content.close();
 			}

@@ -31,7 +31,7 @@ public class Util {
 	 * Get context IRI from string representation
 	 * 
 	 * @param repository repository
-	 * @param ctxID context as string
+	 * @param ctxID      context as string
 	 * @return context IRI
 	 */
 	public static Resource getContext(Repository repository, String ctxID) {
@@ -43,19 +43,19 @@ public class Util {
 		}
 		return repository.getValueFactory().createIRI(ctxID);
 	}
-	
+
 	/**
 	 * Get context IRIs from a series of tokens, starting from (zero-based) position within the series.
 	 * 
-	 * @param tokens command as series of tokens
-	 * @param pos position to start from
+	 * @param tokens     command as series of tokens
+	 * @param pos        position to start from
 	 * @param repository repository
 	 * @return array of contexts or null for default context
 	 * @throws IllegalArgumentException
 	 */
 	public static Resource[] getContexts(String[] tokens, int pos, Repository repository)
-									throws IllegalArgumentException {	
-		Resource[] contexts = new Resource[]{};
+			throws IllegalArgumentException {
+		Resource[] contexts = new Resource[] {};
 
 		if (tokens.length > pos) {
 			contexts = new Resource[tokens.length - pos];
@@ -65,7 +65,7 @@ public class Util {
 		}
 		return contexts;
 	}
-	
+
 	/**
 	 * Get path from file or URI
 	 * 
@@ -79,22 +79,22 @@ public class Util {
 		} catch (InvalidPathException ipe) {
 			try {
 				path = Paths.get(new URI(file));
-			} catch (URISyntaxException ex) { 
+			} catch (URISyntaxException ex) {
 				//
 			}
 		}
 		return path;
 	}
-	
+
 	/**
-	 * Get string representation for a value.
-	 * If the value is an IRI and is part of a known namespace, the prefix will be used to shorten it.
+	 * Get string representation for a value. If the value is an IRI and is part of a known namespace, the prefix will
+	 * be used to shorten it.
 	 * 
-	 * @param value value
+	 * @param value      value
 	 * @param namespaces mapping (uri,prefix)
 	 * @return string representation
 	 */
-	public static String getPrefixedValue(Value value, Map<String,String> namespaces) {
+	public static String getPrefixedValue(Value value, Map<String, String> namespaces) {
 		if (value == null) {
 			return null;
 		}
@@ -118,15 +118,14 @@ public class Util {
 		}
 		return NTriplesUtil.toNTriplesString(value);
 	}
-	
+
 	/**
-	 * Format a string of values, starting new line(s) when the joined values exceed the width. 
-	 * Primarily used for displaying formatted help (e.g namespaces, config files) to the console.
-	 * To be replaced by a commons text method
+	 * Format a string of values, starting new line(s) when the joined values exceed the width. Primarily used for
+	 * displaying formatted help (e.g namespaces, config files) to the console. To be replaced by a commons text method
 	 * 
-	 * @param width maximum column width
-	 * @param padding left padding
-	 * @param str joined string
+	 * @param width     maximum column width
+	 * @param padding   left padding
+	 * @param str       joined string
 	 * @param separator value separator
 	 * @return list of values as a formatted string, or empty
 	 */
@@ -135,21 +134,21 @@ public class Util {
 		if (str.isEmpty()) {
 			return "";
 		}
-		
+
 		int padLen = padding.length();
 		int strLen = str.length();
 		int sepLen = separator.length();
-		
+
 		if (strLen + padLen <= width) {
 			return padding + str;
 		}
-		
+
 		String[] values = str.split(separator);
 		StringBuilder builder = new StringBuilder(strLen + 4 * padLen + 8 * sepLen);
 
 		int colpos = width; // force start on new line
-		
-		for(String value: values) {
+
+		for (String value : values) {
 			int len = value.length();
 			if (colpos + sepLen + len <= width) {
 				builder.append(separator);

@@ -97,15 +97,13 @@ public class TransactionController extends AbstractController {
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST, "PUT", "DELETE" });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		ModelAndView result;
 
 		String reqMethod = request.getMethod();
@@ -126,83 +124,75 @@ public class TransactionController extends AbstractController {
 		final String actionParam = request.getParameter(Protocol.ACTION_PARAM_NAME);
 		final Action action = actionParam != null ? Action.valueOf(actionParam) : Action.ROLLBACK;
 		switch (action) {
-			case QUERY:
-				// TODO SES-2238 note that we allow POST requests for backward
-				// compatibility reasons with earlier
-				// 2.8.x releases, even though according to the protocol spec only
-				// PUT is allowed.
-				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
-					logger.info("{} txn query request", reqMethod);
-					result = processQuery(transaction, request, response);
-					logger.info("{} txn query request finished", reqMethod);
+		case QUERY:
+			// TODO SES-2238 note that we allow POST requests for backward
+			// compatibility reasons with earlier
+			// 2.8.x releases, even though according to the protocol spec only
+			// PUT is allowed.
+			if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+				logger.info("{} txn query request", reqMethod);
+				result = processQuery(transaction, request, response);
+				logger.info("{} txn query request finished", reqMethod);
+			} else {
+				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+						"Method not allowed: " + reqMethod);
+			}
+			break;
+		case GET:
+			if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+				logger.info("{} txn get/export statements request", reqMethod);
+				result = getExportStatementsResult(transaction, request, response);
+				logger.info("{} txn get/export statements request finished", reqMethod);
+			} else {
+				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+						"Method not allowed: " + reqMethod);
+			}
+			break;
+		case SIZE:
+			if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+				logger.info("{} txn size request", reqMethod);
+				result = getSize(transaction, request, response);
+				logger.info("{} txn size request finished", reqMethod);
+			} else {
+				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+						"Method not allowed: " + reqMethod);
+			}
+			break;
+		case PING:
+			String text = Long.toString(ActiveTransactionRegistry.INSTANCE.getTimeout(TimeUnit.MILLISECONDS));
+			Map<String, String> model = Collections.singletonMap(SimpleResponseView.CONTENT_KEY, text);
+			result = new ModelAndView(SimpleResponseView.getInstance(), model);
+			break;
+		default:
+			// TODO Action.ROLLBACK check is for backward compatibility with
+			// older 2.8.x releases only. It's not in the protocol spec.
+			if ("DELETE".equals(reqMethod) || (action.equals(Action.ROLLBACK)
+					&& ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)))) {
+				logger.info("transaction rollback");
+				try {
+					transaction.rollback();
+				} finally {
+					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
 				}
-				else {
-					throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-							"Method not allowed: " + reqMethod);
-				}
-				break;
-			case GET:
-				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
-					logger.info("{} txn get/export statements request", reqMethod);
-					result = getExportStatementsResult(transaction, request, response);
-					logger.info("{} txn get/export statements request finished", reqMethod);
-				}
-				else {
-					throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-							"Method not allowed: " + reqMethod);
-				}
-				break;
-			case SIZE:
-				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
-					logger.info("{} txn size request", reqMethod);
-					result = getSize(transaction, request, response);
-					logger.info("{} txn size request finished", reqMethod);
-				}
-				else {
-					throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-							"Method not allowed: " + reqMethod);
-				}
-				break;
-			case PING:
-				String text = Long.toString(ActiveTransactionRegistry.INSTANCE.getTimeout(TimeUnit.MILLISECONDS));
-				Map<String, String> model = Collections.singletonMap(SimpleResponseView.CONTENT_KEY, text);
-				result = new ModelAndView(SimpleResponseView.getInstance(), model);
-				break;
-			default:
-				// TODO Action.ROLLBACK check is for backward compatibility with
-				// older 2.8.x releases only. It's not in the protocol spec.
-				if ("DELETE".equals(reqMethod) || (action.equals(Action.ROLLBACK)
-						&& ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod))))
-				{
-					logger.info("transaction rollback");
-					try {
-						transaction.rollback();
-					}
-					finally {
-						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-					}
-					result = new ModelAndView(EmptySuccessView.getInstance());
-					logger.info("transaction rollback request finished.");
-				}
-				else if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
-					// TODO filter for appropriate PUT operations
-					logger.info("{} txn operation", reqMethod);
-					result = processModificationOperation(transaction, action, request, response);
-					logger.info("PUT txn operation request finished.");
-				}
-				else {
-					throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-							"Method not allowed: " + reqMethod);
-				}
-				break;
+				result = new ModelAndView(EmptySuccessView.getInstance());
+				logger.info("transaction rollback request finished.");
+			} else if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+				// TODO filter for appropriate PUT operations
+				logger.info("{} txn operation", reqMethod);
+				result = processModificationOperation(transaction, action, request, response);
+				logger.info("PUT txn operation request finished.");
+			} else {
+				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+						"Method not allowed: " + reqMethod);
+			}
+			break;
 		}
 		ActiveTransactionRegistry.INSTANCE.active(transaction);
 		return result;
 	}
 
 	private UUID getTransactionID(HttpServletRequest request)
-		throws ClientHTTPException
-	{
+			throws ClientHTTPException {
 		String pathInfoStr = request.getPathInfo();
 
 		UUID txnID = null;
@@ -214,13 +204,11 @@ public class TransactionController extends AbstractController {
 				try {
 					txnID = UUID.fromString(pathInfo[2]);
 					logger.debug("txnID is '{}'", txnID);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ClientHTTPException(SC_BAD_REQUEST,
 							"not a valid transaction id: " + pathInfo[2]);
 				}
-			}
-			else {
+			} else {
 				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);
 			}
 		}
@@ -230,8 +218,7 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView processModificationOperation(Transaction transaction, Action action,
 			HttpServletRequest request, HttpServletResponse response)
-		throws IOException, HTTPException
-	{
+			throws IOException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();
@@ -250,38 +237,38 @@ public class TransactionController extends AbstractController {
 		try {
 			RDFFormat format = null;
 			switch (action) {
-				case ADD:
-					format = Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-							Rio.unsupportedFormat(request.getContentType()));
-					transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);
-					break;
-				case DELETE:
-					format = Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-							Rio.unsupportedFormat(request.getContentType()));
-					transaction.delete(format, request.getInputStream(), baseURI);
+			case ADD:
+				format = Rio.getParserFormatForMIMEType(request.getContentType())
+						.orElseThrow(
+								Rio.unsupportedFormat(request.getContentType()));
+				transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);
+				break;
+			case DELETE:
+				format = Rio.getParserFormatForMIMEType(request.getContentType())
+						.orElseThrow(
+								Rio.unsupportedFormat(request.getContentType()));
+				transaction.delete(format, request.getInputStream(), baseURI);
 
-					break;
-				case UPDATE:
-					return getSparqlUpdateResult(transaction, request, response);
-				case COMMIT:
-					transaction.commit();
-					// If commit fails with an exception, deregister should be skipped so the user
-					// has a chance to do a proper rollback. See #725.
-					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-					break;
-				default:
-					logger.warn("transaction modification action '{}' not recognized", action);
-					throw new ClientHTTPException("modification action not recognized: " + action);
+				break;
+			case UPDATE:
+				return getSparqlUpdateResult(transaction, request, response);
+			case COMMIT:
+				transaction.commit();
+				// If commit fails with an exception, deregister should be skipped so the user
+				// has a chance to do a proper rollback. See #725.
+				ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+				break;
+			default:
+				logger.warn("transaction modification action '{}' not recognized", action);
+				throw new ClientHTTPException("modification action not recognized: " + action);
 			}
 
 			model.put(SimpleResponseView.SC_KEY, HttpServletResponse.SC_OK);
 			return new ModelAndView(SimpleResponseView.getInstance(), model);
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			if (e instanceof ClientHTTPException) {
-				throw (ClientHTTPException)e;
-			}
-			else {
+				throw (ClientHTTPException) e;
+			} else {
 				throw new ServerHTTPException(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
 						"Transaction handling error: " + e.getMessage(), e);
 			}
@@ -290,8 +277,7 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView getSize(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response)
-		throws HTTPException
-	{
+			throws HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();
@@ -307,8 +293,7 @@ public class TransactionController extends AbstractController {
 
 			try {
 				size = transaction.getSize(contexts);
-			}
-			catch (RepositoryException | InterruptedException | ExecutionException e) {
+			} catch (RepositoryException | InterruptedException | ExecutionException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 			}
 			model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));
@@ -324,8 +309,7 @@ public class TransactionController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ClientHTTPException
-	{
+			throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -359,16 +343,14 @@ public class TransactionController extends AbstractController {
 	 */
 	private ModelAndView processQuery(Transaction txn, HttpServletRequest request,
 			HttpServletResponse response)
-		throws IOException, HTTPException
-	{
+			throws IOException, HTTPException {
 		String queryStr = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
 			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding()
 					: "UTF-8";
 			queryStr = IOUtils.toString(request.getInputStream(), encoding);
-		}
-		else {
+		} else {
 			queryStr = request.getParameter(QUERY_PARAM_NAME);
 		}
 
@@ -380,43 +362,37 @@ public class TransactionController extends AbstractController {
 			Query query = getQuery(txn, queryStr, request, response);
 
 			if (query instanceof TupleQuery) {
-				TupleQuery tQuery = (TupleQuery)query;
+				TupleQuery tQuery = (TupleQuery) query;
 
 				queryResult = txn.evaluate(tQuery);
 				registry = TupleQueryResultWriterRegistry.getInstance();
 				view = TupleQueryResultView.getInstance();
-			}
-			else if (query instanceof GraphQuery) {
-				GraphQuery gQuery = (GraphQuery)query;
+			} else if (query instanceof GraphQuery) {
+				GraphQuery gQuery = (GraphQuery) query;
 
 				queryResult = txn.evaluate(gQuery);
 				registry = RDFWriterRegistry.getInstance();
 				view = GraphQueryResultView.getInstance();
-			}
-			else if (query instanceof BooleanQuery) {
-				BooleanQuery bQuery = (BooleanQuery)query;
+			} else if (query instanceof BooleanQuery) {
+				BooleanQuery bQuery = (BooleanQuery) query;
 
 				queryResult = txn.evaluate(bQuery);
 				registry = BooleanQueryResultWriterRegistry.getInstance();
 				view = BooleanQueryResultView.getInstance();
-			}
-			else {
+			} else {
 				throw new ClientHTTPException(SC_BAD_REQUEST,
 						"Unsupported query type: " + query.getClass().getName());
 			}
-		}
-		catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
+		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
 			logger.info("Query interrupted", e);
 			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query execution interrupted");
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			logger.info("Query evaluation error", e);
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException
 				// directly (see SES-1016).
-				throw (HTTPException)e.getCause();
-			}
-			else {
+				throw (HTTPException) e.getCause();
+			} else {
 				throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
 			}
 		}
@@ -433,8 +409,7 @@ public class TransactionController extends AbstractController {
 
 	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request,
 			HttpServletResponse response)
-		throws IOException, ClientHTTPException, InterruptedException, ExecutionException
-	{
+			throws IOException, ClientHTTPException, InterruptedException, ExecutionException {
 		Query result = null;
 
 		// default query language is SPARQL
@@ -461,8 +436,7 @@ public class TransactionController extends AbstractController {
 		if (timeout != null) {
 			try {
 				maxQueryTime = Integer.parseInt(timeout);
-			}
-			catch (NumberFormatException e) {
+			} catch (NumberFormatException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid timeout value: " + timeout);
 			}
 		}
@@ -483,8 +457,7 @@ public class TransactionController extends AbstractController {
 							uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);
 						}
 						dataset.addDefaultGraph(uri);
-					}
-					catch (IllegalArgumentException e) {
+					} catch (IllegalArgumentException e) {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
 								"Illegal URI for default graph: " + defaultGraphURI);
 					}
@@ -499,8 +472,7 @@ public class TransactionController extends AbstractController {
 							uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);
 						}
 						dataset.addNamedGraph(uri);
-					}
-					catch (IllegalArgumentException e) {
+					} catch (IllegalArgumentException e) {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
 								"Illegal URI for named graph: " + namedGraphURI);
 					}
@@ -528,24 +500,20 @@ public class TransactionController extends AbstractController {
 				String parameterName = parameterNames.nextElement();
 
 				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length())
-				{
+						&& parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							SimpleValueFactory.getInstance());
 					result.setBinding(bindingName, bindingValue);
 				}
 			}
-		}
-		catch (UnsupportedQueryLanguageException e) {
+		} catch (UnsupportedQueryLanguageException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.UNSUPPORTED_QUERY_LANGUAGE, queryLn.getName());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			logger.error("Repository error", e);
 			response.sendError(SC_INTERNAL_SERVER_ERROR);
 		}
@@ -555,23 +523,21 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView getSparqlUpdateResult(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ServerHTTPException, ClientHTTPException, HTTPException
-	{
+			throws ServerHTTPException, ClientHTTPException, HTTPException {
 		String sparqlUpdateString = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {
 				final String encoding = request.getCharacterEncoding() != null
-						? request.getCharacterEncoding() : "UTF-8";
+						? request.getCharacterEncoding()
+						: "UTF-8";
 				sparqlUpdateString = IOUtils.toString(request.getInputStream(), encoding);
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				logger.warn("error reading sparql update string from request body", e);
 				throw new ClientHTTPException(SC_BAD_REQUEST,
 						"could not read SPARQL update string from body: " + e.getMessage());
 			}
-		}
-		else {
+		} else {
 			sparqlUpdateString = request.getParameter(Protocol.UPDATE_PARAM_NAME);
 		}
 
@@ -616,8 +582,7 @@ public class TransactionController extends AbstractController {
 						uri = SimpleValueFactory.getInstance().createIRI(graphURI);
 					}
 					dataset.addDefaultRemoveGraph(uri);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ClientHTTPException(SC_BAD_REQUEST,
 							"Illegal URI for default remove graph: " + graphURI);
 				}
@@ -632,8 +597,7 @@ public class TransactionController extends AbstractController {
 					uri = SimpleValueFactory.getInstance().createIRI(graphURI);
 				}
 				dataset.setDefaultInsertGraph(uri);
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST,
 						"Illegal URI for default insert graph: " + graphURI);
 			}
@@ -647,8 +611,7 @@ public class TransactionController extends AbstractController {
 						uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);
 					}
 					dataset.addDefaultGraph(uri);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ClientHTTPException(SC_BAD_REQUEST,
 							"Illegal URI for default graph: " + defaultGraphURI);
 				}
@@ -663,8 +626,7 @@ public class TransactionController extends AbstractController {
 						uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);
 					}
 					dataset.addNamedGraph(uri);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ClientHTTPException(SC_BAD_REQUEST,
 							"Illegal URI for named graph: " + namedGraphURI);
 				}
@@ -681,8 +643,7 @@ public class TransactionController extends AbstractController {
 				String parameterName = parameterNames.nextElement();
 
 				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length())
-				{
+						&& parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							SimpleValueFactory.getInstance());
@@ -694,28 +655,23 @@ public class TransactionController extends AbstractController {
 					bindings);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
-		}
-		catch (UpdateExecutionException | InterruptedException | ExecutionException e) {
+		} catch (UpdateExecutionException | InterruptedException | ExecutionException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException directly
 				// (see SES-1016).
-				throw (HTTPException)e.getCause();
-			}
-			else {
+				throw (HTTPException) e.getCause();
+			} else {
 				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException directly
 				// (see SES-1016).
-				throw (HTTPException)e.getCause();
-			}
-			else {
+				throw (HTTPException) e.getCause();
+			} else {
 				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 			}
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
 		}

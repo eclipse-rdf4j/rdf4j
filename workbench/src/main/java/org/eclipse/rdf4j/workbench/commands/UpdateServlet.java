@@ -37,15 +37,13 @@ public class UpdateServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception, IOException
-	{
+			throws Exception, IOException {
 		// All POST requests are expected to contain a SPARQL/Update 'update' parameter.
 		try {
 			String updateString = req.getParameter("update");
 			executeUpdate(updateString);
 			resp.sendRedirect("summary");
-		}
-		catch (BadRequestException exc) {
+		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "update.xsl");
@@ -59,32 +57,26 @@ public class UpdateServlet extends TransformationServlet {
 	}
 
 	private void executeUpdate(String updateString)
-		throws Exception
-	{
+			throws Exception {
 		RepositoryConnection con = repository.getConnection();
 		Update update;
 		try {
 			update = con.prepareUpdate(QueryLanguage.SPARQL, updateString);
 			update.execute();
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new BadRequestException(e.getMessage());
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new BadRequestException(e.getMessage());
-		}
-		catch (UpdateExecutionException e) {
+		} catch (UpdateExecutionException e) {
 			throw new BadRequestException(e.getMessage());
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		// All GET requests are assumed to be to present the update editor page.
 		builder.transform(xslPath, "update.xsl");
 		builder.start();

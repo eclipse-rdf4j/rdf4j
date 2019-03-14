@@ -41,8 +41,7 @@ public class CookieHandler {
 	}
 
 	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp)
-		throws UnsupportedEncodingException
-	{
+			throws UnsupportedEncodingException {
 		for (String name : this.servlet.getCookieNames()) {
 			if (req.isParameterPresent(name)) {
 				addCookie(req, resp, name);
@@ -51,8 +50,7 @@ public class CookieHandler {
 	}
 
 	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name)
-		throws UnsupportedEncodingException
-	{
+			throws UnsupportedEncodingException {
 		final String raw = req.getParameter(name);
 		final String value = URLEncoder.encode(raw, "UTF-8");
 		LOGGER.info("name: {}\nvalue: {}", name, value);
@@ -60,8 +58,7 @@ public class CookieHandler {
 		final Cookie cookie = new Cookie(name, value);
 		if (req.getContextPath().isEmpty()) {
 			cookie.setPath("/");
-		}
-		else {
+		} else {
 			cookie.setPath(req.getContextPath());
 		}
 		cookie.setMaxAge(parseInt(config.getInitParameter(COOKIE_AGE_PARAM)));
@@ -84,10 +81,8 @@ public class CookieHandler {
 	/**
 	 * Add a 'total_result_count' cookie. Used by both QueryServlet and ExploreServlet.
 	 * 
-	 * @param req
-	 *        the request object
-	 * @param resp
-	 *        the response object
+	 * @param req  the request object
+	 * @param resp the response object
 	 * @value the value to give the cookie
 	 */
 	public void addTotalResultCountCookie(WorkbenchRequest req, HttpServletResponse resp, int value) {
@@ -98,8 +93,7 @@ public class CookieHandler {
 		final Cookie cookie = new Cookie(name, value);
 		if (req.getContextPath().isEmpty()) {
 			cookie.setPath("/");
-		}
-		else {
+		} else {
 			cookie.setPath(req.getContextPath());
 		}
 		cookie.setMaxAge(Integer.parseInt(config.getInitParameter(COOKIE_AGE_PARAM)));

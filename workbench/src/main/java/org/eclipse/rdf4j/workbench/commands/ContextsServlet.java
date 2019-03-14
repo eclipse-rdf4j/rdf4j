@@ -23,8 +23,7 @@ public class ContextsServlet extends TupleServlet {
 
 	@Override
 	protected void service(TupleResultBuilder builder, RepositoryConnection con)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		for (Resource ctx : Iterations.asList(con.getContextIDs())) {
 			builder.result(ctx);
 		}

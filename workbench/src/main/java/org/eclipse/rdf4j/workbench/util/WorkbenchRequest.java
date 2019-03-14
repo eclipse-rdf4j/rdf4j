@@ -55,22 +55,15 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	/**
 	 * Wrap a request with an object aware of the current repository and application defaults.
 	 * 
-	 * @param repository
-	 *        currently connected repository
-	 * @param request
-	 *        current request
-	 * @param defaults
-	 *        application default parameter values
-	 * @throws RepositoryException
-	 *         if there is an issue retrieving the parameter map
-	 * @throws IOException
-	 *         if there is an issue retrieving the parameter map
-	 * @throws FileUploadException
-	 *         if there is an issue retrieving the parameter map
+	 * @param repository currently connected repository
+	 * @param request    current request
+	 * @param defaults   application default parameter values
+	 * @throws RepositoryException if there is an issue retrieving the parameter map
+	 * @throws IOException         if there is an issue retrieving the parameter map
+	 * @throws FileUploadException if there is an issue retrieving the parameter map
 	 */
 	public WorkbenchRequest(Repository repository, HttpServletRequest request, Map<String, String> defaults)
-		throws RepositoryException, IOException, FileUploadException
-	{
+			throws RepositoryException, IOException, FileUploadException {
 		super(request);
 		this.defaults = defaults;
 		this.decoder = new ValueDecoder(repository,
@@ -78,8 +71,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		String url = request.getRequestURL().toString();
 		if (ServletFileUpload.isMultipartContent(this)) {
 			parameters = getMultipartParameterMap();
-		}
-		else if (request.getQueryString() == null && url.contains(";")) {
+		} else if (request.getQueryString() == null && url.contains(";")) {
 			parameters = getUrlParameterMap(url);
 		}
 	}
@@ -103,24 +95,21 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/***
-	 * Get the integer value associated with the given parameter name. Internally uses getParameter(String),
-	 * so looks in this order: 1. the query parameters that were parsed at construction, using the last value
-	 * if multiple exist. 2. Request cookies. 3. The defaults.
+	 * Get the integer value associated with the given parameter name. Internally uses getParameter(String), so looks in
+	 * this order: 1. the query parameters that were parsed at construction, using the last value if multiple exist. 2.
+	 * Request cookies. 3. The defaults.
 	 * 
 	 * @return the value of the parameter, or zero if it is not present
-	 * @throws BadRequestException
-	 *         if the parameter is present but does not parse as an integer
+	 * @throws BadRequestException if the parameter is present but does not parse as an integer
 	 */
 	public int getInt(String name)
-		throws BadRequestException
-	{
+			throws BadRequestException {
 		int result = 0;
 		String limit = getParameter(name);
 		if (limit != null && !limit.isEmpty()) {
 			try {
 				result = Integer.parseInt(limit);
-			}
-			catch (NumberFormatException exc) {
+			} catch (NumberFormatException exc) {
 				throw new BadRequestException(exc.getMessage(), exc);
 			}
 		}
@@ -132,14 +121,12 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		String result = null;
 		if (parameters != null && parameters.containsKey(name)) {
 			result = parameters.get(name);
-		}
-		else {
+		} else {
 			String[] values = super.getParameterValues(name);
 			if (values != null && values.length > 0) {
 				// use the last one as it may be appended in JavaScript
 				result = values[values.length - 1];
-			}
-			else {
+			} else {
 				result = getCookie(name);
 				if (result == null && defaults != null && defaults.containsKey(name)) {
 					result = defaults.get(name);
@@ -172,8 +159,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	/**
 	 * Returns whether a non-null, non-empty value is available for the given parameter name.
 	 * 
-	 * @param name
-	 *        parameter name to check
+	 * @param name parameter name to check
 	 * @return true if a non-null, non-empty value exists, false otherwise
 	 */
 	public boolean isParameterPresent(String name) {
@@ -184,29 +170,24 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 				// use the last one as it may be appended in JavaScript
 				result = !values[values.length - 1].isEmpty();
 			}
-		}
-		else {
+		} else {
 			result = !parameters.get(name).isEmpty();
 		}
 		return result;
 	}
 
 	/**
-	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of the given parameter
-	 * name.
+	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of the given parameter name.
 	 * 
-	 * @param name
-	 *        of parameter to retrieve resource from
+	 * @param name of parameter to retrieve resource from
 	 * @return value corresponding to the given parameter name
-	 * @throws BadRequestException
-	 *         if a problem occurs parsing the parameter value
+	 * @throws BadRequestException if a problem occurs parsing the parameter value
 	 */
 	public Resource getResource(String name)
-		throws BadRequestException, RepositoryException
-	{
+			throws BadRequestException, RepositoryException {
 		Value value = getValue(name);
 		if (value == null || value instanceof Resource) {
-			return (Resource)value;
+			return (Resource) value;
 		}
 		throw new BadRequestException("Not a BNode or URI: " + value);
 	}
@@ -243,20 +224,16 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	/**
 	 * Gets the URI referred to by the parameter value.
 	 * 
-	 * @param name
-	 *        of the parameter to check
+	 * @param name of the parameter to check
 	 * @return the URI, or null if the parameter has no value, is only whitespace, or equals "null"
-	 * @throws BadRequestException
-	 *         if the value doesn't parse as a URI
-	 * @throws RepositoryException
-	 *         if the name space prefix is not resolvable
+	 * @throws BadRequestException if the value doesn't parse as a URI
+	 * @throws RepositoryException if the name space prefix is not resolvable
 	 */
 	public IRI getURI(String name)
-		throws BadRequestException, RepositoryException
-	{
+			throws BadRequestException, RepositoryException {
 		Value value = getValue(name);
 		if (value == null || value instanceof IRI) {
-			return (IRI)value;
+			return (IRI) value;
 		}
 		throw new BadRequestException("Not a URI: " + value);
 	}
@@ -264,20 +241,16 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	/**
 	 * Gets the URL referred to by the parameter value.
 	 * 
-	 * @param name
-	 *        of the parameter to check
+	 * @param name of the parameter to check
 	 * @return the URL
-	 * @throws BadRequestException
-	 *         if the value doesn't parse as a URL
+	 * @throws BadRequestException if the value doesn't parse as a URL
 	 */
 	public URL getUrl(String name)
-		throws BadRequestException
-	{
+			throws BadRequestException {
 		String url = getParameter(name);
 		try {
 			return new URL(url);
-		}
-		catch (MalformedURLException exc) {
+		} catch (MalformedURLException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
 	}
@@ -285,23 +258,18 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	/**
 	 * Gets the {@link org.eclipse.rdf4j.model.Value} referred to by the parameter value.
 	 * 
-	 * @param name
-	 *        of the parameter to check
+	 * @param name of the parameter to check
 	 * @return the value, or null if the parameter has no value, is only whitespace, or equals "null"
-	 * @throws BadRequestException
-	 *         if the value doesn't parse as a URI
-	 * @throws RepositoryException
-	 *         if any name space prefix is not resolvable
+	 * @throws BadRequestException if the value doesn't parse as a URI
+	 * @throws RepositoryException if any name space prefix is not resolvable
 	 */
 	public Value getValue(String name)
-		throws BadRequestException, RepositoryException
-	{
+			throws BadRequestException, RepositoryException {
 		return decoder.decodeValue(getParameter(name));
 	}
 
 	private String firstLine(FileItemStream item)
-		throws IOException
-	{
+			throws IOException {
 		InputStream stream = item.openStream();
 		try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
 			return reader.readLine();
@@ -309,8 +277,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	private Map<String, String> getMultipartParameterMap()
-		throws RepositoryException, IOException, FileUploadException
-	{
+			throws RepositoryException, IOException, FileUploadException {
 		Map<String, String> parameters = new HashMap<>();
 		ServletFileUpload upload = new ServletFileUpload();
 		FileItemIterator iter = upload.getItemIterator(this);
@@ -321,8 +288,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 				content = item.openStream();
 				contentFileName = item.getName();
 				break;
-			}
-			else {
+			} else {
 				parameters.put(name, firstLine(item));
 			}
 		}
@@ -330,8 +296,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	private Map<String, String> getUrlParameterMap(String url)
-		throws UnsupportedEncodingException
-	{
+			throws UnsupportedEncodingException {
 		String qry = url.substring(url.indexOf(';') + 1);
 		Map<String, String> parameters = new HashMap<>();
 		for (String param : qry.split("&")) {

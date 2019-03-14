@@ -25,8 +25,7 @@ public class TestTupleResultBuilder {
 
 	@Test
 	public final void testSES1780regression()
-		throws Exception
-	{
+			throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(
 				new SPARQLResultsJSONWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		builder.start("test");
@@ -36,23 +35,20 @@ public class TestTupleResultBuilder {
 
 	@Test
 	public final void testSES1726regression()
-		throws Exception
-	{
+			throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(
 				new SPARQLResultsJSONWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		try {
 			builder.namedResult("test", new URL("http://www.foo.org/bar#"));
 			fail("Did not receive expected exception for calling namedResult before start");
-		}
-		catch (IllegalStateException ise) {
+		} catch (IllegalStateException ise) {
 			// Expected exception
 		}
 	}
 
 	@Test
 	public final void testSES1846Normal()
-		throws Exception
-	{
+			throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(
 				new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		builder.startBoolean();
@@ -62,16 +58,14 @@ public class TestTupleResultBuilder {
 
 	@Test
 	public final void testSES1846regression()
-		throws Exception
-	{
+			throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(
 				new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		try {
 			builder.start();
 			builder.bool(true);
 			fail("Did not receive expected exception for calling bool after start");
-		}
-		catch (QueryResultHandlerException qrhe) {
+		} catch (QueryResultHandlerException qrhe) {
 			// Expected exception
 		}
 	}

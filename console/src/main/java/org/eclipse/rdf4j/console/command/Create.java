@@ -69,20 +69,20 @@ public class Create extends ConsoleCommand {
 	public String getName() {
 		return "create";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Creates a new repository";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "create <template>   Create a new repository using this configuration template\n"
-			+ "  built-in: \n"
-			+  Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
-			+ "  template-dir (" + templatesDir + "):\n" 
-			+  Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
+				+ "create <template>   Create a new repository using this configuration template\n"
+				+ "  built-in: \n"
+				+ Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
+				+ "  template-dir (" + templatesDir + "):\n"
+				+ Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
 	}
 
 	/**
@@ -110,14 +110,16 @@ public class Create extends ConsoleCommand {
 	 * 
 	 * @param path path with templates
 	 * @return string concatenated string
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private String getOrderedTemplates(Path path) throws IOException {
-		return Files.walk(path).filter(Files::isRegularFile)
-					.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
-					.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-					.sorted()
-					.collect(Collectors.joining(", "));
+		return Files.walk(path)
+				.filter(Files::isRegularFile)
+				.map(f -> f.getFileName().toString())
+				.filter(s -> s.endsWith(FILE_EXT))
+				.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+				.sorted()
+				.collect(Collectors.joining(", "));
 	}
 
 	/**
@@ -145,33 +147,34 @@ public class Create extends ConsoleCommand {
 	private String getBuiltinTemplates() {
 		// assume the templates are all located in the same jar "directory" as the RepositoryConfig class
 		Class cl = RepositoryConfig.class;
-		
+
 		try {
 			URI dir = cl.getResource(cl.getSimpleName() + ".class").toURI();
 			if (dir.getScheme().equals("jar")) {
-				try(FileSystem fs = FileSystems.newFileSystem(dir, Collections.EMPTY_MAP, null)) {
+				try (FileSystem fs = FileSystems.newFileSystem(dir, Collections.EMPTY_MAP, null)) {
 					// turn package structure into directory structure
 					String pkg = cl.getPackage().getName().replaceAll("\\.", "/");
-					return getOrderedTemplates(fs.getPath(pkg));			
+					return getOrderedTemplates(fs.getPath(pkg));
 				}
-			} 
+			}
 		} catch (NullPointerException | URISyntaxException | IOException e) {
 			LOGGER.error("Could not get built-in config templates from JAR", e);
 		}
 		return "";
 	}
+
 	/**
 	 * Create a new repository based on a template
 	 * 
 	 * @param templateName name of the template
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private void createRepository(final String templateName) throws IOException {
 		try {
 			// FIXME: remove assumption of .ttl extension
 			final String templateFileName = templateName + FILE_EXT;
 			final File templateFile = new File(templatesDir, templateFileName);
-			
+
 			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,
 					templateFile);
 			if (templateStream != null) {
@@ -184,33 +187,36 @@ public class Create extends ConsoleCommand {
 				final ConfigTemplate configTemplate = new ConfigTemplate(template);
 				final Map<String, String> valueMap = new HashMap<>();
 				final Map<String, List<String>> variableMap = configTemplate.getVariableMap();
-			
+
 				boolean eof = inputParameters(valueMap, variableMap, configTemplate.getMultilineMap());
 				if (!eof) {
 					final String configString = configTemplate.render(valueMap);
 					final Model graph = new LinkedHashModel();
-					
+
 					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE,
 							SimpleValueFactory.getInstance());
 					rdfParser.setRDFHandler(new StatementCollector(graph));
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
-					
+
 					final Resource repositoryNode = Models.subject(
-							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
-							() -> new RepositoryConfigException("missing repository node"));
-					
+							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+							.orElseThrow(
+									() -> new RepositoryConfigException("missing repository node"));
+
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
-					
+
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
-					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(
-							repConfig.getID()) ? consoleIO.askProceed(overwrite, false) : true;
-					
+					boolean proceedOverwrite = this.state.getManager()
+							.hasRepositoryConfig(
+									repConfig.getID()) ? consoleIO.askProceed(overwrite, false) : true;
+
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
 					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())
-							? consoleIO.askProceed(invalid, false) : true;
-					
+							? consoleIO.askProceed(invalid, false)
+							: true;
+
 					if (proceedInvalid && proceedOverwrite) {
 						try {
 							this.state.getManager().addRepositoryConfig(repConfig);
@@ -245,7 +251,7 @@ public class Create extends ConsoleCommand {
 	 * @param variableMap
 	 * @param multilineInput
 	 * @return
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private boolean inputParameters(final Map<String, String> valueMap,
 			final Map<String, List<String>> variableMap, Map<String, String> multilineInput)
@@ -254,14 +260,14 @@ public class Create extends ConsoleCommand {
 			consoleIO.writeln("Please specify values for the following variables:");
 		}
 		boolean eof = false;
-		
+
 		for (Map.Entry<String, List<String>> entry : variableMap.entrySet()) {
 			final String var = entry.getKey();
 			final List<String> values = entry.getValue();
-		
+
 			StringBuilder sb = new StringBuilder();
 			sb.append(var);
-			
+
 			if (values.size() > 1) {
 				sb.append(" (");
 				for (int i = 0; i < values.size(); i++) {
@@ -277,12 +283,12 @@ public class Create extends ConsoleCommand {
 			}
 			String prompt = sb.append(": ").toString();
 			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput(prompt)
-															: consoleIO.readln(prompt);
+					: consoleIO.readln(prompt);
 			eof = (value == null);
 			if (eof) {
 				break; // for loop
 			}
-			
+
 			value = value.trim();
 			if (value.length() == 0) {
 				value = null; // NOPMD
@@ -293,15 +299,15 @@ public class Create extends ConsoleCommand {
 	}
 
 	/**
-	 * Create input stream from a template file in the specified file directory.
-	 * If the file cannot be found, try to read it from the embedded java resources instead.
+	 * Create input stream from a template file in the specified file directory. If the file cannot be found, try to
+	 * read it from the embedded java resources instead.
 	 * 
-	 * @param templateName name of the template
+	 * @param templateName     name of the template
 	 * @param templateFileName template file name
-	 * @param templatesDir template directory
-	 * @param templateFile template file
+	 * @param templatesDir     template directory
+	 * @param templateFile     template file
 	 * @return input stream of the template
-	 * @throws FileNotFoundException 
+	 * @throws FileNotFoundException
 	 */
 	private InputStream createTemplateStream(final String templateName, final String templateFileName,
 			final File templatesDir, final File templateFile)

@@ -22,23 +22,23 @@ public class Close extends ConsoleCommand {
 	public String getName() {
 		return "close";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Closes the current repository";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "close   Closes the current repository\n";
+				+ "close   Closes the current repository\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param appInfo 
+	 * @param appInfo
 	 */
 	public Close(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -60,7 +60,7 @@ public class Close extends ConsoleCommand {
 	 */
 	protected void closeRepository(final boolean verbose) {
 		final Repository repository = this.state.getRepository();
-		
+
 		if (repository == null) {
 			if (verbose) {
 				consoleIO.writeln("There are no open repositories that can be closed");

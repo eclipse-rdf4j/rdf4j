@@ -25,7 +25,7 @@ public class QueryPrefixTest extends AbstractSettingTest {
 		settings.put(QueryPrefix.NAME, new QueryPrefix());
 		super.setUp();
 	}
-	
+
 	@Test
 	public void testQueryPrefix() {
 		setParameters.execute("set", "queryPrefix=false");
@@ -34,5 +34,5 @@ public class QueryPrefixTest extends AbstractSettingTest {
 		verify(mockConsoleIO).writeln("queryPrefix: false");
 
 		verifyNoMoreInteractions(mockConsoleIO);
-	}	
+	}
 }

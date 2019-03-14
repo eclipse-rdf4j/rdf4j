@@ -54,30 +54,28 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 	public void setRepository(Repository repository) {
 		if (repository == null) {
 			this.vf = SimpleValueFactory.getInstance();
-		}
-		else {
+		} else {
 			this.repository = repository;
 			this.vf = repository.getValueFactory();
 
 			if (this.repository instanceof HTTPRepository) {
-				((HTTPRepository)this.repository).setPreferredRDFFormat(RDFFormat.BINARY);
+				((HTTPRepository) this.repository).setPreferredRDFFormat(RDFFormat.BINARY);
 			}
 		}
 	}
 
 	@Override
 	public void init(ServletConfig config)
-		throws ServletException
-	{
+			throws ServletException {
 		super.init(config);
 		if (repository == null) {
 			if (config.getInitParameter(REPOSITORY_PARAM) != null)
-				setRepository((Repository)lookup(config, REPOSITORY_PARAM));
+				setRepository((Repository) lookup(config, REPOSITORY_PARAM));
 		}
 		if (manager == null) {
 			if (config.getInitParameter(MANAGER_PARAM) == null)
 				throw new MissingInitParameterException(MANAGER_PARAM);
-			manager = (RepositoryManager)lookup(config, MANAGER_PARAM);
+			manager = (RepositoryManager) lookup(config, MANAGER_PARAM);
 		}
 		if (info == null) {
 			info = new RepositoryInfo();
@@ -87,8 +85,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 				if (repository == null) {
 					info.setReadable(false);
 					info.setWritable(false);
-				}
-				else {
+				} else {
 					info.setReadable(true);
 					info.setWritable(repository.isWritable());
 				}
@@ -96,25 +93,21 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 				if (location != null && location.trim().length() > 0) {
 					info.setLocation(new URL(location));
 				}
-			}
-			catch (MalformedURLException e) {
+			} catch (MalformedURLException e) {
 				throw new ServletException(e);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new ServletException(e);
 			}
 		}
 	}
 
 	private Object lookup(ServletConfig config, String name)
-		throws ServletException
-	{
+			throws ServletException {
 		String param = config.getInitParameter(name);
 		try {
 			InitialContext ctx = new InitialContext();
 			return ctx.lookup(param);
-		}
-		catch (NamingException e) {
+		} catch (NamingException e) {
 			throw new ServletException(e);
 		}
 	}

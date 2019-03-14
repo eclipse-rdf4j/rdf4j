@@ -49,7 +49,7 @@ public class FileLogReader extends AbstractLogReader {
 	/**
 	 * Constructor
 	 * 
-	 * @param logFile 
+	 * @param logFile
 	 */
 	public FileLogReader(File logFile) {
 		this.logFile = logFile;
@@ -59,9 +59,8 @@ public class FileLogReader extends AbstractLogReader {
 	public void setAppender(Appender<?> appender) {
 		super.setAppender(appender);
 		if (appender instanceof FileAppender) {
-			this.logFile = new File(((FileAppender<?>)appender).getFile());
-		}
-		else {
+			this.logFile = new File(((FileAppender<?>) appender).getFile());
+		} else {
 			throw new RuntimeException("FileLogReader appender must be an instance of FileAppender!");
 		}
 		this.next = null;
@@ -115,15 +114,13 @@ public class FileLogReader extends AbstractLogReader {
 		try {
 			next = getNext();
 			count++;
-		}
-		catch (IOException ioe) {
+		} catch (IOException ioe) {
 			throw new RuntimeException("Unable to get next log record.", ioe);
 		}
 		if (!hasNext()) {
 			try {
 				destroy();
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				// too bad
 			}
 		}
@@ -134,7 +131,7 @@ public class FileLogReader extends AbstractLogReader {
 	 * Get next log record
 	 *
 	 * @return log record
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private LogRecord getNext() throws IOException {
 		SimpleLogRecord result = null;
@@ -158,8 +155,7 @@ public class FileLogReader extends AbstractLogReader {
 				if (currentByte != '\n' && currentByte != '\r') {
 					bytesRead.add(0, currentByte);
 				}
-			}
-			while (byteOffset > 0 && currentByte != '\n' && currentByte != '\r');
+			} while (byteOffset > 0 && currentByte != '\n' && currentByte != '\r');
 
 			// if at start of file, retrieve the byte we just read in the do/while
 			if (byteOffset < 1) {
@@ -196,8 +192,7 @@ public class FileLogReader extends AbstractLogReader {
 
 						message = new StringBuilder();
 						stackTrace = new ArrayList<>();
-					}
-					catch (ParseException pe) {
+					} catch (ParseException pe) {
 						throw new IOException("Unable to parse timestamp in log record");
 					}
 				}
@@ -206,8 +201,7 @@ public class FileLogReader extends AbstractLogReader {
 					if (!lastLine.trim().equals("")) {
 						if (lastLine.startsWith("\t")) {
 							stackTrace.add(0, lastLine.trim());
-						}
-						else {
+						} else {
 							message.insert(0, lastLine);
 						}
 					}

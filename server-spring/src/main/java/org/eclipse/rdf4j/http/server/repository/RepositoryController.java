@@ -72,8 +72,8 @@ import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
- * Handles queries and admin (delete) operations on a repository and renders the results in a format suitable
- * to the type of operation.
+ * Handles queries and admin (delete) operations on a repository and renders the results in a format suitable to the
+ * type of operation.
  * 
  * @author Herko ter Horst
  */
@@ -86,8 +86,7 @@ public class RepositoryController extends AbstractController {
 	private static final String METHOD_DELETE = "DELETE";
 
 	public RepositoryController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_DELETE, METHOD_HEAD });
 	}
 
@@ -97,8 +96,7 @@ public class RepositoryController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		String reqMethod = request.getMethod();
 		String queryStr = request.getParameter(QUERY_PARAM_NAME);
 
@@ -106,8 +104,7 @@ public class RepositoryController extends AbstractController {
 			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
 			if (!(Protocol.FORM_MIME_TYPE.equals(mimeType)
-					|| Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType)))
-			{
+					|| Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType))) {
 				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
 						"Unsupported MIME type: " + mimeType);
 			}
@@ -116,16 +113,14 @@ public class RepositoryController extends AbstractController {
 				// The query should be the entire body
 				try {
 					queryStr = IOUtils.toString(request.getReader());
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body",
 							e);
 				}
 				if (queryStr.isEmpty())
 					queryStr = null;
 			}
-		}
-		else if (METHOD_DELETE.equals(reqMethod)) {
+		} else if (METHOD_DELETE.equals(reqMethod)) {
 			String repId = RepositoryInterceptor.getRepositoryID(request);
 			logger.info("DELETE request invoked for repository '" + repId + "'");
 
@@ -145,14 +140,12 @@ public class RepositoryController extends AbstractController {
 				if (success) {
 					logger.info("DELETE request successfully completed");
 					return new ModelAndView(EmptySuccessView.getInstance());
-				}
-				else {
+				} else {
 					logger.error("error while attempting to delete repository '" + repId + "'");
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST,
 							"could not locate repository configuration for repository '" + repId + "'.");
 				}
-			}
-			catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				logger.error("error while attempting to delete repository '" + repId + "'", e);
 				throw new ServerHTTPException("Repository delete error: " + e.getMessage(), e);
 			}
@@ -168,12 +161,10 @@ public class RepositoryController extends AbstractController {
 		boolean headersOnly = false;
 		if (METHOD_GET.equals(reqMethod)) {
 			logger.info("GET query {}", qryCode);
-		}
-		else if (METHOD_HEAD.equals(reqMethod)) {
+		} else if (METHOD_HEAD.equals(reqMethod)) {
 			logger.info("HEAD query {}", qryCode);
 			headersOnly = true;
-		}
-		else if (METHOD_POST.equals(reqMethod)) {
+		} else if (METHOD_POST.equals(reqMethod)) {
 			logger.info("POST query {}", qryCode);
 		}
 
@@ -191,58 +182,54 @@ public class RepositoryController extends AbstractController {
 				try {
 					if (query instanceof TupleQuery) {
 						if (!headersOnly) {
-							TupleQuery tQuery = (TupleQuery)query;
+							TupleQuery tQuery = (TupleQuery) query;
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
 							boolean distinct = ProtocolUtil.parseBooleanParam(request,
 									Protocol.DISTINCT_PARAM_NAME, false);
 
 							final TupleQueryResult tqr = distinct
-									? QueryResults.distinctResults(tQuery.evaluate()) : tQuery.evaluate();
+									? QueryResults.distinctResults(tQuery.evaluate())
+									: tQuery.evaluate();
 							queryResult = QueryResults.limitResults(tqr, limit, offset);
 						}
 						registry = TupleQueryResultWriterRegistry.getInstance();
 						view = TupleQueryResultView.getInstance();
-					}
-					else if (query instanceof GraphQuery) {
+					} else if (query instanceof GraphQuery) {
 						if (!headersOnly) {
-							GraphQuery gQuery = (GraphQuery)query;
+							GraphQuery gQuery = (GraphQuery) query;
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
 							boolean distinct = ProtocolUtil.parseBooleanParam(request,
 									Protocol.DISTINCT_PARAM_NAME, false);
 
 							final GraphQueryResult qqr = distinct
-									? QueryResults.distinctResults(gQuery.evaluate()) : gQuery.evaluate();
+									? QueryResults.distinctResults(gQuery.evaluate())
+									: gQuery.evaluate();
 							queryResult = QueryResults.limitResults(qqr, limit, offset);
 						}
 						registry = RDFWriterRegistry.getInstance();
 						view = GraphQueryResultView.getInstance();
-					}
-					else if (query instanceof BooleanQuery) {
-						BooleanQuery bQuery = (BooleanQuery)query;
+					} else if (query instanceof BooleanQuery) {
+						BooleanQuery bQuery = (BooleanQuery) query;
 
 						queryResult = headersOnly ? null : bQuery.evaluate();
 						registry = BooleanQueryResultWriterRegistry.getInstance();
 						view = BooleanQueryResultView.getInstance();
-					}
-					else {
+					} else {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
 								"Unsupported query type: " + query.getClass().getName());
 					}
-				}
-				catch (QueryInterruptedException e) {
+				} catch (QueryInterruptedException e) {
 					logger.info("Query interrupted", e);
 					throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					logger.info("Query evaluation error", e);
 					if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 						// custom signal from the backend, throw as HTTPException
 						// directly (see SES-1016).
-						throw (HTTPException)e.getCause();
-					}
-					else {
+						throw (HTTPException) e.getCause();
+					} else {
 						throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
 					}
 				}
@@ -257,22 +244,20 @@ public class RepositoryController extends AbstractController {
 				model.put(QueryResultView.CONNECTION_KEY, repositoryCon);
 
 				return new ModelAndView(view, model);
-			}
-			catch (Exception e) {
-				// only close the connection when an exception occurs. Otherwise, the QueryResultView will take care of closing it.
+			} catch (Exception e) {
+				// only close the connection when an exception occurs. Otherwise, the QueryResultView will take care of
+				// closing it.
 				repositoryCon.close();
 				throw e;
 			}
-		}
-		else {
+		} else {
 			throw new ClientHTTPException(SC_BAD_REQUEST, "Missing parameter: " + QUERY_PARAM_NAME);
 		}
 	}
 
 	private Query getQuery(Repository repository, RepositoryConnection repositoryCon, String queryStr,
 			HttpServletRequest request, HttpServletResponse response)
-		throws IOException, ClientHTTPException
-	{
+			throws IOException, ClientHTTPException {
 		Query result = null;
 
 		// default query language is SPARQL
@@ -309,8 +294,7 @@ public class RepositoryController extends AbstractController {
 					try {
 						IRI uri = createURIOrNull(repository, defaultGraphURI);
 						dataset.addDefaultGraph(uri);
-					}
-					catch (IllegalArgumentException e) {
+					} catch (IllegalArgumentException e) {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
 								"Illegal URI for default graph: " + defaultGraphURI);
 					}
@@ -322,8 +306,7 @@ public class RepositoryController extends AbstractController {
 					try {
 						IRI uri = createURIOrNull(repository, namedGraphURI);
 						dataset.addNamedGraph(uri);
-					}
-					catch (IllegalArgumentException e) {
+					} catch (IllegalArgumentException e) {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
 								"Illegal URI for named graph: " + namedGraphURI);
 					}
@@ -352,24 +335,20 @@ public class RepositoryController extends AbstractController {
 				String parameterName = parameterNames.nextElement();
 
 				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length())
-				{
+						&& parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							repository.getValueFactory());
 					result.setBinding(bindingName, bindingValue);
 				}
 			}
-		}
-		catch (UnsupportedQueryLanguageException e) {
+		} catch (UnsupportedQueryLanguageException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.UNSUPPORTED_QUERY_LANGUAGE, queryLn.getName());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			logger.error("Repository error", e);
 			response.sendError(SC_INTERNAL_SERVER_ERROR);
 		}
@@ -385,14 +364,12 @@ public class RepositoryController extends AbstractController {
 
 	private static QueryResult<?> distinct(QueryResult<?> qr) {
 		if (qr instanceof TupleQueryResult) {
-			TupleQueryResult tqr = (TupleQueryResult)qr;
+			TupleQueryResult tqr = (TupleQueryResult) qr;
 			return QueryResults.distinctResults(tqr);
-		}
-		else if (qr instanceof GraphQueryResult) {
-			GraphQueryResult gqr = (GraphQueryResult)qr;
+		} else if (qr instanceof GraphQueryResult) {
+			GraphQueryResult gqr = (GraphQueryResult) qr;
 			return QueryResults.distinctResults(gqr);
-		}
-		else {
+		} else {
 			return qr;
 		}
 	}

@@ -46,15 +46,13 @@ public class TransactionStartController extends AbstractController {
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionStartController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -65,8 +63,7 @@ public class TransactionStartController extends AbstractController {
 			logger.info("POST transaction start");
 			result = startTransaction(repository, request, response);
 			logger.info("transaction started");
-		}
-		else {
+		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
 					"Method not allowed: " + reqMethod);
 		}
@@ -75,8 +72,7 @@ public class TransactionStartController extends AbstractController {
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-		throws IOException, ClientHTTPException, ServerHTTPException
-	{
+			throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
@@ -114,16 +110,13 @@ public class TransactionStartController extends AbstractController {
 			ActiveTransactionRegistry.INSTANCE.register(txn);
 			allGood = true;
 			return result;
-		}
-		catch (RepositoryException | InterruptedException | ExecutionException e) {
+		} catch (RepositoryException | InterruptedException | ExecutionException e) {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
-		}
-		finally {
+		} finally {
 			if (!allGood) {
 				try {
 					txn.close();
-				}
-				catch (InterruptedException | ExecutionException e) {
+				} catch (InterruptedException | ExecutionException e) {
 					throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
 				}
 			}

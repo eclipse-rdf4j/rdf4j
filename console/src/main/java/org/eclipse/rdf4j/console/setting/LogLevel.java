@@ -22,10 +22,10 @@ import org.slf4j.LoggerFactory;
  */
 public class LogLevel extends ConsoleSetting<String> {
 	public final static String NAME = "log";
-	
-	private static final BiMap<String,Level> LOG_LEVELS;
+
+	private static final BiMap<String, Level> LOG_LEVELS;
 	static {
-		ImmutableBiMap.Builder<String,Level> logLevels = ImmutableBiMap.<String,Level>builder();
+		ImmutableBiMap.Builder<String, Level> logLevels = ImmutableBiMap.<String, Level>builder();
 
 		logLevels.put("none", Level.OFF);
 		logLevels.put("error", Level.ERROR);
@@ -34,19 +34,19 @@ public class LogLevel extends ConsoleSetting<String> {
 		logLevels.put("debug", Level.DEBUG);
 		LOG_LEVELS = logLevels.build();
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return "set log=<level>                Set the logging level (none, error, warning, info or debug)\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 */
 	public LogLevel() {
 		super("info");
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;
@@ -62,7 +62,7 @@ public class LogLevel extends ConsoleSetting<String> {
 	@Override
 	public void set(String value) throws IllegalArgumentException {
 		// Assume Logback
-		Level logLevel = LOG_LEVELS.get(value.toLowerCase());		
+		Level logLevel = LOG_LEVELS.get(value.toLowerCase());
 		if (logLevel != null) {
 			Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 			logbackRootLogger.setLevel(logLevel);
@@ -70,7 +70,7 @@ public class LogLevel extends ConsoleSetting<String> {
 			throw new IllegalArgumentException("unknown logging level: " + value);
 		}
 	}
-	
+
 	@Override
 	public void setFromString(String value) throws IllegalArgumentException {
 		set(value);

@@ -52,8 +52,7 @@ public class HttpServerUtilTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		FileFormatServiceRegistry<? extends FileFormat, ?> registry = TupleQueryResultWriterRegistry.getInstance();
 
 		tupleQueryMimeTypes = new ArrayList<>(16);
@@ -173,8 +172,7 @@ public class HttpServerUtilTest {
 
 		@Override
 		public void setCharacterEncoding(String env)
-			throws UnsupportedEncodingException
-		{
+				throws UnsupportedEncodingException {
 			// TODO Auto-generated method stub
 
 		}
@@ -193,8 +191,7 @@ public class HttpServerUtilTest {
 
 		@Override
 		public ServletInputStream getInputStream()
-			throws IOException
-		{
+				throws IOException {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -249,8 +246,7 @@ public class HttpServerUtilTest {
 
 		@Override
 		public BufferedReader getReader()
-			throws IOException
-		{
+				throws IOException {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -484,6 +480,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getServletContext()
 		 */
 		@Override
@@ -494,31 +491,31 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#startAsync()
 		 */
 		@Override
 		public AsyncContext startAsync()
-			throws IllegalStateException
-		{
+				throws IllegalStateException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
-		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest,
-		 * javax.servlet.ServletResponse)
+		 * 
+		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest, javax.servlet.ServletResponse)
 		 */
 		@Override
 		public AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse)
-			throws IllegalStateException
-		{
+				throws IllegalStateException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#isAsyncStarted()
 		 */
 		@Override
@@ -529,6 +526,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#isAsyncSupported()
 		 */
 		@Override
@@ -539,6 +537,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getAsyncContext()
 		 */
 		@Override
@@ -549,6 +548,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getDispatcherType()
 		 */
 		@Override
@@ -559,60 +559,60 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#authenticate(javax.servlet.http.HttpServletResponse)
 		 */
 		@Override
 		public boolean authenticate(HttpServletResponse response)
-			throws IOException, ServletException
-		{
+				throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return false;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
 		 */
 		@Override
 		public void login(String username, String password)
-			throws ServletException
-		{
+				throws ServletException {
 			// TODO Auto-generated method stub
 
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#logout()
 		 */
 		@Override
 		public void logout()
-			throws ServletException
-		{
+				throws ServletException {
 			// TODO Auto-generated method stub
 
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#getParts()
 		 */
 		@Override
 		public Collection<Part> getParts()
-			throws IOException, ServletException
-		{
+				throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#getPart(java.lang.String)
 		 */
 		@Override
 		public Part getPart(String name)
-			throws IOException, ServletException
-		{
+				throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return null;
 		}

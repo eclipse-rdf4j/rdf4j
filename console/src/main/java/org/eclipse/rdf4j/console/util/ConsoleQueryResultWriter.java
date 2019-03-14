@@ -32,26 +32,27 @@ import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	private final ConsoleIO consoleIO;
 	private final int consoleWidth;
-	private final Map<String,String> namespaces = new HashMap<>();
+	private final Map<String, String> namespaces = new HashMap<>();
 	private List<String> bindingNames;
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
-	
+
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
+	 * @param consoleIO
 	 * @param consoleWidth console width
 	 */
 	public ConsoleQueryResultWriter(ConsoleIO consoleIO, int consoleWidth) {
 		this.consoleIO = consoleIO;
 		this.consoleWidth = consoleWidth;
 	}
-	
+
 	@Override
 	public QueryResultFormat getQueryResultFormat() {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
+																		// Tools | Templates.
 	}
 
 	@Override
@@ -67,7 +68,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
-		// 
+		//
 	}
 
 	@Override
@@ -88,14 +89,14 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
-		//	
+		//
 	}
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		this.bindingNames = bindingNames;
 		int columns = bindingNames.size();
-		columnWidth = (consoleWidth - 1) / columns  - 3;
+		columnWidth = (consoleWidth - 1) / columns - 3;
 
 		StringBuilder builder = new StringBuilder(consoleWidth);
 		for (int i = columns; i > 0; i--) {
@@ -104,7 +105,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 		}
 		builder.append('+');
 		separatorLine = builder.toString();
-	
+
 		// Build table header
 		builder = new StringBuilder(consoleWidth);
 		for (String bindingName : bindingNames) {

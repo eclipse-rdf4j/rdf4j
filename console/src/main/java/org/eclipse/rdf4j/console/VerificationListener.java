@@ -24,7 +24,7 @@ public class VerificationListener extends AbstractRDFHandler implements ParseErr
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
+	 * @param consoleIO
 	 */
 	public VerificationListener(ConsoleIO consoleIO) {
 		super();
@@ -38,7 +38,7 @@ public class VerificationListener extends AbstractRDFHandler implements ParseErr
 	/**
 	 * Get number of warnings
 	 * 
-	 * @return number of warnings 
+	 * @return number of warnings
 	 */
 	public int getWarnings() {
 		return warnings;
@@ -56,7 +56,7 @@ public class VerificationListener extends AbstractRDFHandler implements ParseErr
 	/**
 	 * Get number of statements
 	 * 
-	 * @return number of statements 
+	 * @return number of statements
 	 */
 	public int getStatements() {
 		return statements;

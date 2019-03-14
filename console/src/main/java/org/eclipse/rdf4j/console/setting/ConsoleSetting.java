@@ -20,7 +20,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	private final T initValue;
 	private T value;
 	private final Class clazz;
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -31,12 +31,12 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 		this.value = initValue;
 		this.clazz = initValue.getClass();
 	}
-	
+
 	@Override
 	public Class getType() {
 		return this.clazz;
 	}
-	
+
 	@Override
 	public T getInitValue() {
 		return this.initValue;
@@ -46,19 +46,19 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	public T get() {
 		return this.value;
 	}
-	
+
 	@Override
 	public void set(T value) {
 		this.value = value;
 	}
-	
+
 	/**
 	 * Set the value for this setting from a string
 	 *
-	 * @param value string  value
+	 * @param value string value
 	 */
 	public abstract void setFromString(String value) throws IllegalArgumentException;
-	
+
 	/**
 	 * Get the value for this setting as a string
 	 * 
@@ -67,26 +67,26 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	public String getAsString() {
 		return String.valueOf(get());
 	}
-	
+
 	@Override
 	public void clear() {
 		this.value = initValue;
 	}
-	
+
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
-	 * @return 
+	 * @return
 	 */
 	@Override
 	public String getHelpShort() {
 		return "No help available";
 	}
-	
+
 	/**
 	 * Get long description
 	 * 
-	 * @return string, can be multiple lines 
+	 * @return string, can be multiple lines
 	 */
 	@Override
 	public String getHelpLong() {

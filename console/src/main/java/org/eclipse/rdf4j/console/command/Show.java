@@ -48,9 +48,9 @@ public class Show extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "show {r, repositories}   Shows all available repositories\n"
-			+ "show {n, namespaces}     Shows all namespaces\n"
-			+ "show {c, contexts}       Shows all context identifiers\n";
+				+ "show {r, repositories}   Shows all available repositories\n"
+				+ "show {n, namespaces}     Shows all namespaces\n"
+				+ "show {c, contexts}       Shows all context identifiers\n";
 	}
 
 	/**
@@ -123,7 +123,6 @@ public class Show extends ConsoleCommand {
 			return;
 		}
 
-
 		try (RepositoryConnection con = repository.getConnection()) {
 			try (CloseableIteration<? extends Namespace, RepositoryException> namespaces = con.getNamespaces()) {
 				if (namespaces.hasNext()) {
@@ -136,7 +135,7 @@ public class Show extends ConsoleCommand {
 				} else {
 					consoleIO.writeln("--no namespaces found--");
 				}
-			} 
+			}
 		} catch (RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error("Failed to show namespaces", e);

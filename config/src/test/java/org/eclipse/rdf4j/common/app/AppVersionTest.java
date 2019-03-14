@@ -20,8 +20,7 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromString()
-		throws Exception
-	{
+			throws Exception {
 		AppVersion v = AppVersion.parse("1.0.3");
 
 		assertEquals(1, v.getMajor());
@@ -32,9 +31,8 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromStringSnapshot()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse("2.8.0-beta3-SNAPSHOT");
 		assertEquals(2, v.getMajor());
 		assertEquals(8, v.getMinor());
@@ -45,9 +43,8 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromStringMilestone()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse("1.0M1");
 		assertEquals(1, v.getMajor());
 		assertEquals(0, v.getMinor());
@@ -58,9 +55,8 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromStringBeta()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse("1.0.0-beta3");
 		assertEquals(1, v.getMajor());
 		assertEquals(0, v.getMinor());
@@ -70,9 +66,8 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromStringModifier()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse("1.0.0-M1");
 		assertEquals(1, v.getMajor());
 		assertEquals(0, v.getMinor());
@@ -82,9 +77,8 @@ public class AppVersionTest {
 
 	@Test
 	public void testCreateFromStringModifierMilestone()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse("1.0.0-GAMMA");
 		assertEquals(1, v.getMajor());
 		assertEquals(0, v.getMinor());
@@ -94,17 +88,15 @@ public class AppVersionTest {
 
 	@Test
 	public void testCurrentVersion()
-		throws Exception
-	{
-		AppVersion  v;
+			throws Exception {
+		AppVersion v;
 		v = AppVersion.parse(RDF4J.getVersion());
 		assertEquals(RDF4J.getVersion(), v.toString());
 	}
 
 	@Test
 	public void testCompare1()
-		throws Exception
-	{
+			throws Exception {
 		AppVersion v1 = AppVersion.parse("1.0M1");
 		AppVersion v2 = AppVersion.parse("1.0");
 
@@ -113,8 +105,7 @@ public class AppVersionTest {
 
 	@Test
 	public void testCompare2()
-		throws Exception
-	{
+			throws Exception {
 		AppVersion v1 = AppVersion.parse("1.0M1-SNAPSHOT");
 		AppVersion v2 = AppVersion.parse("1.0M1");
 

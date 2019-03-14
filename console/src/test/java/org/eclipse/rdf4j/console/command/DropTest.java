@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -50,9 +49,9 @@ public class DropTest extends AbstractCommandTest {
 	public void setUp() throws UnsupportedEncodingException, IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
-		
+
 		addRepositories("drop", MEMORY_MEMBER_ID1);
-		
+
 		manager.addRepositoryConfig(
 				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
@@ -61,8 +60,7 @@ public class DropTest extends AbstractCommandTest {
 	}
 
 	private void setUserDropConfirm(boolean confirm)
-		throws IOException
-	{
+			throws IOException {
 		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"),
 				anyBoolean())).thenReturn(confirm);
 	}
@@ -70,15 +68,13 @@ public class DropTest extends AbstractCommandTest {
 	@After
 	@Override
 	public void tearDown()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		manager.shutDown();
 	}
 
 	@Test
 	public final void testSafeDrop()
-		throws RepositoryException, IOException
-	{
+			throws RepositoryException, IOException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
 		drop.execute("drop", PROXY_ID);
@@ -90,8 +86,7 @@ public class DropTest extends AbstractCommandTest {
 
 	@Test
 	public final void testUnsafeDropCancel()
-		throws RepositoryException, IOException
-	{
+			throws RepositoryException, IOException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isFalse();
 		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"),
@@ -102,8 +97,7 @@ public class DropTest extends AbstractCommandTest {
 
 	@Test
 	public final void testUserAbortedUnsafeDropBeforeWarning()
-		throws IOException
-	{
+			throws IOException {
 		setUserDropConfirm(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO, never()).askProceed(startsWith("WARNING: dropping this repository may break"),

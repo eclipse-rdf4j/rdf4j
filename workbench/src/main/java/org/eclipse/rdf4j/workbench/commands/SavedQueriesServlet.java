@@ -41,24 +41,20 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	public void init(final ServletConfig config)
-		throws ServletException
-	{
+			throws ServletException {
 		super.init(config);
 		try {
 			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServletException(e);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new ServletException(e);
 		}
 	}
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws IOException, RDF4JException, BadRequestException
-	{
+			throws IOException, RDF4JException, BadRequestException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.transform(xslPath, "saved-queries.xsl");
 		builder.start();
@@ -69,13 +65,12 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
-		throws BadRequestException, IOException, RDF4JException
-	{
+			throws BadRequestException, IOException, RDF4JException {
 		final String urn = wreq.getParameter("delete");
 		if (null == urn || urn.isEmpty()) {
 			throw new BadRequestException("Expected POST to contain a 'delete=' parameter.");
 		}
-		final boolean accessible = storage.checkAccess((HTTPRepository)this.repository);
+		final boolean accessible = storage.checkAccess((HTTPRepository) this.repository);
 		if (accessible) {
 			String userName = wreq.getParameter(SERVER_USER);
 			if (null == userName) {
@@ -84,8 +79,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 			final IRI queryURI = SimpleValueFactory.getInstance().createIRI(urn);
 			if (storage.canChange(queryURI, userName)) {
 				storage.deleteQuery(queryURI, userName);
-			}
-			else {
+			} else {
 				throw new BadRequestException("User '" + userName + "' may not delete query id " + urn);
 			}
 		}
@@ -93,9 +87,8 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)
-		throws RDF4JException, BadRequestException
-	{
-		final HTTPRepository repo = (HTTPRepository)this.repository;
+			throws RDF4JException, BadRequestException {
+		final HTTPRepository repo = (HTTPRepository) this.repository;
 		String user = req.getParameter(SERVER_USER);
 		if (null == user) {
 			user = "";

@@ -51,6 +51,6 @@ public interface LogRecord {
 	 * Get stack trace as list of strings
 	 * 
 	 * @return list of strings
-	 */	
+	 */
 	public List<String> getStackTrace();
 }

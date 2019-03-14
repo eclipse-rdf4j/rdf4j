@@ -34,7 +34,7 @@ public class ConvertTest extends AbstractCommandTest {
 
 	private Convert convert;
 	private File from;
-	
+
 	@Rule
 	public final TemporaryFolder LOCATION = new TemporaryFolder();
 
@@ -42,43 +42,43 @@ public class ConvertTest extends AbstractCommandTest {
 	public void prepare() throws IOException, RDF4JException {
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 		convert = new Convert(mockConsoleIO, mockConsoleState);
-		
+
 		from = LOCATION.newFile("alien.ttl");
 		copyFromResource("convert/alien.ttl", from);
 	}
-	
+
 	@After
 	@Override
 	public void tearDown() {
 		from.delete();
 	}
-	
+
 	@Test
 	public final void testConvert() throws IOException {
 		File json = LOCATION.newFile("alien.jsonld");
 		convert.execute("convert", from.toString(), json.toString());
-		
+
 		assertTrue("File is empty", json.length() > 0);
-		
+
 		Object o = null;
 		try {
 			o = JsonUtils.fromInputStream(Files.newInputStream(json.toPath()));
-		} catch (IOException ioe) { 
+		} catch (IOException ioe) {
 			//
 		}
 		assertTrue("Invalid JSON", o != null);
 	}
-	
+
 	@Test
 	public final void testConvertParseError() throws IOException {
 		File wrong = LOCATION.newFile("wrong.nt");
 		Files.write(wrong.toPath(), "error".getBytes());
 		File json = LOCATION.newFile("empty.jsonld");
-		
+
 		convert.execute("convert", wrong.toString(), json.toString());
 		verify(mockConsoleIO).writeError(anyString());
 	}
-	
+
 	@Test
 	public final void testConvertInvalidFormat() throws IOException {
 		File qyx = LOCATION.newFile("alien.qyx");

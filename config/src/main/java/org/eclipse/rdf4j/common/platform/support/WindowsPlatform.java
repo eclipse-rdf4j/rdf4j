@@ -37,23 +37,17 @@ public class WindowsPlatform extends AbstractPlatform {
 	public String getName() {
 		if (isWin9x()) {
 			return "Windows 9x";
-		}
-		else if (isWinNT()) {
+		} else if (isWinNT()) {
 			return "Windows NT";
-		}
-		else if (isWin2000()) {
+		} else if (isWin2000()) {
 			return "Windows 2000";
-		}
-		else if (isWinXP()) {
+		} else if (isWinXP()) {
 			return "Windows XP";
-		}
-		else if (isWin2003()) {
+		} else if (isWin2003()) {
 			return "Windows 2003";
-		}
-		else if (isWinVista()) {
+		} else if (isWinVista()) {
 			return "Windows Vista";
-		}
-		else {
+		} else {
 			return "Windows";
 		}
 	}
@@ -69,8 +63,7 @@ public class WindowsPlatform extends AbstractPlatform {
 			if (homeDir.isDirectory() && homeDir.canWrite()) {
 				result = homeDir;
 			}
-		}
-		else {
+		} else {
 			String userProfile = System.getenv("USERPROFILE");
 			if (userProfile != null) {
 				File userProfileDir = new File(userProfile);
@@ -127,11 +120,9 @@ public class WindowsPlatform extends AbstractPlatform {
 				ProcessLauncher launcher = new ProcessLauncher(new String[] { "cmd", "/c", "echo" });
 				launcher.launch();
 				isWin9x = -1;
-			}
-			catch (ProcessLauncher.CommandNotExistsException nosuchcommand) {
+			} catch (ProcessLauncher.CommandNotExistsException nosuchcommand) {
 				isWin9x = 1;
-			}
-			catch (Exception e) {
+			} catch (Exception e) {
 				logger.error("Unexpected exception while checking isWin9x", e);
 			}
 		}
@@ -196,8 +187,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	public String getCommandShell() {
 		if (isWin9x()) {
 			return "command.com";
-		}
-		else {
+		} else {
 			return "cmd";
 		}
 	}

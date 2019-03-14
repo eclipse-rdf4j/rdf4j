@@ -50,8 +50,8 @@ public class Export extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "export <file>                 Exports the entirey repository to a file\n"
-			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
+				+ "export <file>                 Exports the entirey repository to a file\n"
+				+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
 
 	@Override
@@ -65,10 +65,10 @@ public class Export extends ConsoleCommand {
 		if (tokens.length < 2) {
 			consoleIO.writeln(getHelpLong());
 			return;
-		} 
-		
+		}
+
 		String fileName = tokens[1];
-		
+
 		Resource[] contexts;
 		try {
 			contexts = Util.getContexts(tokens, 2, repository);
@@ -83,17 +83,17 @@ public class Export extends ConsoleCommand {
 	 * Export to a file
 	 * 
 	 * @param repository repository to export
-	 * @param fileName file name
-	 * @param context context(s) (if any)
+	 * @param fileName   file name
+	 * @param context    context(s) (if any)
 	 * @throws UnsupportedRDFormatException
 	 */
-	private void export(Repository repository, String fileName, Resource...contexts) {
+	private void export(Repository repository, String fileName, Resource... contexts) {
 		Path path = Util.getPath(fileName);
 		if (path == null) {
 			consoleIO.writeError("Invalid file name");
 			return;
 		}
-		
+
 		if (path.toFile().exists()) {
 			try {
 				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
@@ -105,13 +105,13 @@ public class Export extends ConsoleCommand {
 				consoleIO.writeError("I/O error " + ioe.getMessage());
 			}
 		}
-		
-		try (	RepositoryConnection conn = repository.getConnection();
-				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, 
-							StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-			
-			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName).orElseThrow(() ->
-								new UnsupportedRDFormatException("No RDF parser for " + fileName));
+
+		try (RepositoryConnection conn = repository.getConnection();
+				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8,
+						StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+
+			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName)
+					.orElseThrow(() -> new UnsupportedRDFormatException("No RDF parser for " + fileName));
 			RDFWriter writer = Rio.createWriter(fmt, w);
 
 			long startTime = System.nanoTime();
@@ -121,7 +121,7 @@ public class Export extends ConsoleCommand {
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
 			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
-		} catch (IOException|UnsupportedRDFormatException e) {
+		} catch (IOException | UnsupportedRDFormatException e) {
 			consoleIO.writeError("Failed to export data: " + e.getMessage());
 		}
 	}

@@ -60,8 +60,8 @@ public class PlatformFactory {
 	}
 
 	/**
-	 * Tries to determine the platform we're running on based on Java system properties and/or environment
-	 * variables. See http://lopica.sourceforge.net/os.html for an overview.
+	 * Tries to determine the platform we're running on based on Java system properties and/or environment variables.
+	 * See http://lopica.sourceforge.net/os.html for an overview.
 	 */
 	private Platform createPlatform() {
 		Platform platform;
@@ -77,42 +77,33 @@ public class PlatformFactory {
 				if (osName.contains("windows")) {
 					logger.debug("Detected Windows platform");
 					platform = new WindowsPlatform();
-				}
-				else if (osName.contains("solaris") || osName.contains("sunos") || osName.contains("linux")
-						|| osName.contains("hp-ux"))
-				{
+				} else if (osName.contains("solaris") || osName.contains("sunos") || osName.contains("linux")
+						|| osName.contains("hp-ux")) {
 					// Try to detect specific window managers
 					if (isGnome()) {
 						logger.debug("Detected Gnome window manager on Posix platform");
 						platform = new PosixGnomePlatform();
-					}
-					else if (isKDE()) {
+					} else if (isKDE()) {
 						logger.debug("Detected KDE window manager on Posix platform");
 						platform = new PosixKDEPlatform();
-					}
-					else {
+					} else {
 						logger.debug("Detected Posix platform");
 						platform = new PosixPlatform();
 					}
-				}
-				else if (osName.contains("mac os x") || osName.contains("macos") || osName.contains("darwin")
-						|| System.getProperty("mrj.version") != null)
-				{
+				} else if (osName.contains("mac os x") || osName.contains("macos") || osName.contains("darwin")
+						|| System.getProperty("mrj.version") != null) {
 					logger.debug("Detected Mac OS X platform");
 					platform = new MacOSXPlatform();
-				}
-				else {
+				} else {
 					logger.warn("Unrecognized operating system: '{}', falling back to default platform",
 							osName);
 					platform = new DefaultPlatform();
 				}
-			}
-			else {
+			} else {
 				logger.warn("System property 'os.name' is null, falling back to default platform");
 				platform = new DefaultPlatform();
 			}
-		}
-		catch (SecurityException e) {
+		} catch (SecurityException e) {
 			logger.warn("Not allowed to read system property 'os.name', falling back to default platform", e);
 			platform = new DefaultPlatform();
 		}
@@ -183,8 +174,7 @@ public class PlatformFactory {
 	private String getSystemEnv(String propertyName) {
 		try {
 			return System.getenv(propertyName);
-		}
-		catch (SecurityException e) {
+		} catch (SecurityException e) {
 			logger.warn("Not allowed to read environment variable '" + propertyName + "'", e);
 			return null;
 		}
@@ -193,7 +183,7 @@ public class PlatformFactory {
 	/**
 	 * Main
 	 * 
-	 * @param args  arguments
+	 * @param args arguments
 	 */
 	public static void main(String[] args) {
 		System.out.println(getPlatform().getApplicationDataDir("My Application: Test").getAbsolutePath());

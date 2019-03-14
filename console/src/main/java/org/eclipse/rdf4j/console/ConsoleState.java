@@ -22,28 +22,28 @@ public interface ConsoleState {
 	/**
 	 * Get application name
 	 * 
-	 * @return application name 
+	 * @return application name
 	 */
 	public String getApplicationName();
 
 	/**
 	 * Get repository data directory
 	 * 
-	 * @return directory 
+	 * @return directory
 	 */
 	public File getDataDirectory();
 
 	/**
 	 * Get repository manager ID
 	 * 
-	 * @return repository manager ID 
+	 * @return repository manager ID
 	 */
 	public String getManagerID();
 
 	/**
 	 * Get repository ID
 	 * 
-	 * @return repository ID 
+	 * @return repository ID
 	 */
 	public String getRepositoryID();
 

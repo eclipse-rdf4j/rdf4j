@@ -19,14 +19,14 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 	public String getHelpLong() {
 		return "set queryPrefix=<true|false>   Toggles automatic use of known namespace prefixes in queries\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 */
 	public QueryPrefix() {
 		super(true);
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -35,12 +35,12 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 	public QueryPrefix(Boolean initValue) {
 		super(initValue);
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;
 	}
-	
+
 	@Override
 	public void setFromString(String value) throws IllegalArgumentException {
 		set(Boolean.valueOf(value));

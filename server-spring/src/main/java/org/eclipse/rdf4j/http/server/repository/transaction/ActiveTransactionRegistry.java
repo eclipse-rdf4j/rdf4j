@@ -37,8 +37,9 @@ public enum ActiveTransactionRegistry {
 	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
 
 	/**
-	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction
-	 * cache timeout (in seconds).
+	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
+	 * timeout (in seconds).
+	 * 
 	 * @deprecated since 2.3 use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
 	 */
 	@Deprecated
@@ -46,21 +47,21 @@ public enum ActiveTransactionRegistry {
 
 	/**
 	 * Default timeout setting for transaction cache entries (in seconds).
+	 * 
 	 * @deprecated since 2.3 use {@link Protocol#DEFAULT_TIMEOUT}
 	 */
 	@Deprecated
 	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
 
 	/**
-	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a
-	 * transaction signals it has ended, or until the secondary cache finds an "orphaned" transaction entry.
+	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a transaction signals
+	 * it has ended, or until the secondary cache finds an "orphaned" transaction entry.
 	 */
 	private final Cache<UUID, Transaction> primaryCache;
 
 	/**
-	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an
-	 * expired transaction is no longer active, it is considered "orphaned" and discarded from the primary
-	 * cache.
+	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an expired
+	 * transaction is no longer active, it is considered "orphaned" and discarded from the primary cache.
 	 */
 	private final Cache<UUID, Transaction> secondaryCache;
 
@@ -72,8 +73,7 @@ public enum ActiveTransactionRegistry {
 		if (configuredValue != null) {
 			try {
 				timeout = Integer.parseInt(configuredValue);
-			}
-			catch (NumberFormatException e) {
+			} catch (NumberFormatException e) {
 				logger.warn("Expected integer value for property {}. Timeout will default to {} seconds. ",
 						Protocol.CACHE_TIMEOUT_PROPERTY, Protocol.DEFAULT_TIMEOUT);
 			}
@@ -86,8 +86,7 @@ public enum ActiveTransactionRegistry {
 				Transaction entry = notification.getValue();
 				try {
 					entry.close();
-				}
-				catch (RepositoryException | InterruptedException | ExecutionException e) {
+				} catch (RepositoryException | InterruptedException | ExecutionException e) {
 					// fall through
 				}
 			}
@@ -105,8 +104,7 @@ public enum ActiveTransactionRegistry {
 							// no operation active, we can decommission this entry
 							primaryCache.invalidate(transactionId);
 							logger.warn("deregistered expired transaction {}", transactionId);
-						}
-						else {
+						} else {
 							// operation still active. Reinsert in secondary cache.
 							secondaryCache.put(transactionId, entry);
 						}
@@ -132,8 +130,7 @@ public enum ActiveTransactionRegistry {
 				primaryCache.put(txn.getID(), txn);
 				secondaryCache.put(txn.getID(), txn);
 				logger.debug("registered transaction {} ", txn.getID());
-			}
-			else {
+			} else {
 				logger.error("transaction already registered: {}", txn.getID());
 				throw new RepositoryException(
 						"transaction with id " + txn.getID().toString() + " already registered.");
@@ -179,8 +176,7 @@ public enum ActiveTransactionRegistry {
 			if (entry == null) {
 				throw new RepositoryException(
 						"transaction with id " + transaction.getID().toString() + " not registered.");
-			}
-			else {
+			} else {
 				primaryCache.invalidate(transaction.getID());
 				secondaryCache.invalidate(transaction.getID());
 				logger.debug("deregistered transaction {}", transaction.getID());
@@ -189,11 +185,10 @@ public enum ActiveTransactionRegistry {
 	}
 
 	/**
-	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time
-	 * in the process) and if not reinserts it.
+	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time in the
+	 * process) and if not reinserts it.
 	 * 
-	 * @param transaction
-	 *        the transaction to check
+	 * @param transaction the transaction to check
 	 */
 	private void updateSecondaryCache(final Transaction transaction) {
 		try {
@@ -201,13 +196,11 @@ public enum ActiveTransactionRegistry {
 
 				@Override
 				public Transaction call()
-					throws Exception
-				{
+						throws Exception {
 					return transaction;
 				}
 			});
-		}
-		catch (ExecutionException e) {
+		} catch (ExecutionException e) {
 			throw new RuntimeException(e);
 		}
 	}

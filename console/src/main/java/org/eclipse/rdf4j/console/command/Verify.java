@@ -43,19 +43,19 @@ public class Verify extends ConsoleCommand {
 	public String getHelpShort() {
 		return "Verifies the syntax of an RDF data file, takes a file path or URL as argument";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "verify <file-or-url>\n"
-			+ "  <file-or-url>   The path or URL identifying the data file\n"
-			+ "Verifies the validity of the specified data file\n";
+				+ "verify <file-or-url>\n"
+				+ "  <file-or-url>   The path or URL identifying the data file\n"
+				+ "Verifies the validity of the specified data file\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
+	 * @param consoleIO
 	 */
 	public Verify(ConsoleIO consoleIO) {
 		super(consoleIO);
@@ -70,30 +70,31 @@ public class Verify extends ConsoleCommand {
 		String dataPath = parseDataPath(tokens);
 		try {
 			URL dataURL = new URL(dataPath);
-			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(
-					Rio.unsupportedFormat(dataPath));
+			RDFFormat format = Rio.getParserFormatForFileName(dataPath)
+					.orElseThrow(
+							Rio.unsupportedFormat(dataPath));
 			consoleIO.writeln("RDF Format is " + format.getName());
-			
+
 			RDFParser parser = Rio.createParser(format);
 			VerificationListener listener = new VerificationListener(consoleIO);
-		
+
 			parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
-			
+
 			parser.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, true);
 			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
-			
-			parser.set(BasicParserSettings.VERIFY_RELATIVE_URIS, true);			
+
+			parser.set(BasicParserSettings.VERIFY_RELATIVE_URIS, true);
 			parser.set(BasicParserSettings.VERIFY_URI_SYNTAX, true);
-			
+
 			parser.setParseErrorListener(listener);
 			parser.setRDFHandler(listener);
 			consoleIO.writeln("Verifying data...");
-			
+
 			try (InputStream dataStream = dataURL.openStream()) {
 				parser.parse(dataStream, "urn://openrdf.org/RioVerifier/");
 			}
-			
+
 			int warnings = listener.getWarnings();
 			int errors = listener.getErrors();
 
@@ -120,11 +121,11 @@ public class Verify extends ConsoleCommand {
 	}
 
 	/**
-	 * Parse URL or path to local file.
-	 * Only the second (index 1) token will be parsed, files will be prefixed with "file:" scheme
+	 * Parse URL or path to local file. Only the second (index 1) token will be parsed, files will be prefixed with
+	 * "file:" scheme
 	 * 
 	 * @param tokens array of tokens to be parsed
-	 * @return URL path as string 
+	 * @return URL path as string
 	 */
 	private String parseDataPath(String... tokens) {
 		StringBuilder dataPath = new StringBuilder(tokens[1]);

@@ -21,36 +21,35 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
  * @author dale
  */
 public class SetParameters extends ConsoleCommand {
-	private final Map<String,ConsoleSetting> settings;
-	
+	private final Map<String, ConsoleSetting> settings;
+
 	@Override
 	public String getName() {
 		return "set";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Allows various console parameters to be set";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		StringBuilder builder = new StringBuilder(settings.size() * 80);
-		for (ConsoleSetting setting: settings.values()) {
+		for (ConsoleSetting setting : settings.values()) {
 			builder.append(setting.getHelpLong());
 		}
 		return PrintHelp.USAGE
-			+ "set                            Shows all parameter values\n"
-			+ builder.toString();
+				+ "set                            Shows all parameter values\n"
+				+ builder.toString();
 	}
-	
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param parameters 
+	 * @param parameters
 	 */
 	@Deprecated
 	public SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
@@ -63,36 +62,36 @@ public class SetParameters extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param settings 
+	 * @param settings
 	 */
-	public SetParameters(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+	public SetParameters(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
 		super(consoleIO, state);
 		this.settings = settings;
 	}
-	
+
 	@Override
 	public void execute(String... tokens) {
-		switch(tokens.length) {
-			case 0:
-				consoleIO.writeln(getHelpLong());
-				break;
-			case 1:
-				for (String setting: settings.keySet()) {
-					showSetting(setting);
-				}
-				break;
-			default:
-				String param = tokens[1];
-				int eqIdx = param.indexOf('=');
-				if (eqIdx < 0) {
-					showSetting(param);
-				} else {
-					String key = param.substring(0, eqIdx);
-					// FIXME: somewhat ugly, join back together to set parameter which may contain spaces
-					String values = String.join(" ", tokens);
-					eqIdx = values.indexOf('=');
-					setParameter(key, values.substring(eqIdx + 1));
-				}
+		switch (tokens.length) {
+		case 0:
+			consoleIO.writeln(getHelpLong());
+			break;
+		case 1:
+			for (String setting : settings.keySet()) {
+				showSetting(setting);
+			}
+			break;
+		default:
+			String param = tokens[1];
+			int eqIdx = param.indexOf('=');
+			if (eqIdx < 0) {
+				showSetting(param);
+			} else {
+				String key = param.substring(0, eqIdx);
+				// FIXME: somewhat ugly, join back together to set parameter which may contain spaces
+				String values = String.join(" ", tokens);
+				eqIdx = values.indexOf('=');
+				setParameter(key, values.substring(eqIdx + 1));
+			}
 		}
 	}
 
@@ -110,7 +109,7 @@ public class SetParameters extends ConsoleCommand {
 			// quick and dirty wrapping of too long values
 			if ((s.length() > 80 - 10) && s.contains(",")) {
 				StringBuilder builder = new StringBuilder();
-				for (String val: s.split(",")) {
+				for (String val : s.split(",")) {
 					builder.append("\n    ").append(val);
 				}
 				s = builder.toString();
@@ -125,12 +124,12 @@ public class SetParameters extends ConsoleCommand {
 	 * Set parameter
 	 * 
 	 * @param key
-	 * @param value 
+	 * @param value
 	 */
 	private void setParameter(String key, String value) {
 		Objects.requireNonNull(key, "parameter key was missing");
 		Objects.requireNonNull(value, "parameter value was missing");
-		
+
 		String str = key.toLowerCase();
 
 		ConsoleSetting setting = settings.get(str);

@@ -35,7 +35,7 @@ public class Disconnect extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "disconnect   Disconnects from the current set of repositories or server\n";
+				+ "disconnect   Disconnects from the current set of repositories or server\n";
 	}
 
 	/**
@@ -43,7 +43,7 @@ public class Disconnect extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param close 
+	 * @param close
 	 */
 	public Disconnect(ConsoleIO consoleIO, ConsoleState state, Close close) {
 		super(consoleIO, state);
@@ -53,7 +53,7 @@ public class Disconnect extends ConsoleCommand {
 	/**
 	 * Execute the command
 	 * 
-	 * @param verbose 
+	 * @param verbose
 	 */
 	public void execute(boolean verbose) {
 		final RepositoryManager manager = this.state.getManager();

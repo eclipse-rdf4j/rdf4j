@@ -50,15 +50,13 @@ public class NamespacesController extends AbstractController {
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public NamespacesController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "DELETE" });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		String reqMethod = request.getMethod();
 		if (METHOD_GET.equals(reqMethod)) {
 			logger.info("GET namespace list");
@@ -67,8 +65,7 @@ public class NamespacesController extends AbstractController {
 		if (METHOD_HEAD.equals(reqMethod)) {
 			logger.info("HEAD namespace list");
 			return getExportNamespacesResult(request, response);
-		}
-		else if ("DELETE".equals(reqMethod)) {
+		} else if ("DELETE".equals(reqMethod)) {
 			logger.info("DELETE namespaces");
 			return getClearNamespacesResult(request, response);
 		}
@@ -78,8 +75,7 @@ public class NamespacesController extends AbstractController {
 	}
 
 	private ModelAndView getExportNamespacesResult(HttpServletRequest request, HttpServletResponse response)
-		throws ClientHTTPException, ServerHTTPException
-	{
+			throws ClientHTTPException, ServerHTTPException {
 		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
 		Map<String, Object> model = new HashMap<>();
@@ -88,11 +84,11 @@ public class NamespacesController extends AbstractController {
 			List<BindingSet> namespaces = new ArrayList<>();
 
 			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
-					request))
-			{
+					request)) {
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
-					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon.getNamespaces()) {
+					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon
+							.getNamespaces()) {
 						while (iter.hasNext()) {
 							Namespace ns = iter.next();
 
@@ -103,8 +99,7 @@ public class NamespacesController extends AbstractController {
 							namespaces.add(bindingSet);
 						}
 					}
-				}
-				catch (RepositoryException e) {
+				} catch (RepositoryException e) {
 					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 				}
 			}
@@ -122,15 +117,12 @@ public class NamespacesController extends AbstractController {
 		return new ModelAndView(TupleQueryResultView.getInstance(), model);
 	}
 
-
 	private ModelAndView getClearNamespacesResult(HttpServletRequest request, HttpServletResponse response)
-		throws ServerHTTPException
-	{
+			throws ServerHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			try {
 				repositoryCon.clearNamespaces();
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 			}
 

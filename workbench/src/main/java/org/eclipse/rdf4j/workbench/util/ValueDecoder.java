@@ -31,10 +31,8 @@ class ValueDecoder {
 	/**
 	 * Creates an instance of ValueDecoder.
 	 * 
-	 * @param repository
-	 *        to get namespaces from
-	 * @param factory
-	 *        to generate values
+	 * @param repository to get namespaces from
+	 * @param factory    to generate values
 	 */
 	protected ValueDecoder(Repository repository, ValueFactory factory) {
 		this.repository = repository;
@@ -44,16 +42,13 @@ class ValueDecoder {
 	/**
 	 * Decode the given string into a {@link org.eclipse.rdf4j.model.Value}.
 	 * 
-	 * @param string
-	 *        representation of an RDF value
+	 * @param string representation of an RDF value
 	 * @return the parsed value, or null if the string is null, empty, only whitespace, or
 	 *         {@link java.lang.String#equals(Object)} "null".
-	 * @throws BadRequestException
-	 *         if a problem occurs during parsing
+	 * @throws BadRequestException if a problem occurs during parsing
 	 */
 	protected Value decodeValue(String string)
-		throws BadRequestException
-	{
+			throws BadRequestException {
 		Value result = null;
 		try {
 			if (string != null) {
@@ -62,24 +57,20 @@ class ValueDecoder {
 					if (value.startsWith("_:")) {
 						String label = value.substring("_:".length());
 						result = factory.createBNode(label);
-					}
-					else {
+					} else {
 						if (value.charAt(0) == '<' && value.endsWith(">")) {
 							result = factory.createIRI(value.substring(1, value.length() - 1));
-						}
-						else {
+						} else {
 							if (value.charAt(0) == '"') {
 								result = parseLiteral(value);
-							}
-							else {
+							} else {
 								result = parseURI(value);
 							}
 						}
 					}
 				}
 			}
-		}
-		catch (Exception exc) {
+		} catch (Exception exc) {
 			LOGGER.warn(exc.toString(), exc);
 			throw new BadRequestException("Malformed value: " + string, exc);
 		}
@@ -87,8 +78,7 @@ class ValueDecoder {
 	}
 
 	private Value parseURI(String value)
-		throws RepositoryException, BadRequestException
-	{
+			throws RepositoryException, BadRequestException {
 		String prefix = value.substring(0, value.indexOf(':'));
 		String localPart = value.substring(prefix.length() + 1);
 		String namespace = getNamespace(prefix);
@@ -99,28 +89,23 @@ class ValueDecoder {
 	}
 
 	private Value parseLiteral(String value)
-		throws BadRequestException
-	{
+			throws BadRequestException {
 		String label = value.substring(1, value.lastIndexOf('"'));
 		Value result;
 		if (value.length() == (label.length() + 2)) {
 			result = factory.createLiteral(label);
-		}
-		else {
+		} else {
 			String rest = value.substring(label.length() + 2);
 			if (rest.startsWith("^^")) {
 				Value datatype = decodeValue(rest.substring(2));
 				if (datatype instanceof IRI) {
-					result = factory.createLiteral(label, (IRI)datatype);
-				}
-				else {
+					result = factory.createLiteral(label, (IRI) datatype);
+				} else {
 					throw new BadRequestException("Malformed datatype: " + value);
 				}
-			}
-			else if (rest.charAt(0) == '@') {
+			} else if (rest.charAt(0) == '@') {
 				result = factory.createLiteral(label, rest.substring(1));
-			}
-			else {
+			} else {
 				throw new BadRequestException("Malformed language tag or datatype: " + value);
 			}
 		}
@@ -128,8 +113,7 @@ class ValueDecoder {
 	}
 
 	private String getNamespace(String prefix)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			return con.getNamespace(prefix);
 		}

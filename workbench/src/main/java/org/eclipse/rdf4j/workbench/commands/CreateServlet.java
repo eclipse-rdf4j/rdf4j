@@ -47,8 +47,7 @@ public class CreateServlet extends TransformationServlet {
 
 	@Override
 	public void init(final ServletConfig config)
-		throws ServletException
-	{
+			throws ServletException {
 		super.init(config);
 		this.rmf = new RepositoryManagerFederator(manager);
 	}
@@ -58,12 +57,10 @@ public class CreateServlet extends TransformationServlet {
 	 */
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws ServletException
-	{
+			throws ServletException {
 		try {
 			resp.sendRedirect("../" + createRepositoryConfig(req) + "/summary");
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			throw new ServletException(e);
 		}
 	}
@@ -76,16 +73,14 @@ public class CreateServlet extends TransformationServlet {
 	 */
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws IOException, RepositoryException, QueryResultHandlerException
-	{
+			throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
 		if (req.isParameterPresent("type")) {
 			final String type = req.getTypeParameter();
 			federate = "federate".equals(type);
 			builder.transform(xslPath, "create-" + type + ".xsl");
-		}
-		else {
+		} else {
 			federate = false;
 			builder.transform(xslPath, "create.xsl");
 		}
@@ -103,8 +98,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private String createRepositoryConfig(final WorkbenchRequest req)
-		throws IOException, RDF4JException
-	{
+			throws IOException, RDF4JException {
 		String type = req.getTypeParameter();
 		String newID;
 		if ("federate".equals(type)) {
@@ -113,8 +107,7 @@ public class CreateServlet extends TransformationServlet {
 					Arrays.asList(req.getParameterValues("memberID")),
 					Boolean.parseBoolean(req.getParameter("readonly")),
 					Boolean.parseBoolean(req.getParameter("distinct")));
-		}
-		else {
+		} else {
 			newID = updateRepositoryConfig(
 					getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
 		}
@@ -122,15 +115,15 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private RepositoryConfig updateRepositoryConfig(final String configString)
-		throws IOException, RDF4JException
-	{
+			throws IOException, RDF4JException {
 		final Model graph = new LinkedHashModel();
 		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
 		Resource res = Models.subject(
-				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
+				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+				.orElseThrow(
 						() -> new RepositoryException(
 								"could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
@@ -140,8 +133,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private ConfigTemplate getConfigTemplate(final String type)
-		throws IOException
-	{
+			throws IOException {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
 			return new ConfigTemplate(template);

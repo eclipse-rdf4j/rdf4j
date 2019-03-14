@@ -30,25 +30,22 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 
 	@Override
 	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response,
-			Object handler, Exception exception)
-	{
+			Object handler, Exception exception) {
 		logger.debug("ProtocolExceptionResolver.resolveException() called");
 
 		int statusCode = HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 		String errMsg = exception.getMessage();
 
 		if (exception instanceof HTTPException) {
-			HTTPException httpExc = (HTTPException)exception;
+			HTTPException httpExc = (HTTPException) exception;
 			statusCode = httpExc.getStatusCode();
 
 			if (exception instanceof ClientHTTPException) {
 				logger.info("Client sent bad request ( " + statusCode + ")", exception);
-			}
-			else {
+			} else {
 				logger.error("Error while handling request (" + statusCode + ")", exception);
 			}
-		}
-		else {
+		} else {
 			logger.error("Error while handling request", exception);
 		}
 

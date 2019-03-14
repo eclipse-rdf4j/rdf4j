@@ -53,7 +53,7 @@ public class SimpleLogRecord implements LogRecord {
 	/**
 	 * Set log level
 	 * 
-	 * @param level 
+	 * @param level
 	 */
 	public void setLevel(LogLevel level) {
 		this.level = level;
@@ -80,7 +80,7 @@ public class SimpleLogRecord implements LogRecord {
 	/**
 	 * Set thread name
 	 * 
-	 * @param threadName 
+	 * @param threadName
 	 */
 	public void setThreadName(String threadName) {
 		this.threadName = threadName;

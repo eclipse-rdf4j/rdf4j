@@ -37,14 +37,13 @@ public class InfoServlet extends TransformationServlet {
 
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+			throws Exception {
 		String id = info.getId();
 
 		// "Caching" of servlet instances can cause this request to succeed even
 		// if the repository has been deleted. Client-side code using InfoServlet
-		// for repository existential checks expects an error response when the id 
-		// no longer exists. 
+		// for repository existential checks expects an error response when the id
+		// no longer exists.
 		if (null != id && !manager.hasRepositoryConfig(id)) {
 			throw new RepositoryConfigException(id + " does not exist.");
 		}
@@ -91,8 +90,7 @@ public class InfoServlet extends TransformationServlet {
 	private URL getServer() {
 		try {
 			return manager.getLocation();
-		}
-		catch (MalformedURLException exc) {
+		} catch (MalformedURLException exc) {
 			return null;
 		}
 	}

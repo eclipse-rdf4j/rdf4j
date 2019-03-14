@@ -50,16 +50,14 @@ public class ProxySettings implements Configuration {
 	private File propsFile;
 
 	public ProxySettings(File applicationDataDir)
-		throws IOException
-	{
+			throws IOException {
 		confDir = new File(applicationDataDir, DIR);
 	}
 
 	public void setProperty(String key, String val) {
 		if (val == null) {
 			props.remove(key);
-		}
-		else {
+		} else {
 			props.setProperty(key, val);
 		}
 	}
@@ -67,8 +65,7 @@ public class ProxySettings implements Configuration {
 	private void setSystemProperty(String key, String val) {
 		if (val == null) {
 			System.getProperties().remove(key);
-		}
-		else {
+		} else {
 			System.setProperty(key, val);
 		}
 	}
@@ -137,7 +134,7 @@ public class ProxySettings implements Configuration {
 	/**
 	 * Get HTTPS proxy host
 	 * 
-	 * @param httpsProxyHost 
+	 * @param httpsProxyHost
 	 */
 	public void setHttpsProxyHost(String httpsProxyHost) {
 		setProperty(PROPNAME_HTTPS_PROXYHOST, httpsProxyHost);
@@ -194,22 +191,20 @@ public class ProxySettings implements Configuration {
 			setSystemProperty(key, val);
 		}
 		// See SES-1100: Sesame should leave proxy settings alone if not enabled
-		//		else {
-		//			setSystemProperty(key, null);
-		//		}
+		// else {
+		// setSystemProperty(key, null);
+		// }
 	}
 
 	/**
-	 * Get the semicolon-separated list of hostnames starting with given strings, that do not use the proxy
-	 * settings.
+	 * Get the semicolon-separated list of hostnames starting with given strings, that do not use the proxy settings.
 	 */
 	public String getNonProxyHostsStarting() {
 		return props.getProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING);
 	}
 
 	/**
-	 * Set the semicolon separated list of hostnames starting with given strings, that do not use the proxy
-	 * settings.
+	 * Set the semicolon separated list of hostnames starting with given strings, that do not use the proxy settings.
 	 */
 	public void setNonProxyHostsStarting(String nonProxyHostsStarting) {
 		setProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING, nonProxyHostsStarting);
@@ -241,8 +236,7 @@ public class ProxySettings implements Configuration {
 	 */
 	@Override
 	public void load()
-		throws IOException
-	{
+			throws IOException {
 		Properties proxyConfig = ConfigurationUtil.loadConfigurationProperties(PROXY_SETTINGS_FILENAME, null);
 
 		propsFile = new File(confDir, PROXY_SETTINGS_FILENAME);
@@ -255,8 +249,7 @@ public class ProxySettings implements Configuration {
 	 */
 	@Override
 	public void save()
-		throws IOException
-	{
+			throws IOException {
 		if (!props.isEmpty()) {
 			ConfigurationUtil.saveConfigurationProperties(props, propsFile, false);
 		}
@@ -267,15 +260,13 @@ public class ProxySettings implements Configuration {
 
 	@Override
 	public void destroy()
-		throws IOException
-	{
+			throws IOException {
 		// no-op
 	}
 
 	@Override
 	public void init()
-		throws IOException
-	{
+			throws IOException {
 		load();
 
 		// make sure some system properties are set properly

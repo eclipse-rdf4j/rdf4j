@@ -47,9 +47,8 @@ public class SimpleResponseView implements View {
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
-		Integer sc = (Integer)model.get(SC_KEY);
+			throws Exception {
+		Integer sc = (Integer) model.get(SC_KEY);
 		if (sc == null) {
 			sc = DEFAULT_SC;
 		}
@@ -58,7 +57,7 @@ public class SimpleResponseView implements View {
 		response.setContentType(CONTENT_TYPE);
 
 		if (model.containsKey(CUSTOM_HEADERS_KEY)) {
-			Map<String, String> customHeaders = (Map<String, String>)model.get(CUSTOM_HEADERS_KEY);
+			Map<String, String> customHeaders = (Map<String, String>) model.get(CUSTOM_HEADERS_KEY);
 			if (customHeaders != null) {
 				for (String headerName : customHeaders.keySet()) {
 					response.setHeader(headerName, customHeaders.get(headerName));
@@ -67,13 +66,12 @@ public class SimpleResponseView implements View {
 		}
 
 		try (OutputStream out = response.getOutputStream()) {
-			String content = (String)model.get(CONTENT_KEY);
+			String content = (String) model.get(CONTENT_KEY);
 			if (content != null) {
 				byte[] contentBytes = content.getBytes("UTF-8");
 				response.setContentLength(contentBytes.length);
 				out.write(contentBytes);
-			}
-			else {
+			} else {
 				response.setContentLength(0);
 			}
 		}

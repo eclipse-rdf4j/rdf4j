@@ -56,15 +56,13 @@ public class GraphController extends AbstractController {
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public GraphController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, METHOD_POST, "PUT", "DELETE" });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -75,28 +73,23 @@ public class GraphController extends AbstractController {
 			logger.info("GET graph");
 			result = getExportStatementsResult(repository, request, response);
 			logger.info("GET graph request finished.");
-		}
-		else if (METHOD_HEAD.equals(reqMethod)) {
+		} else if (METHOD_HEAD.equals(reqMethod)) {
 			logger.info("HEAD graph");
 			result = getExportStatementsResult(repository, request, response);
 			logger.info("HEAD graph request finished.");
-		}
-		else if (METHOD_POST.equals(reqMethod)) {
+		} else if (METHOD_POST.equals(reqMethod)) {
 			logger.info("POST data to graph");
 			result = getAddDataResult(repository, request, response, false);
 			logger.info("POST data request finished.");
-		}
-		else if ("PUT".equals(reqMethod)) {
+		} else if ("PUT".equals(reqMethod)) {
 			logger.info("PUT data in graph");
 			result = getAddDataResult(repository, request, response, true);
 			logger.info("PUT data request finished.");
-		}
-		else if ("DELETE".equals(reqMethod)) {
+		} else if ("DELETE".equals(reqMethod)) {
 			logger.info("DELETE data from graph");
 			result = getDeleteDataResult(repository, request, response);
 			logger.info("DELETE data request finished.");
-		}
-		else {
+		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
 					"Method not allowed: " + reqMethod);
 		}
@@ -104,8 +97,7 @@ public class GraphController extends AbstractController {
 	}
 
 	private IRI getGraphName(HttpServletRequest request, ValueFactory vf)
-		throws ClientHTTPException
-	{
+			throws ClientHTTPException {
 		String requestURL = request.getRequestURL().toString();
 		boolean isServiceRequest = requestURL.endsWith("/service");
 
@@ -121,8 +113,7 @@ public class GraphController extends AbstractController {
 				return graph;
 			}
 			return null;
-		}
-		else {
+		} else {
 			if (queryString != null) {
 				throw new ClientHTTPException(HttpServletResponse.SC_BAD_REQUEST,
 						"No parameters epxected for direct reference request.");
@@ -138,8 +129,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ClientHTTPException
-	{
+			throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -163,15 +153,15 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response, boolean replaceCurrent)
-		throws IOException, ClientHTTPException, ServerHTTPException
-	{
+			throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
-		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType).orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-						"Unsupported MIME type: " + mimeType));
+		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)
+				.orElseThrow(
+						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
+								"Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);
@@ -200,19 +190,15 @@ public class GraphController extends AbstractController {
 			}
 
 			return new ModelAndView(EmptySuccessView.getInstance());
-		}
-		catch (UnsupportedRDFormatException e) {
+		} catch (UnsupportedRDFormatException e) {
 			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
 					"No RDF parser available for format " + rdfFormat.getName());
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new ServerHTTPException("Failed to read data: " + e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 		}
 	}
@@ -222,8 +208,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ClientHTTPException, ServerHTTPException
-	{
+			throws ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -234,8 +219,7 @@ public class GraphController extends AbstractController {
 			repositoryCon.clear(graph);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 		}
 	}

@@ -40,9 +40,9 @@ public class AppConfiguration implements Configuration {
 	private String longName;
 	private String fullName;
 	private AppVersion version;
-	
+
 	private String[] commandLineArgs;
-	
+
 	private String dataDirName;
 	private File dataDir;
 
@@ -64,8 +64,7 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Create the application configuration.
 	 * 
-	 * @param applicationId
-	 *        the ID of the application
+	 * @param applicationId the ID of the application
 	 */
 	public AppConfiguration(final String applicationId) {
 		this();
@@ -75,10 +74,8 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Create the application configuration.
 	 * 
-	 * @param applicationId
-	 *        the ID of the application
-	 * @param version
-	 *        the application's version
+	 * @param applicationId the ID of the application
+	 * @param version       the application's version
 	 */
 	public AppConfiguration(final String applicationId, final AppVersion version) {
 		this(applicationId);
@@ -88,10 +85,8 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Create the application configuration.
 	 * 
-	 * @param applicationId
-	 *        the ID of the application
-	 * @param longName
-	 *        the long name of the application
+	 * @param applicationId the ID of the application
+	 * @param longName      the long name of the application
 	 */
 	public AppConfiguration(final String applicationId, final String longName) {
 		this(applicationId);
@@ -101,12 +96,9 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Create the application configuration.
 	 * 
-	 * @param applicationId
-	 *        the ID of the application
-	 * @param longName
-	 *        the long name of the application
-	 * @param version
-	 *        the application's version
+	 * @param applicationId the ID of the application
+	 * @param longName      the long name of the application
+	 * @param version       the application's version
 	 */
 	public AppConfiguration(final String applicationId, final String longName, final AppVersion version) {
 		this(applicationId, version);
@@ -148,7 +140,7 @@ public class AppConfiguration implements Configuration {
 	 * Initialize configuration and proxy settings, optionally load (logback) logging
 	 * 
 	 * @param loadLogConfig load logging configuration
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public void init(final boolean loadLogConfig) throws IOException {
 		if (longName == null) {
@@ -163,8 +155,7 @@ public class AppConfiguration implements Configuration {
 				loggingConfiguration.setBaseDir(getDataDir());
 				loggingConfiguration.setAppConfiguration(this);
 				loggingConfiguration.init();
-			}
-			catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
+			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
 				e.printStackTrace();
 			}
 		}
@@ -218,16 +209,15 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Set the long name of the application.
 	 * 
-	 * @param longName
-	 *        the new name
+	 * @param longName the new name
 	 */
 	public final void setLongName(final String longName) {
 		this.longName = longName;
 	}
 
 	/**
-	 * Get the full name of the application, which consists of the long name and the version number (e.g.
-	 * "Aduna AutoFocus 4.0-beta1" or "OpenRDF Sesame Webclient 2.0")
+	 * Get the full name of the application, which consists of the long name and the version number (e.g. "Aduna
+	 * AutoFocus 4.0-beta1" or "OpenRDF Sesame Webclient 2.0")
 	 * 
 	 * @return the full name of the application
 	 */
@@ -260,8 +250,7 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Set the version of the application.
 	 * 
-	 * @param version
-	 *        the new version
+	 * @param version the new version
 	 */
 	public final void setVersion(final AppVersion version) {
 		this.version = version;
@@ -274,17 +263,16 @@ public class AppConfiguration implements Configuration {
 	 * @return A String array, as (typically) specified to the main method.
 	 */
 	public String[] getCommandLineArgs() {
-		return (String[])commandLineArgs.clone();
+		return (String[]) commandLineArgs.clone();
 	}
 
 	/**
 	 * Set the command line arguments specified to the application.
 	 * 
-	 * @param args
-	 *        A String array containing the arguments as specified to the main method.
+	 * @param args A String array containing the arguments as specified to the main method.
 	 */
 	public void setCommandLineArgs(final String[] args) {
-		this.commandLineArgs = (String[])args.clone();
+		this.commandLineArgs = (String[]) args.clone();
 	}
 
 	/**
@@ -324,8 +312,7 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
-	 * Configure the data dir.
-	 * Determination of the data dir might be deferred to Platform.
+	 * Configure the data dir. Determination of the data dir might be deferred to Platform.
 	 */
 	private void configureDataDir() {
 		if (dataDirName != null) {
@@ -351,8 +338,8 @@ public class AppConfiguration implements Configuration {
 	 * @throws IllegalAccessException
 	 * @throws InstantiationException
 	 */
-	private LogConfiguration loadLogConfiguration() 
-							throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+	private LogConfiguration loadLogConfiguration()
+			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
 		String classname = this.properties.getProperty("feature.logging.impl");
 		if (classname == null) {
 			classname = DEFAULT_LOGGING;
@@ -360,7 +347,7 @@ public class AppConfiguration implements Configuration {
 		final Class<?> logImplClass = Class.forName(classname);
 		final Object logImpl = logImplClass.newInstance();
 		if (logImpl instanceof LogConfiguration) {
-			return (LogConfiguration)logImpl;
+			return (LogConfiguration) logImpl;
 		}
 		throw new InstantiationException(classname + " is not valid LogConfiguration instance!");
 	}

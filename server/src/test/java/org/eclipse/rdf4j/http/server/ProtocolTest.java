@@ -69,13 +69,11 @@ public class ProtocolTest {
 
 	@BeforeClass
 	public static void startServer()
-		throws Exception
-	{
+			throws Exception {
 		server = new TestServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
@@ -83,8 +81,7 @@ public class ProtocolTest {
 
 	@AfterClass
 	public static void stopServer()
-		throws Exception
-	{
+			throws Exception {
 		server.stop();
 	}
 
@@ -93,8 +90,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testRepository_PUT()
-		throws Exception
-	{
+			throws Exception {
 		putFile(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL), "/testcases/default-graph-1.ttl");
 	}
 
@@ -103,8 +99,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testRepository_DELETE()
-		throws Exception
-	{
+			throws Exception {
 		delete(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL));
 	}
 
@@ -113,8 +108,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testNullContext_PUT()
-		throws Exception
-	{
+			throws Exception {
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + Protocol.NULL_PARAM_VALUE;
 		putFile(location, "/testcases/default-graph-1.ttl");
@@ -125,8 +119,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testNullContext_DELETE()
-		throws Exception
-	{
+			throws Exception {
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + Protocol.NULL_PARAM_VALUE;
 		delete(location);
@@ -137,8 +130,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testNamedContext_PUT()
-		throws Exception
-	{
+			throws Exception {
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		String encContext = Protocol.encodeValue(vf.createIRI("urn:x-local:graph1"));
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + encContext;
@@ -150,8 +142,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testNamedContext_DELETE()
-		throws Exception
-	{
+			throws Exception {
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		String encContext = Protocol.encodeValue(vf.createIRI("urn:x-local:graph1"));
 		location += "?" + Protocol.CONTEXT_PARAM_NAME + "=" + encContext;
@@ -163,8 +154,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testSeRQLselect()
-		throws Exception
-	{
+			throws Exception {
 		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL,
 				"select * from {X} P {Y}", QueryLanguage.SERQL);
 		QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
@@ -175,8 +165,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testQueryDirect_POST()
-		throws Exception
-	{
+			throws Exception {
 		String query = "DESCRIBE <monkey:pod>";
 		String location = TestServer.REPOSITORY_URL;
 
@@ -197,8 +186,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testUpdateDirect_POST()
-		throws Exception
-	{
+			throws Exception {
 		String query = "delete where { <monkey:pod> ?p ?o }";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 
@@ -219,8 +207,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testUpdateForm_POST()
-		throws Exception
-	{
+			throws Exception {
 		String update = "delete where { <monkey:pod> ?p ?o . }";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		CloseableHttpClient httpclient = HttpClients.createDefault();
@@ -244,15 +231,14 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testContentTypeForGraphQuery1_GET()
-		throws Exception
-	{
+			throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
 		location += "?query=" + URLEncoder.encode(query, "UTF-8");
 
 		URL url = new URL(location);
 
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
 		// Request RDF/XML formatted results:
 		conn.setRequestProperty("Accept", RDFFormat.RDFXML.getDefaultMIMEType());
@@ -272,15 +258,13 @@ public class ProtocolTest {
 				}
 
 				assertEquals(RDFFormat.RDFXML.getDefaultMIMEType(), contentType);
-			}
-			else {
+			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}
@@ -290,15 +274,14 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testContentTypeForGraphQuery2_GET()
-		throws Exception
-	{
+			throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
 		location += "?query=" + URLEncoder.encode(query, "UTF-8");
 
 		URL url = new URL(location);
 
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
 		// incorrect mime-type for graph query results
 		conn.setRequestProperty("Accept", TupleQueryResultFormat.SPARQL.getDefaultMIMEType());
@@ -309,29 +292,26 @@ public class ProtocolTest {
 			int responseCode = conn.getResponseCode();
 			if (responseCode == HttpURLConnection.HTTP_NOT_ACCEPTABLE) {
 				// do nothing, expected
-			}
-			else {
+			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
 				fail(response);
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}
 
 	@Test
 	public void testQueryResponse_HEAD()
-		throws Exception
-	{
+			throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
 		location += "?query=" + URLEncoder.encode(query, "UTF-8");
 
 		URL url = new URL(location);
 
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("HEAD");
 
 		// Request RDF/XML formatted results:
@@ -353,30 +333,27 @@ public class ProtocolTest {
 
 				assertEquals(RDFFormat.RDFXML.getDefaultMIMEType(), contentType);
 				assertEquals(0, conn.getContentLength());
-			}
-			else {
+			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}
 
 	@Test
 	public void testUpdateResponse_HEAD()
-		throws Exception
-	{
+			throws Exception {
 		String query = "INSERT DATA { <foo:foo> <foo:bar> \"foo\". } ";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		location += "?update=" + URLEncoder.encode(query, "UTF-8");
 
 		URL url = new URL(location);
 
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("HEAD");
 
 		conn.connect();
@@ -394,15 +371,13 @@ public class ProtocolTest {
 				}
 
 				assertEquals(0, conn.getContentLength());
-			}
-			else {
+			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}
@@ -414,8 +389,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testSequentialNamespaceUpdates()
-		throws Exception
-	{
+			throws Exception {
 		int limitCount = 1000;
 		int limitPrefix = 50;
 
@@ -434,8 +408,7 @@ public class ProtocolTest {
 
 			if (count % 2 == 0) {
 				putNamespace(location, ns);
-			}
-			else {
+			} else {
 				deleteNamespace(location);
 			}
 		}
@@ -448,8 +421,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testPutEmptyPrefix()
-		throws Exception
-	{
+			throws Exception {
 		String repositoryLocation = TestServer.REPOSITORY_URL;
 		String namespacesLocation = Protocol.getNamespacesLocation(repositoryLocation);
 		String emptyPrefixLocation = Protocol.getNamespacePrefixLocation(repositoryLocation, "");
@@ -474,8 +446,7 @@ public class ProtocolTest {
 	 */
 	@Test
 	public void testConcurrentNamespaceUpdates()
-		throws Exception
-	{
+			throws Exception {
 		int limitCount = 1000;
 		int limitPrefix = 50;
 
@@ -504,12 +475,10 @@ public class ProtocolTest {
 					try {
 						if (number % 2 == 0) {
 							putNamespace(location, ns);
-						}
-						else {
+						} else {
 							deleteNamespace(location);
 						}
-					}
-					catch (Exception e) {
+					} catch (Exception e) {
 						e.printStackTrace();
 						fail("Failed in test: " + number);
 					}
@@ -523,10 +492,9 @@ public class ProtocolTest {
 	}
 
 	private Set<Namespace> getNamespaces(String location)
-		throws Exception
-	{
+			throws Exception {
 		URL url = new URL(location);
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		try {
 			conn.setRequestProperty("Accept", "text/csv; charset=utf-8");
 			conn.connect();
@@ -539,7 +507,7 @@ public class ProtocolTest {
 			}
 
 			try (CSVReader reader = new CSVReader(
-				new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
+					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
 				String[] headerRow = reader.readNext();
 
 				if (headerRow == null) {
@@ -561,19 +529,17 @@ public class ProtocolTest {
 				}
 				return namespaces;
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}
 
 	private void putNamespace(String location, String namespace)
-		throws Exception
-	{
+			throws Exception {
 		// System.out.println("Put namespace to " + location);
 
 		URL url = new URL(location);
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
@@ -582,8 +548,7 @@ public class ProtocolTest {
 
 			try {
 				IOUtil.transfer(dataStream, connOut);
-			}
-			finally {
+			} finally {
 				connOut.close();
 			}
 		}
@@ -593,9 +558,8 @@ public class ProtocolTest {
 		int responseCode = conn.getResponseCode();
 
 		// HTTP 200 or 204
-		if (responseCode != HttpURLConnection.HTTP_OK && 
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
-		{
+		if (responseCode != HttpURLConnection.HTTP_OK &&
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
 			fail(response);
@@ -603,12 +567,11 @@ public class ProtocolTest {
 	}
 
 	private void deleteNamespace(String location)
-		throws Exception
-	{
+			throws Exception {
 		// System.out.println("Delete namespace at " + location);
 
 		URL url = new URL(location);
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("DELETE");
 		conn.setDoOutput(true);
 
@@ -618,8 +581,7 @@ public class ProtocolTest {
 
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK &&
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT) 
-		{
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
 			fail(response);
@@ -627,12 +589,11 @@ public class ProtocolTest {
 	}
 
 	private void putFile(String location, String file)
-		throws Exception
-	{
+			throws Exception {
 		System.out.println("Put file to " + location);
 
 		URL url = new URL(location);
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
@@ -644,8 +605,7 @@ public class ProtocolTest {
 
 			try {
 				IOUtil.transfer(dataStream, connOut);
-			}
-			finally {
+			} finally {
 				connOut.close();
 			}
 		}
@@ -656,8 +616,7 @@ public class ProtocolTest {
 
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK &&
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
-		{
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
 			fail(response);
@@ -665,10 +624,9 @@ public class ProtocolTest {
 	}
 
 	private void delete(String location)
-		throws Exception
-	{
+			throws Exception {
 		URL url = new URL(location);
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("DELETE");
 
 		conn.connect();
@@ -677,8 +635,7 @@ public class ProtocolTest {
 
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK &&
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
-		{
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
 			fail(response);
@@ -686,13 +643,12 @@ public class ProtocolTest {
 	}
 
 	private TupleQueryResult evaluateTupleQuery(String location, String query, QueryLanguage queryLn)
-		throws Exception
-	{
+			throws Exception {
 		location += "?query=" + URLEncoder.encode(query, "UTF-8") + "&queryLn=" + queryLn.getName();
 
 		URL url = new URL(location);
 
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
 		// Request SPARQL-XML formatted results:
 		conn.setRequestProperty("Accept", TupleQueryResultFormat.SPARQL.getDefaultMIMEType());
@@ -705,15 +661,13 @@ public class ProtocolTest {
 			if (responseCode == HttpURLConnection.HTTP_OK) {
 				// Process query results
 				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL);
-			}
-			else {
+			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
-		}
-		finally {
+		} finally {
 			conn.disconnect();
 		}
 	}

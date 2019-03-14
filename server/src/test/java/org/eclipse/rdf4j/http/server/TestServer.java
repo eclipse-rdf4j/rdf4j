@@ -67,8 +67,7 @@ public class TestServer {
 	}
 
 	public void start()
-		throws Exception
-	{
+			throws Exception {
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
@@ -79,8 +78,7 @@ public class TestServer {
 	}
 
 	public void stop()
-		throws Exception
-	{
+			throws Exception {
 		Repository systemRepo = new HTTPRepository(
 				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 		try (RepositoryConnection con = systemRepo.getConnection()) {
@@ -92,8 +90,7 @@ public class TestServer {
 	}
 
 	private void createTestRepositories()
-		throws RepositoryException, RepositoryConfigException
-	{
+			throws RepositoryException, RepositoryConfigException {
 		Repository systemRep = new HTTPRepository(
 				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 

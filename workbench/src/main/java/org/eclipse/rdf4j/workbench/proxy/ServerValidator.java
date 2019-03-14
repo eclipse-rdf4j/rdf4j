@@ -41,11 +41,9 @@ class ServerValidator {
 		try {
 			final URL url = new URL(server);
 			isDir = asLocalFile(url).isDirectory();
-		}
-		catch (MalformedURLException e) {
+		} catch (MalformedURLException e) {
 			LOGGER.warn(e.toString(), e);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			LOGGER.warn(e.toString(), e);
 		}
 		return isDir;
@@ -54,12 +52,9 @@ class ServerValidator {
 	/**
 	 * Returns whether the given server can be connected to.
 	 * 
-	 * @param server
-	 *        the server path
-	 * @param password
-	 *        the optional password
-	 * @param user
-	 *        the optional username
+	 * @param server   the server path
+	 * @param password the optional password
+	 * @param user     the optional username
 	 * @return true, if the given server can be connected to
 	 */
 	protected boolean isValidServer(final String server) {
@@ -67,8 +62,7 @@ class ServerValidator {
 		if (isValid) {
 			if (server.startsWith("http")) {
 				isValid = canConnect(server);
-			}
-			else if (server.startsWith("file:")) {
+			} else if (server.startsWith("file:")) {
 				isValid = isDirectory(server);
 			}
 		}
@@ -76,19 +70,17 @@ class ServerValidator {
 	}
 
 	/**
-	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the
-	 * space-separated configuration parameter value for 'accepted-server-prefixes'.
+	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated
+	 * configuration parameter value for 'accepted-server-prefixes'.
 	 * 
-	 * @param server
-	 *        the server for which to check the prefix
+	 * @param server the server for which to check the prefix
 	 * @return whether the server prefix is in the list of acceptable prefixes
 	 */
 	private boolean checkServerPrefixes(final String server) {
 		boolean accept = false;
 		if (prefixes == null) {
 			accept = true;
-		}
-		else {
+		} else {
 			for (String prefix : prefixes.split(" ")) {
 				if (server.startsWith(prefix)) {
 					accept = true;
@@ -113,22 +105,18 @@ class ServerValidator {
 				Integer.parseInt(reader.readLine());
 				success = true;
 			}
-		}
-		catch (NumberFormatException e) {
+		} catch (NumberFormatException e) {
 			LOGGER.warn(e.toString(), e);
-		}
-		catch (MalformedURLException e) {
+		} catch (MalformedURLException e) {
 			LOGGER.warn(e.toString(), e);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			LOGGER.warn(e.toString(), e);
 		}
 		return success;
 	}
 
 	private File asLocalFile(final URL rdf)
-		throws UnsupportedEncodingException
-	{
+			throws UnsupportedEncodingException {
 		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
 	}
 }

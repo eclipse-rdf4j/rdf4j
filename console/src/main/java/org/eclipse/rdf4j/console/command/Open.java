@@ -35,18 +35,18 @@ public class Open extends ConsoleCommand {
 	public String getName() {
 		return "open";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Opens a repository to work on, takes a repository ID as argument";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "open <repositoryID>   Opens the repository with the specified ID\n";
+				+ "open <repositoryID>   Opens the repository with the specified ID\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -73,7 +73,7 @@ public class Open extends ConsoleCommand {
 	/**
 	 * Open a repository
 	 * 
-	 * @param repoID repository ID 
+	 * @param repoID repository ID
 	 */
 	public void openRepository(final String repoID) {
 		try {

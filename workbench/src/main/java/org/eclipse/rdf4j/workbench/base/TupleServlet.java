@@ -31,8 +31,7 @@ public abstract class TupleServlet extends TransformationServlet {
 
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+			throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
@@ -47,21 +46,18 @@ public abstract class TupleServlet extends TransformationServlet {
 			builder.link(Arrays.asList("info"));
 			this.service(req, resp, builder, con);
 			builder.end();
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
 
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, TupleResultBuilder builder,
 			RepositoryConnection con)
-		throws Exception
-	{
+			throws Exception {
 		service(builder, con);
 	}
 
 	protected void service(TupleResultBuilder builder, RepositoryConnection con)
-		throws Exception
-	{
+			throws Exception {
 	}
 }

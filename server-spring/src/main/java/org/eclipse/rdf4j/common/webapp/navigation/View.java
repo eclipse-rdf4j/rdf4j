@@ -17,8 +17,7 @@ public class View extends AbstractNavigationNode {
 	/**
 	 * Construct a new view with the specified ID.
 	 * 
-	 * @param id
-	 *        the ID of the view
+	 * @param id the ID of the view
 	 */
 	public View(String id) {
 		super(id);

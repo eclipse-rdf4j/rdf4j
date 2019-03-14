@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
- * View used to render boolean query results. Renders results in a format specified using a parameter or
- * Accept header.
+ * View used to render boolean query results. Renders results in a format specified using a parameter or Accept header.
  * 
  * @author Arjohn Kampman
  */
@@ -46,9 +45,8 @@ public class BooleanQueryResultView extends QueryResultView {
 	@SuppressWarnings("rawtypes")
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws IOException
-	{
-		BooleanQueryResultWriterFactory brWriterFactory = (BooleanQueryResultWriterFactory)model.get(
+			throws IOException {
+		BooleanQueryResultWriterFactory brWriterFactory = (BooleanQueryResultWriterFactory) model.get(
 				FACTORY_KEY);
 		BooleanQueryResultFormat brFormat = brWriterFactory.getBooleanQueryResultFormat();
 
@@ -56,19 +54,17 @@ public class BooleanQueryResultView extends QueryResultView {
 		setContentType(response, brFormat);
 		setContentDisposition(model, response, brFormat);
 
-		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
+		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 
 		if (!headersOnly) {
 			try (OutputStream out = response.getOutputStream()) {
 				BooleanQueryResultWriter qrWriter = brWriterFactory.getWriter(out);
-				boolean value = (Boolean)model.get(QUERY_RESULT_KEY);
+				boolean value = (Boolean) model.get(QUERY_RESULT_KEY);
 				qrWriter.handleBoolean(value);
-			}
-			catch (QueryResultHandlerException e) {
+			} catch (QueryResultHandlerException e) {
 				if (e.getCause() != null && e.getCause() instanceof IOException) {
-					throw (IOException)e.getCause();
-				}
-				else {
+					throw (IOException) e.getCause();
+				} else {
 					throw new IOException(e);
 				}
 			}

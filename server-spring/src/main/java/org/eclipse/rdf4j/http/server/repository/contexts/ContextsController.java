@@ -42,15 +42,13 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class ContextsController extends AbstractController {
 
 	public ContextsController()
-		throws ApplicationContextException
-	{
+			throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		Map<String, Object> model = new HashMap<>();
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
 				TupleQueryResultWriterRegistry.getInstance());
@@ -60,7 +58,8 @@ public class ContextsController extends AbstractController {
 			List<BindingSet> contexts = new ArrayList<>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			try {
-				try (CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs()) {
+				try (CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon
+						.getContextIDs()) {
 					while (contextIter.hasNext()) {
 						BindingSet bindingSet = new ListBindingSet(columnNames, contextIter.next());
 						contexts.add(bindingSet);
@@ -73,8 +72,7 @@ public class ContextsController extends AbstractController {
 				model.put(QueryResultView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));
 				model.put(QueryResultView.CONNECTION_KEY, repositoryCon);
 
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				// normally the QueryResultView closes the connection, but not if an exception occurred
 				repositoryCon.close();
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);

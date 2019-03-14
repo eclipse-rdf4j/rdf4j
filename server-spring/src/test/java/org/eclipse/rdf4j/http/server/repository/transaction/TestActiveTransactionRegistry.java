@@ -7,7 +7,6 @@
  */
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-
 import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.Repository;
@@ -35,12 +34,10 @@ public class TestActiveTransactionRegistry {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		System.setProperty(ActiveTransactionRegistry.CACHE_TIMEOUT_PROPERTY, "1");
 		registry = ActiveTransactionRegistry.INSTANCE;
 		repository = Mockito.mock(Repository.class);
 	}
-
 
 }

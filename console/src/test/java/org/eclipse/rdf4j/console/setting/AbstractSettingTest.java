@@ -30,13 +30,14 @@ public abstract class AbstractSettingTest {
 
 	@Mock
 	protected ConsoleState mockConsoleState;
-	
+
 	SetParameters setParameters;
-	Map<String,ConsoleSetting> settings = new HashMap<>();
-		
+	Map<String, ConsoleSetting> settings = new HashMap<>();
+
 	@Before
 	public void setUp() {
 		MockitoAnnotations.initMocks(this);
-		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);;
+		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
+		;
 	}
 }

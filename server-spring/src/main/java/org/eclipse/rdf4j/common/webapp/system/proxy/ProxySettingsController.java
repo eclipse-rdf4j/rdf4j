@@ -24,14 +24,12 @@ public class ProxySettingsController {
 	private ProxySettings PROXY_SETTINGS = null;
 
 	private void setProxies(Map<String, Object> params, HttpServletResponse response)
-		throws IOException
-	{
+			throws IOException {
 		boolean useProxies = HttpServerUtil.isTrue(HttpServerUtil.getPostDataParameter(params, "connection"));
 
 		if (!useProxies) {
 			PROXY_SETTINGS.setProxiesEnabled(false);
-		}
-		else {
+		} else {
 			String httpProxyHost = HttpServerUtil.getPostDataParameter(params, "httpProxyHost");
 			String httpProxyPort = HttpServerUtil.getPostDataParameter(params, "httpProxyPort");
 			if (!HttpServerUtil.isEmpty(httpProxyHost)) {
@@ -80,8 +78,7 @@ public class ProxySettingsController {
 	}
 
 	private boolean checkPort(String proxyPort)
-		throws IOException
-	{
+			throws IOException {
 		boolean result = false;
 
 		int port = -1;
@@ -91,8 +88,7 @@ public class ProxySettingsController {
 				if (port > 0 || port < 65536) {
 					result = true;
 				}
-			}
-			catch (NumberFormatException nfe) {
+			} catch (NumberFormatException nfe) {
 				result = false;
 			}
 		}

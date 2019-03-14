@@ -49,8 +49,7 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	@Override
 	public void init(final ServletConfig config)
-		throws ServletException
-	{
+			throws ServletException {
 		super.init(config);
 		if (getDefaultServerPath() == null) {
 			throw new MissingInitParameterException(DEFAULT_SERVER);
@@ -74,8 +73,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * Returns the value of the default-server configuration variable. Often, this is simply a relative path
-	 * on the same HTTP server.
+	 * Returns the value of the default-server configuration variable. Often, this is simply a relative path on the same
+	 * HTTP server.
 	 * 
 	 * @return the path to the default Sesame server instance
 	 */
@@ -86,8 +85,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Whether the server path is fixed, which is when the change-server-path configuration value is not set.
 	 * 
-	 * @return true, if the change-server-path configuration variable is not set, meaning that changing the
-	 *         server is blocked
+	 * @return true, if the change-server-path configuration variable is not set, meaning that changing the server is
+	 *         blocked
 	 */
 	public boolean isServerFixed() {
 		return getChangeServerPath() == null;
@@ -95,18 +94,15 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
-		throws ServletException, IOException
-	{
+			throws ServletException, IOException {
 		final String change = getChangeServerPath();
 		if (change != null && change.equals(req.getPathInfo())) {
 			try {
 				changeServer(req, resp);
-			}
-			catch (QueryResultHandlerException e) {
+			} catch (QueryResultHandlerException e) {
 				throw new IOException(e);
 			}
-		}
-		else {
+		} else {
 			final WorkbenchServlet servlet = findWorkbenchServlet(req, resp);
 			if (servlet == null) {
 				// Redirect to change-server-path
@@ -115,8 +111,7 @@ public class WorkbenchGateway extends AbstractServlet {
 					uri.setLength(uri.length() - req.getPathInfo().length());
 				}
 				resp.sendRedirect(uri.append(getChangeServerPath()).toString());
-			}
-			else {
+			} else {
 				servlet.service(req, resp);
 			}
 		}
@@ -132,17 +127,13 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Handles requests to the "change server" page.
 	 * 
-	 * @param req
-	 *        the servlet request object
-	 * @param resp
-	 *        the servlet response object
-	 * @throws IOException
-	 *         if an issue occurs writing to the response
+	 * @param req  the servlet request object
+	 * @param resp the servlet response object
+	 * @throws IOException                 if an issue occurs writing to the response
 	 * @throws QueryResultHandlerException
 	 */
 	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
-		throws IOException, QueryResultHandlerException
-	{
+			throws IOException, QueryResultHandlerException {
 		String server = req.getParameter(SERVER_COOKIE);
 		if (server == null) {
 			// Server parameter was not present, so present entry form.
@@ -187,10 +178,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * @param req
-	 *        the servlet request
-	 * @param name
-	 *        the name of the optional parameter
+	 * @param req  the servlet request
+	 * @param name the name of the optional parameter
 	 * @return the value of the parameter, or an empty String if it is not present.
 	 */
 	private String getOptionalParameter(final HttpServletRequest req, final String name) {
@@ -204,23 +193,19 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Returns the user requested server, if valid, or the default server.
 	 * 
-	 * @param req
-	 *        the request
-	 * @param resp
-	 *        the response
+	 * @param req  the request
+	 * @param resp the response
 	 * @return the user's requested server, if valid, or the default server
 	 */
 	private String findServer(final HttpServletRequest req, final HttpServletResponse resp) {
 		final StringBuilder value = new StringBuilder();
 		if (isServerFixed()) {
 			value.append(getDefaultServer(req));
-		}
-		else {
+		} else {
 			value.append(cookies.getCookie(req, resp, SERVER_COOKIE));
 			if (0 == value.length()) {
 				value.append(getDefaultServer(req));
-			}
-			else if (!this.serverValidator.isValidServer(value.toString())) {
+			} else if (!this.serverValidator.isValidServer(value.toString())) {
 				value.replace(0, value.length(), getDefaultServer(req));
 			}
 		}
@@ -230,24 +215,19 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Returns a WorkbenchServlet instance allocated for the requested server.
 	 * 
-	 * @param req
-	 *        the current request
-	 * @param resp
-	 *        the current response
+	 * @param req  the current request
+	 * @param resp the current response
 	 * @return a WorkbenchServlet instance allocated for the requested server
-	 * @throws ServletException
-	 *         if a problem occurs initializing a new servlet
+	 * @throws ServletException if a problem occurs initializing a new servlet
 	 */
 	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req,
 			final HttpServletResponse resp)
-		throws ServletException
-	{
+			throws ServletException {
 		WorkbenchServlet servlet = null;
 		final String server = findServer(req, resp);
 		if (servlets.containsKey(server)) {
 			servlet = servlets.get(server);
-		}
-		else {
+		} else {
 			if (isServerFixed() || this.serverValidator.isValidServer(server)) {
 				synchronized (servlets) {
 					// Even though the map is thread-safe, we only wish one
@@ -255,8 +235,7 @@ public class WorkbenchGateway extends AbstractServlet {
 					// a WorkbenchServlet instance to the garbage collector.
 					if (servlets.containsKey(server)) {
 						servlet = servlets.get(server);
-					}
-					else {
+					} else {
 						final Map<String, String> params = new HashMap<>(3);
 						params.put(SERVER_PARAM, server);
 						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
@@ -275,8 +254,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Returns the full URL to the default server on the same server as the given request.
 	 * 
-	 * @param req
-	 *        the request to find the default server relative to
+	 * @param req the request to find the default server relative to
 	 * @return the full URL to the default server on the same server as the given request
 	 */
 	private String getDefaultServer(final HttpServletRequest req) {
@@ -293,8 +271,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Returns the full path for the given request.
 	 * 
-	 * @param req
-	 *        the request for which the path is sought
+	 * @param req the request for which the path is sought
 	 * @return the full path for the given request
 	 */
 	private StringBuilder getServerPath(final HttpServletRequest req) {

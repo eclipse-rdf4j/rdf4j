@@ -25,8 +25,7 @@ public class TypesServlet extends TupleServlet {
 
 	@Override
 	protected void service(TupleResultBuilder builder, RepositoryConnection con)
-		throws Exception
-	{
+			throws Exception {
 		TupleQuery query = con.prepareTupleQuery(SPARQL, DISTINCT_TYPE);
 		try (TupleQueryResult result = query.evaluate()) {
 			while (result.hasNext()) {

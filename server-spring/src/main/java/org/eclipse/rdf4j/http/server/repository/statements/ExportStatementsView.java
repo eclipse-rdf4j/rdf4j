@@ -30,8 +30,8 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.springframework.web.servlet.View;
 
 /**
- * View used to export statements. Renders the statements as RDF using a serialization specified using a
- * parameter or Accept header.
+ * View used to export statements. Renders the statements as RDF using a serialization specified using a parameter or
+ * Accept header.
  * 
  * @author Herko ter Horst
  */
@@ -72,50 +72,47 @@ public class ExportStatementsView implements View {
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
-		Resource subj = (Resource)model.get(SUBJECT_KEY);
-		IRI pred = (IRI)model.get(PREDICATE_KEY);
-		Value obj = (Value)model.get(OBJECT_KEY);
-		Resource[] contexts = (Resource[])model.get(CONTEXTS_KEY);
-		boolean useInferencing = (Boolean)model.get(USE_INFERENCING_KEY);
+			throws Exception {
+		Resource subj = (Resource) model.get(SUBJECT_KEY);
+		IRI pred = (IRI) model.get(PREDICATE_KEY);
+		Value obj = (Value) model.get(OBJECT_KEY);
+		Resource[] contexts = (Resource[]) model.get(CONTEXTS_KEY);
+		boolean useInferencing = (Boolean) model.get(USE_INFERENCING_KEY);
 
-		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
+		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 
-		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory)model.get(FACTORY_KEY);
+		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
 
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
 
 		try {
 			try (OutputStream out = response.getOutputStream()) {
 				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-				
+
 				response.setStatus(SC_OK);
-				
+
 				String mimeType = rdfFormat.getDefaultMIMEType();
 				if (rdfFormat.hasCharset()) {
 					Charset charset = rdfFormat.getCharset();
 					mimeType += "; charset=" + charset.name();
 				}
 				response.setContentType(mimeType);
-				
+
 				String filename = "statements";
 				if (rdfFormat.getDefaultFileExtension() != null) {
 					filename += "." + rdfFormat.getDefaultFileExtension();
 				}
 				response.setHeader("Content-Disposition", "attachment; filename=" + filename);
-				
+
 				if (!headersOnly) {
 					try (RepositoryConnection conn = RepositoryInterceptor.getRepositoryConnection(request)) {
 						conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 					}
 				}
 			}
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 	}

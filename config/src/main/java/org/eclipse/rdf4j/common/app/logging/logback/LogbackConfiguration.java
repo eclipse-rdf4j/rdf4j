@@ -35,8 +35,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 	private LogConfigurator configurator = null;
 
 	public LogbackConfiguration()
-		throws IOException
-	{
+			throws IOException {
 		super();
 		// USE init() FOR FURTHER CONFIGURATION
 		// it will be called from the super constructor
@@ -44,8 +43,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 
 	@Override
 	public void init()
-		throws IOException
-	{
+			throws IOException {
 		configFile = getConfigFile();
 
 		load();
@@ -58,25 +56,22 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 
 	@Override
 	public void load()
-		throws IOException
-	{
+			throws IOException {
 		try {
 			if (System.getProperty(LOGGING_DIR_PROPERTY) == null) {
 				System.setProperty(LOGGING_DIR_PROPERTY, getLoggingDir().getAbsolutePath());
 			}
-		}
-		catch (SecurityException e) {
+		} catch (SecurityException e) {
 			System.out.println("Not allowed to read or write system property '" + LOGGING_DIR_PROPERTY + "'");
 		}
 
-		LoggerContext lc = (LoggerContext)LoggerFactory.getILoggerFactory();
+		LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
 		try {
 			configurator = new LogConfigurator();
 			configurator.setContext(lc);
 			lc.reset();
 			configurator.doConfigure(configFile);
-		}
-		catch (JoranException je) {
+		} catch (JoranException je) {
 			System.out.println("Logback configuration error");
 			je.printStackTrace();
 			StatusPrinter.print(lc);
@@ -85,8 +80,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 
 	@Override
 	public void save()
-		throws IOException
-	{
+			throws IOException {
 		// nop
 	}
 
@@ -94,13 +88,12 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 	public void destroy() {
 		// look up all loggers in the logger context and close
 		// all appenders configured for them.
-		LoggerContext lc = (LoggerContext)LoggerFactory.getILoggerFactory();
+		LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
 		lc.reset();
 	}
 
 	private File getConfigFile()
-		throws IOException
-	{
+			throws IOException {
 		File f = new File(getConfDir(), LOGBACK_CONFIG_FILE);
 		if (!f.exists() || !f.canRead()) {
 			String content = ConfigurationUtil.loadConfigurationContents(LOGBACK_CONFIG_FILE);
@@ -111,8 +104,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 			content = content.replace("${logging.event.admin.logger}", ADMIN_EVENT_LOGGER_NAME);
 			if (!f.getParentFile().mkdirs() && !f.getParentFile().canWrite()) {
 				throw new IOException("Not allowed to write logging configuration file to " + f.getParent());
-			}
-			else {
+			} else {
 				IOUtil.writeString(content, f);
 			}
 		}

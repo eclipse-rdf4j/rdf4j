@@ -43,8 +43,8 @@ public abstract class QueryResultView implements View {
 	public static final String FACTORY_KEY = "factory";
 
 	/**
-	 * Key by which a filename hint is stored in the model. The filename hint may be used to present the
-	 * client with a suggestion for a filename to use for storing the result.
+	 * Key by which a filename hint is stored in the model. The filename hint may be used to present the client with a
+	 * suggestion for a filename to use for storing the result.
 	 */
 	public static final String FILENAME_HINT_KEY = "filenameHint";
 
@@ -59,13 +59,11 @@ public abstract class QueryResultView implements View {
 	@SuppressWarnings("rawtypes")
 	@Override
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws IOException
-	{
+			throws IOException {
 		try {
 			renderInternal(model, request, response);
-		}
-		finally {
-			RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
+		} finally {
+			RepositoryConnection conn = (RepositoryConnection) model.get(CONNECTION_KEY);
 			if (conn != null) {
 				conn.close();
 			}
@@ -75,11 +73,10 @@ public abstract class QueryResultView implements View {
 	@SuppressWarnings("rawtypes")
 	protected abstract void renderInternal(Map model, HttpServletRequest request,
 			HttpServletResponse response)
-		throws IOException;
+			throws IOException;
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat)
-		throws IOException
-	{
+			throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();
 		if (fileFormat.hasCharset()) {
 			Charset charset = fileFormat.getCharset();
@@ -90,10 +87,9 @@ public abstract class QueryResultView implements View {
 
 	@SuppressWarnings("rawtypes")
 	protected void setContentDisposition(Map model, HttpServletResponse response, FileFormat fileFormat)
-		throws IOException
-	{
+			throws IOException {
 		// Report as attachment to make use in browser more convenient
-		String filename = (String)model.get(FILENAME_HINT_KEY);
+		String filename = (String) model.get(FILENAME_HINT_KEY);
 
 		if (filename == null || filename.length() == 0) {
 			filename = "result";

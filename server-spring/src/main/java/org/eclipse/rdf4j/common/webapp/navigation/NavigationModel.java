@@ -13,8 +13,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 
 /**
- * NavigationModel represents the navigation structure of a web application. A model consists of groups and
- * views.
+ * NavigationModel represents the navigation structure of a web application. A model consists of groups and views.
  * 
  * @author Herko ter Horst
  */
@@ -68,8 +67,7 @@ public class NavigationModel extends Group {
 	/**
 	 * Construct a new emtpy NavigationModel with the specified ID.
 	 * 
-	 * @param id
-	 *        the ID of the NavigationModel
+	 * @param id the ID of the NavigationModel
 	 */
 	public NavigationModel(String id) {
 		super(id);
@@ -187,9 +185,8 @@ public class NavigationModel extends Group {
 	/**
 	 * Find the view with the specified name in the NavigationModel.
 	 * 
-	 * @param viewName
-	 *        the name of the view, specified as a /-separated hierarchy of groups, where the part after the
-	 *        last / is interpreted as the name of the view itself.
+	 * @param viewName the name of the view, specified as a /-separated hierarchy of groups, where the part after the
+	 *                 last / is interpreted as the name of the view itself.
 	 * @return the view, or null if no view matching the specified name could be found
 	 */
 	public View findView(String viewName) {
@@ -203,11 +200,10 @@ public class NavigationModel extends Group {
 	}
 
 	/**
-	 * Add another NavigationModel to this one. This is done by adding all groups and view from the other
-	 * model to this one.
+	 * Add another NavigationModel to this one. This is done by adding all groups and view from the other model to this
+	 * one.
 	 * 
-	 * @param other
-	 *        the model to add to this one.
+	 * @param other the model to add to this one.
 	 */
 	public void addModel(NavigationModel other) {
 		for (Group group : other.getGroups()) {
@@ -219,11 +215,10 @@ public class NavigationModel extends Group {
 	}
 
 	/**
-	 * Set the locations of the navigation model resources to be used in the construction of this model.
-	 * Calling this method will cause this NavigationModel to be initialized.
+	 * Set the locations of the navigation model resources to be used in the construction of this model. Calling this
+	 * method will cause this NavigationModel to be initialized.
 	 * 
-	 * @param navigationModelLocations
-	 *        a list of resource names
+	 * @param navigationModelLocations a list of resource names
 	 */
 	public void setNavigationModels(List<String> navigationModelLocations) {
 		this.navigationModelLocations = navigationModelLocations;
@@ -237,8 +232,7 @@ public class NavigationModel extends Group {
 			if (first) {
 				parser.parseInto(this, ResourceUtil.getURL(navigationModelLocation));
 				first = false;
-			}
-			else {
+			} else {
 				addModel(parser.parse(ResourceUtil.getURL(navigationModelLocation)));
 			}
 		}

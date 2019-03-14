@@ -41,14 +41,12 @@ public class TupleResultBuilder {
 	}
 
 	public void prefix(String prefix, String namespace)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		out.handleNamespace(prefix, namespace);
 	}
 
 	public TupleResultBuilder transform(String path, String xsl)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		out.handleStylesheet(path + "/" + xsl);
 		return this;
 	}
@@ -56,14 +54,12 @@ public class TupleResultBuilder {
 	/**
 	 * This must be called before calling {@link #namedResult(String, Object)} or {@link #result(Object...)}.
 	 * 
-	 * @param variables
-	 *        one or more variable names
+	 * @param variables one or more variable names
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
 	public TupleResultBuilder start(String... variables)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		variables(variables);
 		return this;
 	}
@@ -74,23 +70,20 @@ public class TupleResultBuilder {
 	}
 
 	public TupleResultBuilder variables(String... names)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		variables = Arrays.asList(names);
 		out.startQueryResult(variables);
 		return this;
 	}
 
 	public TupleResultBuilder link(List<String> url)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		out.handleLinks(url);
 		return this;
 	}
 
 	public TupleResultBuilder bool(boolean result)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		out.handleBoolean(result);
 		return this;
 	}
@@ -98,15 +91,12 @@ public class TupleResultBuilder {
 	/**
 	 * {@link #start(String...)} must be called before using this method.
 	 * 
-	 * @param result
-	 *        a single result, one value for each variable, in the same order as the variable names were
-	 *        provided
+	 * @param result a single result, one value for each variable, in the same order as the variable names were provided
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
 	public TupleResultBuilder result(Object... result)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		for (int i = 0; i < result.length; i++) {
 			if (result[i] == null)
@@ -120,16 +110,13 @@ public class TupleResultBuilder {
 	/**
 	 * {@link #start(String...)} must be called before using this method.
 	 * 
-	 * @param name
-	 *        the variable name, from the set of provided variable names
-	 * @param result
-	 *        the result value associated with the given variable name
+	 * @param name   the variable name, from the set of provided variable names
+	 * @param result the result value associated with the given variable name
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
 	public TupleResultBuilder namedResult(String name, Object result)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		bindingSet.addBinding(outputNamedResult(name, result));
 		out.handleSolution(bindingSet);
@@ -137,20 +124,16 @@ public class TupleResultBuilder {
 	}
 
 	private Binding outputNamedResult(String name, Object result)
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		final Value nextValue;
 		if (result instanceof Value) {
-			nextValue = (Value)result;
-		}
-		else if (result instanceof URL) {
+			nextValue = (Value) result;
+		} else if (result instanceof URL) {
 			nextValue = vf.createIRI(result.toString());
-		}
-		else {
+		} else {
 			try {
 				nextValue = Literals.createLiteralOrFail(vf, result);
-			}
-			catch (LiteralUtilException e) {
+			} catch (LiteralUtilException e) {
 				throw new QueryResultHandlerException("Could not convert an object to a Value", e);
 			}
 		}
@@ -167,8 +150,7 @@ public class TupleResultBuilder {
 	 * @throws QueryResultHandlerException
 	 */
 	public TupleResultBuilder end()
-		throws QueryResultHandlerException
-	{
+			throws QueryResultHandlerException {
 		out.endQueryResult();
 		return this;
 	}

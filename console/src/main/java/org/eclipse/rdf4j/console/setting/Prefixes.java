@@ -35,12 +35,12 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  */
 public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public final static String NAME = "prefixes";
-	
+
 	public final static Set<Namespace> DEFAULT = new HashSet<>();
 	static {
 		DEFAULT.add(DCAT.NS);
 		DEFAULT.add(DCTERMS.NS);
-		DEFAULT.add(FOAF.NS);		
+		DEFAULT.add(FOAF.NS);
 		DEFAULT.add(ORG.NS);
 		DEFAULT.add(OWL.NS);
 		DEFAULT.add(RDF.NS);
@@ -50,16 +50,16 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		DEFAULT.add(VCARD4.NS);
 		DEFAULT.add(VOID.NS);
 		DEFAULT.add(XMLSchema.NS);
-	} 
+	}
 
 	@Override
 	public String getHelpLong() {
 		return "set prefixes=<default>         Set the prefixes to a default list of prefixes\n" +
-			   "    prefixes=<none>            Remove all namespace prefixes\n" +
-			   "	prefixes=prefix ns-url     Set prefix for namespace\n" +
-			   "	prefixes=prefix <none>     Remove namespace prefix\n";	
+				"    prefixes=<none>            Remove all namespace prefixes\n" +
+				"	prefixes=prefix ns-url     Set prefix for namespace\n" +
+				"	prefixes=prefix <none>     Remove namespace prefix\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -68,7 +68,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public Prefixes() {
 		super(new HashSet<>(DEFAULT));
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -77,7 +77,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public Prefixes(Set<Namespace> initValue) {
 		super(initValue);
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;
@@ -87,11 +87,11 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public void clear() {
 		get().clear();
 	}
-	
+
 	/**
 	 * Remove the namespace with specified prefix
 	 * 
-	 * @param prefix 
+	 * @param prefix
 	 */
 	private void clearNamespace(String prefix) {
 		get().removeIf(ns -> ns.getPrefix().equals(prefix));
@@ -100,16 +100,18 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	@Override
 	public String getAsString() {
 		return get().stream()
-					.map(ns -> { return ns.getPrefix() + " " + ns.getName(); })
-					.sorted()
-					.collect(Collectors.joining(","));
+				.map(ns -> {
+					return ns.getPrefix() + " " + ns.getName();
+				})
+				.sorted()
+				.collect(Collectors.joining(","));
 	}
 
 	/**
-	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI
-	 * E.g.   'dcterms http://purl.org/dc/terms/'
+	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI E.g. 'dcterms
+	 * http://purl.org/dc/terms/'
 	 * 
-	 * @param namespace 
+	 * @param namespace
 	 */
 	private void setNamespace(String namespace) {
 		String[] parts = namespace.split(" ");
@@ -139,9 +141,9 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 			set(new HashSet<>(DEFAULT));
 			return;
 		}
-		
+
 		String[] namespaces = value.split(",");
-		for (String namespace: namespaces) {
+		for (String namespace : namespaces) {
 			setNamespace(namespace);
 		}
 	}

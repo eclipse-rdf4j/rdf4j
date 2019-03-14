@@ -32,7 +32,7 @@ public class Parameter {
 	@Override
 	public boolean equals(Object obj) {
 		if (obj instanceof Parameter) {
-			Parameter other = (Parameter)obj;
+			Parameter other = (Parameter) obj;
 			return key.equals(other.getKey()) && value.equals(other.getValue());
 		}
 
@@ -48,8 +48,7 @@ public class Parameter {
 	public String toString() {
 		if (value == null) {
 			return key;
-		}
-		else {
+		} else {
 			return key + "=" + value;
 		}
 	}

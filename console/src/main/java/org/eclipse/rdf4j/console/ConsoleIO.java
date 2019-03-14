@@ -41,7 +41,7 @@ public class ConsoleIO {
 	 * @param input
 	 * @param out
 	 * @param info
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();
@@ -53,7 +53,7 @@ public class ConsoleIO {
 	 * Constructor
 	 * 
 	 * @param info
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public ConsoleIO(ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.terminal();
@@ -69,12 +69,12 @@ public class ConsoleIO {
 	public OutputStream getOutputStream() {
 		return terminal.output();
 	}
-	
+
 	/**
 	 * Read a command from input
 	 * 
 	 * @return one line of input, or null on error
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	protected String readCommand() throws IOException {
 		try {
@@ -113,7 +113,7 @@ public class ConsoleIO {
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
-	 * @return 
+	 * @return
 	 * @throws IOException
 	 */
 	public String readMultiLineInput() throws IOException {
@@ -124,17 +124,17 @@ public class ConsoleIO {
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
 	 * @param prompt
-	 * @return 
+	 * @return
 	 * @throws IOException
 	 */
 	public String readMultiLineInput(String prompt) throws IOException {
 		String line = input.readLine(prompt);
 		String result = null;
-		
+
 		if (line != null) {
 			final StringBuilder buf = new StringBuilder(256);
 			buf.append(line);
-			
+
 			while (line != null && !(line.length() == 1 && line.endsWith("."))) {
 				line = input.readLine("> ");
 				buf.append('\n');
@@ -151,16 +151,16 @@ public class ConsoleIO {
 	}
 
 	/**
-	 * Read message from input 
+	 * Read message from input
 	 * 
 	 * @param message one or multiple messages
 	 * @return
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public String readln(String... message) throws IOException {
 		String prompt = !quiet && message.length > 0 && message[0] != null ? message[0] : "";
 		String result = input.readLine(prompt);
-		
+
 		if (echo) {
 			writeln(result);
 		}
@@ -172,7 +172,7 @@ public class ConsoleIO {
 	 * 
 	 * @param prompt prompt to display
 	 * @return password string
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public String readPassword(final String prompt) throws IOException {
 		String result = input.readLine(prompt, '*');
@@ -229,13 +229,13 @@ public class ConsoleIO {
 	 * 
 	 * @param prefix
 	 * @param lineNo line number
-	 * @param colNo column number
-	 * @param msg message to write
+	 * @param colNo  column number
+	 * @param msg    message to write
 	 */
 	public void writeParseError(String prefix, long lineNo, long colNo, String msg) {
 		String locationString = RDFParseException.getLocationString(lineNo, colNo);
 		int locSize = locationString.length();
-		
+
 		StringBuilder builder = new StringBuilder(locSize + prefix.length() + msg.length() + 3);
 		builder.append(prefix).append(": ").append(msg);
 		if (locSize > 0) {
@@ -247,15 +247,15 @@ public class ConsoleIO {
 	/**
 	 * Ask if the user wants to continue
 	 * 
-	 * @param msg confirmation question
+	 * @param msg          confirmation question
 	 * @param defaultValue true when default is yes
 	 * @return true when continue
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public boolean askProceed(String msg, boolean defaultValue) throws IOException {
 		final String defaultString = defaultValue ? "yes" : "no";
 		boolean result = force ? true : (cautious ? false : defaultValue);
-		
+
 		if (!force && !cautious) {
 			while (true) {
 				writeln(msg);

@@ -76,8 +76,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 	@Override
 	public boolean isWritable()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		return true;
 	}
 
@@ -88,20 +87,17 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 	@Override
 	protected void initializeInternal()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 	}
 
 	@Override
 	protected void shutDownInternal()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 	}
 
 	@Override
 	public RepositoryConnection getConnection()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		return new AbstractRepositoryConnection(this) {
 
 			private boolean active = false;
@@ -114,8 +110,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public RepositoryResult<Resource> getContextIDs()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				Set<Resource> contextIDs = new LinkedHashSet<>();
 				manager.getRepositoryIDs().forEach(id -> {
 					contextIDs.add(getContext(id));
@@ -128,8 +123,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			@Override
 			public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 					boolean includeInferred, Resource... contexts)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				Model model = committed.filter(subj, pred, obj, contexts);
 				CloseableIteration<Statement, RepositoryException> iter;
 				iter = new CloseableIteratorIteration<>(model.iterator());
@@ -139,9 +133,8 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			@Override
 			public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 					RDFHandler handler, Resource... contexts)
-				throws RepositoryException,
-				RDFHandlerException
-			{
+					throws RepositoryException,
+					RDFHandlerException {
 				Model model = committed.filter(subj, pred, obj, contexts);
 				handler.startRDF();
 				model.getNamespaces().forEach(ns -> {
@@ -155,30 +148,26 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public long size(Resource... contexts)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				return committed.filter(null, null, null, contexts).size();
 			}
 
 			@Override
 			public boolean isActive()
-				throws UnknownTransactionStateException,
-				RepositoryException
-			{
+					throws UnknownTransactionStateException,
+					RepositoryException {
 				return active;
 			}
 
 			@Override
 			public void begin()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				active = true;
 			}
 
 			@Override
 			public void commit()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				Set<String> ids = new LinkedHashSet<>();
 				ids.addAll(manager.getRepositoryIDs());
 				ids.addAll(RepositoryConfigUtil.getRepositoryIDs(added));
@@ -202,8 +191,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 						}
 						if (model.isEmpty()) {
 							manager.removeRepository(id);
-						}
-						else {
+						} else {
 							manager.addRepositoryConfig(RepositoryConfigUtil.getRepositoryConfig(model, id));
 						}
 					}
@@ -214,8 +202,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public void rollback()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				added.clear();
 				added.getNamespaces().clear();
 				removed.clear();
@@ -225,8 +212,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public RepositoryResult<Namespace> getNamespaces()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				CloseableIteration<Namespace, RepositoryException> iter;
 				iter = new CloseableIteratorIteration<>(committed.getNamespaces().iterator());
 				return new RepositoryResult<>(iter);
@@ -234,29 +220,25 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public String getNamespace(String prefix)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				Optional<Namespace> ns = committed.getNamespace(prefix);
 				if (ns.isPresent()) {
 					return ns.get().getName();
-				}
-				else {
+				} else {
 					return null;
 				}
 			}
 
 			@Override
 			public void setNamespace(String prefix, String name)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				removed.removeNamespace(prefix);
 				added.setNamespace(prefix, name);
 			}
 
 			@Override
 			public void removeNamespace(String prefix)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				added.removeNamespace(prefix);
 				Optional<Namespace> ns = committed.getNamespace(prefix);
 				if (ns.isPresent()) {
@@ -266,8 +248,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public void clearNamespaces()
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				added.getNamespaces().clear();
 				committed.getNamespaces().forEach(ns -> {
 					removed.setNamespace(ns);
@@ -276,55 +257,48 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException,
-				MalformedQueryException
-			{
+					throws RepositoryException,
+					MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException,
-				MalformedQueryException
-			{
+					throws RepositoryException,
+					MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException,
-				MalformedQueryException
-			{
+					throws RepositoryException,
+					MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException,
-				MalformedQueryException
-			{
+					throws RepositoryException,
+					MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-				throws RepositoryException,
-				MalformedQueryException
-			{
+					throws RepositoryException,
+					MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			protected void addWithoutCommit(Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				added.add(subj, pred, obj, contexts);
 			}
 
 			@Override
 			protected void removeWithoutCommit(Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				Model model = committed.filter(subj, pred, obj, contexts);
 				removed.addAll(model);
 			}
@@ -350,8 +324,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 				String location;
 				try {
 					location = manager.getLocation().toURI().toString();
-				}
-				catch (MalformedURLException | URISyntaxException e) {
+				} catch (MalformedURLException | URISyntaxException e) {
 					assert false;
 					location = "urn:" + repositoryID;
 				}

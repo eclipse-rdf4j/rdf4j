@@ -40,8 +40,7 @@ public class LoggingOverviewController implements Controller {
 
 	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		int offset = getOffset(request);
 		int count = getCount(request);
 		Map<String, Object> model = new HashMap<>();
@@ -73,8 +72,7 @@ public class LoggingOverviewController implements Controller {
 			if (logReader.getStartDate() != null) {
 				cal.setTime(logReader.getStartDate());
 				model.put("startDate", Boolean.TRUE);
-			}
-			else {
+			} else {
 				cal.setTime(logReader.getMinDate());
 				model.put("startDate", Boolean.FALSE);
 			}
@@ -87,8 +85,7 @@ public class LoggingOverviewController implements Controller {
 			if (logReader.getEndDate() != null) {
 				cal.setTime(logReader.getEndDate());
 				model.put("endDate", Boolean.TRUE);
-			}
-			else {
+			} else {
 				cal.setTime(logReader.getMaxDate());
 				model.put("endDate", Boolean.FALSE);
 			}
@@ -102,33 +99,32 @@ public class LoggingOverviewController implements Controller {
 	}
 
 	public LogReader getLogReader(int offset, int count, HttpServletRequest request) {
-		LogReader logReader = (LogReader)request.getSession().getAttribute(
-				"logreader" + (appenderName != null ? "+" + appenderName : ""));
+		LogReader logReader = (LogReader) request.getSession()
+				.getAttribute(
+						"logreader" + (appenderName != null ? "+" + appenderName : ""));
 		if (logReader == null) {
 			if (appenderName == null) {
 				logReader = config.getLogConfiguration().getDefaultLogReader();
-			}
-			else {
+			} else {
 				logReader = config.getLogConfiguration().getLogReader(appenderName);
 			}
-			request.getSession().setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""),
-					logReader);
+			request.getSession()
+					.setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""),
+							logReader);
 		}
 		logReader.setOffset(offset);
 		logReader.setLimit(count);
 		if (logReader.supportsLevelFilter() && (request.getParameter("level") != null)) {
 			if (request.getParameter("level").equalsIgnoreCase("ALL")) {
 				logReader.setLevel(null);
-			}
-			else {
+			} else {
 				logReader.setLevel(LogLevel.valueOf(request.getParameter("level")));
 			}
 		}
 		if (logReader.supportsThreadFilter() && (request.getParameter("thread") != null)) {
 			if (request.getParameter("thread").equalsIgnoreCase("ALL")) {
 				logReader.setThread(null);
-			}
-			else {
+			} else {
 				logReader.setThread(request.getParameter("thread"));
 			}
 		}
@@ -141,8 +137,7 @@ public class LoggingOverviewController implements Controller {
 						Integer.parseInt(request.getParameter("s_hour")),
 						Integer.parseInt(request.getParameter("s_min")), 0);
 				logReader.setStartDate(cal.getTime());
-			}
-			else if (logReader.getStartDate() != null) {
+			} else if (logReader.getStartDate() != null) {
 				logReader.setStartDate(null);
 			}
 			if (request.getParameter("applyenddate") != null) {
@@ -153,15 +148,13 @@ public class LoggingOverviewController implements Controller {
 						Integer.parseInt(request.getParameter("e_hour")),
 						Integer.parseInt(request.getParameter("e_min")), 59);
 				logReader.setEndDate(cal.getTime());
-			}
-			else if (logReader.getEndDate() != null) {
+			} else if (logReader.getEndDate() != null) {
 				logReader.setEndDate(null);
 			}
 		}
 		try {
 			logReader.init();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			throw new RuntimeException("Unable to initialize log reader.", e);
 		}
 		return logReader;
@@ -182,8 +175,7 @@ public class LoggingOverviewController implements Controller {
 		if (offsetString != null && !offsetString.equals("")) {
 			try {
 				result = Integer.parseInt(offsetString);
-			}
-			catch (NumberFormatException nfe) {
+			} catch (NumberFormatException nfe) {
 				// ignore, result stays 0
 			}
 		}
@@ -198,8 +190,7 @@ public class LoggingOverviewController implements Controller {
 		if (countString != null && !countString.equals("")) {
 			try {
 				result = Integer.parseInt(countString);
-			}
-			catch (NumberFormatException nfe) {
+			} catch (NumberFormatException nfe) {
 				// ignore, result stays 50
 			}
 		}
@@ -215,8 +206,7 @@ public class LoggingOverviewController implements Controller {
 	}
 
 	/**
-	 * @param appenderName
-	 *        The appenderName to set.
+	 * @param appenderName The appenderName to set.
 	 */
 	public void setAppenderName(String appenderName) {
 		this.appenderName = appenderName;

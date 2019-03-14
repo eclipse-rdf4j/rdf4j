@@ -38,13 +38,11 @@ public class EmptySuccessView implements View {
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		try {
 			// Indicate success with a 204 NO CONTENT response
 			response.setStatus(SC_NO_CONTENT);
-		}
-		finally {
+		} finally {
 			response.getOutputStream().close();
 		}
 	}

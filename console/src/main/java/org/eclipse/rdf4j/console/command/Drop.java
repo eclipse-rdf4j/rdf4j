@@ -36,13 +36,13 @@ public class Drop extends ConsoleCommand {
 	public String getHelpShort() {
 		return "Drops a repository";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "drop <repositoryID>   Drops the repository with the specified id\n";
+				+ "drop <repositoryID>   Drops the repository with the specified id\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -92,7 +92,7 @@ public class Drop extends ConsoleCommand {
 	 * @param repoID repository ID
 	 * @throws IOException
 	 * @throws RepositoryException
-	 * @throws RepositoryConfigException 
+	 * @throws RepositoryConfigException
 	 */
 	private void dropRepository(final String repoID)
 			throws IOException, RepositoryException, RepositoryConfigException {

@@ -30,8 +30,7 @@ public class CookieHandler {
 	}
 
 	protected String getCookieNullIfEmpty(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name)
-	{
+			final String name) {
 		String value = this.getCookie(req, resp, name);
 		if (null != value && value.isEmpty()) {
 			value = null;
@@ -40,8 +39,7 @@ public class CookieHandler {
 	}
 
 	protected String getCookie(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name)
-	{
+			final String name) {
 		String value = null;
 		final Cookie[] cookies = req.getCookies();
 		if (cookies != null) {
@@ -67,18 +65,13 @@ public class CookieHandler {
 	}
 
 	/**
-	 * @param req
-	 *        servlet request
-	 * @param resp
-	 *        servlet response
-	 * @param name
-	 *        cookie name
-	 * @param value
-	 *        cookie value
+	 * @param req   servlet request
+	 * @param resp  servlet response
+	 * @param name  cookie name
+	 * @param value cookie value
 	 */
 	protected void addNewCookie(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name, final String value)
-	{
+			final String name, final String value) {
 		final Cookie cookie = new Cookie(name, value);
 		initCookie(cookie, req);
 		resp.addCookie(cookie);

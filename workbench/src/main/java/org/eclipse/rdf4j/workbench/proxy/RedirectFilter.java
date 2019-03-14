@@ -25,8 +25,7 @@ public class RedirectFilter implements Filter {
 
 	@Override
 	public void init(FilterConfig config)
-		throws ServletException
-	{
+			throws ServletException {
 		this.config = config;
 	}
 
@@ -37,10 +36,9 @@ public class RedirectFilter implements Filter {
 	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
-		throws IOException, ServletException
-	{
-		HttpServletRequest hreq = (HttpServletRequest)req;
-		HttpServletResponse hresp = (HttpServletResponse)resp;
+			throws IOException, ServletException {
+		HttpServletRequest hreq = (HttpServletRequest) req;
+		HttpServletResponse hresp = (HttpServletResponse) resp;
 		Enumeration<String> names = config.getInitParameterNames();
 		while (names.hasMoreElements()) {
 			String name = names.nextElement();
@@ -50,8 +48,7 @@ public class RedirectFilter implements Filter {
 				if (hreq.getContextPath() != null) {
 					hresp.sendRedirect(hreq.getContextPath() + config.getInitParameter(name));
 					return;
-				}
-				else {
+				} else {
 					hresp.sendRedirect(config.getInitParameter(name));
 					return;
 				}

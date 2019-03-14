@@ -30,9 +30,8 @@ public class TestStatementsController {
 
 	@Test
 	public void shouldUseTimeoutParameterForUpdateQueries()
-		throws Exception
-	{
-		//prepare
+			throws Exception {
+		// prepare
 		StatementsController controller = new StatementsController();
 
 		final int maxExecution = 1;
@@ -49,14 +48,15 @@ public class TestStatementsController {
 		final ParserConfig parserConfigMock = Mockito.mock(ParserConfig.class);
 		final Update updateMock = Mockito.mock(Update.class);
 		Mockito.when(repMock.getConnection()).thenReturn(connectionMock);
-		Mockito.when(connectionMock.prepareUpdate(QueryLanguage.SPARQL, updateString, null)).thenReturn(
-				updateMock);
+		Mockito.when(connectionMock.prepareUpdate(QueryLanguage.SPARQL, updateString, null))
+				.thenReturn(
+						updateMock);
 		Mockito.when(connectionMock.getParserConfig()).thenReturn(parserConfigMock);
 
 		// repository interceptor uses this attribute
 		request.setAttribute("repository", repMock);
 
-		//act
+		// act
 		controller.handleRequest(request, new MockHttpServletResponse());
 
 		Mockito.verify(updateMock).setMaxExecutionTime(maxExecution);

@@ -36,32 +36,32 @@ public class Connect extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
 
 	private final Disconnect disconnect;
-	
+
 	@Override
 	public String getName() {
 		return "connect";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Connects to a (local or remote) set of repositories";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "connect default                         Opens the default repository set for this console\n"
-			+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
-			+ "connect <serverURL> [user [password]]   Connects to an RDF4J server with optional credentials\n";
+				+ "connect default                         Opens the default repository set for this console\n"
+				+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
+				+ "connect <serverURL> [user [password]]   Connects to an RDF4J server with optional credentials\n";
 
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param disconnect 
+	 * @param disconnect
 	 */
 	public Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
 		super(consoleIO, state);
@@ -74,7 +74,7 @@ public class Connect extends ConsoleCommand {
 			consoleIO.writeln(getHelpLong());
 			return;
 		}
-		
+
 		final String target = tokens[1];
 		if ("default".equalsIgnoreCase(target)) {
 			connectDefault();
@@ -95,7 +95,7 @@ public class Connect extends ConsoleCommand {
 	/**
 	 * Connect to default repository
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public boolean connectDefault() {
 		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()),
@@ -105,8 +105,8 @@ public class Connect extends ConsoleCommand {
 	/**
 	 * Connect to remote repository
 	 * 
-	 * @param url URL of remote repository
-	 * @param user username
+	 * @param url    URL of remote repository
+	 * @param user   username
 	 * @param passwd password
 	 * @return true on success
 	 */
@@ -127,7 +127,7 @@ public class Connect extends ConsoleCommand {
 			} finally {
 				client.shutDown();
 			}
-			
+
 			final RemoteRepositoryManager manager = new RemoteRepositoryManager(url);
 			manager.setUsernameAndPassword(user, pass);
 			result = installNewManager(manager, url);
@@ -147,7 +147,7 @@ public class Connect extends ConsoleCommand {
 					LOGGER.warn("Failed to read user credentials", ioe);
 				}
 			}
-		} catch (IOException|RepositoryException e) {
+		} catch (IOException | RepositoryException e) {
 			consoleIO.writeError("Failed to access the server: " + e.getMessage());
 			LOGGER.warn("Failed to access the server", e);
 		}
@@ -175,14 +175,14 @@ public class Connect extends ConsoleCommand {
 	/**
 	 * Install and initialize new repository manager
 	 * 
-	 * @param newManager repository manager
+	 * @param newManager   repository manager
 	 * @param newManagerID repository manager ID
 	 * @return true on success
 	 */
 	private boolean installNewManager(final RepositoryManager newManager, final String newManagerID) {
 		boolean installed = false;
 		final String managerID = this.state.getManagerID();
-		
+
 		if (newManagerID.equals(managerID)) {
 			consoleIO.writeln("Already connected to " + managerID);
 			installed = true;
@@ -190,11 +190,11 @@ public class Connect extends ConsoleCommand {
 			try {
 				newManager.initialize();
 				disconnect.execute(false);
-				
+
 				this.state.setManager(newManager);
 				this.state.setManagerID(newManagerID);
 				consoleIO.writeln("Connected to " + newManagerID);
-		
+
 				installed = true;
 			} catch (RepositoryException e) {
 				consoleIO.writeError(e.getMessage());

@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.http.server;
 import java.net.HttpURLConnection;
 
 /**
- * HTTP-related exception indicating that an HTTP client has erred. Status codes for these types of errors are
- * in the 4xx range. The default status code for constructors without a <tt>statusCode</tt> parameter is
+ * HTTP-related exception indicating that an HTTP client has erred. Status codes for these types of errors are in the
+ * 4xx range. The default status code for constructors without a <tt>statusCode</tt> parameter is
  * <tt>400 Bad Request</tt>.
  * 
  * @author Arjohn Kampman
@@ -46,8 +46,7 @@ public class ClientHTTPException extends HTTPException {
 	/**
 	 * Creates a {@link ClientHTTPException} with the specified status code.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 4xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 4xx range.
 	 */
 	public ClientHTTPException(int statusCode) {
 		super(statusCode);
@@ -56,8 +55,7 @@ public class ClientHTTPException extends HTTPException {
 	/**
 	 * Creates a {@link ClientHTTPException} with the specified status code.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 4xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 4xx range.
 	 */
 	public ClientHTTPException(int statusCode, String message) {
 		super(statusCode, message);
@@ -66,8 +64,7 @@ public class ClientHTTPException extends HTTPException {
 	/**
 	 * Creates a {@link ClientHTTPException} with the specified status code.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 4xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 4xx range.
 	 */
 	public ClientHTTPException(int statusCode, String message, Throwable t) {
 		super(statusCode, message, t);
@@ -76,8 +73,7 @@ public class ClientHTTPException extends HTTPException {
 	/**
 	 * Creates a {@link ClientHTTPException} with the specified status code.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 4xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 4xx range.
 	 */
 	public ClientHTTPException(int statusCode, Throwable t) {
 		super(statusCode, t);

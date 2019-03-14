@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 /**
  * Test console width
+ * 
  * @author Bart Hanssens
  */
 public class ConsoleWidthTest extends AbstractSettingTest {
@@ -28,7 +29,7 @@ public class ConsoleWidthTest extends AbstractSettingTest {
 	@Test
 	public void testShowWidth() {
 		setParameters.execute("set", "width=42");
-		
+
 		setParameters.execute("set", "width");
 		verify(mockConsoleIO).writeln("width: 42");
 

@@ -130,8 +130,7 @@ public abstract class AbstractLogReader implements LogReader {
 	/**
 	 * Set the limit
 	 * 
-	 * @param limit
-	 *        The limit to set.
+	 * @param limit The limit to set.
 	 */
 	@Override
 	public void setLimit(int limit) {
@@ -151,8 +150,7 @@ public abstract class AbstractLogReader implements LogReader {
 	/**
 	 * Set the offset
 	 * 
-	 * @param offset
-	 *        The offset to set.
+	 * @param offset The offset to set.
 	 */
 	@Override
 	public void setOffset(int offset) {
