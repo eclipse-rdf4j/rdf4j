@@ -58,8 +58,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
 			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new QueryEvaluationException("First argument must be a resource");
@@ -68,53 +67,46 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 			throw new QueryEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedQuery parsedQuery = parser.parseQuery((Resource)args[0], qp.getTripleSource());
+			ParsedQuery parsedQuery = parser.parseQuery((Resource) args[0], qp.getTripleSource());
 			if (parsedQuery instanceof ParsedTupleQuery) {
-				ParsedTupleQuery tupleQuery = (ParsedTupleQuery)parsedQuery;
+				ParsedTupleQuery tupleQuery = (ParsedTupleQuery) parsedQuery;
 				TupleQuery queryOp = qp.prepare(tupleQuery);
 				addBindings(queryOp, args);
 				final TupleQueryResult queryResult = queryOp.evaluate();
 				return new TupleQueryResultIteration(queryResult);
-			}
-			else if (parsedQuery instanceof ParsedBooleanQuery) {
-				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery)parsedQuery;
+			} else if (parsedQuery instanceof ParsedBooleanQuery) {
+				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery) parsedQuery;
 				BooleanQuery queryOp = qp.prepare(booleanQuery);
 				addBindings(queryOp, args);
 				Value result = BooleanLiteral.valueOf(queryOp.evaluate());
 				return new SingletonIteration<>(
 						Collections.singletonList(result));
-			}
-			else {
+			} else {
 				throw new QueryEvaluationException("First argument must be a SELECT or ASK query");
 			}
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw e;
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}
 
 	static class TupleQueryResultIteration
-			extends AbstractCloseableIteration<List<Value>, QueryEvaluationException>
-	{
+			extends AbstractCloseableIteration<List<Value>, QueryEvaluationException> {
 
 		private final TupleQueryResult queryResult;
 
 		private final List<String> bindingNames;
 
 		TupleQueryResultIteration(TupleQueryResult queryResult)
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			this.queryResult = queryResult;
 			this.bindingNames = queryResult.getBindingNames();
 		}
 
 		@Override
 		public boolean hasNext()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				return false;
 			}
@@ -127,8 +119,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 
 		@Override
 		public List<Value> next()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
@@ -139,8 +130,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 					values.add(bs.getValue(bindingName));
 				}
 				return values;
-			}
-			catch (NoSuchElementException e) {
+			} catch (NoSuchElementException e) {
 				close();
 				throw e;
 			}
@@ -148,15 +138,13 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 
 		@Override
 		public void remove()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
 			try {
 				queryResult.remove();
-			}
-			catch (IllegalStateException e) {
+			} catch (IllegalStateException e) {
 				close();
 				throw e;
 			}
@@ -164,12 +152,10 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 
 		@Override
 		public void handleClose()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			try {
 				super.handleClose();
-			}
-			finally {
+			} finally {
 				queryResult.close();
 			}
 		}

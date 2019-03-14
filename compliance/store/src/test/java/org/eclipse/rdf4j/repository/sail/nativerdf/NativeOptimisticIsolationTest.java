@@ -19,8 +19,7 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@BeforeClass
 	public static void setUpClass()
-		throws Exception
-	{
+			throws Exception {
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
@@ -31,8 +30,7 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@AfterClass
 	public static void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		setRepositoryFactory(null);
 	}
 }

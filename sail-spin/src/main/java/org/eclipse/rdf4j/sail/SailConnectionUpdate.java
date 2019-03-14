@@ -34,8 +34,7 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 	private final ParserConfig parserConfig;
 
 	public SailConnectionUpdate(ParsedUpdate parsedUpdate, SailConnection con, ValueFactory vf,
-			ParserConfig parserConfig)
-	{
+			ParserConfig parserConfig) {
 		super(parsedUpdate);
 		this.con = con;
 		this.vf = vf;
@@ -48,8 +47,7 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 
 	@Override
 	public void execute()
-		throws UpdateExecutionException
-	{
+			throws UpdateExecutionException {
 		ParsedUpdate parsedUpdate = getParsedUpdate();
 		List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
 		Map<UpdateExpr, Dataset> datasetMapping = parsedUpdate.getDatasetMapping();
@@ -72,14 +70,12 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 				if (localTransaction) {
 					commitLocalTransaction();
 				}
-			}
-			catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				logger.warn("exception during update execution: ", e);
 				if (!updateExpr.isSilent()) {
 					throw new UpdateExecutionException(e);
 				}
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				logger.warn("exception during update execution: ", e);
 				if (!updateExpr.isSilent()) {
 					throw new UpdateExecutionException(e);
@@ -89,20 +85,17 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 	}
 
 	private boolean isLocalTransaction()
-		throws SailException
-	{
+			throws SailException {
 		return !getSailConnection().isActive();
 	}
 
 	private void beginLocalTransaction()
-		throws SailException
-	{
+			throws SailException {
 		getSailConnection().begin();
 	}
 
 	private void commitLocalTransaction()
-		throws SailException
-	{
+			throws SailException {
 		getSailConnection().commit();
 	}
 }

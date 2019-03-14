@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.sail.SailChangedListener;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A base {@link NotifyingSail} implementation that takes care of common sail tasks, including proper closing
- * of active connections and a grace period for active connections during shutdown of the store.
+ * A base {@link NotifyingSail} implementation that takes care of common sail tasks, including proper closing of active
+ * connections and a grace period for active connections during shutdown of the store.
  * 
  * @author Herko ter Horst
  * @author jeen
@@ -41,14 +41,13 @@ public abstract class AbstractNotifyingSail extends AbstractSail implements Noti
 
 	@Override
 	public NotifyingSailConnection getConnection()
-		throws SailException
-	{
-		return (NotifyingSailConnection)super.getConnection();
+			throws SailException {
+		return (NotifyingSailConnection) super.getConnection();
 	}
 
 	@Override
 	protected abstract NotifyingSailConnection getConnectionInternal()
-		throws SailException;
+			throws SailException;
 
 	@Override
 	public void addSailChangedListener(SailChangedListener listener) {

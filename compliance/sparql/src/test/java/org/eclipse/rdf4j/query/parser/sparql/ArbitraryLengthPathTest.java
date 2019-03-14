@@ -33,8 +33,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		repo = new SailRepository(new MemoryStore());
 		repo.initialize();
 		con = repo.getConnection();
@@ -42,16 +41,14 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		con.close();
 		repo.shutDown();
 	}
 
 	@Test
 	public void test10()
-		throws Exception
-	{
+			throws Exception {
 		populate(10);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
@@ -59,8 +56,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void test100()
-		throws Exception
-	{
+			throws Exception {
 		populate(100);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
@@ -68,8 +64,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void test1000()
-		throws Exception
-	{
+			throws Exception {
 		populate(1000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
@@ -77,8 +72,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void test10000()
-		throws Exception
-	{
+			throws Exception {
 		populate(10000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
@@ -86,8 +80,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void test100000()
-		throws Exception
-	{
+			throws Exception {
 		populate(100000);
 		String sparql = "ASK { <urn:test:root> <urn:test:hasChild>* <urn:test:node-end> }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
@@ -95,8 +88,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void testDirection()
-		throws Exception
-	{
+			throws Exception {
 		ValueFactory vf = con.getValueFactory();
 		con.add(vf.createIRI("urn:test:a"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:b"));
 		con.add(vf.createIRI("urn:test:b"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:a"));
@@ -106,8 +98,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 
 	@Test
 	public void testSimilarPatterns()
-		throws Exception
-	{
+			throws Exception {
 		ValueFactory vf = con.getValueFactory();
 		con.add(vf.createIRI("urn:test:a"), RDF.TYPE, vf.createIRI("urn:test:c"));
 		con.add(vf.createIRI("urn:test:b"), RDF.TYPE, vf.createIRI("urn:test:d"));
@@ -123,8 +114,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 	}
 
 	private void populate(int n)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		ValueFactory vf = con.getValueFactory();
 		for (int i = 0; i < n; i++) {
 			con.add(vf.createIRI("urn:test:root"), vf.createIRI("urn:test:hasChild"),

@@ -43,8 +43,7 @@ public class NativeStoreFactory implements SailFactory {
 
 	@Override
 	public Sail getSail(SailImplConfig config)
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
@@ -52,7 +51,7 @@ public class NativeStoreFactory implements SailFactory {
 		NativeStore nativeStore = new NativeStore();
 
 		if (config instanceof NativeStoreConfig) {
-			NativeStoreConfig nativeConfig = (NativeStoreConfig)config;
+			NativeStoreConfig nativeConfig = (NativeStoreConfig) config;
 
 			nativeStore.setTripleIndexes(nativeConfig.getTripleIndexes());
 			nativeStore.setForceSync(nativeConfig.getForceSync());

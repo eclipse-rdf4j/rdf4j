@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException>
-		implements Serializable
-{
+		implements Serializable {
 
 	/**
 	 * 
@@ -36,16 +35,14 @@ class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluati
 
 	@Override
 	public boolean hasNext()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		hasNextCount++;
 		return super.hasNext();
 	}
 
 	@Override
 	public BindingSet next()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		nextCount++;
 		return super.next();
 	}

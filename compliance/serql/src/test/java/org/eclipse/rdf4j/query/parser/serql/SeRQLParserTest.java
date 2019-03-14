@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.query.parser.QueryParser;
 public class SeRQLParserTest extends SeRQLParserTestCase {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SeRQLParserTestCase.suite(new Factory() {
 
 			@Override

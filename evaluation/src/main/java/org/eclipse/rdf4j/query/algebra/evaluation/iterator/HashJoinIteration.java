@@ -64,21 +64,18 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *--------------*/
 
 	public HashJoinIteration(EvaluationStrategy strategy, Join join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, false);
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, true);
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy, TupleExpr left, TupleExpr right,
 			BindingSet bindings, boolean leftJoin)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this(strategy, strategy.evaluate(left, bindings), left.getBindingNames(),
 				strategy.evaluate(right, bindings), right.getBindingNames(), leftJoin);
 	}
@@ -87,8 +84,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
 			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
 			boolean leftJoin)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightIter = rightIter;
 
@@ -105,8 +101,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	@Override
 	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable = hashTable;
 		if (nextHashTable == null) {
 			synchronized (this) {
@@ -121,14 +116,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		while (currentScanElem == null) {
 			if (scanList.hasNext()) {
 				currentScanElem = nextFromCache(scanList);
-			}
-			else {
+			} else {
 				disposeCache(scanList); // exhausted so can free
 
 				if (restIter.hasNext()) {
 					currentScanElem = restIter.next();
-				}
-				else {
+				} else {
 					// no more elements available
 					return null;
 				}
@@ -147,18 +140,15 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 						closeHashValue(nextHashTableValues);
 						nextHashTableValues = hashTableValues = null;
 					}
-				}
-				else {
+				} else {
 					BindingSetHashKey key = BindingSetHashKey.create(joinAttributes, currentScanElem);
 					List<BindingSet> hashValue = nextHashTable.get(key);
 					if (hashValue != null && !hashValue.isEmpty()) {
 						nextHashTableValues = hashTableValues = hashValue.iterator();
-					}
-					else if (leftJoin) {
+					} else if (leftJoin) {
 						nextHashTableValues = hashTableValues = Collections.singletonList(
 								EmptyBindingSet.getInstance()).iterator();
-					}
-					else {
+					} else {
 						currentScanElem = null;
 						closeHashValue(nextHashTableValues);
 						nextHashTableValues = hashTableValues = null;
@@ -195,40 +185,34 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	@Override
 	protected void handleClose()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				if (leftIter != null) {
 					leftIter.close();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					if (rightIter != null) {
 						rightIter.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						Iterator<BindingSet> toCloseHashTableValues = hashTableValues;
 						hashTableValues = null;
 						if (toCloseHashTableValues != null) {
 							closeHashValue(toCloseHashTableValues);
 						}
-					}
-					finally {
+					} finally {
 						try {
 							Iterator<BindingSet> toCloseScanList = scanList;
 							scanList = null;
 							if (toCloseScanList != null) {
 								disposeCache(toCloseScanList);
 							}
-						}
-						finally {
+						} finally {
 							Map<BindingSetHashKey, List<BindingSet>> toCloseHashTable = hashTable;
 							hashTable = null;
 							if (toCloseHashTable != null) {
@@ -242,8 +226,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	private Map<BindingSetHashKey, List<BindingSet>> setupHashTable()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Collection<BindingSet> leftArgResults;
 		Collection<BindingSet> rightArgResults = makeIterationCache(rightIter);
@@ -254,8 +237,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 				add(leftArgResults, leftIter.next());
 				add(rightArgResults, rightIter.next());
 			}
-		}
-		else {
+		} else {
 			leftArgResults = Collections.emptyList();
 
 			while (rightIter.hasNext()) {
@@ -269,8 +251,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			smallestResult = rightArgResults;
 			scanList = leftArgResults.iterator();
 			restIter = leftIter;
-		}
-		else { // rightArg is the greater relation (or they are equal)
+		} else { // rightArg is the greater relation (or they are equal)
 			smallestResult = leftArgResults;
 			scanList = rightArgResults.iterator();
 			restIter = rightIter;
@@ -304,8 +285,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> nextHashTable,
 			BindingSetHashKey hashKey, List<BindingSet> hashValue, boolean newEntry)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		// by default, we use a standard memory hash map
 		// so we only need to do the put() if the list is new
 		if (newEntry) {
@@ -319,8 +299,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 * @return list
 	 */
 	protected Collection<BindingSet> makeIterationCache(
-			CloseableIteration<BindingSet, QueryEvaluationException> iter)
-	{
+			CloseableIteration<BindingSet, QueryEvaluationException> iter) {
 		return new ArrayList<>();
 	}
 
@@ -336,10 +315,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			// but we are only one rehash away and this might save a bit of memory
 			// when we have more than one value per entry
 			nextHashTable = new HashMap<>(initialSize);
-		}
-		else {
+		} else {
 			List<BindingSet> l = (initialSize > 0) ? new ArrayList<>(initialSize) : null;
-			nextHashTable = Collections.<BindingSetHashKey, List<BindingSet>> singletonMap(
+			nextHashTable = Collections.<BindingSetHashKey, List<BindingSet>>singletonMap(
 					BindingSetHashKey.EMPTY, l);
 		}
 		return nextHashTable;
@@ -381,14 +359,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	protected <E> void add(Collection<E> col, E value)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		col.add(value);
 	}
 
 	protected <E> void addAll(Collection<E> col, List<E> values)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		col.addAll(values);
 	}
 }

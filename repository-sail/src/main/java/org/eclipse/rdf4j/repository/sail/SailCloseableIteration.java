@@ -25,14 +25,11 @@ class SailCloseableIteration<E> extends ExceptionConvertingIteration<E, Reposito
 	protected RepositoryException convert(Exception e) {
 		if (e instanceof SailException) {
 			return new RepositoryException(e);
-		}
-		else if (e instanceof RuntimeException) {
-			throw (RuntimeException)e;
-		}
-		else if (e == null) {
+		} else if (e instanceof RuntimeException) {
+			throw (RuntimeException) e;
+		} else if (e == null) {
 			throw new IllegalArgumentException("e must not be null");
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("Unexpected exception type: " + e.getClass());
 		}
 	}

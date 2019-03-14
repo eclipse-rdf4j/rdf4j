@@ -19,7 +19,7 @@ public interface SearchQuery {
 	 * Queries for the given subject or all subjects if null.
 	 */
 	Iterable<? extends DocumentScore> query(Resource subject)
-		throws IOException;
+			throws IOException;
 
 	/**
 	 * Highlights the given field or all fields if null.

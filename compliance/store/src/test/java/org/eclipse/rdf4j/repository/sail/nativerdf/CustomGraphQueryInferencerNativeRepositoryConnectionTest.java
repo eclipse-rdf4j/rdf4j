@@ -33,8 +33,7 @@ public class CustomGraphQueryInferencerNativeRepositoryConnectionTest extends Re
 
 	@Override
 	protected Repository createRepository()
-		throws IOException, MalformedQueryException, UnsupportedQueryLanguageException, SailException
-	{
+			throws IOException, MalformedQueryException, UnsupportedQueryLanguageException, SailException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(
 				new CustomGraphQueryInferencer(new NativeStore(dataDir, "spoc"), QueryLanguage.SPARQL,
@@ -44,12 +43,10 @@ public class CustomGraphQueryInferencerNativeRepositoryConnectionTest extends Re
 
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}

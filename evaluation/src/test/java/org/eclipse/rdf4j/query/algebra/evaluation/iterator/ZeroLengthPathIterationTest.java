@@ -51,8 +51,7 @@ public class ZeroLengthPathIterationTest {
 			@Override
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(
 					Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws QueryEvaluationException
-			{
+					throws QueryEvaluationException {
 				return new CloseableIteratorIteration<>(
 						m.filter(subj, pred, obj, contexts).iterator());
 			}
@@ -66,7 +65,8 @@ public class ZeroLengthPathIterationTest {
 	}
 
 	/**
-	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings. 
+	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings.
+	 * 
 	 * @see https://github.com/eclipse/rdf4j/issues/689
 	 */
 	@Test
@@ -78,7 +78,7 @@ public class ZeroLengthPathIterationTest {
 		Var subjectVar = new Var("x");
 		Var objVar = new Var("y");
 		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null,
-			null, bindings)) {
+				null, bindings)) {
 			BindingSet result = zlp.getNextElement();
 
 			assertTrue("zlp evaluation should have retained unrelated input binding", result.hasBinding("a"));

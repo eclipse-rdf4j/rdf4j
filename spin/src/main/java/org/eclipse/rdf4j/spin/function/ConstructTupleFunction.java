@@ -52,8 +52,7 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
 			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new QueryEvaluationException("First argument must be a resource");
@@ -62,23 +61,20 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 			throw new QueryEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedGraphQuery graphQuery = parser.parseConstructQuery((Resource)args[0], qp.getTripleSource());
+			ParsedGraphQuery graphQuery = parser.parseConstructQuery((Resource) args[0], qp.getTripleSource());
 			GraphQuery queryOp = qp.prepare(graphQuery);
 			addBindings(queryOp, args);
 			final GraphQueryResult queryResult = queryOp.evaluate();
 			return new GraphQueryResultIteration(queryResult);
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw e;
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}
 
 	static class GraphQueryResultIteration
-			extends AbstractCloseableIteration<List<Value>, QueryEvaluationException>
-	{
+			extends AbstractCloseableIteration<List<Value>, QueryEvaluationException> {
 
 		private final GraphQueryResult queryResult;
 
@@ -88,13 +84,12 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 		@Override
 		public boolean hasNext()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				return false;
 			}
 			boolean result = queryResult.hasNext();
-			if(!result) {
+			if (!result) {
 				close();
 			}
 			return result;
@@ -102,8 +97,7 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 		@Override
 		public List<Value> next()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
@@ -112,12 +106,10 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 				Resource ctx = stmt.getContext();
 				if (ctx != null) {
 					return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject(), ctx);
-				}
-				else {
+				} else {
 					return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject());
 				}
-			}
-			catch (NoSuchElementException e) {
+			} catch (NoSuchElementException e) {
 				close();
 				throw e;
 			}
@@ -125,15 +117,13 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 		@Override
 		public void remove()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
 			try {
 				queryResult.remove();
-			}
-			catch (IllegalStateException e) {
+			} catch (IllegalStateException e) {
 				close();
 				throw e;
 			}
@@ -141,12 +131,10 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 		@Override
 		public void handleClose()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			try {
 				super.handleClose();
-			}
-			finally {
+			} finally {
 				queryResult.close();
 			}
 		}

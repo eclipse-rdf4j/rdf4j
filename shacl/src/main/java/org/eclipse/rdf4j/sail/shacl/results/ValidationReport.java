@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ValidationReport implements  ModelInterface{
+public class ValidationReport implements ModelInterface {
 
 	private Resource id = SimpleValueFactory.getInstance().createBNode();
 
@@ -25,12 +25,11 @@ public class ValidationReport implements  ModelInterface{
 
 	private List<ValidationResult> validationResult = new ArrayList<>();
 
-
 	public ValidationReport(boolean conforms) {
 		this.conforms = conforms;
 	}
 
-	public void addValidationResult(ValidationResult validationResult){
+	public void addValidationResult(ValidationResult validationResult) {
 		this.validationResult.add(validationResult);
 	}
 
@@ -55,14 +54,12 @@ public class ValidationReport implements  ModelInterface{
 		return id;
 	}
 
-
 	/**
 	 * @return false if the changes violated a SHACL Shape
 	 */
 	public boolean conforms() {
 		return conforms;
 	}
-
 
 	/**
 	 * @return list of ValidationResult with more information about each violation

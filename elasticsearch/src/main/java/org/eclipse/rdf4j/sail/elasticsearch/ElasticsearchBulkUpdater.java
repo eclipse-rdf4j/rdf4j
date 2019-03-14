@@ -28,35 +28,35 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 
 	@Override
 	public void add(SearchDocument doc)
-		throws IOException
-	{
-		ElasticsearchDocument esDoc = (ElasticsearchDocument)doc;
-		bulkRequest.add(client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(
-				esDoc.getSource()));
+			throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		bulkRequest.add(client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
+				.setSource(
+						esDoc.getSource()));
 	}
 
 	@Override
 	public void update(SearchDocument doc)
-		throws IOException
-	{
-		ElasticsearchDocument esDoc = (ElasticsearchDocument)doc;
-		bulkRequest.add(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setVersion(
-				esDoc.getVersion()).setDoc(esDoc.getSource()));
+			throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		bulkRequest.add(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
+				.setVersion(
+						esDoc.getVersion())
+				.setDoc(esDoc.getSource()));
 	}
 
 	@Override
 	public void delete(SearchDocument doc)
-		throws IOException
-	{
-		ElasticsearchDocument esDoc = (ElasticsearchDocument)doc;
-		bulkRequest.add(client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setVersion(
-				esDoc.getVersion()));
+			throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		bulkRequest.add(client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
+				.setVersion(
+						esDoc.getVersion()));
 	}
 
 	@Override
 	public void end()
-		throws IOException
-	{
+			throws IOException {
 		if (bulkRequest.numberOfActions() > 0) {
 			BulkResponse response = bulkRequest.execute().actionGet();
 			if (response.hasFailures()) {

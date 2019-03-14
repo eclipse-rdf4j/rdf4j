@@ -37,8 +37,7 @@ public class LimitedSizeZeroLengthPathIteration extends ZeroLengthPathIteration 
 	 */
 	public LimitedSizeZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar,
 			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings, AtomicLong used,
-			long maxSize)
-	{
+			long maxSize) {
 		super(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -46,9 +45,8 @@ public class LimitedSizeZeroLengthPathIteration extends ZeroLengthPathIteration 
 
 	@Override
 	protected boolean add(Set<Value> reportedValues2, Value v)
-		throws QueryEvaluationException
-	{
-		return LimitedSizeIteratorUtil.<Value> add(v, reportedValues2, used, maxSize);
+			throws QueryEvaluationException {
+		return LimitedSizeIteratorUtil.<Value>add(v, reportedValues2, used, maxSize);
 	}
 
 }

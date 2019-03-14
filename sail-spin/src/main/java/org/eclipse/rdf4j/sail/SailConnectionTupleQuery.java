@@ -32,13 +32,12 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 
 	@Override
 	public ParsedTupleQuery getParsedQuery() {
-		return (ParsedTupleQuery)super.getParsedQuery();
+		return (ParsedTupleQuery) super.getParsedQuery();
 	}
 
 	@Override
 	public TupleQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		try {
@@ -51,16 +50,14 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			return new TupleQueryResultImpl(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException
-	{
+			throws QueryEvaluationException, TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

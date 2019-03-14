@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.Before;
 import org.junit.Test;
 
-public class QueryBindingSetTest{
+public class QueryBindingSetTest {
 
 	private final MapBindingSet mbs = new MapBindingSet();
 	private final QueryBindingSet qbs = new QueryBindingSet();
@@ -55,23 +55,23 @@ public class QueryBindingSetTest{
 	}
 
 	/**
-	 * Verifies that the BindingSet implementation honors the API spec for {@link BindingSet#equals(Object)}
-	 * and {@link BindingSet#hashCode()}.
+	 * Verifies that the BindingSet implementation honors the API spec for {@link BindingSet#equals(Object)} and
+	 * {@link BindingSet#hashCode()}.
 	 */
 	@Test
 	public void testEqualsHashcode() {
 		QueryBindingSet bs1 = new QueryBindingSet();
 		QueryBindingSet bs2 = new QueryBindingSet();
-		
+
 		bs1.addBinding("x", RDF.ALT);
 		bs1.addBinding("y", RDF.BAG);
 		bs1.addBinding("z", RDF.FIRST);
-		
+
 		bs2.addBinding("y", RDF.BAG);
 		bs2.addBinding("x", RDF.ALT);
 		bs2.addBinding("z", RDF.FIRST);
 		assertEquals(bs1, bs2);
 		assertEquals(bs1.hashCode(), bs2.hashCode());
 	}
-	
+
 }

@@ -40,98 +40,98 @@ import java.util.List;
  * The ShaclSail looks for SHACL shape data in a special named graph {@link RDF4J#SHACL_SHAPE_GRAPH}.
  * <h4>Working example</h4>
  * <p>
+ * 
  * <pre>
- *import ch.qos.logback.classic.Level;
- *import ch.qos.logback.classic.Logger;
- *import org.eclipse.rdf4j.model.Model;
- *import org.eclipse.rdf4j.model.vocabulary.RDF4J;
- *import org.eclipse.rdf4j.repository.RepositoryException;
- *import org.eclipse.rdf4j.repository.sail.SailRepository;
- *import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
- *import org.eclipse.rdf4j.rio.RDFFormat;
- *import org.eclipse.rdf4j.rio.Rio;
- *import org.eclipse.rdf4j.sail.memory.MemoryStore;
- *import org.eclipse.rdf4j.sail.shacl.ShaclSail;
- *import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
- *import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
- *import org.slf4j.LoggerFactory;
+ * import ch.qos.logback.classic.Level;
+ * import ch.qos.logback.classic.Logger;
+ * import org.eclipse.rdf4j.model.Model;
+ * import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+ * import org.eclipse.rdf4j.repository.RepositoryException;
+ * import org.eclipse.rdf4j.repository.sail.SailRepository;
+ * import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+ * import org.eclipse.rdf4j.rio.RDFFormat;
+ * import org.eclipse.rdf4j.rio.Rio;
+ * import org.eclipse.rdf4j.sail.memory.MemoryStore;
+ * import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+ * import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+ * import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+ * import org.slf4j.LoggerFactory;
  *
- *import java.io.IOException;
- *import java.io.StringReader;
+ * import java.io.IOException;
+ * import java.io.StringReader;
  *
- *public class ShaclSampleCode {
+ * public class ShaclSampleCode {
  *
- *	public static void main(String[] args) throws IOException {
+ * 	public static void main(String[] args) throws IOException {
  *
- *		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+ * 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
  *
- *		//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
- *		//root.setLevel(Level.INFO);
+ * 		// Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+ * 		// root.setLevel(Level.INFO);
  *
- *		//shaclSail.setLogValidationPlans(true);
- *		//shaclSail.setGlobalLogValidationExecution(true);
- *		//shaclSail.setLogValidationViolations(true);
+ * 		// shaclSail.setLogValidationPlans(true);
+ * 		// shaclSail.setGlobalLogValidationExecution(true);
+ * 		// shaclSail.setLogValidationViolations(true);
  *
- *		SailRepository sailRepository = new SailRepository(shaclSail);
- *		sailRepository.init();
+ * 		SailRepository sailRepository = new SailRepository(shaclSail);
+ * 		sailRepository.init();
  *
- *		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+ * 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
  *
- *			connection.begin();
+ * 			connection.begin();
  *
- *			StringReader shaclRules = new StringReader(
- *				String.join(&quot;\n&quot;, &quot;&quot;,
- *					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- *					&quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
- *					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
- *					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ * 			StringReader shaclRules = new StringReader(
+ * 					String.join(&quot;\n&quot;, &quot;&quot;,
+ * 							&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
+ * 							&quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
+ * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
  *
- *					&quot;ex:PersonShape&quot;,
- *					&quot;	a sh:NodeShape  ;&quot;,
- *					&quot;	sh:targetClass foaf:Person ;&quot;,
- *					&quot;	sh:property ex:PersonShapeProperty .&quot;,
+ * 							&quot;ex:PersonShape&quot;,
+ * 							&quot;	a sh:NodeShape  ;&quot;,
+ * 							&quot;	sh:targetClass foaf:Person ;&quot;,
+ * 							&quot;	sh:property ex:PersonShapeProperty .&quot;,
  *
- *					&quot;ex:PersonShapeProperty &quot;,
- *					&quot;	sh:path foaf:age ;&quot;,
- *					&quot;	sh:datatype xsd:int ;&quot;,
- *					&quot;	sh:maxCount 1 ;&quot;,
- *					&quot;	sh:minCount 1 .&quot;
- *				));
+ * 							&quot;ex:PersonShapeProperty &quot;,
+ * 							&quot;	sh:path foaf:age ;&quot;,
+ * 							&quot;	sh:datatype xsd:int ;&quot;,
+ * 							&quot;	sh:maxCount 1 ;&quot;,
+ * 							&quot;	sh:minCount 1 .&quot;));
  *
- *			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
- *			connection.commit();
+ * 			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+ * 			connection.commit();
  *
- *			connection.begin();
+ * 			connection.begin();
  *
- *			StringReader invalidSampleData = new StringReader(
- *				String.join(&quot;\n&quot;, &quot;&quot;,
- *					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- *					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
- *					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ * 			StringReader invalidSampleData = new StringReader(
+ * 					String.join(&quot;\n&quot;, &quot;&quot;,
+ * 							&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
+ * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
  *
- *					&quot;ex:peter a foaf:Person ;&quot;,
- *					&quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
+ * 							&quot;ex:peter a foaf:Person ;&quot;,
+ * 							&quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
  *
- *				));
+ * 					));
  *
- *			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
- *			try {
- *				connection.commit();
- *			} catch (RepositoryException exception) {
- *				Throwable cause = exception.getCause();
- *				if (cause instanceof ShaclSailValidationException) {
- *					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
- *					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
- *					// use validationReport or validationReportModel to understand validation violations
+ * 			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
+ * 			try {
+ * 				connection.commit();
+ * 			} catch (RepositoryException exception) {
+ * 				Throwable cause = exception.getCause();
+ * 				if (cause instanceof ShaclSailValidationException) {
+ * 					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
+ * 					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+ * 					// use validationReport or validationReportModel to understand validation violations
  *
- *					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *				}
- *				throw exception;
- *			}
- *		}
- *	}
- *}
- *</pre>
+ * 					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
+ * 				}
+ * 				throw exception;
+ * 			}
+ * 		}
+ * 	}
+ * }
+ * </pre>
  *
  * @author Heshan Jayasinghe
  * @author Håvard Ottestad
@@ -168,8 +168,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		try {
 			SH_OR_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or.rq");
 			SH_OR_NODE_SHAPE_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or_node_shape.rq");
-			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString("shacl-sparql-inference/implicitTargetClassNodeShape.rq");
-			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString("shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
+					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
+			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
+					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -197,26 +199,25 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
 		return Arrays.asList(
-			SHACL.TARGET_CLASS,
-			SHACL.PATH,
-			SHACL.PROPERTY,
-			SHACL.OR,
-			SHACL.MIN_COUNT,
-			SHACL.MAX_COUNT,
-			SHACL.MIN_LENGTH,
-			SHACL.MAX_LENGTH,
-			SHACL.PATTERN,
-			SHACL.FLAGS,
-			SHACL.NODE_KIND_PROP,
-			SHACL.LANGUAGE_IN,
-			SHACL.DATATYPE,
-			SHACL.MIN_EXCLUSIVE,
-			SHACL.MIN_INCLUSIVE,
-			SHACL.MAX_EXCLUSIVE,
-			SHACL.MAX_INCLUSIVE,
-			SHACL.CLASS,
-			SHACL.TARGET_NODE
-		);
+				SHACL.TARGET_CLASS,
+				SHACL.PATH,
+				SHACL.PROPERTY,
+				SHACL.OR,
+				SHACL.MIN_COUNT,
+				SHACL.MAX_COUNT,
+				SHACL.MIN_LENGTH,
+				SHACL.MAX_LENGTH,
+				SHACL.PATTERN,
+				SHACL.FLAGS,
+				SHACL.NODE_KIND_PROP,
+				SHACL.LANGUAGE_IN,
+				SHACL.DATATYPE,
+				SHACL.MIN_EXCLUSIVE,
+				SHACL.MIN_INCLUSIVE,
+				SHACL.MAX_EXCLUSIVE,
+				SHACL.MAX_INCLUSIVE,
+				SHACL.CLASS,
+				SHACL.TARGET_NODE);
 	}
 
 	@Override
@@ -225,8 +226,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 		super.initialize();
 
 		if (getDataDir() != null) {
-			if(parallelValidation){
-				logger.info("Automatically disabled parallel SHACL validation because persistent base sail was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
+			if (parallelValidation) {
+				logger.info("Automatically disabled parallel SHACL validation because persistent base sail "
+						+ "was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
 			}
 			setParallelValidation(false);
 		}
@@ -260,16 +262,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection)
-		throws SailException {
+			throws SailException {
 		if (!initializing) {
 			try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
 				boolean empty = !beforeCommitConnection.hasStatement(null, null, null, false);
 				if (!empty) {
 					// Our inferencer both adds and removes statements.
 					// To support updates I recommend having two graphs, one raw one with the unmodified data.
-					// Then copy all that data into a new graph, run inferencing on that graph and use it to generate the java objects
+					// Then copy all that data into a new graph, run inferencing on that graph and use it to generate
+					// the java objects
 					throw new IllegalStateException(
-						"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
+							"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
 				}
 			}
 		}
@@ -291,11 +294,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
 		return new ShaclSailConnection(
-			this,
-			super.getConnection(),
-			super.getConnection(),
-			shapesRepo.getConnection()
-		);
+				this,
+				super.getConnection(),
+				super.getConnection(),
+				shapesRepo.getConnection());
 	}
 
 	/**
@@ -344,8 +346,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation
-	 * with setParallelValidation(false)
+	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation with
+	 * setParallelValidation(false)
 	 *
 	 * @param logValidationPlans
 	 */
@@ -368,14 +370,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
 			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
 			currentSize = shaclSailConnection.size();
-		}
-		while (prevSize != currentSize);
+		} while (prevSize != currentSize);
 
 	}
 
 	/**
-	 * Log (INFO) every execution step of the SHACL validation. This is fairly costly and should not be used
-	 * in production. Recommended to disable parallel validation with setParallelValidation(false)
+	 * Log (INFO) every execution step of the SHACL validation. This is fairly costly and should not be used in
+	 * production. Recommended to disable parallel validation with setParallelValidation(false)
 	 *
 	 * @param loggingEnabled
 	 */
@@ -394,8 +395,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Check if logging a list of violations and the triples that caused the violations is enabled. It is
-	 * recommended to disable parallel validation with {@link #setParallelValidation(boolean)}
+	 * Check if logging a list of violations and the triples that caused the violations is enabled. It is recommended to
+	 * disable parallel validation with {@link #setParallelValidation(boolean)}
 	 *
 	 * @see #setLogValidationViolations(boolean)
 	 */
@@ -404,8 +405,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Log (INFO) a list of violations and the triples that caused the violations (BETA). Recommended to
-	 * disable parallel validation with setParallelValidation(false)
+	 * Log (INFO) a list of violations and the triples that caused the violations (BETA). Recommended to disable
+	 * parallel validation with setParallelValidation(false)
 	 *
 	 * @param logValidationViolations
 	 */
@@ -414,12 +415,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with
-	 * "true" will make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting
-	 * sh:targetClass to owl:Thing or rdfs:Resource in an environment with a reasoner.
+	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with "true" will
+	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
+	 * or rdfs:Resource in an environment with a reasoner.
 	 *
-	 * @param undefinedTargetValidatesAllSubjects
-	 *        default false
+	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
 	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
 		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
@@ -449,11 +449,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * <p>
 	 * May cause deadlock, especially when using NativeStore.
 	 *
-	 * @param parallelValidation
-	 *        default false
-	*/
+	 * @param parallelValidation default false
+	 */
 	public void setParallelValidation(boolean parallelValidation) {
-		if(parallelValidation){
+		if (parallelValidation) {
 			logger.warn("Parallel SHACL validation enabled. This is an experimental feature and may cause deadlocks!");
 		}
 		this.parallelValidation = parallelValidation;
@@ -470,17 +469,15 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * The ShaclSail retries a lot of its relevant data through running SPARQL Select queries against the
-	 * underlying sail and against the changes in the transaction. This is usually good for performance, but
-	 * while validating large amounts of data disabling this cache will use less memory. Default: true
+	 * The ShaclSail retries a lot of its relevant data through running SPARQL Select queries against the underlying
+	 * sail and against the changes in the transaction. This is usually good for performance, but while validating large
+	 * amounts of data disabling this cache will use less memory. Default: true
 	 *
-	 * @param cacheSelectNodes
-	 *        default true
-	*/
+	 * @param cacheSelectNodes default true
+	 */
 	public void setCacheSelectNodes(boolean cacheSelectNodes) {
 		this.cacheSelectNodes = cacheSelectNodes;
 	}
-
 
 	public boolean isRdfsSubClassReasoning() {
 		return rdfsSubClassReasoning;

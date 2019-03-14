@@ -22,8 +22,7 @@ public class MemoryStoreConcurrencyTest extends SailConcurrencyTest {
 
 	@Override
 	protected Sail createSail()
-		throws SailException
-	{
+			throws SailException {
 		return new MemoryStore();
 	}
 }

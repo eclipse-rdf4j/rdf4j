@@ -32,8 +32,7 @@ public class LowerCaseTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		lcaseFunc = new LowerCase();
 	}
 
@@ -42,8 +41,7 @@ public class LowerCaseTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -55,8 +53,7 @@ public class LowerCaseTest {
 			Literal result = lcaseFunc.evaluate(f, pattern);
 
 			assertTrue(result.getLabel().equals("foobar"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -70,8 +67,7 @@ public class LowerCaseTest {
 			Literal result = lcaseFunc.evaluate(f, pattern);
 
 			assertTrue(result.getLabel().equals("foobar"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -85,8 +81,7 @@ public class LowerCaseTest {
 		try {
 			lcaseFunc.evaluate(f, pattern, startIndex);
 			fail("illegal number of parameters");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}

@@ -46,8 +46,7 @@ public class SplSailTest {
 
 	@Before
 	public void setup()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		NotifyingSail baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
 		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
@@ -59,8 +58,7 @@ public class SplSailTest {
 
 	@After
 	public void tearDown()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		if (conn != null) {
 			conn.close();
 		}
@@ -71,8 +69,7 @@ public class SplSailTest {
 
 	@Test
 	public void runTests()
-		throws Exception
-	{
+			throws Exception {
 		ValueFactory vf = conn.getValueFactory();
 		loadRDF("/schema/owl.ttl");
 		conn.add(vf.createStatement(vf.createURI("test:run"), RDF.TYPE,
@@ -81,7 +78,7 @@ public class SplSailTest {
 				"prefix spin: <http://spinrdf.org/spin#> " + "prefix spl: <http://spinrdf.org/spl#> "
 						+ "select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");
 		try ( // returns failed tests
-			TupleQueryResult tqr = tq.evaluate()) {
+				TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");
@@ -93,8 +90,7 @@ public class SplSailTest {
 	}
 
 	private void loadRDF(String path)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);

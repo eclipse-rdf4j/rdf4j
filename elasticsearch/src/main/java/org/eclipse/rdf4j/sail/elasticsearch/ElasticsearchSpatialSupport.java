@@ -14,9 +14,8 @@ import org.locationtech.spatial4j.shape.Shape;
 
 /**
  * This class will try to load a subclass of itself called
- * "org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer". This is not provided, and is
- * primarily intended as a way to inject JTS support. If this fails a fall-back is used that doesn't support
- * any shapes.
+ * "org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer". This is not provided, and is primarily
+ * intended as a way to inject JTS support. If this fails a fall-back is used that doesn't support any shapes.
  */
 abstract class ElasticsearchSpatialSupport {
 
@@ -28,9 +27,8 @@ abstract class ElasticsearchSpatialSupport {
 			Class<?> cls = Class.forName(
 					"org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer", true,
 					Thread.currentThread().getContextClassLoader());
-			spatialSupport = (ElasticsearchSpatialSupport)cls.newInstance();
-		}
-		catch (Exception e) {
+			spatialSupport = (ElasticsearchSpatialSupport) cls.newInstance();
+		} catch (Exception e) {
 			spatialSupport = new DefaultElasticsearchSpatialSupport();
 		}
 		support = spatialSupport;

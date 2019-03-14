@@ -41,8 +41,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	 */
 	public LimitedSizeBottomUpJoinIterator(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
 			BindingSet bindings, AtomicLong used, long maxSize)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super(limitedSizeEvaluationStrategy, join, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -50,8 +49,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	@Override
 	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		Iterator<BindingSet> iter = values.iterator();
 		while (iter.hasNext()) {
 			if (hashTableValues.add(iter.next()) && used.incrementAndGet() > maxSize) {
@@ -62,8 +60,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	@Override
 	protected void add(List<BindingSet> leftArgResults, BindingSet b)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		if (leftArgResults.add(b) && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
@@ -71,8 +68,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	@Override
 	protected BindingSet removeFirstElement(List<BindingSet> list)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		used.decrementAndGet();
 		return super.removeFirstElement(list);
 	}
@@ -80,8 +76,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	@Override
 	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey,
 			List<BindingSet> hashValue)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
@@ -90,12 +85,10 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	@Override
 	protected void handleClose()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			long htvSize = clearHashTable();
 			used.addAndGet(-htvSize);
 		}

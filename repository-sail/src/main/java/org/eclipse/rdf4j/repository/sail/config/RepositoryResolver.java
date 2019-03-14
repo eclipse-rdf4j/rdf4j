@@ -22,5 +22,5 @@ public interface RepositoryResolver extends org.eclipse.rdf4j.repository.Reposit
 
 	@Override
 	Repository getRepository(String memberID)
-		throws RepositoryException, RepositoryConfigException;
+			throws RepositoryException, RepositoryConfigException;
 }

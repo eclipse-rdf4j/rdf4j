@@ -28,8 +28,7 @@ public class STRUUID implements Function {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (args.length > 0) {
 			throw new ValueExprEvaluationException("STRUUID requires 0 arguments, got " + args.length);
 		}

@@ -39,37 +39,32 @@ public class OrderComparatorTest {
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr,
 				String serviceUri, CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
 				BindingSet bindings)
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException
-		{
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return null;
 		}
 
 		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException
-		{
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public FederatedService getService(String serviceUrl)
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 	}
@@ -106,8 +101,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testEquals()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(ZERO).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
@@ -116,8 +110,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testZero()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(asc);
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(ZERO, POS).iterator());
@@ -127,8 +120,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testTerm()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(asc);
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(POS, NEG).iterator());
@@ -138,8 +130,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testAscLessThan()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
@@ -148,8 +139,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testAscGreaterThan()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(asc);
 		cmp.setIterator(Arrays.asList(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
@@ -158,8 +148,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testDescLessThan()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(desc);
 		cmp.setIterator(Arrays.asList(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
@@ -168,8 +157,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testDescGreaterThan()
-		throws Exception
-	{
+			throws Exception {
 		order.addElement(desc);
 		cmp.setIterator(Arrays.asList(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
@@ -178,8 +166,7 @@ public class OrderComparatorTest {
 
 	@Test
 	public void testDisjunctBindingNames()
-		throws Exception
-	{
+			throws Exception {
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
@@ -204,8 +191,7 @@ public class OrderComparatorTest {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		asc.setAscending(true);
 		desc.setAscending(false);
 	}

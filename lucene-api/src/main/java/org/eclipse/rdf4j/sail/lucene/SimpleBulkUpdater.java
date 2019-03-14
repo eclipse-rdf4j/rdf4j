@@ -22,22 +22,19 @@ public class SimpleBulkUpdater implements BulkUpdater {
 
 	@Override
 	public void add(SearchDocument doc)
-		throws IOException
-	{
+			throws IOException {
 		index.addDocument(doc);
 	}
 
 	@Override
 	public void update(SearchDocument doc)
-		throws IOException
-	{
+			throws IOException {
 		index.updateDocument(doc);
 	}
 
 	@Override
 	public void delete(SearchDocument doc)
-		throws IOException
-	{
+			throws IOException {
 		index.deleteDocument(doc);
 	}
 

@@ -31,8 +31,7 @@ public class FederationTest extends RDFStoreTest {
 
 	@Override
 	protected Sail createSail()
-		throws SailException
-	{
+			throws SailException {
 		Federation sail = new Federation();
 		sail.addMember(new SailRepository(new MemoryStore()));
 		sail.addMember(new SailRepository(new MemoryStore()));

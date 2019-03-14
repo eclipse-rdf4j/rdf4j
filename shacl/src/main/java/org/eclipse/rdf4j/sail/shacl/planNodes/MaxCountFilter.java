@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.eclipse.rdf4j.model.Literal;
 
 /**
@@ -18,7 +17,7 @@ public class MaxCountFilter extends FilterPlanNode {
 
 	private final long maxCount;
 
-	public MaxCountFilter(PlanNode parent,  long maxCount) {
+	public MaxCountFilter(PlanNode parent, long maxCount) {
 		super(parent);
 		this.maxCount = maxCount;
 	}
@@ -32,8 +31,8 @@ public class MaxCountFilter extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "MaxCountFilter{" +
-			"maxCount=" + maxCount +
-			" 'true means <= " +maxCount +"'"+
-			'}';
+				"maxCount=" + maxCount +
+				" 'true means <= " + maxCount + "'" +
+				'}';
 	}
 }

@@ -34,8 +34,7 @@ public class FederationConnectionTest {
 
 	@Test
 	public void testSize()
-		throws Exception
-	{
+			throws Exception {
 		Federation federation = new Federation();
 
 		SailRepository repository = new SailRepository(new MemoryStore());
@@ -55,16 +54,14 @@ public class FederationConnectionTest {
 				connection.commit();
 				assertEquals("Should get size", 1, connection.size());
 			}
-		}
-		finally {
+		} finally {
 			federation.shutDown();
 		}
 	}
 
 	@Test
 	public void testSizeWithInferredStatements()
-		throws Exception
-	{
+			throws Exception {
 		Federation federation = new Federation();
 
 		SailRepository repository = new SailRepository(new TestInferencer(new MemoryStore()));
@@ -85,18 +82,16 @@ public class FederationConnectionTest {
 
 				assertEquals("Should get explicit statement size", 1, connection.size());
 			}
-		}
-		finally {
+		} finally {
 			federation.shutDown();
 		}
 	}
 
 	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
 			SailConnection connection)
-		throws SailException
-	{
+			throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-			(IRI)predicate, object, true)) {
+				(IRI) predicate, object, true)) {
 			assertTrue(message, statements.hasNext());
 		}
 	}
@@ -109,12 +104,10 @@ public class FederationConnectionTest {
 
 		@Override
 		public TestInferencerConnection getConnection()
-			throws SailException
-		{
+				throws SailException {
 			try {
-				return new TestInferencerConnection((InferencerConnection)super.getConnection());
-			}
-			catch (ClassCastException e) {
+				return new TestInferencerConnection((InferencerConnection) super.getConnection());
+			} catch (ClassCastException e) {
 				throw new SailException(e.getMessage(), e);
 			}
 		}
@@ -143,8 +136,7 @@ public class FederationConnectionTest {
 
 			@Override
 			public void flushUpdates()
-				throws SailException
-			{
+					throws SailException {
 				if (m_added) {
 					addInferredStatement(OWL.THING, RDFS.COMMENT, RDF.ALT);
 					m_added = false;

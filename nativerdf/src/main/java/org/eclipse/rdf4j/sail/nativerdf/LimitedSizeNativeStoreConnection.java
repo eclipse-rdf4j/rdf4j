@@ -26,8 +26,7 @@ public class LimitedSizeNativeStoreConnection extends NativeStoreConnection {
 	 * @throws IOException
 	 */
 	protected LimitedSizeNativeStoreConnection(NativeStore nativeStore)
-		throws IOException
-	{
+			throws IOException {
 		super(nativeStore);
 	}
 

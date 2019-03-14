@@ -37,8 +37,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base
- * Sail implementations.
+ * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
+ * implementations.
  * 
  * @author Jeen Broekstra
  */
@@ -46,8 +46,7 @@ public abstract class EvaluationStrategyTest {
 
 	@BeforeClass
 	public static void setUpClass()
-		throws Exception
-	{
+			throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -65,8 +64,7 @@ public abstract class EvaluationStrategyTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		manager = RepositoryProvider.getRepositoryManager(tempDir.newFolder());
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();

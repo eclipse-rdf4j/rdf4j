@@ -27,8 +27,7 @@ public class FilterCursor extends FilterIterator {
 
 	public FilterCursor(CloseableIteration<BindingSet, QueryEvaluationException> result, ValueExpr condition,
 			final Set<String> scopeBindingNames, EvaluationStrategy strategy)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super(new Filter(new EmptySet() {
 
 			@Override

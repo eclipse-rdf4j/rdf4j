@@ -29,14 +29,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void startTransactionInternal()
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.begin();
 			}
 		});
@@ -44,14 +42,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void rollbackInternal()
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.rollback();
 			}
 		});
@@ -59,14 +55,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void commitInternal()
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.commit();
 			}
 		});
@@ -74,14 +68,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void setNamespaceInternal(final String prefix, final String name)
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.setNamespace(prefix, name);
 			}
 		});
@@ -89,14 +81,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void clearNamespacesInternal()
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.clearNamespaces();
 			}
 		});
@@ -104,14 +94,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void removeNamespaceInternal(final String prefix)
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.removeNamespace(prefix);
 			}
 		});
@@ -120,14 +108,12 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	@Override
 	public void removeStatementsInternal(final Resource subj, final IRI pred, final Value obj,
 			final Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		excute(new Procedure() {
 
 			@Override
 			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+					throws RepositoryException {
 				con.remove(subj, pred, obj, contexts);
 			}
 		});

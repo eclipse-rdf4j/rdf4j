@@ -26,8 +26,7 @@ public class SailModelTest extends ModelTest {
 	private SailConnection conn;
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return ModelTest.suite(SailModelTest.class);
 	}
 
@@ -43,16 +42,14 @@ public class SailModelTest extends ModelTest {
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
 
 	@Override
 	protected void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		if (conn != null) {
 			conn.commit();
 			conn.close();

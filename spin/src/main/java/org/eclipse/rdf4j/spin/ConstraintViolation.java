@@ -27,8 +27,7 @@ public class ConstraintViolation implements Serializable {
 	private final ConstraintViolationLevel level;
 
 	public ConstraintViolation(String message, String root, String path, String value,
-			ConstraintViolationLevel level)
-	{
+			ConstraintViolationLevel level) {
 		this.message = message;
 		this.root = root;
 		this.path = path;

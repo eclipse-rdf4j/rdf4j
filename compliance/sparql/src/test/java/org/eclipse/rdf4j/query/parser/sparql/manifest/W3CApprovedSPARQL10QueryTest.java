@@ -25,28 +25,25 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SPARQL10ManifestTest.suite(new Factory() {
 
 			public W3CApprovedSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
+					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, false);
 			}
 
 			public W3CApprovedSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
-					boolean checkOrder)
-			{
+					boolean checkOrder) {
 				String[] ignoredTests = {
 						// incompatible with SPARQL 1.1 - syntax for decimals was modified
 						"Basic - Term 6",
 						// incompatible with SPARQL 1.1 - syntax for decimals was modified
 						"Basic - Term 7",
 						// Test is incorrect: assumes timezoned date is comparable with non-timezoned
-						"date-2"};
+						"date-2" };
 
 				return new W3CApprovedSPARQL10QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);
@@ -56,15 +53,13 @@ public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 	}
 
 	protected W3CApprovedSPARQL10QueryTest(String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataSet, boolean laxCardinality, String... ignoredTests)
-	{
+			String resultFileURL, Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
 		this(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, false, ignoredTests);
 	}
 
 	protected W3CApprovedSPARQL10QueryTest(String testURI, String name, String queryFileURL,
 			String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder,
-			String... ignoredTests)
-	{
+			String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

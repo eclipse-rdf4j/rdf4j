@@ -89,26 +89,22 @@ public class SpinxFunction implements TransientFunction {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		Bindings bindings = scriptEngine.createBindings();
 		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);
 			Value arg = args[i];
 			Object jsArg;
 			if (arg instanceof Literal) {
-				Literal argLiteral = (Literal)arg;
+				Literal argLiteral = (Literal) arg;
 				if (XMLSchema.INTEGER.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.intValue();
-				}
-				else if (XMLSchema.DECIMAL.equals(argLiteral.getDatatype())) {
+				} else if (XMLSchema.DECIMAL.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.doubleValue();
-				}
-				else {
+				} else {
 					jsArg = argLiteral.getLabel();
 				}
-			}
-			else {
+			} else {
 				jsArg = arg.stringValue();
 			}
 			bindings.put(argument.getPredicate().getLocalName(), jsArg);
@@ -117,16 +113,14 @@ public class SpinxFunction implements TransientFunction {
 		Object result;
 		try {
 			if (compiledScript == null && scriptEngine instanceof Compilable) {
-				compiledScript = ((Compilable)scriptEngine).compile(script);
+				compiledScript = ((Compilable) scriptEngine).compile(script);
 			}
 			if (compiledScript != null) {
 				result = compiledScript.eval(bindings);
-			}
-			else {
+			} else {
 				result = scriptEngine.eval(script, bindings);
 			}
-		}
-		catch (ScriptException e) {
+		} catch (ScriptException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 

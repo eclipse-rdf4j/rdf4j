@@ -35,17 +35,18 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	}
 
 	public EvaluationStrategyFactory getEvaluationStrategyFactory()
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		if (evalStratFactoryClassName == null) {
 			return null;
 		}
 
 		try {
-			return (EvaluationStrategyFactory)Thread.currentThread().getContextClassLoader().loadClass(
-					evalStratFactoryClassName).newInstance();
-		}
-		catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+			return (EvaluationStrategyFactory) Thread.currentThread()
+					.getContextClassLoader()
+					.loadClass(
+							evalStratFactoryClassName)
+					.newInstance();
+		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
 			throw new SailConfigException(e);
 		}
 	}
@@ -65,18 +66,17 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	@Override
 	public void parse(Model graph, Resource implNode)
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		super.parse(graph, implNode);
 
 		try {
 
-			Models.objectLiteral(graph.filter(implNode, EVALUATION_STRATEGY_FACTORY, null)).ifPresent(
-					factoryClassName -> {
-						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
-					});
-		}
-		catch (ModelException e) {
+			Models.objectLiteral(graph.filter(implNode, EVALUATION_STRATEGY_FACTORY, null))
+					.ifPresent(
+							factoryClassName -> {
+								setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
+							});
+		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

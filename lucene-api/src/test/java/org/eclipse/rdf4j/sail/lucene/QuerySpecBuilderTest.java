@@ -39,16 +39,14 @@ public class QuerySpecBuilderTest {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		interpreter = new QuerySpecBuilder(true);
 		parser = new SeRQLParser();
 	}
 
 	@Test
 	public void testQueryInterpretation()
-		throws Exception
-	{
+			throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT Subject, Score, Snippet ");
 		buffer.append("FROM {Subject} <" + MATCHES + "> {} ");
@@ -62,10 +60,10 @@ public class QuerySpecBuilderTest {
 		Collection<SearchQueryEvaluator> queries = process(interpreter, tupleExpr);
 		assertEquals(1, queries.size());
 
-		QuerySpec querySpec = (QuerySpec)queries.iterator().next();
+		QuerySpec querySpec = (QuerySpec) queries.iterator().next();
 		assertEquals("Subject", querySpec.getMatchesPattern().getSubjectVar().getName());
 		assertEquals("my Lucene query",
-				((Literal)querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+				((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 		assertEquals("Score", querySpec.getScorePattern().getObjectVar().getName());
 		assertEquals("Snippet", querySpec.getSnippetPattern().getObjectVar().getName());
 		assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
@@ -75,8 +73,7 @@ public class QuerySpecBuilderTest {
 
 	@Test
 	public void testMultipleQueriesInterpretation()
-		throws Exception
-	{
+			throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT sub1, score1, snippet1, sub2, score2, snippet2, x, p1, p2 ");
 		buffer.append("FROM {sub1} <" + MATCHES + "> {} ");
@@ -101,32 +98,30 @@ public class QuerySpecBuilderTest {
 		boolean matched1 = false;
 		boolean matched2 = false;
 		while (i.hasNext()) {
-			QuerySpec querySpec = (QuerySpec)i.next();
+			QuerySpec querySpec = (QuerySpec) i.next();
 			if ("sub1".equals(querySpec.getMatchesVariableName())) {
 				// Matched the first
 				assertEquals("sub1", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals("my Lucene query",
-						((Literal)querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+						((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 				assertEquals("score1", querySpec.getScorePattern().getObjectVar().getName());
 				assertEquals("snippet1", querySpec.getSnippetPattern().getObjectVar().getName());
 				assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
 				assertEquals("my Lucene query", querySpec.getQueryString());
 				assertNull(querySpec.getSubject());
 				matched1 = true;
-			}
-			else if ("sub2".equals(querySpec.getMatchesVariableName())) {
+			} else if ("sub2".equals(querySpec.getMatchesVariableName())) {
 				// and the second
 				assertEquals("sub2", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals("second lucene query",
-						((Literal)querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+						((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 				assertEquals("score2", querySpec.getScorePattern().getObjectVar().getName());
 				assertEquals("snippet2", querySpec.getSnippetPattern().getObjectVar().getName());
 				assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
 				assertEquals("second lucene query", querySpec.getQueryString());
 				assertNull(querySpec.getSubject());
 				matched2 = true;
-			}
-			else
+			} else
 				fail("Found unexpected query spec: " + querySpec.toString());
 		}
 		if (!matched1)
@@ -142,8 +137,7 @@ public class QuerySpecBuilderTest {
 	 */
 	@Test
 	public void testIncompleteFail()
-		throws Exception
-	{
+			throws Exception {
 		// default works
 		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<"
 				+ TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<"
@@ -163,8 +157,7 @@ public class QuerySpecBuilderTest {
 		try {
 			checkQuery(queryString);
 			fail("invalid query ignored");
-		}
-		catch (Exception x) {
+		} catch (Exception x) {
 			// excellent
 		}
 
@@ -176,8 +169,7 @@ public class QuerySpecBuilderTest {
 		try {
 			checkQuery(queryString);
 			// excellent
-		}
-		catch (Exception x) {
+		} catch (Exception x) {
 			fail("missing type is ok, should not throw an exception");
 		}
 
@@ -189,8 +181,7 @@ public class QuerySpecBuilderTest {
 		try {
 			checkQuery(queryString);
 			fail("invalid missing query not detected");
-		}
-		catch (Exception x) {
+		} catch (Exception x) {
 			// excellent
 		}
 	}
@@ -202,8 +193,7 @@ public class QuerySpecBuilderTest {
 	 * @param queryString
 	 */
 	private void checkQuery(String queryString)
-		throws Exception
-	{
+			throws Exception {
 		ParsedQuery query = parser.parseQuery(queryString, null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 		Collection<SearchQueryEvaluator> queries = process(interpreter, tupleExpr);
@@ -211,8 +201,7 @@ public class QuerySpecBuilderTest {
 	}
 
 	private Collection<SearchQueryEvaluator> process(SearchQueryInterpreter interpreter, TupleExpr tupleExpr)
-		throws SailException
-	{
+			throws SailException {
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 		interpreter.process(tupleExpr, new QueryBindingSet(), queries);
 		return queries;

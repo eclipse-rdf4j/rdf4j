@@ -43,8 +43,7 @@ public class AskFunction extends AbstractSpinFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new ValueExprEvaluationException("First argument must be a resource");
@@ -53,15 +52,13 @@ public class AskFunction extends AbstractSpinFunction implements Function {
 			throw new ValueExprEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedBooleanQuery askQuery = parser.parseAskQuery((Resource)args[0], qp.getTripleSource());
+			ParsedBooleanQuery askQuery = parser.parseAskQuery((Resource) args[0], qp.getTripleSource());
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, args);
 			return BooleanLiteral.valueOf(queryOp.evaluate());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			throw e;
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}

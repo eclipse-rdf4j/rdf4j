@@ -36,8 +36,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 	}
 
 	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, IRI units, Point origin,
-			boolean includeContext, LuceneIndex index)
-	{
+			boolean includeContext, LuceneIndex index) {
 		super(doc, index, requiredFields(geoProperty, includeContext));
 		this.geoProperty = geoProperty;
 		this.units = units;
@@ -54,8 +53,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 				shape = index.getSpatialContext(geoProperty).readShapeFromWkt(wkt);
 				double dist = index.getSpatialContext(geoProperty).calcDistance(shape.getCenter(), origin);
 				min = Math.min(dist, min);
-			}
-			catch (ParseException e) {
+			} catch (ParseException e) {
 				// ignore
 			}
 		}

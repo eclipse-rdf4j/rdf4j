@@ -46,8 +46,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public void close()
-		throws SailException
-	{
+			throws SailException {
 		for (SailDataset dataset : datasets) {
 			dataset.close();
 		}
@@ -55,8 +54,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces()
-		throws SailException
-	{
+			throws SailException {
 		CloseableIteration<? extends Namespace, SailException>[] result;
 		result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
@@ -67,8 +65,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public String getNamespace(String prefix)
-		throws SailException
-	{
+			throws SailException {
 		for (int i = 0; i < datasets.length; i++) {
 			String result = datasets[i].getNamespace(prefix);
 			if (result != null) {
@@ -80,8 +77,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs()
-		throws SailException
-	{
+			throws SailException {
 		CloseableIteration<? extends Resource, SailException>[] result;
 		result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
@@ -93,8 +89,7 @@ class UnionSailDataset implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		CloseableIteration<? extends Statement, SailException>[] result;
 		result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
@@ -104,8 +99,7 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	private <T> CloseableIteration<? extends T, SailException> union(
-			CloseableIteration<? extends T, SailException>[] items)
-	{
+			CloseableIteration<? extends T, SailException>[] items) {
 		return new UnionIteration<>(items);
 	}
 

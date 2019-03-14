@@ -37,8 +37,7 @@ public class TestProxyRepository {
 
 	@Before
 	public final void setUp()
-		throws RepositoryConfigException, RepositoryException
-	{
+			throws RepositoryConfigException, RepositoryException {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		when(resolver.getRepository("test")).thenReturn(proxied);
 		repository = new ProxyRepository(resolver, "test");
@@ -47,22 +46,19 @@ public class TestProxyRepository {
 
 	@After
 	public final void tearDown()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		repository.shutDown();
 	}
 
 	@Test(expected = IllegalStateException.class)
 	public final void testDisallowAccessBeforeInitialize()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		repository.getConnection();
 	}
 
 	@Test
 	public final void testProperInitialization()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		assertThat(repository.getDataDir()).isEqualTo(dataDir.getRoot());
 		assertThat(repository.getProxiedIdentity()).isEqualTo("test");
 		assertThat(repository.isInitialized()).isFalse();
@@ -75,8 +71,7 @@ public class TestProxyRepository {
 
 	@Test(expected = IllegalStateException.class)
 	public final void testNoAccessAfterShutdown()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		repository.initialize();
 		repository.shutDown();
 		repository.getConnection();
@@ -84,8 +79,7 @@ public class TestProxyRepository {
 
 	@Test
 	public final void addDataToProxiedAndCompareToProxy()
-		throws RepositoryException, RDFParseException, IOException
-	{
+			throws RepositoryException, RDFParseException, IOException {
 		proxied.initialize();
 		RepositoryConnection connection = proxied.getConnection();
 		long count;
@@ -94,15 +88,13 @@ public class TestProxyRepository {
 					"http://www.test.org/proxy#", RDFFormat.TURTLE);
 			count = connection.size();
 			assertThat(count).isNotEqualTo(0L);
-		}
-		finally {
+		} finally {
 			connection.close();
 		}
 		connection = repository.getConnection();
 		try {
 			assertThat(connection.size()).isEqualTo(count);
-		}
-		finally {
+		} finally {
 			connection.close();
 		}
 	}

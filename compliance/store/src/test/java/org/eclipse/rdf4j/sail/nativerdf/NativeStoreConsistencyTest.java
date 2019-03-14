@@ -56,8 +56,7 @@ public class NativeStoreConsistencyTest {
 
 	@Test
 	public void testSES1867IndexCorruption()
-		throws Exception
-	{
+			throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
@@ -74,6 +73,7 @@ public class NativeStoreConsistencyTest {
 		conn.begin();
 		RDFInserter inserter = new RDFInserter(conn) {
 			private int count;
+
 			@Override
 			protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
 				super.addStatement(subj, pred, obj, ctxt);
@@ -94,7 +94,7 @@ public class NativeStoreConsistencyTest {
 		conn.begin();
 
 		logger.info("Removing old context");
-		conn.remove((Resource)null, (IRI)null, (Value)null, oldContext);
+		conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
 
 		logger.info("Adding updated context");
 		conn.add(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/newTriples.nt"), "",

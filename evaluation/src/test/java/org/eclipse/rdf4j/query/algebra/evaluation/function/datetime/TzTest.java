@@ -34,8 +34,7 @@ public class TzTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		tz = new Tz();
 	}
 
@@ -44,8 +43,7 @@ public class TzTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -60,8 +58,7 @@ public class TzTest {
 
 			assertEquals("-05:00", result.getLabel());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -78,8 +75,7 @@ public class TzTest {
 
 			assertEquals("Z", result.getLabel());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -96,8 +92,7 @@ public class TzTest {
 
 			assertEquals("", result.getLabel());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}

@@ -32,8 +32,7 @@ public class Concat implements Function {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (args.length == 0) {
 			throw new ValueExprEvaluationException("CONCAT requires at least 1 argument, got " + args.length);
 		}
@@ -44,30 +43,27 @@ public class Concat implements Function {
 
 		for (Value arg : args) {
 			if (arg instanceof Literal) {
-				Literal lit = (Literal)arg;
+				Literal lit = (Literal) arg;
 
 				if (!QueryEvaluationUtil.isStringLiteral(lit)) {
 					throw new ValueExprEvaluationException("unexpected datatype for CONCAT operand: " + lit);
 				}
-				
+
 				// verify that every literal argument has the same language tag. If
 				// not, the operator result should not use a language tag.
 				if (useLanguageTag && Literals.isLanguageLiteral(lit)) {
 					if (commonLanguageTag == null) {
 						commonLanguageTag = lit.getLanguage().get();
-					}
-					else if (!commonLanguageTag.equals(lit.getLanguage().orElse(null))) {
+					} else if (!commonLanguageTag.equals(lit.getLanguage().orElse(null))) {
 						commonLanguageTag = null;
 						useLanguageTag = false;
 					}
-				}
-				else {
+				} else {
 					useLanguageTag = false;
 				}
 
 				concatBuilder.append(lit.getLabel());
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException(
 						"unexpected argument type for CONCAT operator: " + arg);
 			}
@@ -77,8 +73,7 @@ public class Concat implements Function {
 
 		if (useLanguageTag) {
 			result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag);
-		}
-		else {
+		} else {
 			result = valueFactory.createLiteral(concatBuilder.toString());
 		}
 

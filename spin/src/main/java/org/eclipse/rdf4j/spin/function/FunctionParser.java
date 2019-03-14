@@ -15,5 +15,5 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 public interface FunctionParser {
 
 	Function parse(IRI uri, TripleSource store)
-		throws RDF4JException;
+			throws RDF4JException;
 }

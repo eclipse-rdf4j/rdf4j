@@ -49,8 +49,7 @@ public class RegexTest {
 
 	@Test
 	public void testEvaluate1()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal expr = vf.createLiteral("foobar");
 		Literal pattern = vf.createLiteral("foobar");
@@ -59,16 +58,14 @@ public class RegexTest {
 			Literal result = evaluate(expr, pattern);
 
 			assertTrue(result.booleanValue());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
 
 	@Test
 	public void testEvaluate2()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal expr = vf.createLiteral("foobar");
 		Literal pattern = vf.createLiteral("FooBar");
@@ -78,16 +75,14 @@ public class RegexTest {
 			Literal result = evaluate(expr, pattern, flags);
 
 			assertTrue(result.booleanValue());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
 
 	@Test
 	public void testEvaluate3()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal pattern = vf.createLiteral("FooBar");
 		Literal startIndex = vf.createLiteral(4);
@@ -95,16 +90,14 @@ public class RegexTest {
 		try {
 			evaluate(pattern, startIndex, startIndex, startIndex);
 			fail("illegal number of parameters");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
 
 	@Test
 	public void testEvaluate4()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal expr = vf.createLiteral("foobar", "en");
 		Literal pattern = vf.createLiteral("FooBar");
@@ -114,16 +107,14 @@ public class RegexTest {
 			Literal result = evaluate(expr, pattern, flags);
 
 			assertTrue(result.booleanValue());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
 
 	@Test
 	public void testEvaluate5()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal expr = vf.createLiteral("foobar", XMLSchema.STRING);
 		Literal pattern = vf.createLiteral("FooBar");
@@ -133,16 +124,14 @@ public class RegexTest {
 			Literal result = evaluate(expr, pattern, flags);
 
 			assertTrue(result.booleanValue());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
 
 	@Test
 	public void testEvaluate6()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		Literal expr = vf.createLiteral("foobar", XMLSchema.TOKEN);
 		Literal pattern = vf.createLiteral("FooBar");
@@ -151,15 +140,13 @@ public class RegexTest {
 		try {
 			evaluate(expr, pattern, flags);
 			fail("Regex should not process typed literals");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
 
 	private Literal evaluate(Value... args)
-		throws ValueExprEvaluationException, QueryEvaluationException
-	{
+			throws ValueExprEvaluationException, QueryEvaluationException {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(vf),
 				serviceResolver);
 		ValueExpr expr = new Var("expr", args[0]);
@@ -168,7 +155,7 @@ public class RegexTest {
 		if (args.length > 2) {
 			flags = new Var("flags", args[2]);
 		}
-		return (Literal)strategy.evaluate(new Regex(expr, pattern, flags), new EmptyBindingSet());
+		return (Literal) strategy.evaluate(new Regex(expr, pattern, flags), new EmptyBindingSet());
 	}
 
 }

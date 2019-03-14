@@ -36,12 +36,10 @@ public class LimitedSizeNativeStore extends NativeStore {
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal()
-		throws SailException
-	{
+			throws SailException {
 		try {
 			return new LimitedSizeNativeStoreConnection(this);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new SailException(e);
 		}
 	}

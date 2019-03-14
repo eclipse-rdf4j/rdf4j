@@ -33,14 +33,13 @@ public class LowerCase implements Function {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("LCASE requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
+			Literal literal = (Literal) args[0];
 
 			// LowerCase function accepts only string literals.
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
@@ -49,19 +48,15 @@ public class LowerCase implements Function {
 
 				if (language.isPresent()) {
 					return valueFactory.createLiteral(lexicalValue, language.get());
-				}
-				else if (XMLSchema.STRING.equals(literal.getDatatype())) {
+				} else if (XMLSchema.STRING.equals(literal.getDatatype())) {
 					return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);
-				}
-				else {
+				} else {
 					return valueFactory.createLiteral(lexicalValue);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 

@@ -34,12 +34,10 @@ public class NativeStoreInterruptTest extends SailInterruptTest {
 
 	@Override
 	protected NotifyingSail createSail()
-		throws SailException
-	{
+			throws SailException {
 		try {
 			return new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 	}

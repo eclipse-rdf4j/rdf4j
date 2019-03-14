@@ -19,8 +19,7 @@ public class SHA384Test extends HashFunctionTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		setHashFunction(new SHA384());
 		setToHash("abc");
 		setExpectedDigest(

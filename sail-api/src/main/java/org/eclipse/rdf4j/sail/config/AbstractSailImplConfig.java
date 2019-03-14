@@ -54,8 +54,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	@Override
 	public void validate()
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		if (type == null) {
 			throw new SailConfigException("No type specified for sail implementation");
 		}
@@ -85,19 +84,20 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	@Override
 	public void parse(Model m, Resource implNode)
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		try {
-			Models.objectLiteral(m.filter(implNode, SAILTYPE, null)).ifPresent(
-					lit -> setType(lit.getLabel()));
+			Models.objectLiteral(m.filter(implNode, SAILTYPE, null))
+					.ifPresent(
+							lit -> setType(lit.getLabel()));
 			Models.objectLiteral(
-					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null)).ifPresent(
+					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null))
+					.ifPresent(
 							lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			Models.objectLiteral(
-					m.filter(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null)).ifPresent(
+					m.filter(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null))
+					.ifPresent(
 							lit -> setConnectionTimeOut(lit.longValue()));
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
@@ -111,13 +111,12 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	}
 
 	/**
-	 * @param iterationCacheSyncThreshold
-	 *        The iterationCacheSyncThreshold to set.
+	 * @param iterationCacheSyncThreshold The iterationCacheSyncThreshold to set.
 	 */
 	public void setIterationCacheSyncThreshold(long iterationCacheSyncThreshold) {
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 	}
-	
+
 	/**
 	 * Get the connection timeout (in ms).
 	 * 

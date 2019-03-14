@@ -36,8 +36,7 @@ public class TestDateTimeCast {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		dtCast = new DateTimeCast();
 	}
 
@@ -46,8 +45,7 @@ public class TestDateTimeCast {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -57,8 +55,7 @@ public class TestDateTimeCast {
 			Literal result = dtCast.evaluate(f, plainLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.DATETIME, result.getDatatype());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -71,8 +68,7 @@ public class TestDateTimeCast {
 			assertNotNull(result);
 			assertEquals(XMLSchema.DATETIME, result.getDatatype());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -87,8 +83,7 @@ public class TestDateTimeCast {
 			assertEquals(XMLSchema.DATETIME, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

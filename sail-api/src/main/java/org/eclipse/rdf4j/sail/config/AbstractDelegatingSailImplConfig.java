@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.model.util.Models;
  * @author Herko ter Horst
  */
 public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplConfig
-		implements DelegatingSailImplConfig
-{
+		implements DelegatingSailImplConfig {
 
 	private SailImplConfig delegate;
 
@@ -56,8 +55,7 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 
 	@Override
 	public void validate()
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		super.validate();
 		if (delegate == null) {
 			throw new SailConfigException("No delegate specified for " + getType() + " Sail");
@@ -79,15 +77,14 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 
 	@Override
 	public void parse(Model m, Resource implNode)
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectResource(m.filter(implNode, DELEGATE, null)).ifPresent(
-					delegate -> setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegate)));
-		}
-		catch (ModelException e) {
+			Models.objectResource(m.filter(implNode, DELEGATE, null))
+					.ifPresent(
+							delegate -> setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegate)));
+		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

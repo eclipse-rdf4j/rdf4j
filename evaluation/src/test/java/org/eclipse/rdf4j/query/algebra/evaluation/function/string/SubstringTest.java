@@ -32,8 +32,7 @@ public class SubstringTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		substrFunc = new Substring();
 	}
 
@@ -42,8 +41,7 @@ public class SubstringTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -56,8 +54,7 @@ public class SubstringTest {
 			Literal result = substrFunc.evaluate(f, pattern, startIndex);
 
 			assertTrue(result.getLabel().equals("bar"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -73,8 +70,7 @@ public class SubstringTest {
 			Literal result = substrFunc.evaluate(f, pattern, startIndex, length);
 
 			assertTrue(result.getLabel().equals("ba"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -89,8 +85,7 @@ public class SubstringTest {
 		try {
 			substrFunc.evaluate(f, pattern, startIndex, length);
 			fail("illegal length spec should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}
@@ -103,8 +98,7 @@ public class SubstringTest {
 		try {
 			substrFunc.evaluate(f, pattern);
 			fail("illegal number of args hould have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}

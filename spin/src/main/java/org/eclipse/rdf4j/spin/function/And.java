@@ -24,8 +24,7 @@ public class And extends BinaryFunction {
 
 	@Override
 	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(arg1)
 				&& QueryEvaluationUtil.getEffectiveBooleanValue(arg2));
 	}

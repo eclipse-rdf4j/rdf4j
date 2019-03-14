@@ -25,10 +25,9 @@ public class Divide extends BinaryFunction {
 
 	@Override
 	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (arg1 instanceof Literal && arg2 instanceof Literal) {
-			return MathUtil.compute((Literal)arg1, (Literal)arg2, MathOp.DIVIDE);
+			return MathUtil.compute((Literal) arg1, (Literal) arg2, MathOp.DIVIDE);
 		}
 
 		throw new ValueExprEvaluationException("Both arguments must be numeric literals");

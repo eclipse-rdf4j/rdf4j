@@ -21,8 +21,7 @@ public class FederationSparqlTest {
 
 	@Test
 	public void test181Issue()
-		throws Exception
-	{
+			throws Exception {
 		SailRepository repo1 = new SailRepository(new MemoryStore());
 		SailRepository repo2 = new SailRepository(new MemoryStore());
 		Federation fed = new Federation();

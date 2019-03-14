@@ -21,8 +21,7 @@ public class MemorySPARQLUpdateTest extends SPARQLUpdateTest {
 
 	@Override
 	protected Repository newRepository()
-		throws Exception
-	{
+			throws Exception {
 		return new SailRepository(new MemoryStore());
 	}
 

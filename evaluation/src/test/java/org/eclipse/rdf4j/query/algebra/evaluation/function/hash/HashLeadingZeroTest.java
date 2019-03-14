@@ -14,8 +14,8 @@ import org.junit.Before;
  */
 public class HashLeadingZeroTest extends HashFunctionTest {
 	/**
-	 * Test if hash function adds multiple leading zeros (if needed).
-	 * Test value and expected result provided by Vassil Momtchev..
+	 * Test if hash function adds multiple leading zeros (if needed). Test value and expected result provided by Vassil
+	 * Momtchev..
 	 * 
 	 * @throws java.lang.Exception
 	 */

@@ -28,7 +28,7 @@ public abstract class HashFunction implements Function {
 	/**
 	 * Calculate hash value, represented as hexadecimal string.
 	 *
-	 * @param text text
+	 * @param text      text
 	 * @param algorithm name of the hash algorithm
 	 * @return hexadecimal string (padded with leading zeros if needed)
 	 * @throws NoSuchAlgorithmException

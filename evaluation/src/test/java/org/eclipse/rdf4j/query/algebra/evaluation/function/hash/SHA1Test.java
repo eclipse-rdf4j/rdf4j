@@ -19,8 +19,7 @@ public class SHA1Test extends HashFunctionTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		setHashFunction(new SHA1());
 		setToHash("abc");
 		setExpectedDigest("a9993e364706816aba3e25717850c26c9cd0d89d");

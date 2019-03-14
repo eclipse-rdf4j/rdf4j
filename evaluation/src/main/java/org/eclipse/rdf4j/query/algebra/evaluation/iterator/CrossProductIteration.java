@@ -17,10 +17,9 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Iteration which forms the cross product of a list of materialized input bindings with each result obtained
- * from the inner iteration. Example: <source> inputBindings := {b1, b2, ...} resultIteration := {r1, r2, ...}
- * getNextElement() returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross product per
- * result binding </source>
+ * Iteration which forms the cross product of a list of materialized input bindings with each result obtained from the
+ * inner iteration. Example: <source> inputBindings := {b1, b2, ...} resultIteration := {r1, r2, ...} getNextElement()
+ * returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross product per result binding </source>
  * 
  * @author Andreas Schwarte
  */
@@ -35,8 +34,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	protected BindingSet currentInputBinding = null;
 
 	public CrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
-			List<BindingSet> inputBindings)
-	{
+			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;
 		this.inputBindings = inputBindings;
@@ -44,8 +42,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 
 	@Override
 	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 
 		if (currentInputBinding == null) {
 			inputBindingsIterator = inputBindings.iterator();
@@ -70,12 +67,10 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 
 	@Override
 	protected void handleClose()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			resultIteration.close();
 		}
 	}

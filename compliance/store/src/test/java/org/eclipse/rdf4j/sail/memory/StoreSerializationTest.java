@@ -42,23 +42,20 @@ public class StoreSerializationTest extends TestCase {
 
 	@Override
 	protected void setUp()
-		throws Exception
-	{
+			throws Exception {
 		super.setUp();
 		dataDir = FileUtil.createTempDir("memorystore");
 	}
 
 	@Override
 	protected void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		super.tearDown();
 		FileUtil.deleteDir(dataDir);
 	}
 
 	public void testShortLiterals()
-		throws Exception
-	{
+			throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.initialize();
 
@@ -96,8 +93,7 @@ public class StoreSerializationTest extends TestCase {
 	}
 
 	public void testSerialization()
-		throws Exception
-	{
+			throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.initialize();
 
@@ -154,8 +150,7 @@ public class StoreSerializationTest extends TestCase {
 	}
 
 	public void testLongLiterals()
-		throws Exception
-	{
+			throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.initialize();
 

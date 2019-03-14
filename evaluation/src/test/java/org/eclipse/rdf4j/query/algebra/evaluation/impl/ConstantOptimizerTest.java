@@ -36,8 +36,7 @@ public class ConstantOptimizerTest {
 
 	@Test
 	public void testAndOptimization()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?a ?b ?c\n" + "where {\n" + " bind((?a && ?b) as ?c) \n"
 				+ "}";
 
@@ -74,8 +73,7 @@ public class ConstantOptimizerTest {
 
 	@Test
 	public void testFunctionOptimization()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?a ?b ?c \n " + "where {\n"
 				+ " bind(concat(?a, ?b) as ?c) \n" + "}";
 

@@ -26,8 +26,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Implementation of an on-disk B-Tree using the <tt>java.nio</tt> classes that are available in JDK 1.4 and
- * newer. Documentation about B-Trees can be found on-line at the following URLs:
+ * Implementation of an on-disk B-Tree using the <tt>java.nio</tt> classes that are available in JDK 1.4 and newer.
+ * Documentation about B-Trees can be found on-line at the following URLs:
  * <ul>
  * <li>http://cis.stvincent.edu/swd/btree/btree.html</li>,
  * <li>http://bluerwhite.org/btree/</li>, and
@@ -46,9 +46,9 @@ public class BTree implements Closeable {
 	 *-----------*/
 
 	/**
-	 * Magic number "BTree File" to detect whether the file is actually a BTree file. The first three bytes of
-	 * the file should be equal to this magic number. Note: this header has only been introduced in Sesame
-	 * 2.3. The old "header" can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
+	 * Magic number "BTree File" to detect whether the file is actually a BTree file. The first three bytes of the file
+	 * should be equal to this magic number. Note: this header has only been introduced in Sesame 2.3. The old "header"
+	 * can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
 	 */
 	static final byte[] MAGIC_NUMBER = new byte[] { 'b', 't', 'f' };
 
@@ -81,14 +81,14 @@ public class BTree implements Closeable {
 	private final boolean forceSync;
 
 	/**
-	 * Object used to determine whether one value is lower, equal or greater than another value. This
-	 * determines the order of values in the BTree.
+	 * Object used to determine whether one value is lower, equal or greater than another value. This determines the
+	 * order of values in the BTree.
 	 */
 	final RecordComparator comparator;
 
 	/**
-	 * A read/write lock that is used to prevent changes to the BTree while readers are active in order to
-	 * prevent concurrency issues.
+	 * A read/write lock that is used to prevent changes to the BTree while readers are active in order to prevent
+	 * concurrency issues.
 	 */
 	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
@@ -96,8 +96,7 @@ public class BTree implements Closeable {
 		Node node = new Node(id, this);
 		try {
 			node.read();
-		}
-		catch (IOException exc) {
+		} catch (IOException exc) {
 			throw new SailException("Error reading B-tree node", exc);
 		}
 		return node;
@@ -117,8 +116,8 @@ public class BTree implements Closeable {
 	 */
 
 	/**
-	 * The block size to use for calculating BTree node size. For optimal performance, the specified block
-	 * size should be equal to the file system's block size.
+	 * The block size to use for calculating BTree node size. For optimal performance, the specified block size should
+	 * be equal to the file system's block size.
 	 */
 	final int blockSize;
 
@@ -157,8 +156,8 @@ public class BTree implements Closeable {
 	private volatile int rootNodeID;
 
 	/**
-	 * The depth of this BTree (the cache variable), < 0 indicating it is unknown, 0 for an empty BTree, 1 for
-	 * a BTree with just a root node, and so on.
+	 * The depth of this BTree (the cache variable), < 0 indicating it is unknown, 0 for an empty BTree, 1 for a BTree
+	 * with just a root node, and so on.
 	 */
 	private volatile int height = -1;
 
@@ -174,102 +173,74 @@ public class BTree implements Closeable {
 	/**
 	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
 	 * 
-	 * @param dataDir
-	 *        The directory for the BTree data.
-	 * @param filenamePrefix
-	 *        The prefix for all files used by this BTree.
-	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
-	 *        of a block in the used file system.
-	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
-	 * @throws IOException
-	 *         In case the initialization of the B-Tree file failed.
+	 * @param dataDir        The directory for the BTree data.
+	 * @param filenamePrefix The prefix for all files used by this BTree.
+	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+	 *                       size of a block in the used file system.
+	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 * @see DefaultRecordComparator
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize)
-		throws IOException
-	{
+			throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, false);
 	}
 
 	/**
 	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
 	 * 
-	 * @param dataDir
-	 *        The directory for the BTree data.
-	 * @param filenamePrefix
-	 *        The prefix for all files used by this BTree.
-	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
-	 *        of a block in the used file system.
-	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
-	 * @param forceSync
-	 *        Flag indicating whether updates should be synced to disk forcefully by calling
-	 *        {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
-	 * @throws IOException
-	 *         In case the initialization of the B-Tree file failed.
+	 * @param dataDir        The directory for the BTree data.
+	 * @param filenamePrefix The prefix for all files used by this BTree.
+	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+	 *                       size of a block in the used file system.
+	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+	 * @param forceSync      Flag indicating whether updates should be synced to disk forcefully by calling
+	 *                       {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
+	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 * @see DefaultRecordComparator
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, boolean forceSync)
-		throws IOException
-	{
+			throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, new DefaultRecordComparator(), forceSync);
 	}
 
 	/**
-	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or
-	 * will be stored in the B-Tree.
+	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or will be
+	 * stored in the B-Tree.
 	 * 
-	 * @param dataDir
-	 *        The directory for the BTree data.
-	 * @param filenamePrefix
-	 *        The prefix for all files used by this BTree.
-	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
-	 *        of a block in the used file system.
-	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
-	 * @param comparator
-	 *        The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger or
-	 *        equal to another.
-	 * @throws IOException
-	 *         In case the initialization of the B-Tree file failed.
+	 * @param dataDir        The directory for the BTree data.
+	 * @param filenamePrefix The prefix for all files used by this BTree.
+	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+	 *                       size of a block in the used file system.
+	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+	 * @param comparator     The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger
+	 *                       or equal to another.
+	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize,
 			RecordComparator comparator)
-		throws IOException
-	{
+			throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, comparator, false);
 	}
 
 	/**
-	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or
-	 * will be stored in the B-Tree.
+	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or will be
+	 * stored in the B-Tree.
 	 * 
-	 * @param dataDir
-	 *        The directory for the BTree data.
-	 * @param filenamePrefix
-	 *        The prefix for all files used by this BTree.
-	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
-	 *        of a block in the used file system.
-	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
-	 * @param comparator
-	 *        The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger or
-	 *        equal to another.
-	 * @param forceSync
-	 *        Flag indicating whether updates should be synced to disk forcefully by calling
-	 *        {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
-	 * @throws IOException
-	 *         In case the initialization of the B-Tree file failed.
+	 * @param dataDir        The directory for the BTree data.
+	 * @param filenamePrefix The prefix for all files used by this BTree.
+	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+	 *                       size of a block in the used file system.
+	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+	 * @param comparator     The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger
+	 *                       or equal to another.
+	 * @param forceSync      Flag indicating whether updates should be synced to disk forcefully by calling
+	 *                       {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
+	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize,
 			RecordComparator comparator, boolean forceSync)
-		throws IOException
-	{
+			throws IOException {
 		if (dataDir == null) {
 			throw new IllegalArgumentException("dataDir must not be null");
 		}
@@ -308,8 +279,7 @@ public class BTree implements Closeable {
 			writeFileHeader();
 
 			// sync();
-		}
-		else {
+		} else {
 			// Read parameters from file
 			ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH);
 			nioFile.read(buf, 0L);
@@ -327,13 +297,11 @@ public class BTree implements Closeable {
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException(
 							"Unable to read BTree file " + file + "; it uses a newer file format");
-				}
-				else if (version != FILE_FORMAT_VERSION) {
+				} else if (version != FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read BTree file " + file
 							+ "; invalid file format version: " + version);
 				}
-			}
-			else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {
+			} else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {
 				if (version != 1) {
 					throw new IOException("Unable to read BTree file " + file
 							+ "; invalid file format version: " + version);
@@ -341,8 +309,7 @@ public class BTree implements Closeable {
 				// Write new magic number to file
 				logger.info("Updating file header for btree file '{}'", file.getAbsolutePath());
 				writeFileHeader();
-			}
-			else {
+			} else {
 				throw new IOException("File doesn't contain (compatible) BTree data: " + file);
 			}
 
@@ -385,8 +352,7 @@ public class BTree implements Closeable {
 	 * @return <tt>true</tt> if the operation was successful.
 	 */
 	public boolean delete()
-		throws IOException
-	{
+			throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			close(false);
 
@@ -398,51 +364,43 @@ public class BTree implements Closeable {
 	}
 
 	/**
-	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes will be
-	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
+	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes will be synchronized
+	 * to disk before closing. Once the B-Tree has been closed, it can no longer be used.
 	 */
 	@Override
 	public void close()
-		throws IOException
-	{
+			throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			close(true);
 		}
 	}
 
 	/**
-	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes are
-	 * optionally synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be
-	 * used.
+	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes are optionally
+	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
 	 * 
-	 * @param syncChanges
-	 *        Flag indicating whether pending changes should be synchronized to disk.
+	 * @param syncChanges Flag indicating whether pending changes should be synchronized to disk.
 	 */
 	private void close(boolean syncChanges)
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			try {
 				if (syncChanges) {
 					sync();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					nodeCache.clear();
-				}
-				finally {
+				} finally {
 					try {
 						nioFile.close();
-					}
-					finally {
+					} finally {
 						allocatedNodesList.close(syncChanges);
 					}
 				}
 			}
-		}
-		finally {
+		} finally {
 			btreeLock.writeLock().unlock();
 		}
 	}
@@ -453,8 +411,7 @@ public class BTree implements Closeable {
 	 * @throws IOException
 	 */
 	public void sync()
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.readLock().lock();
 		try {
 			// Write any changed nodes that still reside in the cache to disk
@@ -465,8 +422,7 @@ public class BTree implements Closeable {
 			}
 
 			allocatedNodesList.sync();
-		}
-		finally {
+		} finally {
 			btreeLock.readLock().unlock();
 		}
 	}
@@ -474,14 +430,12 @@ public class BTree implements Closeable {
 	/**
 	 * Gets the value that matches the specified key.
 	 * 
-	 * @param key
-	 *        A value that is equal to the value that should be retrieved, at least as far as the
-	 *        RecordComparator of this BTree is concerned.
+	 * @param key A value that is equal to the value that should be retrieved, at least as far as the RecordComparator
+	 *            of this BTree is concerned.
 	 * @return The value matching the key, or <tt>null</tt> if no such value could be found.
 	 */
 	public byte[] get(byte[] key)
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.readLock().lock();
 		try {
 			Node node = readRootNode();
@@ -499,22 +453,19 @@ public class BTree implements Closeable {
 					byte[] result = node.getValue(valueIdx);
 					node.release();
 					return result;
-				}
-				else if (!node.isLeaf()) {
+				} else if (!node.isLeaf()) {
 					// Returned index references the first value that is larger than
 					// the key, search the child node just left of it (==same index).
 					Node childNode = node.getChildNode(-valueIdx - 1);
 					node.release();
 					node = childNode;
-				}
-				else {
+				} else {
 					// value not found
 					node.release();
 					return null;
 				}
 			}
-		}
-		finally {
+		} finally {
 			btreeLock.readLock().unlock();
 		}
 	}
@@ -534,20 +485,19 @@ public class BTree implements Closeable {
 	}
 
 	/**
-	 * Returns an iterator that iterates over all values and returns the values that match the supplied
-	 * searchKey after searchMask has been applied to the value.
+	 * Returns an iterator that iterates over all values and returns the values that match the supplied searchKey after
+	 * searchMask has been applied to the value.
 	 */
 	public RecordIterator iterateValues(byte[] searchKey, byte[] searchMask) {
 		return new RangeIterator(this, searchKey, searchMask, null, null);
 	}
 
 	/**
-	 * Returns an iterator that iterates over all values between minValue and maxValue (inclusive) and returns
-	 * the values that match the supplied searchKey after searchMask has been applied to the value.
+	 * Returns an iterator that iterates over all values between minValue and maxValue (inclusive) and returns the
+	 * values that match the supplied searchKey after searchMask has been applied to the value.
 	 */
 	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue,
-			byte[] maxValue)
-	{
+			byte[] maxValue) {
 		return new RangeIterator(this, searchKey, searchMask, minValue, maxValue);
 	}
 
@@ -555,26 +505,22 @@ public class BTree implements Closeable {
 	 * Returns an estimate for the number of values stored in this BTree.
 	 */
 	public long getValueCountEstimate()
-		throws IOException
-	{
+			throws IOException {
 		int allocatedNodesCount = allocatedNodesList.getNodeCount();
 
 		// Assume fill factor of 50%
-		return (long)(allocatedNodesCount * (branchFactor - 1) * 0.5);
+		return (long) (allocatedNodesCount * (branchFactor - 1) * 0.5);
 	}
 
 	/**
 	 * Gives an estimate of the number of values between <tt>minValue</tt> and <tt>maxValue</tt>.
 	 * 
-	 * @param minValue
-	 *        the lower bound of the range.
-	 * @param maxValue
-	 *        the upper bound of the range,
+	 * @param minValue the lower bound of the range.
+	 * @param maxValue the upper bound of the range,
 	 * @return an estimate of the number of values in the specified range.
 	 */
 	public long getValueCountEstimate(byte[] minValue, byte[] maxValue)
-		throws IOException
-	{
+			throws IOException {
 		assert minValue != null : "minValue must not be null";
 		assert maxValue != null : "maxValue must not be null";
 
@@ -584,8 +530,7 @@ public class BTree implements Closeable {
 		try {
 			minValuePath = getPath(minValue);
 			maxValuePath = getPath(maxValue);
-		}
-		finally {
+		} finally {
 			btreeLock.readLock().unlock();
 		}
 
@@ -593,8 +538,7 @@ public class BTree implements Closeable {
 	}
 
 	private List<PathSegment> getPath(byte[] key)
-		throws IOException
-	{
+			throws IOException {
 		assert key != null : "key must not be null";
 
 		List<PathSegment> path = new ArrayList<>(height());
@@ -654,8 +598,7 @@ public class BTree implements Closeable {
 	}
 
 	private long getValueCountEstimate(List<PathSegment> minValuePath, List<PathSegment> maxValuePath)
-		throws IOException
-	{
+			throws IOException {
 		int commonListSize = Math.min(minValuePath.size(), maxValuePath.size());
 
 		if (commonListSize == 0) {
@@ -712,12 +655,11 @@ public class BTree implements Closeable {
 	}
 
 	/**
-	 * Estimates the number of values contained by a averagely filled node node at the specified
-	 * <tt>nodeDepth</tt> (the root is at depth 1).
+	 * Estimates the number of values contained by a averagely filled node node at the specified <tt>nodeDepth</tt> (the
+	 * root is at depth 1).
 	 */
 	private long getTreeSizeEstimate(int nodeDepth)
-		throws IOException
-	{
+			throws IOException {
 		// Assume fill factor of 50%
 		int fanOut = this.branchFactor / 2;
 
@@ -735,8 +677,7 @@ public class BTree implements Closeable {
 	}
 
 	private int height()
-		throws IOException
-	{
+			throws IOException {
 		// if the depth is cached, return that value
 		if (height >= 0) {
 			return height;
@@ -766,18 +707,15 @@ public class BTree implements Closeable {
 	}
 
 	/**
-	 * Inserts the supplied value into the B-Tree. In case an equal value is already present in the B-Tree
-	 * this value is overwritten with the new value and the old value is returned by this method.
+	 * Inserts the supplied value into the B-Tree. In case an equal value is already present in the B-Tree this value is
+	 * overwritten with the new value and the old value is returned by this method.
 	 * 
-	 * @param value
-	 *        The value to insert into the B-Tree.
+	 * @param value The value to insert into the B-Tree.
 	 * @return The old value that was replaced, if any.
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public byte[] insert(byte[] value)
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			Node rootNode = readRootNode();
@@ -812,15 +750,13 @@ public class BTree implements Closeable {
 			rootNode.release();
 
 			return insertResult.oldValue;
-		}
-		finally {
+		} finally {
 			btreeLock.writeLock().unlock();
 		}
 	}
 
 	private InsertResult insertInTree(byte[] value, int nodeID, Node node)
-		throws IOException
-	{
+			throws IOException {
 		InsertResult insertResult = null;
 
 		// Search value in node
@@ -836,16 +772,14 @@ public class BTree implements Closeable {
 			if (!Arrays.equals(value, insertResult.oldValue)) {
 				node.setValue(valueIdx, value);
 			}
-		}
-		else {
+		} else {
 			// valueIdx references the first value that is larger than the key
 			valueIdx = -valueIdx - 1;
 
 			if (node.isLeaf()) {
 				// Leaf node, insert value here
 				insertResult = insertInNode(value, nodeID, valueIdx, node);
-			}
-			else {
+			} else {
 				// Not a leaf node, insert value in the child node just left of
 				// the found value (==same index)
 				Node childNode = node.getChildNode(valueIdx);
@@ -866,8 +800,7 @@ public class BTree implements Closeable {
 	}
 
 	private InsertResult insertInNode(byte[] value, int nodeID, int valueIdx, Node node)
-		throws IOException
-	{
+			throws IOException {
 		InsertResult insertResult = new InsertResult();
 
 		if (node.isFull()) {
@@ -876,8 +809,7 @@ public class BTree implements Closeable {
 			insertResult.overflowValue = node.splitAndInsert(value, nodeID, valueIdx, newNode);
 			insertResult.overflowNodeID = newNode.getID();
 			newNode.release();
-		}
-		else {
+		} else {
 			// Leaf node is not full, simply add the value to it
 			node.insertValueNodeIDPair(valueIdx, value, nodeID);
 		}
@@ -909,15 +841,12 @@ public class BTree implements Closeable {
 	/**
 	 * Removes the value that matches the specified key from the B-Tree.
 	 * 
-	 * @param key
-	 *        A key that matches the value that should be removed from the B-Tree.
+	 * @param key A key that matches the value that should be removed from the B-Tree.
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public byte[] remove(byte[] key)
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			byte[] result = null;
@@ -932,8 +861,7 @@ public class BTree implements Closeable {
 					if (rootNode.isLeaf()) {
 						// Nothing's left
 						rootNodeID = 0;
-					}
-					else {
+					} else {
 						// Collapse B-Tree one level
 						rootNodeID = rootNode.getChildNodeID(0);
 						rootNode.setChildNodeID(0, 0);
@@ -951,27 +879,22 @@ public class BTree implements Closeable {
 			}
 
 			return result;
-		}
-		finally {
+		} finally {
 			btreeLock.writeLock().unlock();
 		}
 	}
 
 	/**
-	 * Removes the value that matches the specified key from the tree starting at the specified node and
-	 * returns the removed value.
+	 * Removes the value that matches the specified key from the tree starting at the specified node and returns the
+	 * removed value.
 	 * 
-	 * @param key
-	 *        A key that matches the value that should be removed from the B-Tree.
-	 * @param node
-	 *        The root of the (sub) tree.
+	 * @param key  A key that matches the value that should be removed from the B-Tree.
+	 * @param node The root of the (sub) tree.
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	private byte[] removeFromTree(byte[] key, Node node)
-		throws IOException
-	{
+			throws IOException {
 		byte[] value = null;
 
 		// Search key
@@ -981,8 +904,7 @@ public class BTree implements Closeable {
 			// Found matching value in this node, remove it
 			if (node.isLeaf()) {
 				value = node.removeValueRight(valueIdx);
-			}
-			else {
+			} else {
 				// Replace the matching value with the largest value from the left
 				// child node
 				value = node.getValue(valueIdx);
@@ -996,8 +918,7 @@ public class BTree implements Closeable {
 
 				leftChildNode.release();
 			}
-		}
-		else if (!node.isLeaf()) {
+		} else if (!node.isLeaf()) {
 			// Recurse into left child node
 			valueIdx = -valueIdx - 1;
 			Node childNode = node.getChildNode(valueIdx);
@@ -1014,17 +935,13 @@ public class BTree implements Closeable {
 	/**
 	 * Removes the largest value from the tree starting at the specified node and returns the removed value.
 	 * 
-	 * @param node
-	 *        The root of the (sub) tree.
+	 * @param node The root of the (sub) tree.
 	 * @return The value that was removed from the B-Tree.
-	 * @throws IOException
-	 *         If an I/O error occurred.
-	 * @throws IllegalArgumentException
-	 *         If the supplied node is an empty leaf node
+	 * @throws IOException              If an I/O error occurred.
+	 * @throws IllegalArgumentException If the supplied node is an empty leaf node
 	 */
 	private byte[] removeLargestValueFromTree(Node node)
-		throws IOException
-	{
+			throws IOException {
 		int nodeValueCount = node.getValueCount();
 
 		if (node.isLeaf()) {
@@ -1033,8 +950,7 @@ public class BTree implements Closeable {
 						"Trying to remove largest value from an empty node in " + getFile());
 			}
 			return node.removeValueRight(nodeValueCount - 1);
-		}
-		else {
+		} else {
 			// Recurse into right-most child node
 			Node childNode = node.getChildNode(nodeValueCount);
 			byte[] value = removeLargestValueFromTree(childNode);
@@ -1045,8 +961,7 @@ public class BTree implements Closeable {
 	}
 
 	private void balanceChildNode(Node parentNode, Node childNode, int childIdx)
-		throws IOException
-	{
+			throws IOException {
 		if (childNode.getValueCount() < minValueCount) {
 			// Child node contains too few values, try to borrow one from its right
 			// sibling
@@ -1057,8 +972,7 @@ public class BTree implements Closeable {
 			if (rightSibling != null && rightSibling.getValueCount() > minValueCount) {
 				// Right sibling has enough values to give one up
 				parentNode.rotateLeft(childIdx, childNode, rightSibling);
-			}
-			else {
+			} else {
 				// Right sibling does not have enough values to give one up, try its
 				// left sibling
 				Node leftSibling = (childIdx > 0) ? parentNode.getChildNode(childIdx - 1) : null;
@@ -1066,15 +980,13 @@ public class BTree implements Closeable {
 				if (leftSibling != null && leftSibling.getValueCount() > minValueCount) {
 					// Left sibling has enough values to give one up
 					parentNode.rotateRight(childIdx, leftSibling, childNode);
-				}
-				else {
+				} else {
 					// Both siblings contain the minimum amount of values,
 					// merge the child node with its left or right sibling
 					if (leftSibling != null) {
 						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1),
 								childNode);
-					}
-					else {
+					} else {
 						childNode.mergeWithRightSibling(parentNode.removeValueRight(childIdx), rightSibling);
 					}
 				}
@@ -1093,12 +1005,10 @@ public class BTree implements Closeable {
 	/**
 	 * Removes all values from the B-Tree.
 	 * 
-	 * @throws IOException
-	 *         If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear()
-		throws IOException
-	{
+			throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			nodeCache.clear();
@@ -1110,15 +1020,13 @@ public class BTree implements Closeable {
 			}
 
 			allocatedNodesList.clear();
-		}
-		finally {
+		} finally {
 			btreeLock.writeLock().unlock();
 		}
 	}
 
 	private Node createNewNode()
-		throws IOException
-	{
+			throws IOException {
 		int newNodeID = allocatedNodesList.allocateNode();
 
 		Node node = new Node(newNodeID, this);
@@ -1130,8 +1038,7 @@ public class BTree implements Closeable {
 	}
 
 	Node readRootNode()
-		throws IOException
-	{
+			throws IOException {
 		if (rootNodeID > 0) {
 			return readNode(rootNodeID);
 		}
@@ -1139,8 +1046,7 @@ public class BTree implements Closeable {
 	}
 
 	Node readNode(int id)
-		throws IOException
-	{
+			throws IOException {
 		if (id <= 0) {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}
@@ -1149,8 +1055,7 @@ public class BTree implements Closeable {
 	}
 
 	void releaseNode(Node node)
-		throws IOException
-	{
+			throws IOException {
 		// Note: this method is called by Node.release()
 		// This method should not be called directly (to prevent concurrency issues)!!!
 
@@ -1165,14 +1070,12 @@ public class BTree implements Closeable {
 					nioFile.truncate(nodeID2offset(maxNodeID) + nodeSize);
 				}
 			}
-		}
-		else
+		} else
 			nodeCache.release(node, forceSync);
 	}
 
 	private void writeFileHeader()
-		throws IOException
-	{
+			throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH);
 		buf.put(MAGIC_NUMBER);
 		buf.put(FILE_FORMAT_VERSION);
@@ -1186,16 +1089,15 @@ public class BTree implements Closeable {
 	}
 
 	long nodeID2offset(int id) {
-		return (long)blockSize * id;
+		return (long) blockSize * id;
 	}
 
 	private int offset2nodeID(long offset) {
-		return (int)(offset / blockSize);
+		return (int) (offset / blockSize);
 	}
 
 	public void print(PrintStream out)
-		throws IOException
-	{
+			throws IOException {
 		out.println("---contents of BTree file---");
 		out.println("Stored parameters:");
 		out.println("block size   = " + blockSize);

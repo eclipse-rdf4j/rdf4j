@@ -18,8 +18,8 @@ import org.locationtech.spatial4j.shape.Point;
 
 /**
  * The GeoSPARQL {@link Function} geof:distance, as defined in
- * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for
- * RDF Data</a>.
+ * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for RDF
+ * Data</a>.
  */
 public class Distance implements Function {
 

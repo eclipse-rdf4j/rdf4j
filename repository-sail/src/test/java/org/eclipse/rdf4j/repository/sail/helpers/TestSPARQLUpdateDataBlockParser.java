@@ -25,8 +25,7 @@ public class TestSPARQLUpdateDataBlockParser {
 	 */
 	@Test
 	public void testParseGraph()
-		throws RDFParseException, RDFHandlerException, IOException
-	{
+			throws RDFParseException, RDFHandlerException, IOException {
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
 		String blocksToCheck[] = new String[] {
 				"graph <u:g1> {<u:1> <p:1> 1 } . <u:2> <p:2> 2.",

@@ -98,12 +98,12 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 	@Override
 	public void parse(Model graph, Resource implNode)
-		throws SailConfigException
-	{
+			throws SailConfigException {
 		super.parse(graph, implNode);
 
-		Literal indexDirLit = Models.objectLiteral(graph.filter(implNode, INDEX_DIR, null)).orElseThrow(
-				() -> new SailConfigException("no value found for " + INDEX_DIR));
+		Literal indexDirLit = Models.objectLiteral(graph.filter(implNode, INDEX_DIR, null))
+				.orElseThrow(
+						() -> new SailConfigException("no value found for " + INDEX_DIR));
 
 		setIndexDir(indexDirLit.getLabel());
 		for (Statement stmt : graph.filter(implNode, null, null)) {

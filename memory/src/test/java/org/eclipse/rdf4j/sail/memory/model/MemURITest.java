@@ -26,8 +26,7 @@ public class MemURITest {
 	 */
 	@Test
 	public void testEqualsAndHash()
-		throws Exception
-	{
+			throws Exception {
 		compareURIs(RDF.NAMESPACE);
 		compareURIs(RDF.TYPE.toString());
 		compareURIs("foo:bar");
@@ -36,8 +35,7 @@ public class MemURITest {
 	}
 
 	private void compareURIs(String uri)
-		throws Exception
-	{
+			throws Exception {
 		IRI uriImpl = SimpleValueFactory.getInstance().createIRI(uri);
 		MemIRI memURI = new MemIRI(this, uriImpl.getNamespace(), uriImpl.getLocalName());
 

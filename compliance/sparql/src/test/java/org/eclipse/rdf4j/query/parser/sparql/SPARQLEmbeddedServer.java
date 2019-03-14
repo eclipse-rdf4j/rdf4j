@@ -80,8 +80,7 @@ public class SPARQLEmbeddedServer {
 	}
 
 	public void start()
-		throws Exception
-	{
+			throws Exception {
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
@@ -92,15 +91,13 @@ public class SPARQLEmbeddedServer {
 	}
 
 	public void stop()
-		throws Exception
-	{
+			throws Exception {
 		Repository systemRepo = new HTTPRepository(
 				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 		RepositoryConnection con = systemRepo.getConnection();
 		try {
 			con.clear();
-		}
-		finally {
+		} finally {
 			con.close();
 			systemRepo.shutDown();
 		}
@@ -110,8 +107,7 @@ public class SPARQLEmbeddedServer {
 	}
 
 	private void createTestRepositories()
-		throws RepositoryException, RepositoryConfigException
-	{
+			throws RepositoryException, RepositoryConfigException {
 		Repository systemRep = new HTTPRepository(
 				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 

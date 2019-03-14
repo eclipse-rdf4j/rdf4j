@@ -36,14 +36,13 @@ public abstract class ExternalSet extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+			throws X {
 		visitor.meetOther(this);
 	}
 
 	@Override
 	public ExternalSet clone() {
-		return (ExternalSet)super.clone();
+		return (ExternalSet) super.clone();
 	}
 
 	public double cardinality() {
@@ -51,6 +50,6 @@ public abstract class ExternalSet extends AbstractQueryModelNode implements Tupl
 	}
 
 	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 }

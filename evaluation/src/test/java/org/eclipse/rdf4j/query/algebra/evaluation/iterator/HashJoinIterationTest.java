@@ -34,20 +34,19 @@ public class HashJoinIterationTest {
 
 	@Test
 	public void testCartesianJoin()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
-			left.setBindingSets(Arrays.<BindingSet> asList(leftb));
+			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
 		{
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
-			right.setBindingSets(Arrays.<BindingSet> asList(rightb));
+			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),
@@ -60,14 +59,13 @@ public class HashJoinIterationTest {
 
 	@Test
 	public void testInnerJoin()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
 			leftb.addBinding("i", vf.createLiteral("x"));
-			left.setBindingSets(Arrays.<BindingSet> asList(leftb));
+			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
@@ -75,7 +73,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
 			rightb.addBinding("i", vf.createLiteral("x"));
-			right.setBindingSets(Arrays.<BindingSet> asList(rightb));
+			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),
@@ -89,14 +87,13 @@ public class HashJoinIterationTest {
 
 	@Test
 	public void testLeftJoin()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
 			leftb.addBinding("i", vf.createLiteral("x"));
-			left.setBindingSets(Arrays.<BindingSet> asList(leftb));
+			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
@@ -104,7 +101,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
 			rightb.addBinding("i", vf.createLiteral("y"));
-			right.setBindingSets(Arrays.<BindingSet> asList(rightb));
+			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),

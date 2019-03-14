@@ -46,13 +46,12 @@ public abstract class AbstractSpinFunction {
 	}
 
 	protected static void addBindings(Query query, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		for (int i = 1; i < args.length; i += 2) {
 			if (!(args[i] instanceof Literal)) {
 				throw new ValueExprEvaluationException("Argument " + i + " must be a literal");
 			}
-			query.setBinding(((Literal)args[i]).getLabel(), args[i + 1]);
+			query.setBinding(((Literal) args[i]).getLabel(), args[i + 1]);
 		}
 	}
 }

@@ -27,8 +27,7 @@ public class SolrSailTest extends AbstractLuceneSailTest {
 
 	@Override
 	public void tearDown()
-		throws IOException, RepositoryException
-	{
+			throws IOException, RepositoryException {
 		super.tearDown();
 		FileUtils.deleteDirectory(new File(DATA_DIR));
 	}

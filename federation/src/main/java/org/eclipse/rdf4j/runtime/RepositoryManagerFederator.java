@@ -58,9 +58,8 @@ public class RepositoryManagerFederator {
 	 * Create an instance capable of federating "user repositories" within the given
 	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
 	 * 
-	 * @param manager
-	 *        must manage the repositories to be added to new federations, and becomes the manager of any
-	 *        created federations
+	 * @param manager must manage the repositories to be added to new federations, and becomes the manager of any
+	 *                created federations
 	 */
 	public RepositoryManagerFederator(RepositoryManager manager) {
 		this.manager = manager;
@@ -72,26 +71,19 @@ public class RepositoryManagerFederator {
 	 * federation of the given repository id's, which must also refer to repositories already managed by the
 	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
 	 * 
-	 * @param fedID
-	 *        the desired identifier for the new federation repository
-	 * @param description
-	 *        the desired description for the new federation repository
-	 * @param members
-	 *        the identifiers of the repositories to federate, which must already exist and be managed by the
-	 *        {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}
-	 * @param readonly
-	 *        whether the federation is read-only
-	 * @param distinct
-	 *        whether the federation enforces distinct results from its members
-	 * @throws MalformedURLException
-	 *         if the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager} has a malformed location
-	 * @throws RDF4JException
-	 *         if a problem otherwise occurs while creating the federation
+	 * @param fedID       the desired identifier for the new federation repository
+	 * @param description the desired description for the new federation repository
+	 * @param members     the identifiers of the repositories to federate, which must already exist and be managed by
+	 *                    the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}
+	 * @param readonly    whether the federation is read-only
+	 * @param distinct    whether the federation enforces distinct results from its members
+	 * @throws MalformedURLException if the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager} has a
+	 *                               malformed location
+	 * @throws RDF4JException        if a problem otherwise occurs while creating the federation
 	 */
 	public void addFed(String fedID, String description, Collection<String> members, boolean readonly,
 			boolean distinct)
-		throws MalformedURLException, RDF4JException
-	{
+			throws MalformedURLException, RDF4JException {
 		if (members.contains(fedID)) {
 			throw new RepositoryConfigException(
 					"A federation member may not have the same ID as the federation.");
@@ -111,8 +103,7 @@ public class RepositoryManagerFederator {
 
 	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode,
 			boolean readonly, boolean distinct)
-		throws RDF4JException, MalformedURLException
-	{
+			throws RDF4JException, MalformedURLException {
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
 		addToGraph(graph, implRoot, RepositoryConfigSchema.REPOSITORYTYPE,
@@ -122,8 +113,7 @@ public class RepositoryManagerFederator {
 
 	private void addSail(Collection<String> members, Model graph, BNode implRoot, boolean readonly,
 			boolean distinct)
-		throws RDF4JException, MalformedURLException
-	{
+			throws RDF4JException, MalformedURLException {
 		BNode sailRoot = valueFactory.createBNode();
 		addToGraph(graph, implRoot, SailRepositorySchema.SAILIMPL, sailRoot);
 		addToGraph(graph, sailRoot, SailConfigSchema.SAILTYPE,
@@ -136,15 +126,13 @@ public class RepositoryManagerFederator {
 	}
 
 	private void addMember(Model graph, BNode sailRoot, String identifier)
-		throws RDF4JException, MalformedURLException
-	{
+			throws RDF4JException, MalformedURLException {
 		LOGGER.debug("Adding member: {}", identifier);
 		BNode memberNode = valueFactory.createBNode();
 		addToGraph(graph, sailRoot, FederationConfig.MEMBER, memberNode);
 		String memberRepoType = manager.getRepositoryConfig(identifier).getRepositoryImplConfig().getType();
 		if (!(SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)
-				|| HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)))
-		{
+				|| HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType))) {
 			memberRepoType = ProxyRepositoryFactory.REPOSITORY_TYPE;
 		}
 		addToGraph(graph, memberNode, RepositoryConfigSchema.REPOSITORYTYPE,
@@ -158,29 +146,24 @@ public class RepositoryManagerFederator {
 		IRI predicate;
 		if (SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
 			predicate = SPARQLRepositoryConfig.QUERY_ENDPOINT;
-		}
-		else if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
+		} else if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
 			predicate = HTTPRepositorySchema.REPOSITORYURL;
-		}
-		else {
+		} else {
 			predicate = ProxyRepositorySchema.PROXIED_ID;
 		}
 		return predicate;
 	}
 
 	private Value getMemberLocator(String identifier, String memberRepoType)
-		throws MalformedURLException, RepositoryConfigException, RDF4JException
-	{
+			throws MalformedURLException, RepositoryConfigException, RDF4JException {
 		Value locator;
 		if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
-			locator = valueFactory.createIRI(((HTTPRepositoryConfig)manager.getRepositoryConfig(
+			locator = valueFactory.createIRI(((HTTPRepositoryConfig) manager.getRepositoryConfig(
 					identifier).getRepositoryImplConfig()).getURL());
-		}
-		else if (SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
-			locator = valueFactory.createIRI(((SPARQLRepositoryConfig)manager.getRepositoryConfig(
+		} else if (SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
+			locator = valueFactory.createIRI(((SPARQLRepositoryConfig) manager.getRepositoryConfig(
 					identifier).getRepositoryImplConfig()).getQueryEndpointUrl());
-		}
-		else {
+		} else {
 			locator = valueFactory.createLiteral(identifier);
 		}
 		return locator;

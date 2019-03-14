@@ -12,9 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Limited-size concurrent cache. The actual cleanup to keep the size limited is done once per
- * <code>CLEANUP_INTERVAL</code> invocations of the protected method <code>cleanUp</code>.
- * <code>cleanUp</code> method is called every time by <code>put</code> The maximum size is maintained
- * approximately. Cleanup is not done if size is less than <code>capacity + CLEANUP_INTERVAL / 2</code>.
+ * <code>CLEANUP_INTERVAL</code> invocations of the protected method <code>cleanUp</code>. <code>cleanUp</code> method
+ * is called every time by <code>put</code> The maximum size is maintained approximately. Cleanup is not done if size is
+ * less than <code>capacity + CLEANUP_INTERVAL / 2</code>.
  *
  * @author Oleg Mirzov
  */
@@ -32,7 +32,7 @@ public class ConcurrentCache<K, V> {
 
 	public ConcurrentCache(int capacity) {
 		this.capacity = capacity;
-		this.cache = new ConcurrentHashMap<>((int)(capacity / LOAD_FACTOR), LOAD_FACTOR);
+		this.cache = new ConcurrentHashMap<>((int) (capacity / LOAD_FACTOR), LOAD_FACTOR);
 	}
 
 	public V get(Object key) {
@@ -49,8 +49,7 @@ public class ConcurrentCache<K, V> {
 	}
 
 	/**
-	 * @param key
-	 *        the key of the node to test for removal and do finalization on
+	 * @param key the key of the node to test for removal and do finalization on
 	 * @return true if removal is approved
 	 */
 	protected boolean onEntryRemoval(K key) {
@@ -75,7 +74,7 @@ public class ConcurrentCache<K, V> {
 
 			Iterator<K> iter = cache.keySet().iterator();
 
-			float removeEachTh = (float)size / (size - capacity);
+			float removeEachTh = (float) size / (size - capacity);
 
 			for (int i = 0; iter.hasNext(); i++) {
 

@@ -30,8 +30,7 @@ abstract class GeometricRelationFunction implements Function {
 			boolean result = relation(geom1, geom2);
 
 			return valueFactory.createLiteral(result);
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			throw new ValueExprEvaluationException("error evaluating geospatial relation", e);
 		}
 	}

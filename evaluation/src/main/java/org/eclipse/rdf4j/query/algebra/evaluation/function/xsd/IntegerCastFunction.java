@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
- * Abstract superclass for {@link CastFunction}s that cast their arguments to an xsd:integer or one of its
- * derived types.
+ * Abstract superclass for {@link CastFunction}s that cast their arguments to an xsd:integer or one of its derived
+ * types.
  * 
  * @author Jeen Broekstra
  */
@@ -28,10 +28,9 @@ public abstract class IntegerCastFunction extends CastFunction {
 
 	@Override
 	protected Literal convert(ValueFactory valueFactory, Value value)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (XMLDatatypeUtil.isNumericDatatype(datatype)) {
@@ -48,24 +47,20 @@ public abstract class IntegerCastFunction extends CastFunction {
 				BigInteger integerValue = null;
 				if (XMLSchema.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
 					integerValue = literal.decimalValue().toBigInteger();
-				}
-				else {
+				} else {
 					integerValue = literal.integerValue();
 				}
 				try {
 					return createTypedLiteral(valueFactory, integerValue).orElseThrow(
 							() -> typeError(literal, null));
-				}
-				catch (ArithmeticException | NumberFormatException e) {
+				} catch (ArithmeticException | NumberFormatException e) {
 					throw typeError(literal, e);
 				}
-			}
-			else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
 					return createTypedLiteral(valueFactory, literal.booleanValue()).orElseThrow(
 							() -> typeError(literal, null));
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}
 			}
@@ -76,26 +71,21 @@ public abstract class IntegerCastFunction extends CastFunction {
 	/**
 	 * create a {@link Literal} with the specific datatype for the supplied {@link BigInteger} value.
 	 * 
-	 * @param vf
-	 *        the {@link ValueFactory} to use for creating the {@link Literal}
-	 * @param integerValue
-	 *        the integer value to use for creating the {@link Literal}
+	 * @param vf           the {@link ValueFactory} to use for creating the {@link Literal}
+	 * @param integerValue the integer value to use for creating the {@link Literal}
 	 * @return an {@link Optional} literal value, which may be empty if the supplied integerValue can not be
 	 *         successfully converted to the specific datatype.
-	 * @throws ArithmeticException
-	 *         if an error occurs when attempting to convert the supplied value to a value of the specific
-	 *         datatype.
+	 * @throws ArithmeticException if an error occurs when attempting to convert the supplied value to a value of the
+	 *                             specific datatype.
 	 */
 	protected abstract Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-		throws ArithmeticException;
+			throws ArithmeticException;
 
 	/**
 	 * create a {@link Literal} with the specific datatype for the supplied boolean value.
 	 * 
-	 * @param vf
-	 *        the {@link ValueFactory} to use for creating the {@link Literal}
-	 * @param booleanValue
-	 *        the boolean value to use for creating the {@link Literal}
+	 * @param vf           the {@link ValueFactory} to use for creating the {@link Literal}
+	 * @param booleanValue the boolean value to use for creating the {@link Literal}
 	 * @return an {@link Optional} literal value, which may be empty if the supplied boolean value can not be
 	 *         successfully converted to the specific datatype.
 	 */

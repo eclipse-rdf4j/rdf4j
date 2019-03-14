@@ -17,8 +17,8 @@ import org.locationtech.spatial4j.shape.Shape;
 
 /**
  * The GeoSPARQL {@link Function} geof:relate, as defined in
- * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for
- * RDF Data</a>.
+ * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for RDF
+ * Data</a>.
  */
 public class Relate implements Function {
 
@@ -29,8 +29,7 @@ public class Relate implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (args.length != 3) {
 			throw new ValueExprEvaluationException(
 					getURI() + " requires exactly 3 arguments, got " + args.length);

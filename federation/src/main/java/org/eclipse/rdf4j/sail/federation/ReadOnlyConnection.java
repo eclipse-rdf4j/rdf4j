@@ -30,64 +30,55 @@ class ReadOnlyConnection extends AbstractFederationConnection {
 
 	@Override
 	public void setNamespaceInternal(String prefix, String name)
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	public void clearNamespacesInternal()
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	public void removeNamespaceInternal(String prefix)
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	public void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... context)
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	protected void clearInternal(Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
 	protected void commitInternal()
-		throws SailException
-	{
+			throws SailException {
 		// no-op
 	}
 
 	@Override
 	protected void rollbackInternal()
-		throws SailException
-	{
+			throws SailException {
 		// no-op
 	}
 
 	@Override
 	protected void startTransactionInternal()
-		throws SailException
-	{
+			throws SailException {
 		// no-op
 	}
 

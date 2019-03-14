@@ -27,21 +27,18 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 
 	public W3CApprovedSPARQL11UpdateTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
 			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs)
-	{
+			Map<String, IRI> resultNamedGraphs) {
 		super(testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
 				resultNamedGraphs);
 	}
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			public W3CApprovedSPARQL11UpdateTest createSPARQLUpdateConformanceTest(String testURI,
 					String name, String requestFile, IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs,
-					IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs)
-			{
+					IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs) {
 				return new W3CApprovedSPARQL11UpdateTest(testURI, name, requestFile, defaultGraphURI,
 						inputNamedGraphs, resultDefaultGraphURI, resultNamedGraphs);
 			}
@@ -51,8 +48,7 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 
 	@Override
 	protected Repository newRepository()
-		throws Exception
-	{
+			throws Exception {
 		SailRepository repo = new SailRepository(new MemoryStore());
 
 		return repo;

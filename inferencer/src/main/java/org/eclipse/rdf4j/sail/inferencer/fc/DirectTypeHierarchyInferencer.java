@@ -37,9 +37,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A forward-chaining inferencer that infers the direct-type hierarchy relations
- * {@link SESAME#DIRECTSUBCLASSOF sesame:directSubClassOf}, {@link SESAME#DIRECTSUBPROPERTYOF
- * sesame:directSubPropertyOf} and {@link SESAME#DIRECTTYPE sesame:directType}.
+ * A forward-chaining inferencer that infers the direct-type hierarchy relations {@link SESAME#DIRECTSUBCLASSOF
+ * sesame:directSubClassOf}, {@link SESAME#DIRECTSUBPROPERTYOF sesame:directSubPropertyOf} and {@link SESAME#DIRECTTYPE
+ * sesame:directType}.
  * <p>
  * The semantics of this inferencer are defined as follows:
  * 
@@ -110,8 +110,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					"CONSTRUCT {X} sesame:directType {Y} FROM {X} rdf:type {Y} "
 							+ "WHERE NOT EXISTS (SELECT Z FROM {X} rdf:type {Z} rdfs:subClassOf {Y} WHERE Z != Y)",
 					null);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			// Can only occur due to a bug in this code
 			throw new RuntimeException(e);
 		}
@@ -135,21 +134,18 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public InferencerConnection getConnection()
-		throws SailException
-	{
+			throws SailException {
 		try {
-			InferencerConnection con = (InferencerConnection)super.getConnection();
+			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new DirectTypeHierarchyInferencerConnection(con);
-		}
-		catch (ClassCastException e) {
+		} catch (ClassCastException e) {
 			throw new SailException(e.getMessage(), e);
 		}
 	}
 
 	@Override
 	public void initialize()
-		throws SailException
-	{
+			throws SailException {
 		super.initialize();
 
 		try (InferencerConnection con = getConnection()) {
@@ -164,8 +160,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	 *-----------------------------------------------------*/
 
 	private class DirectTypeHierarchyInferencerConnection extends InferencerConnectionWrapper
-			implements SailConnectionListener
-	{
+			implements SailConnectionListener {
 
 		/**
 		 * Flag indicating whether an update of the inferred statements is needed.
@@ -199,16 +194,14 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 
 		@Override
 		public void rollback()
-			throws SailException
-		{
+				throws SailException {
 			super.rollback();
 			updateNeeded = false;
 		}
 
 		@Override
 		public void flushUpdates()
-			throws SailException
-		{
+				throws SailException {
 			super.flushUpdates();
 
 			while (updateNeeded) {
@@ -250,17 +243,14 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					}
 
 					updateNeeded = false;
-				}
-				catch (RDFHandlerException e) {
+				} catch (RDFHandlerException e) {
 					Throwable t = e.getCause();
 					if (t instanceof SailException) {
-						throw (SailException)t;
-					}
-					else {
+						throw (SailException) t;
+					} else {
 						throw new SailException(t);
 					}
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					throw new SailException(e);
 				}
 
@@ -269,10 +259,10 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
-			throws SailException, RDFHandlerException, QueryEvaluationException
-		{
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
-				query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+				throws SailException, RDFHandlerException, QueryEvaluationException {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+					.evaluate(
+							query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {
@@ -283,7 +273,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					Value obj = bindings.getValue("object");
 
 					if (subj instanceof Resource && pred instanceof IRI && obj != null) {
-						statements.add(vf.createStatement((Resource)subj, (IRI)pred, obj));
+						statements.add(vf.createStatement((Resource) subj, (IRI) pred, obj));
 					}
 				}
 			}

@@ -104,7 +104,7 @@ public class ShaclSailConfigTest {
 		subject.parse(mb.build(), implNode);
 
 	}
-	
+
 	@Test
 	public void exportAddsAllConfigData() {
 		Model m = new TreeModel();

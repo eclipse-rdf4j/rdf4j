@@ -17,7 +17,7 @@ public class ParsedGraphTemplate extends ParsedGraphQuery implements ParsedTempl
 	private final BindingSet args;
 
 	public ParsedGraphTemplate(Template template, BindingSet args) {
-		this(template, (ParsedGraphQuery)template.getParsedOperation(), args);
+		this(template, (ParsedGraphQuery) template.getParsedOperation(), args);
 	}
 
 	private ParsedGraphTemplate(Template template, ParsedGraphQuery query, BindingSet args) {

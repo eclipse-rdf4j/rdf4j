@@ -32,13 +32,12 @@ public class SpinTupleFunctionParser implements TupleFunctionParser {
 
 	@Override
 	public TupleFunction parse(IRI funcUri, TripleSource store)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		Value body = TripleSources.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
 		if (!(body instanceof Resource)) {
 			return null;
 		}
-		ParsedQuery query = parser.parseQuery((Resource)body, store);
+		ParsedQuery query = parser.parseQuery((Resource) body, store);
 
 		Map<IRI, Argument> templateArgs = parser.parseArguments(funcUri, store);
 

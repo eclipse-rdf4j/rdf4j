@@ -36,8 +36,7 @@ public class TestProxyRepositoryFactory {
 
 	@Test(expected = RepositoryConfigException.class)
 	public final void testGetConfig()
-		throws RepositoryConfigException
-	{
+			throws RepositoryConfigException {
 		RepositoryImplConfig factoryConfig = factory.getConfig();
 		assertThat(factoryConfig).isInstanceOf(ProxyRepositoryConfig.class);
 		factoryConfig.validate();
@@ -45,8 +44,7 @@ public class TestProxyRepositoryFactory {
 
 	@Test
 	public final void testGetRepository()
-		throws RDF4JException, IOException
-	{
+			throws RDF4JException, IOException {
 		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"),
 				RepositoryConfigSchema.NAMESPACE, RDFFormat.TURTLE);
 		RepositoryConfig config = RepositoryConfig.create(graph,
@@ -57,13 +55,13 @@ public class TestProxyRepositoryFactory {
 		RepositoryImplConfig implConfig = config.getRepositoryImplConfig();
 		assertThat(implConfig.getType()).isEqualTo("openrdf:ProxyRepository");
 		assertThat(implConfig).isInstanceOf(ProxyRepositoryConfig.class);
-		assertThat(((ProxyRepositoryConfig)implConfig).getProxiedRepositoryID()).isEqualTo("memory");
+		assertThat(((ProxyRepositoryConfig) implConfig).getProxiedRepositoryID()).isEqualTo("memory");
 
 		// Factory just needs a resolver instance to proceed with construction.
 		// It doesn't actually invoke the resolver until the repository is
 		// accessed. Normally LocalRepositoryManager is the caller of
 		// getRepository(), and will have called this setter itself.
-		ProxyRepository repository = (ProxyRepository)factory.getRepository(implConfig);
+		ProxyRepository repository = (ProxyRepository) factory.getRepository(implConfig);
 		repository.setRepositoryResolver(mock(RepositoryResolver.class));
 		assertThat(repository).isInstanceOf(ProxyRepository.class);
 	}

@@ -24,14 +24,12 @@ import junit.framework.Test;
 public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			@Override
 			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
+					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, false);
 			}
@@ -39,8 +37,7 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 			@Override
 			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
-					boolean checkOrder)
-			{
+					boolean checkOrder) {
 				String[] ignoredTests = {
 						// test case incompatible with RDF 1.1 - see
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
@@ -61,27 +58,23 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 	private File dataDir;
 
 	protected NativeSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests)
-	{
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
 	@Override
 	protected Repository newRepository()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new DatasetRepository(new SailRepository(new NativeStore(dataDir, "spoc")));
 	}
 
 	@Override
 	protected void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}

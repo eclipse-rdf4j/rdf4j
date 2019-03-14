@@ -29,16 +29,15 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 3) {
 			throw new ValueExprEvaluationException(
 					String.format("%s requires 3 argument, got %d", getURI(), args.length));
 		}
-		Resource subj = (Resource)args[0];
-		IRI pred = (IRI)args[1];
-		Resource list = (Resource)args[2];
+		Resource subj = (Resource) args[0];
+		IRI pred = (IRI) args[1];
+		Resource list = (Resource) args[2];
 		try {
 			Iteration<? extends Value, QueryEvaluationException> iter = TripleSources.list(list,
 					qp.getTripleSource());
@@ -48,8 +47,7 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 					return BooleanLiteralImpl.FALSE;
 				}
 			}
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 		return BooleanLiteralImpl.TRUE;

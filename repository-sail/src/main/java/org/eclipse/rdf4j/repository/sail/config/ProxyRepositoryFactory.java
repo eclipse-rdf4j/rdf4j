@@ -34,14 +34,12 @@ public class ProxyRepositoryFactory implements RepositoryFactory {
 
 	@Override
 	public Repository getRepository(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+			throws RepositoryConfigException {
 		ProxyRepository result = null;
 
 		if (config instanceof ProxyRepositoryConfig) {
-			result = new ProxyRepository(((ProxyRepositoryConfig)config).getProxiedRepositoryID());
-		}
-		else {
+			result = new ProxyRepository(((ProxyRepositoryConfig) config).getProxiedRepositoryID());
+		} else {
 			throw new RepositoryConfigException("Invalid configuration class: " + config.getClass());
 		}
 		return result;

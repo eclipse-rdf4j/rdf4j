@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.eclipse.rdf4j.model.Value;
 
 /**
@@ -30,11 +29,10 @@ public class MinLengthFilter extends FilterPlanNode {
 		return literal.stringValue().length() >= minLength;
 	}
 
-
 	@Override
 	public String toString() {
 		return "MinLengthFilter{" +
-			"minLength=" + minLength +
-			'}';
+				"minLength=" + minLength +
+				'}';
 	}
 }

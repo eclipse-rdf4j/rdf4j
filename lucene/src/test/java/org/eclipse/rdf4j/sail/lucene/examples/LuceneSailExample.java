@@ -40,8 +40,7 @@ public class LuceneSailExample {
 	 * @param args
 	 */
 	public static void main(String[] args)
-		throws Exception
-	{
+			throws Exception {
 		createSimple();
 	}
 
@@ -49,8 +48,7 @@ public class LuceneSailExample {
 	 * Create a LuceneSail and add some triples to it, ask a query.
 	 */
 	public static void createSimple()
-		throws Exception
-	{
+			throws Exception {
 		// create a sesame memory sail
 		MemoryStore memoryStore = new MemoryStore();
 
@@ -71,7 +69,7 @@ public class LuceneSailExample {
 		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
-			SailRepositoryConnection connection = repository.getConnection()) {
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(LuceneSailExample.class.getResourceAsStream(
 					"/org/openrdf/sail/lucene/examples/foaf.rdfs"), "", RDFFormat.RDFXML);
@@ -113,15 +111,13 @@ public class LuceneSailExample {
 					+ "       search:score ?score ; \n" + "       search:snippet ?snippet . \n"
 					+ "} LIMIT 3 \n";
 			graphQuery(queryString, connection);
-		}
-		finally {
+		} finally {
 			repository.shutDown();
 		}
 	}
 
 	private static void tupleQuery(String queryString, RepositoryConnection connection)
-		throws QueryEvaluationException, RepositoryException, MalformedQueryException
-	{
+			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		System.out.println("Running query: \n" + queryString);
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
@@ -138,8 +134,7 @@ public class LuceneSailExample {
 	}
 
 	private static void graphQuery(String queryString, RepositoryConnection connection)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		System.out.println("Running query: \n" + queryString);
 		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, queryString);
 		try (GraphQueryResult result = query.evaluate()) {

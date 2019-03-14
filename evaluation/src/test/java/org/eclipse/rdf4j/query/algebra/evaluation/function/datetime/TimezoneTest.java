@@ -34,8 +34,7 @@ public class TimezoneTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		timezone = new Timezone();
 	}
 
@@ -44,8 +43,7 @@ public class TimezoneTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -60,8 +58,7 @@ public class TimezoneTest {
 
 			assertEquals("-PT5H", result.getLabel());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -79,8 +76,7 @@ public class TimezoneTest {
 
 			assertEquals("PT0S", result.getLabel());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
@@ -94,8 +90,7 @@ public class TimezoneTest {
 
 			fail("should have resulted in a type error");
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}

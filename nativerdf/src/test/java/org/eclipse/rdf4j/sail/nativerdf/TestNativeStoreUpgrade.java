@@ -45,23 +45,20 @@ public class TestNativeStoreUpgrade {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		dataDir = FileUtil.createTempDir("nativestore");
 	}
 
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		FileUtil.deleteDir(dataDir);
 		dataDir = null;
 	}
 
 	@Test
 	public void testDevel()
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
@@ -71,8 +68,7 @@ public class TestNativeStoreUpgrade {
 				con.addStatement(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"));
 				con.commit();
 			}
-		}
-		finally {
+		} finally {
 			store.shutDown();
 		}
 		new File(dataDir, "nativerdf.ver").delete();
@@ -82,8 +78,7 @@ public class TestNativeStoreUpgrade {
 
 	@Test
 	public void test2715()
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		extractZipResource(ZIP_2_7_15, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		assertValue(dataDir);
@@ -92,8 +87,7 @@ public class TestNativeStoreUpgrade {
 
 	@Test
 	public void test2715Inconsistent()
-		throws IOException, SailException
-	{
+			throws IOException, SailException {
 		extractZipResource(ZIP_2_7_15_INCONSISTENT, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		NativeStore store = new NativeStore(dataDir);
@@ -101,16 +95,14 @@ public class TestNativeStoreUpgrade {
 			store.initialize();
 			// we expect init to still succeed, but the store not to be marked as upgraded. See SES-2244.
 			assertFalse(new File(dataDir, "nativerdf.ver").exists());
-		}
-		finally {
+		} finally {
 			store.shutDown();
 		}
 
 	}
 
 	public void assertValue(File dataDir)
-		throws SailException
-	{
+			throws SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
@@ -120,20 +112,17 @@ public class TestNativeStoreUpgrade {
 				iter = con.getStatements(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"), false);
 				try {
 					assertTrue(iter.hasNext());
-				}
-				finally {
+				} finally {
 					iter.close();
 				}
 			}
-		}
-		finally {
+		} finally {
 			store.shutDown();
 		}
 	}
 
 	public void extractZipResource(String resource, File dir)
-		throws IOException
-	{
+			throws IOException {
 		try (InputStream in = TestNativeStoreUpgrade.class.getResourceAsStream(resource)) {
 			ZipInputStream zip = new ZipInputStream(in);
 			ZipEntry entry;

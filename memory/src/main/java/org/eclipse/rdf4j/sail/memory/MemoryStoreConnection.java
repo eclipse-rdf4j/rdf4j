@@ -48,8 +48,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void startTransactionInternal()
-		throws SailException
-	{
+			throws SailException {
 		if (!sail.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
 		}
@@ -59,8 +58,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void commitInternal()
-		throws SailException
-	{
+			throws SailException {
 		super.commitInternal();
 
 		sail.notifySailChanged(sailChangedEvent);
@@ -72,8 +70,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void rollbackInternal()
-		throws SailException
-	{
+			throws SailException {
 		super.rollbackInternal();
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
@@ -81,16 +78,14 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
 	}
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
@@ -99,15 +94,13 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
@@ -115,16 +108,14 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void clearInternal(Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		super.clearInternal(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}

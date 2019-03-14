@@ -42,8 +42,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 	@Before
 	public void setup()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		NotifyingSail baseSail = new MemoryStore();
 		SpinSail spinSail = new SpinSail(baseSail);
 		repo = new SailRepository(spinSail);
@@ -53,8 +52,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 	@After
 	public void tearDown()
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		if (conn != null) {
 			conn.close();
 		}
@@ -65,115 +63,102 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 	@Test
 	public void testAskConstraint()
-		throws Exception
-	{
-        assertThatThrownBy(() -> loadStatements("testAskConstraint.ttl"))
-                .hasCauseInstanceOf(ConstraintViolationException.class).hasMessageContaining("Test constraint");
+			throws Exception {
+		assertThatThrownBy(() -> loadStatements("testAskConstraint.ttl"))
+				.hasCauseInstanceOf(ConstraintViolationException.class)
+				.hasMessageContaining("Test constraint");
 	}
 
 	@Test
 	public void testTemplateConstraint()
-		throws Exception
-	{
-        assertThatThrownBy(() -> loadStatements("testTemplateConstraint-full.ttl"))
-                .hasCauseInstanceOf(ConstraintViolationException.class).hasMessageContaining("Invalid number of values: 0");
+			throws Exception {
+		assertThatThrownBy(() -> loadStatements("testTemplateConstraint-full.ttl"))
+				.hasCauseInstanceOf(ConstraintViolationException.class)
+				.hasMessageContaining("Invalid number of values: 0");
 	}
 
 	@Test
 	public void testConstructRule()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testConstructRule.ttl");
 		assertStatements("testConstructRule-expected.ttl");
 	}
 
 	@Test
 	public void testUpdateTemplateRule()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testUpdateTemplateRule-full.ttl");
 		assertStatements("testUpdateTemplateRule-expected.ttl");
 	}
 
 	@Test
 	public void testConstructor()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testConstructor-full.ttl");
 		assertStatements("testConstructor-expected.ttl");
 	}
 
 	@Test
 	public void testAskFunctionConstraint()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testAskFunctionConstraint.ttl");
 	}
 
 	@Test
 	public void testEvalFunctionConstraint()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testEvalFunctionConstraint.ttl");
 	}
 
 	@Test
 	public void testConstructProperty()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testConstructProperty.ttl");
 		assertStatements("testConstructProperty-expected.ttl");
 	}
 
 	@Test
 	public void testSelectProperty()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testSelectProperty.ttl");
 		assertStatements("testSelectProperty-expected.ttl");
 	}
 
 	@Test
 	public void testMagicPropertyRule()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testMagicPropertyRule.ttl");
 		assertStatements("testMagicPropertyRule-expected.ttl");
 	}
 
 	@Test
 	public void testMagicPropertyConstraint()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testMagicPropertyConstraint.ttl");
 	}
 
 	@Test
 	public void testMagicPropertyFunction()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testMagicPropertyFunction.ttl");
 		assertStatements("testMagicPropertyFunction-expected.ttl");
 	}
 
 	@Test
 	public void testSpinxRule()
-		throws Exception
-	{
+			throws Exception {
 		loadStatements("testSpinxRule.ttl");
 		assertStatements("testSpinxRule-expected.ttl");
 	}
 
 	@Test
 	public void testTransactions()
-		throws Exception
-	{
+			throws Exception {
 		tx(new Callable<Void>() {
 
 			@Override
 			public Void call()
-				throws Exception
-			{
+					throws Exception {
 				loadStatements("testTransactions-rule.ttl");
 				return null;
 			}
@@ -182,8 +167,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 			@Override
 			public Void call()
-				throws Exception
-			{
+					throws Exception {
 				loadStatements("testTransactions-data.ttl");
 				return null;
 			}
@@ -192,8 +176,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 			@Override
 			public Void call()
-				throws Exception
-			{
+					throws Exception {
 				assertStatements("testTransactions-expected.ttl");
 				return null;
 			}
@@ -201,15 +184,13 @@ public class SpinSailWithoutRDFSInferencerTest {
 	}
 
 	private <T> T tx(Callable<T> c)
-		throws Exception
-	{
+			throws Exception {
 		T result;
 		conn.begin();
 		try {
 			result = c.call();
 			conn.commit();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			conn.rollback();
 			throw e;
 		}
@@ -217,8 +198,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 	}
 
 	private void loadStatements(String ttl)
-		throws RepositoryException, RDFParseException, IOException
-	{
+			throws RepositoryException, RDFParseException, IOException {
 		URL url = getClass().getResource(BASE_DIR + ttl);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
@@ -226,8 +206,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 	}
 
 	private void assertStatements(String ttl)
-		throws RDFParseException, RDFHandlerException, IOException, RepositoryException
-	{
+			throws RDFParseException, RDFHandlerException, IOException, RepositoryException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);

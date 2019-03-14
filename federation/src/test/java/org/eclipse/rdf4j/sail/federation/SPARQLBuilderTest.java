@@ -67,8 +67,7 @@ public class SPARQLBuilderTest {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		Federation federation = new Federation();
 		federation.addMember(new SailRepository(new MemoryStore()));
 		Repository repository = new SailRepository(federation);
@@ -83,9 +82,8 @@ public class SPARQLBuilderTest {
 
 	@Test
 	public void test()
-		throws RDF4JException
-	{ // NOPMD
-													// Thrown exceptions are the only failure path.
+			throws RDF4JException { // NOPMD
+									// Thrown exceptions are the only failure path.
 		TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);
 		if (!(prefix.isEmpty() || namespace.isEmpty())) {
 			tupleQuery.setBinding(prefix, valueFactory.createIRI(namespace));

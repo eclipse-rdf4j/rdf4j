@@ -35,8 +35,7 @@ public class RandTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		rand = new Rand();
 	}
 
@@ -45,8 +44,7 @@ public class RandTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -61,8 +59,7 @@ public class RandTest {
 
 			assertTrue(randomValue >= 0.0d);
 			assertTrue(randomValue < 1.0d);
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}

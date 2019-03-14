@@ -32,8 +32,7 @@ public class UpperCaseTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		ucaseFunc = new UpperCase();
 	}
 
@@ -42,8 +41,7 @@ public class UpperCaseTest {
 	 */
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 	}
 
 	@Test
@@ -55,8 +53,7 @@ public class UpperCaseTest {
 			Literal result = ucaseFunc.evaluate(f, pattern);
 
 			assertTrue(result.getLabel().equals("FOOBAR"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -70,8 +67,7 @@ public class UpperCaseTest {
 			Literal result = ucaseFunc.evaluate(f, pattern);
 
 			assertTrue(result.getLabel().equals("FOOBAR"));
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -85,8 +81,7 @@ public class UpperCaseTest {
 		try {
 			ucaseFunc.evaluate(f, pattern, startIndex);
 			fail("illegal number of parameters");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// do nothing, expected
 		}
 	}

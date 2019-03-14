@@ -28,8 +28,7 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	 */
 	public LimitedSizeDistinctIteration(
 			Iteration<? extends BindingSet, ? extends QueryEvaluationException> iter, AtomicLong used,
-			long maxSize)
-	{
+			long maxSize) {
 		super(iter);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -37,8 +36,7 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 
 	@Override
 	protected boolean add(BindingSet object)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		boolean add = super.add(object);
 		if (add && used.incrementAndGet() > maxSize)
 			throw new QueryEvaluationException("Size limited reached inside query operator.");

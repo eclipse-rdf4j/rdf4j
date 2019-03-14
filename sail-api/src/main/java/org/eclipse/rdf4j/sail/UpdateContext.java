@@ -29,20 +29,17 @@ public class UpdateContext {
 	private final boolean includeInferred;
 
 	public UpdateContext(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
-			boolean includeInferred)
-	{
+			boolean includeInferred) {
 		assert updateExpr != null;
 		this.updateExpr = updateExpr;
 		if (dataset == null) {
 			this.dataset = new SimpleDataset();
-		}
-		else {
+		} else {
 			this.dataset = dataset;
 		}
 		if (bindings == null) {
 			this.bindings = EmptyBindingSet.getInstance();
-		}
-		else {
+		} else {
 			this.bindings = bindings;
 		}
 		this.includeInferred = includeInferred;

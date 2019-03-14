@@ -18,22 +18,19 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return GeoSPARQLManifestTest.suite(new Factory() {
 
 			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
+					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, false);
 			}
 
 			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder)
-			{
+					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				return new MemoryGeoSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder);
 			}
@@ -42,15 +39,13 @@ public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 	}
 
 	protected MemoryGeoSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder)
-	{
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder);
 	}
 
 	@Override
 	protected Repository newRepository()
-		throws Exception
-	{
+			throws Exception {
 		return new SailRepository(new MemoryStore());
 	}
 }

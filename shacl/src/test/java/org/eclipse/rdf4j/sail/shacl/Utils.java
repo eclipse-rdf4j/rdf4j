@@ -31,8 +31,7 @@ import java.util.UUID;
 public class Utils {
 
 	public static void loadShapeData(ShaclSail sail, String resourceName)
-		throws IOException
-	{
+			throws IOException {
 		sail.disableValidation();
 		Model shapes;
 		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
@@ -50,8 +49,7 @@ public class Utils {
 	}
 
 	public static void loadShapeData(SailRepository repo, String resourceName)
-		throws IOException
-	{
+			throws IOException {
 		((ShaclSail) repo.getSail()).disableValidation();
 
 		Model shapes;
@@ -67,10 +65,10 @@ public class Utils {
 		}
 		((ShaclSail) repo.getSail()).enableValidation();
 
-
 	}
 
-	public static SailRepository getInitializedShaclRepository(String shapeData, boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
+	public static SailRepository getInitializedShaclRepository(String shapeData,
+			boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
 		SailRepository repo = new SailRepository(sail);
@@ -78,7 +76,7 @@ public class Utils {
 		Utils.loadShapeData(repo, shapeData);
 		return repo;
 	}
-	
+
 	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.init();

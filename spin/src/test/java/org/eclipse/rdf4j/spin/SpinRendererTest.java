@@ -69,8 +69,7 @@ public class SpinRendererTest {
 
 	@Test
 	public void testSpinRenderer()
-		throws IOException, RDF4JException
-	{
+			throws IOException, RDF4JException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
@@ -94,15 +93,14 @@ public class SpinRendererTest {
 		StatementCollector actual = new StatementCollector();
 		renderer.render(parsedOp, actual);
 
-		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery)parsedOp).getTupleExpr()
-				: ((ParsedUpdate)parsedOp).getUpdateExprs();
+		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery) parsedOp).getTupleExpr()
+				: ((ParsedUpdate) parsedOp).getUpdateExprs();
 		assertTrue("Operation was\n" + operation + "\nExpected\n" + toRDF(expected) + "\nbut was\n"
 				+ toRDF(actual), Models.isomorphic(actual.getStatements(), expected.getStatements()));
 	}
 
 	private static String toRDF(StatementCollector stmts)
-		throws RDFHandlerException
-	{
+			throws RDFHandlerException {
 		WriterConfig config = new WriterConfig();
 		config.set(BasicWriterSettings.PRETTY_PRINT, false);
 		StringBuilderWriter writer = new StringBuilderWriter();

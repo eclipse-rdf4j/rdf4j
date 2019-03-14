@@ -33,8 +33,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 
 	public LimitedSizeHashJoinIteration(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
 			BindingSet bindings, AtomicLong used, long maxSize)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super(limitedSizeEvaluationStrategy, join, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -50,8 +49,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 
 	@Override
 	protected <E> void add(Collection<E> col, E value)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		if (col.add(value) && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
@@ -59,8 +57,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 
 	@Override
 	protected <E> void addAll(Collection<E> col, List<E> values)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		for (E v : values) {
 			add(col, v);
 		}
@@ -68,8 +65,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 
 	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> hashTable,
 			BindingSetHashKey hashKey, List<BindingSet> hashValue)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);

@@ -31,8 +31,7 @@ public class Contains implements Function {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException("CONTAINS requires 2 arguments, got " + args.length);
 		}
@@ -40,39 +39,33 @@ public class Contains implements Function {
 		Value rightVal = args[1];
 
 		if (leftVal instanceof Literal && rightVal instanceof Literal) {
-			Literal leftLit = (Literal)leftVal;
-			Literal rightLit = (Literal)rightVal;
+			Literal leftLit = (Literal) leftVal;
+			Literal rightLit = (Literal) rightVal;
 
 			if (leftLit.getLanguage().isPresent()) {
 				if (!rightLit.getLanguage().isPresent()
-						|| rightLit.getLanguage().equals(leftLit.getLanguage()))
-				{
+						|| rightLit.getLanguage().equals(leftLit.getLanguage())) {
 
 					String leftLexVal = leftLit.getLabel();
 					String rightLexVal = rightLit.getLabel();
 
 					return BooleanLiteral.valueOf(leftLexVal.contains(rightLexVal));
-				}
-				else {
+				} else {
 					throw new ValueExprEvaluationException("incompatible operands for CONTAINS function");
 				}
-			}
-			else if (QueryEvaluationUtil.isStringLiteral(leftLit)) {
+			} else if (QueryEvaluationUtil.isStringLiteral(leftLit)) {
 				if (QueryEvaluationUtil.isStringLiteral(rightLit)) {
 					String leftLexVal = leftLit.getLabel();
 					String rightLexVal = rightLit.getLabel();
 
 					return BooleanLiteral.valueOf(leftLexVal.contains(rightLexVal));
-				}
-				else {
+				} else {
 					throw new ValueExprEvaluationException("incompatible operands for CONTAINS function");
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("incompatible operands for CONTAINS function");
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("CONTAINS function expects literal operands");
 		}
 

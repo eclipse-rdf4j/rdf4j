@@ -42,8 +42,7 @@ public class DatasetRepositoryFactory implements RepositoryFactory {
 
 	@Override
 	public Repository getRepository(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+			throws RepositoryConfigException {
 		if (config instanceof DatasetRepositoryConfig) {
 			return new DatasetRepository();
 		}

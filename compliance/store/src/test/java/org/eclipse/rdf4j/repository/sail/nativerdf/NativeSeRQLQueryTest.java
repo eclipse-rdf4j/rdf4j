@@ -22,14 +22,12 @@ import junit.framework.Test;
 public class NativeSeRQLQueryTest extends SeRQLQueryTestCase {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SeRQLQueryTestCase.suite(new Factory() {
 
 			@Override
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
-					String resultFile, String entailment)
-			{
+					String resultFile, String entailment) {
 				return new NativeSeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile,
 						entailment);
 			}
@@ -39,8 +37,7 @@ public class NativeSeRQLQueryTest extends SeRQLQueryTestCase {
 	private File dataDir;
 
 	public NativeSeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile,
-			String resultFile, String entailment)
-	{
+			String resultFile, String entailment) {
 		super(name, dataFile, graphNames, queryFile, resultFile, entailment);
 	}
 
@@ -51,8 +48,7 @@ public class NativeSeRQLQueryTest extends SeRQLQueryTestCase {
 
 	@Override
 	protected NotifyingSail newSail()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new NativeStore(dataDir, "spoc");
 	}

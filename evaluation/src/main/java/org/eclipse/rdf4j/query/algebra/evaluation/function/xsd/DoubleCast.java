@@ -25,10 +25,9 @@ public class DoubleCast extends CastFunction {
 
 	@Override
 	protected Literal convert(ValueFactory valueFactory, Value value)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (XMLDatatypeUtil.isNumericDatatype(datatype)) {
@@ -37,16 +36,13 @@ public class DoubleCast extends CastFunction {
 				try {
 					double doubleValue = literal.doubleValue();
 					return valueFactory.createLiteral(doubleValue);
-				}
-				catch (NumberFormatException e) {
+				} catch (NumberFormatException e) {
 					throw new ValueExprEvaluationException(e.getMessage(), e);
 				}
-			}
-			else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
 					return valueFactory.createLiteral(literal.booleanValue() ? 1.0 : 0.0);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}
 			}

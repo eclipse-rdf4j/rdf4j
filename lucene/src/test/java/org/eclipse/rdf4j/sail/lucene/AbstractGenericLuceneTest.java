@@ -112,12 +112,11 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	protected abstract void configure(LuceneSail sail)
-		throws IOException;
+			throws IOException;
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
 		// TODO: disable logging for org.eclipse.rdf4j.query.parser.serql.SeRQLParser,
@@ -153,14 +152,12 @@ public abstract class AbstractGenericLuceneTest {
 
 	@After
 	public void tearDown()
-		throws IOException, RepositoryException
-	{
+			throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
 			}
-		}
-		finally {
+		} finally {
 			if (repository != null) {
 				repository.shutDown();
 			}
@@ -169,8 +166,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testComplexQueryTwo()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT Resource, Matching, Score ");
@@ -188,8 +184,8 @@ public abstract class AbstractGenericLuceneTest {
 			// check the results
 			assertTrue(result.hasNext());
 			BindingSet bindings = result.next();
-			assertEquals(SUBJECT_3, (IRI)bindings.getValue("Resource"));
-			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Matching"));
+			assertEquals(SUBJECT_3, (IRI) bindings.getValue("Resource"));
+			assertEquals(SUBJECT_1, (IRI) bindings.getValue("Matching"));
 			assertNotNull(bindings.getValue("Score"));
 
 			assertFalse(result.hasNext());
@@ -197,8 +193,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	private void evaluate(String[] queries, ArrayList<List<Map<String, String>>> expectedResults)
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		for (int queryID = 0; queryID < queries.length; queryID++) {
 			String serql = queries[queryID];
 			List<Map<String, String>> expectedResultSet = expectedResults.get(queryID);
@@ -245,12 +240,10 @@ public abstract class AbstractGenericLuceneTest {
 									matches = false;
 									break;
 								}
-							}
-							else {
+							} else {
 								// compare the values
 								if ((actualVal == null)
-										|| (expectedVal.compareTo(actualVal.stringValue()) != 0))
-								{
+										|| (expectedVal.compareTo(actualVal.stringValue()) != 0)) {
 									matches = false;
 									break;
 								}
@@ -284,8 +277,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testPredicateLuceneQueries()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		String[] queries = new String[] {
 				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES
@@ -342,8 +334,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testSnippetQueries()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		// search for the term "one", but only in predicate 1
 		StringBuilder buffer = new StringBuilder();
@@ -388,13 +379,12 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	/**
-	 * Test if the snippets do not accidentially come from the "text" field while we actually expect them to
-	 * come from the predicate field.
+	 * Test if the snippets do not accidentially come from the "text" field while we actually expect them to come from
+	 * the predicate field.
 	 */
 	@Test
 	public void testSnippetLimitedToPredicate()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
 			// we use the string 'charly' as test-case. the snippets should contain
@@ -442,7 +432,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				String snippet = ((Literal)bindings.getValue("Snippet")).stringValue();
+				String snippet = ((Literal) bindings.getValue("Snippet")).stringValue();
 				boolean foundexpected = false;
 				for (Iterator<String> i = expectedSnippetPart.iterator(); i.hasNext();) {
 					String expected = i.next();
@@ -474,8 +464,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testCharlyTerm()
-		throws Exception
-	{
+			throws Exception {
 
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
@@ -522,7 +511,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				String snippet = ((Literal)bindings.getValue("Snippet")).stringValue();
+				String snippet = ((Literal) bindings.getValue("Snippet")).stringValue();
 				boolean foundexpected = false;
 				for (Iterator<String> i = expectedSnippetPart.iterator(); i.hasNext();) {
 					String expected = i.next();
@@ -550,8 +539,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testGraphQuery()
-		throws QueryEvaluationException, MalformedQueryException, RepositoryException
-	{
+			throws QueryEvaluationException, MalformedQueryException, RepositoryException {
 		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
 		StringBuilder query = new StringBuilder();
 
@@ -576,14 +564,12 @@ public abstract class AbstractGenericLuceneTest {
 				n++;
 
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_1))
-				{
+						&& statement.getObject().equals(SUBJECT_1)) {
 					r |= 1;
 					continue;
 				}
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_2))
-				{
+						&& statement.getObject().equals(SUBJECT_2)) {
 					r |= 2;
 					continue;
 				}
@@ -602,8 +588,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testQueryWithSpecifiedSubject()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
 		query.setBinding("Subject", SUBJECT_1);
@@ -613,7 +598,7 @@ public abstract class AbstractGenericLuceneTest {
 			// check that this subject and only this subject is returned
 			assertTrue(result.hasNext());
 			BindingSet bindings = result.next();
-			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Subject"));
+			assertEquals(SUBJECT_1, (IRI) bindings.getValue("Subject"));
 			assertNotNull(bindings.getValue("Score"));
 			assertFalse(result.hasNext());
 		}
@@ -621,8 +606,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testUnionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		String queryStr = "";
 		queryStr += "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> ";
 		queryStr += "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
@@ -652,8 +636,7 @@ public abstract class AbstractGenericLuceneTest {
 	 */
 	@Test
 	public void testContextHandling()
-		throws Exception
-	{
+			throws Exception {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"), CONTEXT_1);
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"), CONTEXT_1);
@@ -688,8 +671,7 @@ public abstract class AbstractGenericLuceneTest {
 	 */
 	@Test
 	public void testNullContextHandling()
-		throws Exception
-	{
+			throws Exception {
 		connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral("sfourponecone"));
 		connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral("sfourptwocone"));
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponecone"));
@@ -708,7 +690,7 @@ public abstract class AbstractGenericLuceneTest {
 		// blind test to see if this method works:
 		assertNoQueryResult("johannesgrenzfurthner");
 		// remove a context
-		connection.clear((Resource)null);
+		connection.clear((Resource) null);
 		connection.commit();
 		assertNoQueryResult("sfourponecone");
 		assertNoQueryResult("sfourptwocone");
@@ -719,8 +701,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testFuzzyQuery()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		// search for the term "one" with 80% fuzzyness
 		StringBuilder buffer = new StringBuilder();
@@ -751,7 +732,7 @@ public abstract class AbstractGenericLuceneTest {
 
 				// the resource should be among the set of expected subjects, if so,
 				// remove it from the set
-				assertTrue(expectedSubject.remove((IRI)bindings.getValue("Resource")));
+				assertTrue(expectedSubject.remove((IRI) bindings.getValue("Resource")));
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -769,16 +750,14 @@ public abstract class AbstractGenericLuceneTest {
 	 */
 	@Test
 	public void testReindexing()
-		throws Exception
-	{
+			throws Exception {
 		sail.reindex();
 		testComplexQueryTwo();
 	}
 
 	@Test
 	public void testPropertyVar()
-		throws MalformedQueryException, RepositoryException, QueryEvaluationException
-	{
+			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT \n");
 		buffer.append("  Resource, Property \n");
@@ -814,8 +793,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testMultithreadedAdd()
-		throws InterruptedException
-	{
+			throws InterruptedException {
 		int numThreads = 3;
 		final CountDownLatch startLatch = new CountDownLatch(1);
 		final CountDownLatch endLatch = new CountDownLatch(numThreads);
@@ -833,12 +811,10 @@ public abstract class AbstractGenericLuceneTest {
 							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
 									vf.createLiteral(i));
 						}
-					}
-					catch (Throwable e) {
+					} catch (Throwable e) {
 						exceptions.add(e);
 						throw new AssertionError(e);
-					}
-					finally {
+					} finally {
 						endLatch.countDown();
 					}
 				}
@@ -865,14 +841,13 @@ public abstract class AbstractGenericLuceneTest {
 		}
 		conn.close();
 		conn = repository.getConnection();
-		conn.clear();	// make sure this can be executed multiple times
+		conn.clear(); // make sure this can be executed multiple times
 		conn.add(FOAF.PERSON, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("abc"));
 		conn.close();
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
-		throws Exception
-	{
+			throws Exception {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 				+ "> {\"" + literal + "\"} ";
@@ -889,8 +864,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	protected void assertNoQueryResult(String literal)
-		throws Exception
-	{
+			throws Exception {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 				+ "> {\"" + literal + "\"} ";

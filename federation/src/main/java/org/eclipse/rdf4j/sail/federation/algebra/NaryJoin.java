@@ -47,13 +47,12 @@ public class NaryJoin extends AbstractNaryTupleOperator {
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+			throws X {
 		visitor.meetOther(this);
 	}
 
 	@Override
 	public NaryJoin clone() { // NOPMD
-		return (NaryJoin)super.clone();
+		return (NaryJoin) super.clone();
 	}
 }

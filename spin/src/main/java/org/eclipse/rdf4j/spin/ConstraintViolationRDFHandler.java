@@ -39,8 +39,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 
 	@Override
 	public void startRDF()
-		throws RDFHandlerException
-	{
+			throws RDFHandlerException {
 		hasStatements = false;
 		label = null;
 		root = null;
@@ -52,30 +51,25 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 
 	@Override
 	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+			throws RDFHandlerException {
 		hasStatements = true;
 		URI pred = st.getPredicate();
 		if (RDFS.LABEL.equals(pred)) {
 			Value labelValue = st.getObject();
 			label = (labelValue instanceof Literal) ? labelValue.stringValue() : null;
-		}
-		else if (SPIN.VIOLATION_ROOT_PROPERTY.equals(pred)) {
+		} else if (SPIN.VIOLATION_ROOT_PROPERTY.equals(pred)) {
 			Value rootValue = st.getObject();
 			root = (rootValue instanceof Resource) ? rootValue.stringValue() : null;
-		}
-		else if (SPIN.VIOLATION_PATH_PROPERTY.equals(pred)) {
+		} else if (SPIN.VIOLATION_PATH_PROPERTY.equals(pred)) {
 			Value pathValue = st.getObject();
 			path = (pathValue != null) ? pathValue.stringValue() : null;
-		}
-		else if (SPIN.VIOLATION_VALUE_PROPERTY.equals(pred)) {
+		} else if (SPIN.VIOLATION_VALUE_PROPERTY.equals(pred)) {
 			Value valueValue = st.getObject();
 			value = (valueValue != null) ? valueValue.stringValue() : null;
-		}
-		else if (SPIN.VIOLATION_LEVEL_PROPERTY.equals(pred)) {
+		} else if (SPIN.VIOLATION_LEVEL_PROPERTY.equals(pred)) {
 			Value levelValue = st.getObject();
 			if (levelValue instanceof URI) {
-				level = ConstraintViolationLevel.valueOf((URI)levelValue);
+				level = ConstraintViolationLevel.valueOf((URI) levelValue);
 			}
 			if (level == null) {
 				throw new RDFHandlerException("Invalid value " + levelValue + " for "
@@ -86,8 +80,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 
 	@Override
 	public void endRDF()
-		throws RDFHandlerException
-	{
+			throws RDFHandlerException {
 		if (hasStatements) {
 			violation = new ConstraintViolation(label, root, path, value, level);
 		}

@@ -19,14 +19,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
- * Iterate the left side and evaluate the right side in separate thread, only iterate the right side in the
- * controlling thread.
+ * Iterate the left side and evaluate the right side in separate thread, only iterate the right side in the controlling
+ * thread.
  * 
  * @author James Leigh
  */
 public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException>
-		implements Runnable
-{
+		implements Runnable {
 
 	/*-----------*
 	 * Constants *
@@ -62,8 +61,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 
 	public ParallelJoinCursor(EvaluationStrategy strategy,
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, TupleExpr rightArg)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super();
 		this.strategy = strategy;
 		this.leftIter = leftIter;
@@ -84,16 +82,13 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 				toCloseList.add(evaluate);
 				rightQueue.put(evaluate);
 			}
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			rightQueue.toss(e);
 			close();
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			close();
-		}
-		finally {
+		} finally {
 			evaluationThread = null;
 			rightQueue.done();
 		}
@@ -101,8 +96,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 
 	@Override
 	public BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		BindingSet result = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 		while (!isClosed() && (nextRightIter != null || rightQueue.hasNext())) {
@@ -113,8 +107,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 				if (nextRightIter.hasNext()) {
 					result = nextRightIter.next();
 					break;
-				}
-				else {
+				} else {
 					nextRightIter.close();
 					nextRightIter = rightIter = null;
 				}
@@ -126,40 +119,33 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 
 	@Override
 	public void handleClose()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
 				rightIter = null;
 				if (toCloseRightIter != null) {
 					toCloseRightIter.close();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					leftIter.close();
-				}
-				finally {
+				} finally {
 					try {
 						rightQueue.close();
-					}
-					finally {
+					} finally {
 						try {
 							for (CloseableIteration<BindingSet, QueryEvaluationException> nextToCloseIteration : toCloseList) {
 								try {
 									nextToCloseIteration.close();
-								}
-								catch (Exception e) {
+								} catch (Exception e) {
 									// Ignoring exceptions while closing component iterations
 								}
 							}
-						}
-						finally {
+						} finally {
 							Thread toCloseEvaluationThread = evaluationThread;
 							if (toCloseEvaluationThread != null) {
 								toCloseEvaluationThread.interrupt();

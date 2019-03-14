@@ -44,29 +44,25 @@ public class ValueComparatorTest {
 
 	@Test
 	public void testBothNull()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(null, null) == 0);
 	}
 
 	@Test
 	public void testLeftNull()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(null, typed1) < 0);
 	}
 
 	@Test
 	public void testRightNull()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(typed1, null) > 0);
 	}
 
 	@Test
 	public void testBothBnode()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(bnode1, bnode1) == 0);
 		assertTrue(cmp.compare(bnode2, bnode2) == 0);
 		assertTrue(cmp.compare(bnode1, bnode2) != cmp.compare(bnode2, bnode1));
@@ -75,22 +71,19 @@ public class ValueComparatorTest {
 
 	@Test
 	public void testLeftBnode()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(bnode1, typed1) < 0);
 	}
 
 	@Test
 	public void testRightBnode()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(typed1, bnode1) > 0);
 	}
 
 	@Test
 	public void testBothURI()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(uri1, uri1) == 0);
 		assertTrue(cmp.compare(uri1, uri2) < 0);
 		assertTrue(cmp.compare(uri1, uri3) < 0);
@@ -104,15 +97,13 @@ public class ValueComparatorTest {
 
 	@Test
 	public void testLeftURI()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(uri1, typed1) < 0);
 	}
 
 	@Test
 	public void testRightURI()
-		throws Exception
-	{
+			throws Exception {
 		assertTrue(cmp.compare(typed1, uri1) > 0);
 	}
 
@@ -121,8 +112,7 @@ public class ValueComparatorTest {
 	 */
 	@Test
 	public void testOrder1()
-		throws Exception
-	{
+			throws Exception {
 		Literal en4 = vf.createLiteral("4", "en");
 		Literal int10 = vf.createLiteral(10);
 		Literal int9 = vf.createLiteral(9);
@@ -138,8 +128,7 @@ public class ValueComparatorTest {
 	 */
 	@Test
 	public void testOrder2()
-		throws Exception
-	{
+			throws Exception {
 		Literal en4 = vf.createLiteral("4", "en");
 		Literal int10 = vf.createLiteral(10);
 		Literal int9 = vf.createLiteral(9);
@@ -161,13 +150,12 @@ public class ValueComparatorTest {
 	}
 
 	/**
-	 * Tests whether numerics of different types are properly sorted. The list also contains a datatype that
-	 * would be sorted between the numerics if the datatypes were to be sorted alphabetically.
+	 * Tests whether numerics of different types are properly sorted. The list also contains a datatype that would be
+	 * sorted between the numerics if the datatypes were to be sorted alphabetically.
 	 */
 	@Test
 	public void testOrder3()
-		throws Exception
-	{
+			throws Exception {
 		Literal year1234 = vf.createLiteral("1234", XMLSchema.GYEAR);
 		Literal float2000 = vf.createLiteral(2000f);
 		Literal int1000 = vf.createLiteral(1000);

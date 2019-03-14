@@ -69,28 +69,24 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
 
 				leftJoin.getRightArg().visit(this);
-			}
-			finally {
+			} finally {
 				boundVars = origBoundVars;
 			}
 		}
 
 		@Override
 		public void meetOther(QueryModelNode node)
-			throws RuntimeException
-		{
+				throws RuntimeException {
 			if (node instanceof NaryJoin) {
-				meetJoin((NaryJoin)node);
-			}
-			else {
+				meetJoin((NaryJoin) node);
+			} else {
 				super.meetOther(node);
 			}
 		}
 
 		@Override
 		public void meet(Join node)
-			throws RuntimeException
-		{
+				throws RuntimeException {
 			meetJoin(node);
 		}
 
@@ -137,25 +133,22 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 
 				// Replace old join hierarchy
 				node.replaceWith(replacement);
-			}
-			finally {
+			} finally {
 				boundVars = origBoundVars;
 			}
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
 			if (tupleExpr instanceof NaryJoin) {
-				NaryJoin join = (NaryJoin)tupleExpr;
+				NaryJoin join = (NaryJoin) tupleExpr;
 				for (TupleExpr arg : join.getArgs()) {
 					getJoinArgs(arg, joinArgs);
 				}
-			}
-			else if (tupleExpr instanceof Join) {
-				Join join = (Join)tupleExpr;
+			} else if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
 				getJoinArgs(join.getLeftArg(), joinArgs);
 				getJoinArgs(join.getRightArg(), joinArgs);
-			}
-			else {
+			} else {
 				joinArgs.add(tupleExpr);
 			}
 
@@ -181,14 +174,13 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This
-		 * method selects the tuple expression with highest number of bound variables, preferring variables
-		 * that have been bound in other tuple expressions over variables with a fixed value.
+		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This method
+		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
+		 * bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions,
 				Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap,
-				Map<Var, Integer> varFreqMap, Set<String> boundVars)
-		{
+				Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double lowestCardinality = Double.MAX_VALUE;
 			TupleExpr result = null;
 
@@ -208,8 +200,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars)
-		{
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double cardinality = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);
@@ -219,7 +210,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 			List<Var> constantVars = getConstantVars(vars);
 			int nonConstantCount = vars.size() - constantVars.size();
 			if (nonConstantCount > 0) {
-				double exp = (double)unboundVars.size() / nonConstantCount;
+				double exp = (double) unboundVars.size() / nonConstantCount;
 				cardinality = Math.pow(cardinality, exp);
 			}
 
@@ -228,8 +219,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 				if (nonConstantCount > 0) {
 					cardinality /= nonConstantCount;
 				}
-			}
-			else {
+			} else {
 				// Prefer patterns that bind variables from other tuple expressions
 				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
 				if (foreignVarFreq > 0) {

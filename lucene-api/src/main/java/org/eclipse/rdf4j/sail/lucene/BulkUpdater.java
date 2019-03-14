@@ -12,14 +12,14 @@ import java.io.IOException;
 public interface BulkUpdater {
 
 	void add(SearchDocument doc)
-		throws IOException;
+			throws IOException;
 
 	void update(SearchDocument doc)
-		throws IOException;
+			throws IOException;
 
 	void delete(SearchDocument doc)
-		throws IOException;
+			throws IOException;
 
 	void end()
-		throws IOException;
+			throws IOException;
 }

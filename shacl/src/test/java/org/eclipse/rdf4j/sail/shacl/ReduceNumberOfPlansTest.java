@@ -31,7 +31,7 @@ public class ReduceNumberOfPlansTest {
 
 	@Test
 	public void testAddingTypeStatement()
-		throws RDFParseException, UnsupportedRDFormatException, IOException {
+			throws RDFParseException, UnsupportedRDFormatException, IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
@@ -42,10 +42,10 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 
 			List<PlanNode> collect = shaclSail
-				.getNodeShapes()
-				.stream()
-				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-				.collect(Collectors.toList());
+					.getNodeShapes()
+					.stream()
+					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.collect(Collectors.toList());
 
 			assertEquals(0, collect.size());
 
@@ -54,10 +54,10 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 
 			List<PlanNode> collect2 = shaclSail
-				.getNodeShapes()
-				.stream()
-				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-				.collect(Collectors.toList());
+					.getNodeShapes()
+					.stream()
+					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.collect(Collectors.toList());
 
 			assertEquals(2, collect2.size());
 			ValueFactory vf = shaclSail.getValueFactory();
@@ -66,7 +66,6 @@ public class ReduceNumberOfPlansTest {
 			connection.addStatement(person1, Utils.Ex.name, vf.createLiteral("c"));
 
 			connection.commit();
-
 
 		}
 
@@ -97,12 +96,11 @@ public class ReduceNumberOfPlansTest {
 
 			refreshAddedRemovedStatements(connection);
 
-
 			List<PlanNode> collect1 = shaclSail
-				.getNodeShapes()
-				.stream()
-				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-				.collect(Collectors.toList());
+					.getNodeShapes()
+					.stream()
+					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.collect(Collectors.toList());
 			assertEquals(1, collect1.size());
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("a"));
@@ -110,25 +108,23 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 
 			List<PlanNode> collect2 = shaclSail
-				.getNodeShapes()
-				.stream()
-				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-				.collect(Collectors.toList());
+					.getNodeShapes()
+					.stream()
+					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.collect(Collectors.toList());
 			assertEquals(1, collect2.size());
 
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
 			refreshAddedRemovedStatements(connection);
 
-
 			List<PlanNode> collect3 = shaclSail
-				.getNodeShapes()
-				.stream()
-				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-				.collect(Collectors.toList());
+					.getNodeShapes()
+					.stream()
+					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.collect(Collectors.toList());
 			assertEquals(2, collect3.size());
 
 			connection.rollback();
-
 
 		}
 

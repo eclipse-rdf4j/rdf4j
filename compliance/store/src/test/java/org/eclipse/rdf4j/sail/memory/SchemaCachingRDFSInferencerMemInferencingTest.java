@@ -31,23 +31,23 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 	@Override
 	protected Repository createRepository() {
 		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
-		//sailStack.setAddInferredStatementsToDefaultContext(false);
+		// sailStack.setAddInferredStatementsToDefaultContext(false);
 		return new SailRepository(sailStack);
 	}
 
 	@Test
 	public void testPersistence() {
 		File datadir = Files.newTemporaryFolder();
-		
+
 		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 		SailRepository repo = new SailRepository(sailStack);
 		repo.initialize();
 		ValueFactory vf = repo.getValueFactory();
-		
-		IRI s1= vf.createIRI("foo:s1");
+
+		IRI s1 = vf.createIRI("foo:s1");
 		IRI c2 = vf.createIRI("foo:c2");
 		IRI c1 = vf.createIRI("foo:c1");
-		
+
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
 			conn.add(s1, RDF.TYPE, c1);
@@ -56,12 +56,12 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
 		}
 		repo.shutDown();
-		
+
 		// re-init
 //		sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 //		repo = new SailRepository(sailStack);
 		repo.initialize();
-		
+
 		try (RepositoryConnection conn = repo.getConnection()) {
 			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
 		}
@@ -92,10 +92,9 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 
 	@Test
 	public void testRollback()
-		throws NoSuchMethodException,
-		InvocationTargetException,
-		IllegalAccessException
-	{
+			throws NoSuchMethodException,
+			InvocationTargetException,
+			IllegalAccessException {
 		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
@@ -145,10 +144,9 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 
 	@Test
 	public void testFastInstantiate()
-		throws NoSuchMethodException,
-		InvocationTargetException,
-		IllegalAccessException
-	{
+			throws NoSuchMethodException,
+			InvocationTargetException,
+			IllegalAccessException {
 		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
@@ -164,7 +162,7 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 		}
 
 		SailRepository sailRepository1 = new SailRepository(SchemaCachingRDFSInferencer.fastInstantiateFrom(
-				(SchemaCachingRDFSInferencer)((SailRepository)sailRepository).getSail(), new MemoryStore()));
+				(SchemaCachingRDFSInferencer) ((SailRepository) sailRepository).getSail(), new MemoryStore()));
 		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {

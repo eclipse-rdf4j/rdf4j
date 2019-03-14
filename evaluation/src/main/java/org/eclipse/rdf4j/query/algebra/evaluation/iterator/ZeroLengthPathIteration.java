@@ -60,8 +60,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	private final EvaluationStrategy evaluationStrategy;
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar,
-			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings)
-	{
+			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		result = new QueryBindingSet(bindings);
 		this.subjectVar = subjectVar;
@@ -74,8 +73,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	@Override
 	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
 				reportedValues = makeSet();
@@ -86,7 +84,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				bs1.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("subject"));
 				QueryBindingSet bs2 = new QueryBindingSet(1);
 				bs2.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("object"));
-				List<BindingSet> seqList = Arrays.<BindingSet> asList(bs1, bs2);
+				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}
 
@@ -116,20 +114,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			// resources
 			reportedValues = null;
 			return null;
-		}
-		else {
+		} else {
 			if (result != null) {
 				if (obj == null && subj != null) {
 					result.addBinding(objVar.getName(), subj);
-				}
-				else if (subj == null && obj != null) {
+				} else if (subj == null && obj != null) {
 					result.addBinding(subjectVar.getName(), obj);
-				}
-				else if (subj != null && subj.equals(obj)) {
+				} else if (subj != null && subj.equals(obj)) {
 					// empty bindings
 					// (result but nothing to bind as subjectVar and objVar are both fixed)
-				}
-				else {
+				} else {
 					result = null;
 				}
 			}
@@ -148,14 +142,12 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	 * @return true if v added to set and not yet present
 	 */
 	protected boolean add(Set<Value> reportedValues2, Value v)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		return reportedValues2.add(v);
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
 		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
 		Var endVar = createAnonVar(ANON_OBJECT_VAR);

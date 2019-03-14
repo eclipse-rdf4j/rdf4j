@@ -38,8 +38,7 @@ public class ConcatTest {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		concatFunc = new Concat();
 	}
 
@@ -61,7 +60,7 @@ public class ConcatTest {
 		assertThat(result.getLanguage().get()).isEqualTo("en");
 
 	}
-	
+
 	@Test
 	public void mixedLanguageLiteralHandling() {
 		Literal result = concatFunc.evaluate(vf, foo_nl, bar_en);
@@ -85,19 +84,17 @@ public class ConcatTest {
 		try {
 			concatFunc.evaluate(vf, RDF.TYPE, BooleanLiteral.TRUE);
 			fail("CONCAT expected to fail on non-stringliteral argument");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// ignore, expected
 		}
 	}
-	
+
 	@Test
 	public void nonLiteralHandling() {
 		try {
 			concatFunc.evaluate(vf, RDF.TYPE, bar_en);
 			fail("CONCAT expected to fail on non-literal argument");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// ignore, expected
 		}
 	}

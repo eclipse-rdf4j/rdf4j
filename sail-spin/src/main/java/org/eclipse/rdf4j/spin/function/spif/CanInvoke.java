@@ -90,8 +90,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		final TripleSource qpTripleSource = qp.getTripleSource();
 		if (args.length == 0) {
@@ -101,7 +100,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 			throw new ValueExprEvaluationException("The first argument must be a function IRI");
 		}
 
-		IRI func = (IRI)args[0];
+		IRI func = (IRI) args[0];
 
 		try {
 			Function instanceOfFunc = getFunction("http://spinrdf.org/spl#instanceOf", qpTripleSource,
@@ -117,21 +116,19 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 					Value argValue = args[argIndex];
 					IRI valueType = funcArg.getValueType();
 					Value isInstance = instanceOfFunc.evaluate(valueFactory, argValue, valueType);
-					if (((Literal)isInstance).booleanValue()) {
+					if (((Literal) isInstance).booleanValue()) {
 						argValues.put(argName, argValue);
-					}
-					else {
+					} else {
 						return BooleanLiteral.FALSE;
 					}
-				}
-				else if (!funcArg.isOptional()) {
+				} else if (!funcArg.isOptional()) {
 					return BooleanLiteral.FALSE;
 				}
 			}
 
 			/*
-			 * in order to check any additional constraints we have to create a virtual function instance to
-			 * run them against
+			 * in order to check any additional constraints we have to create a virtual function instance to run them
+			 * against
 			 */
 			final Resource funcInstance = qpTripleSource.getValueFactory().createBNode();
 
@@ -142,8 +139,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				@Override
 				public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(
 						Resource subj, IRI pred, Value obj, Resource... contexts)
-					throws QueryEvaluationException
-				{
+						throws QueryEvaluationException {
 					if (funcInstance.equals(subj)) {
 						if (pred != null) {
 							Value v = argValues.get(pred);
@@ -154,8 +150,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						}
 
 						return new EmptyIteration<>();
-					}
-					else {
+					} else {
 						return qpTripleSource.getStatements(subj, pred, obj, contexts);
 					}
 				}
@@ -178,8 +173,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
 						TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
 						int maxExecutionTime)
-					throws QueryEvaluationException
-				{
+						throws QueryEvaluationException {
 					// Clone the tuple expression to allow for more aggressive
 					// optimizations
 					tupleExpr = tupleExpr.clone();
@@ -220,14 +214,14 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				@Override
 				protected void execute(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
 						boolean includeInferred, int maxExecutionTime)
-					throws UpdateExecutionException
-				{
+						throws UpdateExecutionException {
 					throw new UnsupportedOperationException();
 				}
 			};
 
-			try (CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
-				func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
+			try (CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources
+					.getObjectResources(
+							func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();
 					Set<IRI> constraintTypes = Iterations.asSet(
@@ -242,8 +236,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 					}
 				}
 			}
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 
@@ -251,8 +244,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 	}
 
 	private Function getFunction(String name, TripleSource tripleSource, FunctionRegistry functionRegistry)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		Function func = functionRegistry.get(name).orElse(null);
 		if (func == null) {
 			IRI funcUri = tripleSource.getValueFactory().createIRI(name);

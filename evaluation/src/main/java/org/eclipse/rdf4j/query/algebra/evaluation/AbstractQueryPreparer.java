@@ -81,11 +81,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
 			int maxExecutionTime)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 	protected abstract void execute(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int maxExecutionTime)
-		throws UpdateExecutionException;
+			throws UpdateExecutionException;
 
 	class BooleanQueryImpl extends AbstractParserQuery implements BooleanQuery {
 
@@ -95,13 +95,12 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public ParsedBooleanQuery getParsedQuery() {
-			return (ParsedBooleanQuery)super.getParsedQuery();
+			return (ParsedBooleanQuery) super.getParsedQuery();
 		}
 
 		@Override
 		public boolean evaluate()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
 			try {
@@ -118,14 +117,12 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 
 				return bindingsIter2.hasNext();
-			}
-			finally {
+			} finally {
 				try {
 					if (bindingsIter2 != null) {
 						bindingsIter2.close();
 					}
-				}
-				finally {
+				} finally {
 					if (bindingsIter1 != null) {
 						bindingsIter1.close();
 					}
@@ -142,13 +139,12 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public ParsedTupleQuery getParsedQuery() {
-			return (ParsedTupleQuery)super.getParsedQuery();
+			return (ParsedTupleQuery) super.getParsedQuery();
 		}
 
 		@Override
 		public TupleQueryResult evaluate()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
 			IteratingTupleQueryResult result = null;
@@ -162,21 +158,18 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 						bindingsIter2);
 				allGood = true;
 				return result;
-			}
-			finally {
+			} finally {
 				if (!allGood) {
 					try {
 						if (result != null) {
 							result.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (bindingsIter2 != null) {
 								bindingsIter2.close();
 							}
-						}
-						finally {
+						} finally {
 							if (bindingsIter1 != null) {
 								bindingsIter1.close();
 							}
@@ -188,8 +181,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException
-		{
+				throws QueryEvaluationException, TupleQueryResultHandlerException {
 			TupleQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
 		}
@@ -203,13 +195,12 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public ParsedGraphQuery getParsedQuery() {
-			return (ParsedGraphQuery)super.getParsedQuery();
+			return (ParsedGraphQuery) super.getParsedQuery();
 		}
 
 		@Override
 		public GraphQueryResult evaluate()
-			throws QueryEvaluationException
-		{
+				throws QueryEvaluationException {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
@@ -240,22 +231,20 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 				// Convert the BindingSet objects to actual RDF statements
 				stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(
-						bindingsIter3)
-				{
+						bindingsIter3) {
 
 					private final ValueFactory vf = tripleSource.getValueFactory();
 
 					@Override
 					protected Statement convert(BindingSet bindingSet) {
-						Resource subject = (Resource)bindingSet.getValue("subject");
-						IRI predicate = (IRI)bindingSet.getValue("predicate");
+						Resource subject = (Resource) bindingSet.getValue("subject");
+						IRI predicate = (IRI) bindingSet.getValue("predicate");
 						Value object = bindingSet.getValue("object");
-						Resource context = (Resource)bindingSet.getValue("context");
+						Resource context = (Resource) bindingSet.getValue("context");
 
 						if (context == null) {
 							return vf.createStatement(subject, predicate, object);
-						}
-						else {
+						} else {
 							return vf.createStatement(subject, predicate, object, context);
 						}
 					}
@@ -264,33 +253,28 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
 				allGood = true;
 				return result;
-			}
-			finally {
+			} finally {
 				if (!allGood) {
 					try {
 						if (result != null) {
 							result.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (stIter != null) {
 								stIter.close();
 							}
-						}
-						finally {
+						} finally {
 							try {
 								if (bindingsIter3 != null) {
 									bindingsIter3.close();
 								}
-							}
-							finally {
+							} finally {
 								try {
 									if (bindingsIter2 != null) {
 										bindingsIter2.close();
 									}
-								}
-								finally {
+								} finally {
 									if (bindingsIter1 != null) {
 										bindingsIter1.close();
 									}
@@ -304,8 +288,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public void evaluate(RDFHandler handler)
-			throws QueryEvaluationException, RDFHandlerException
-		{
+				throws QueryEvaluationException, RDFHandlerException {
 			GraphQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
 		}
@@ -319,8 +302,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public void execute()
-			throws UpdateExecutionException
-		{
+				throws UpdateExecutionException {
 			ParsedUpdate parsedUpdate = getParsedUpdate();
 			List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
 			Map<UpdateExpr, Dataset> datasetMapping = parsedUpdate.getDatasetMapping();
@@ -330,8 +312,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				try {
 					AbstractQueryPreparer.this.execute(updateExpr, activeDataset, getBindings(),
 							getIncludeInferred(), getMaxExecutionTime());
-				}
-				catch (UpdateExecutionException e) {
+				} catch (UpdateExecutionException e) {
 					if (!updateExpr.isSilent()) {
 						throw e;
 					}

@@ -20,14 +20,12 @@ import junit.framework.Test;
 public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 
 	public static Test suite()
-		throws Exception
-	{
+			throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			@Override
 			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
+					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, false);
 			}
@@ -35,8 +33,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 			@Override
 			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
-					boolean checkOrder)
-			{
+					boolean checkOrder) {
 				String[] ignoredTests = {
 						// test case incompatible with RDF 1.1 - see
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
@@ -56,8 +53,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 	}
 
 	protected MemorySPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests)
-	{
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

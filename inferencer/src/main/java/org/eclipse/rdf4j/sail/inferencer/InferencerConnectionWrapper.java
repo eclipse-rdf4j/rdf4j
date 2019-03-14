@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
  * @author Arjohn Kampman
  */
 public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
-		implements InferencerConnection
-{
+		implements InferencerConnection {
 
 	/*--------------*
 	 * Constructors *
@@ -50,42 +49,37 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 */
 	@Override
 	public InferencerConnection getWrappedConnection() {
-		return (InferencerConnection)super.getWrappedConnection();
+		return (InferencerConnection) super.getWrappedConnection();
 	}
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		return getWrappedConnection().addInferredStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		return getWrappedConnection().removeInferredStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		getWrappedConnection().clearInferred(contexts);
 	}
 
 	@Override
 	public void flush()
-		throws SailException
-	{
+			throws SailException {
 		getWrappedConnection().flush();
 		flushUpdates();
 	}
 
 	@Override
 	public void flushUpdates()
-		throws SailException
-	{
+			throws SailException {
 		getWrappedConnection().flushUpdates();
 	}
 
@@ -94,8 +88,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 */
 	@Override
 	public void prepare()
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		super.prepare();
 	}
@@ -105,8 +98,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 */
 	@Override
 	public void commit()
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		super.commit();
 	}
@@ -117,8 +109,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
@@ -128,8 +119,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 */
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs()
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		return super.getContextIDs();
 	}
@@ -140,8 +130,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		return super.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
@@ -151,8 +140,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 */
 	@Override
 	public long size(Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		flushUpdates();
 		return super.size(contexts);
 	}

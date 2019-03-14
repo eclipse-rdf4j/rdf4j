@@ -17,8 +17,7 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of RDFStoreTest for testing the class
- * <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
+ * An extension of RDFStoreTest for testing the class <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
  */
 public class PersistentMemoryStoreTest extends RDFNotifyingStoreTest {
 
@@ -27,14 +26,12 @@ public class PersistentMemoryStoreTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail()
-		throws SailException
-	{
+			throws SailException {
 		try {
 			NotifyingSail sail = new MemoryStore(tempDir.newFolder(PersistentMemoryStoreTest.class.getSimpleName()));
 			sail.init();
 			return sail;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new SailException(e);
 		}
 	}

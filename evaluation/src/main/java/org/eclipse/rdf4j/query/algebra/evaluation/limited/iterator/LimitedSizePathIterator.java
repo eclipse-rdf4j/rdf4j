@@ -41,8 +41,7 @@ public class LimitedSizePathIterator extends PathIteration {
 	public LimitedSizePathIterator(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			AtomicLong used, long maxSize)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super(evaluationStrategyImpl, scope, startVar, pathExpression, endVar, contextVar, minLength,
 				bindings);
 		this.used = used;
@@ -51,9 +50,8 @@ public class LimitedSizePathIterator extends PathIteration {
 
 	@Override
 	protected boolean add(Set<ValuePair> valueSet, ValuePair vp)
-		throws QueryEvaluationException
-	{
-		return LimitedSizeIteratorUtil.<ValuePair> add(vp, valueSet, used, maxSize);
+			throws QueryEvaluationException {
+		return LimitedSizeIteratorUtil.<ValuePair>add(vp, valueSet, used, maxSize);
 	}
 
 }

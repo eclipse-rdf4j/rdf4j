@@ -19,8 +19,7 @@ public class SHA512Test extends HashFunctionTest {
 	 */
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		setHashFunction(new SHA512());
 		setToHash("abc");
 		setExpectedDigest(

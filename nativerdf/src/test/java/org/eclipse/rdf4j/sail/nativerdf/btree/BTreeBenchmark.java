@@ -38,24 +38,21 @@ public class BTreeBenchmark {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		dir = FileUtil.createTempDir("btree");
 		btree = new BTree(dir, "test", 4096, 8);
 	}
 
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		btree.delete();
 		FileUtil.deleteDir(dir);
 	}
 
 	@Test
 	public void testAddAscending()
-		throws Exception
-	{
+			throws Exception {
 		Thread.sleep(500L);
 		long startTime = System.currentTimeMillis();
 
@@ -68,8 +65,7 @@ public class BTreeBenchmark {
 
 	@Test
 	public void testAddRandom()
-		throws Exception
-	{
+			throws Exception {
 		Thread.sleep(500L);
 		long startTime = System.currentTimeMillis();
 
@@ -82,8 +78,7 @@ public class BTreeBenchmark {
 
 	@Test
 	public void testUpdate()
-		throws Exception
-	{
+			throws Exception {
 		addAscending(0L, 2L, VALUE_COUNT);
 		btree.sync();
 
@@ -99,8 +94,7 @@ public class BTreeBenchmark {
 
 	@Test
 	public void testRemove()
-		throws Exception
-	{
+			throws Exception {
 		addAscending(0L, 1L, VALUE_COUNT);
 		btree.sync();
 
@@ -116,8 +110,7 @@ public class BTreeBenchmark {
 
 	@Test
 	public void testFullScan()
-		throws Exception
-	{
+			throws Exception {
 		addAscending(0L, 1L, VALUE_COUNT);
 		btree.sync();
 
@@ -135,28 +128,24 @@ public class BTreeBenchmark {
 
 	@Test
 	public void testRangeScan4()
-		throws Exception
-	{
+			throws Exception {
 		testRangeScan(4L);
 	}
 
 	@Test
 	public void testRangeScan20()
-		throws Exception
-	{
+			throws Exception {
 		testRangeScan(20L);
 	}
 
 	@Test
 	public void testRangeScan1000()
-		throws Exception
-	{
+			throws Exception {
 		testRangeScan(1000L);
 	}
 
 	private void testRangeScan(long rangeSize)
-		throws Exception
-	{
+			throws Exception {
 		addAscending(0L, 1L, VALUE_COUNT);
 		btree.sync();
 
@@ -181,8 +170,7 @@ public class BTreeBenchmark {
 	}
 
 	private void addAscending(long startValue, long increment, int valueCount)
-		throws IOException
-	{
+			throws IOException {
 		long value = startValue;
 
 		byte[] data = new byte[8];
@@ -194,8 +182,7 @@ public class BTreeBenchmark {
 	}
 
 	private void addRandom(int valueCount)
-		throws IOException
-	{
+			throws IOException {
 		Random random = new Random(0L);
 
 		byte[] data = new byte[8];
@@ -206,8 +193,7 @@ public class BTreeBenchmark {
 	}
 
 	private void update(long startValue, long increment, int valueCount, long updateDelta)
-		throws IOException
-	{
+			throws IOException {
 		long oldValue = startValue;
 		long newValue;
 
@@ -228,8 +214,7 @@ public class BTreeBenchmark {
 	}
 
 	private void remove(long startValue, long increment, int valueCount)
-		throws IOException
-	{
+			throws IOException {
 		long value = startValue;
 		byte[] data = new byte[8];
 

@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
  * Forward-chaining RDF Schema inferencer, using the rules from the
- * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February
- * 2004)</a>. This inferencer can be used to add RDF Schema semantics to any Sail that returns
- * {@link InferencerConnection}s from their {@link Sail#getConnection()} method.
+ * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February 2004)</a>. This
+ * inferencer can be used to add RDF Schema semantics to any Sail that returns {@link InferencerConnection}s from their
+ * {@link Sail#getConnection()} method.
  * 
  * @deprecated since 2.5. This inferencer implementation will be phased out. Consider switching to the
  *             {@link SchemaCachingRDFSInferencer} instead.
@@ -41,13 +41,11 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 
 	@Override
 	public ForwardChainingRDFSInferencerConnection getConnection()
-		throws SailException
-	{
+			throws SailException {
 		try {
-			InferencerConnection con = (InferencerConnection)super.getConnection();
+			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new ForwardChainingRDFSInferencerConnection(this, con);
-		}
-		catch (ClassCastException e) {
+		} catch (ClassCastException e) {
 			throw new SailException(e.getMessage(), e);
 		}
 	}
@@ -57,8 +55,7 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 	 */
 	@Override
 	public void initialize()
-		throws SailException
-	{
+			throws SailException {
 		super.initialize();
 
 		try (ForwardChainingRDFSInferencerConnection con = getConnection()) {

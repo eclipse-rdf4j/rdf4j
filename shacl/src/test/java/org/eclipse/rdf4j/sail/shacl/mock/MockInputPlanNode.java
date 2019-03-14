@@ -35,14 +35,16 @@ public class MockInputPlanNode implements PlanNode {
 	public MockInputPlanNode(List<String>... list) {
 
 		initialData = Arrays
-			.stream(list)
-			.map(strings -> strings.stream().map(SimpleValueFactory.getInstance()::createLiteral).map(l -> (Value) l).collect(Collectors.toList()))
-			.map(Tuple::new)
-			.sorted()
-			.collect(Collectors.toList());
+				.stream(list)
+				.map(strings -> strings.stream()
+						.map(SimpleValueFactory.getInstance()::createLiteral)
+						.map(l -> (Value) l)
+						.collect(Collectors.toList()))
+				.map(Tuple::new)
+				.sorted()
+				.collect(Collectors.toList());
 
 	}
-
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
@@ -52,24 +54,24 @@ public class MockInputPlanNode implements PlanNode {
 
 			@Override
 			public void close()
-				throws SailException {
+					throws SailException {
 			}
 
 			@Override
 			public boolean hasNext()
-				throws SailException {
+					throws SailException {
 				return iterator.hasNext();
 			}
 
 			@Override
 			public Tuple next()
-				throws SailException {
+					throws SailException {
 				return iterator.next();
 			}
 
 			@Override
 			public void remove()
-				throws SailException {
+					throws SailException {
 
 			}
 		};
@@ -87,7 +89,7 @@ public class MockInputPlanNode implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

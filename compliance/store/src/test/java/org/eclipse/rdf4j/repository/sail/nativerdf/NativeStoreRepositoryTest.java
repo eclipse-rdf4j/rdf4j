@@ -22,20 +22,17 @@ public class NativeStoreRepositoryTest extends RepositoryTest {
 
 	@Override
 	protected Repository createRepository()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}

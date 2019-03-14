@@ -57,8 +57,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public byte[] next()
-		throws IOException
-	{
+			throws IOException {
 		tree.btreeLock.readLock().lock();
 		try {
 			if (!started) {
@@ -69,34 +68,29 @@ class RangeIterator implements RecordIterator, NodeListener {
 			byte[] value = findNext(revisitValue.getAndSet(false));
 			while (value != null) {
 				if (maxValue != null
-						&& tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0)
-				{
+						&& tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
 					// Reached maximum value, stop iterating
 					close();
 					value = null;
 					break;
-				}
-				else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
+				} else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
 					// Value doesn't match search key/mask
 					value = findNext(false);
 					continue;
-				}
-				else {
+				} else {
 					// Matching value found
 					break;
 				}
 			}
 
 			return value;
-		}
-		finally {
+		} finally {
 			tree.btreeLock.readLock().unlock();
 		}
 	}
 
 	private void findMinimum()
-		throws IOException
-	{
+			throws IOException {
 		Node nextCurrentNode = currentNode = tree.readRootNode();
 
 		if (nextCurrentNode == null) {
@@ -116,8 +110,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 				if (currentIdx >= 0) {
 					// Found exact match with minimum value
 					break;
-				}
-				else {
+				} else {
 					// currentIdx indicates the first value larger than the
 					// minimum value
 					currentIdx = -currentIdx - 1;
@@ -126,8 +119,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 			if (nextCurrentNode.isLeaf()) {
 				break;
-			}
-			else {
+			} else {
 				// [SES-725] must change stacks after node loading has succeeded
 				Node childNode = nextCurrentNode.getChildNode(currentIdx);
 				pushStacks(childNode);
@@ -138,8 +130,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	private byte[] findNext(boolean returnedFromRecursion)
-		throws IOException
-	{
+			throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == null) {
 			return null;
@@ -150,12 +141,10 @@ class RangeIterator implements RecordIterator, NodeListener {
 				// No more values in this node, continue with parent node
 				popStacks();
 				return findNext(true);
-			}
-			else {
+			} else {
 				return nextCurrentNode.getValue(currentIdx++);
 			}
-		}
-		else {
+		} else {
 			// [SES-725] must change stacks after node loading has succeeded
 			Node childNode = nextCurrentNode.getChildNode(currentIdx);
 			pushStacks(childNode);
@@ -173,16 +162,14 @@ class RangeIterator implements RecordIterator, NodeListener {
 			}
 
 			nextCurrentNode.setValue(currentIdx - 1, value);
-		}
-		finally {
+		} finally {
 			tree.btreeLock.readLock().unlock();
 		}
 	}
 
 	@Override
 	public synchronized void close()
-		throws IOException
-	{
+			throws IOException {
 		tree.btreeLock.readLock().lock();
 		try {
 			while (popStacks()) {
@@ -191,8 +178,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 			assert parentNodeStack.isEmpty();
 			assert parentIndexStack.isEmpty();
-		}
-		finally {
+		} finally {
 			tree.btreeLock.readLock().unlock();
 		}
 	}
@@ -206,8 +192,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	private boolean popStacks()
-		throws IOException
-	{
+			throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == null) {
 			// There's nothing to pop
@@ -221,8 +206,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 			currentNode = parentNodeStack.removeLast();
 			currentIdx = parentIndexStack.removeLast();
 			return true;
-		}
-		else {
+		} else {
 			currentNode = null;
 			currentIdx = 0;
 			return false;
@@ -237,8 +221,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 			if (addedIndex < currentIdx) {
 				currentIdx++;
 			}
-		}
-		else {
+		} else {
 			for (int i = 0; i < parentNodeStack.size(); i++) {
 				if (node == parentNodeStack.get(i)) {
 					int parentIdx = parentIndexStack.get(i);
@@ -262,8 +245,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 			if (removedIndex < currentIdx) {
 				currentIdx--;
 			}
-		}
-		else {
+		} else {
 			for (int i = 0; i < parentNodeStack.size(); i++) {
 				if (node == parentNodeStack.get(i)) {
 					int parentIdx = parentIndexStack.get(i);
@@ -281,8 +263,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-		throws IOException
-	{
+			throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == node) {
 			if (valueIndex == currentIdx - 1) {
@@ -295,8 +276,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 					leftChildNode.use();
 				}
 			}
-		}
-		else if (nextCurrentNode == rightChildNode) {
+		} else if (nextCurrentNode == rightChildNode) {
 			if (currentIdx == 0) {
 				// the value that would be visited next has been moved to the
 				// parent node
@@ -304,8 +284,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 				currentIdx = valueIndex;
 				revisitValue.set(true);
 			}
-		}
-		else {
+		} else {
 			for (int i = 0; i < parentNodeStack.size(); i++) {
 				Node stackNode = parentNodeStack.get(i);
 
@@ -335,8 +314,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-		throws IOException
-	{
+			throws IOException {
 		for (int i = 0; i < parentNodeStack.size(); i++) {
 			Node stackNode = parentNodeStack.get(i);
 
@@ -365,8 +343,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-		throws IOException
-	{
+			throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
 		boolean deregister = false;
@@ -383,8 +360,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 				currentNode = newNode;
 				currentIdx -= medianIdx + 1;
 			}
-		}
-		else {
+		} else {
 			for (int i = 0; i < parentNodeStack.size(); i++) {
 				Node parentNode = parentNodeStack.get(i);
 
@@ -412,8 +388,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-		throws IOException
-	{
+			throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
 		boolean deregister = false;
@@ -428,8 +403,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 			currentNode = targetNode;
 			currentIdx += mergeIdx;
-		}
-		else {
+		} else {
 			for (int i = 0; i < parentNodeStack.size(); i++) {
 				Node parentNode = parentNodeStack.get(i);
 

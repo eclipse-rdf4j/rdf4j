@@ -36,10 +36,9 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	@Before
 	@Override
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		super.setUp();
-		TransportClient client = (TransportClient)internalCluster().transportClient();
+		TransportClient client = (TransportClient) internalCluster().transportClient();
 		delegateTest = new AbstractLuceneSailGeoSPARQLTest() {
 
 			@Override
@@ -71,50 +70,43 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	@After
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			delegateTest.tearDown();
-		}
-		finally {
+		} finally {
 			super.tearDown();
 		}
 	}
 
 	@Test
 	public void testTriplesStored()
-		throws Exception
-	{
+			throws Exception {
 		delegateTest.testTriplesStored();
 	}
 
 	@Test
 	public void testDistanceQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testDistanceQuery();
 	}
 
 	@Test
 	public void testComplexDistanceQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexDistanceQuery();
 	}
 
 	@Test
 	@Ignore // JTS is required
 	public void testIntersectionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testIntersectionQuery();
 	}
 
 	@Test
 	@Ignore // JTS is required
 	public void testComplexIntersectionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexIntersectionQuery();
 	}
 }

@@ -17,8 +17,7 @@ public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
 
 	@BeforeClass
 	public static void setUpClass()
-		throws Exception
-	{
+			throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 

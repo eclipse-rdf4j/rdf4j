@@ -35,10 +35,10 @@ public class SolrUtil {
 			solrInputDocument.addField(name, solrDocument.getFieldValue(name));
 		}
 
-		//Don't forget children documents
+		// Don't forget children documents
 		if (solrDocument.getChildDocuments() != null) {
 			for (SolrDocument childDocument : solrDocument.getChildDocuments()) {
-				//You can add paranoic check against infinite loop childDocument == solrDocument
+				// You can add paranoic check against infinite loop childDocument == solrDocument
 				solrInputDocument.addChildDocument(toSolrInputDocument(childDocument));
 			}
 		}

@@ -38,7 +38,7 @@ public class ShaclSailFactoryTest {
 	@Test
 	public void getSailWithDefaultConfigSetsConfigurationCorrectly() {
 		ShaclSailConfig config = new ShaclSailConfig();
-		ShaclSail sail = (ShaclSail)subject.getSail(config);
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 
@@ -59,7 +59,7 @@ public class ShaclSailFactoryTest {
 		config.setUndefinedTargetValidatesAllSubjects(!config.isUndefinedTargetValidatesAllSubjects());
 		config.setValidationEnabled(!config.isValidationEnabled());
 
-		ShaclSail sail = (ShaclSail)subject.getSail(config);
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 

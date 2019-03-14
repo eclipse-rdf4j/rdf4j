@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.sail;
 import org.eclipse.rdf4j.IsolationLevels;
 
 /**
- * An exception thrown by some methods in Sail to indicate that a requested isolation level could not be
- * fulfilled. Such as when multiple conflicting {@link IsolationLevels#SERIALIZABLE} transactions overlap in
- * time.
+ * An exception thrown by some methods in Sail to indicate that a requested isolation level could not be fulfilled. Such
+ * as when multiple conflicting {@link IsolationLevels#SERIALIZABLE} transactions overlap in time.
  */
 public class SailConflictException extends SailException {
 

@@ -58,8 +58,7 @@ public class TestNativeStoreMemoryOverflow {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		testRepository = createRepository();
 		testRepository.initialize();
 
@@ -73,30 +72,26 @@ public class TestNativeStoreMemoryOverflow {
 	}
 
 	private Repository createRepository()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
 	@After
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			testCon2.close();
 			testCon.close();
 			testRepository.shutDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}
 
 	@Test
 	public void test()
-		throws Exception
-	{
+			throws Exception {
 		int size = 10000; // this should really be bigger
 		// load a lot of triples in two different contexts
 		testCon.begin();
@@ -144,22 +139,19 @@ public class TestNativeStoreMemoryOverflow {
 
 		@Override
 		public boolean hasNext()
-			throws RuntimeException
-		{
+				throws RuntimeException {
 			return i < size;
 		}
 
 		@Override
 		public Statement next()
-			throws RuntimeException
-		{
+				throws RuntimeException {
 			return vf.createStatement(vf.createURI("http://my.subject" + i++), predicate, object);
 		}
 
 		@Override
 		public void remove()
-			throws RuntimeException
-		{
+				throws RuntimeException {
 			throw new UnsupportedOperationException();
 		}
 	}

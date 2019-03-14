@@ -25,12 +25,10 @@ public class LuceneIndexNIOFS extends LuceneIndex {
 
 	@Override
 	protected Directory createDirectory(Properties parameters)
-		throws IOException
-	{
+			throws IOException {
 		if (parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
 			return new NIOFSDirectory(Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY)));
-		}
-		else
+		} else
 			return super.createDirectory(parameters);
 	}
 }

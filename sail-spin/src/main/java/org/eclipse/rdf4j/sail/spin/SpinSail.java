@@ -104,9 +104,8 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	}
 
 	/**
-	 * Indicates if the SPIN Sail should itself load the full deductive closure of the SPIN axioms. Typically,
-	 * this will be {@code false} if the underlying Sail stack already supports RDFS inferencing, {@code true}
-	 * if not.
+	 * Indicates if the SPIN Sail should itself load the full deductive closure of the SPIN axioms. Typically, this will
+	 * be {@code false} if the underlying Sail stack already supports RDFS inferencing, {@code true} if not.
 	 * 
 	 * @return {@code true} if the SpinSail needs to load the full axiom closure, {@code false} otherwise.
 	 */
@@ -132,16 +131,14 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	@Override
 	public SpinSailConnection getConnection()
-		throws SailException
-	{
-		InferencerConnection con = (InferencerConnection)super.getConnection();
+			throws SailException {
+		InferencerConnection con = (InferencerConnection) super.getConnection();
 		return new SpinSailConnection(this, con);
 	}
 
 	@Override
 	public void initialize()
-		throws SailException
-	{
+			throws SailException {
 		super.initialize();
 
 		SpinFunctionInterpreter.registerSpinParsingFunctions(parser, functionRegistry);

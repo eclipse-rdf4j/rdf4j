@@ -33,28 +33,24 @@ public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	protected Repository createRepository()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}
 
 	@Test
 	public void testSES715()
-		throws Exception
-	{
+			throws Exception {
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();

@@ -28,8 +28,7 @@ public class NotifyingSailConnectionWrapperTest {
 
 	@BeforeClass
 	public static void setUpClass()
-		throws Exception
-	{
+			throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -65,8 +64,7 @@ public class NotifyingSailConnectionWrapperTest {
 
 	@Before
 	public void setUp()
-		throws SailException
-	{
+			throws SailException {
 		memoryStore.initialize();
 		wrapper = new NotifyingSailConnectionWrapper(memoryStore.getConnection());
 		factory = memoryStore.getValueFactory();
@@ -74,12 +72,10 @@ public class NotifyingSailConnectionWrapperTest {
 
 	@After
 	public void tearDown()
-		throws SailException
-	{
+			throws SailException {
 		try {
 			wrapper.close();
-		}
-		finally {
+		} finally {
 			memoryStore.shutDown();
 		}
 	}
@@ -91,8 +87,7 @@ public class NotifyingSailConnectionWrapperTest {
 	 */
 	@Test
 	public void testAddThenRemoveListener()
-		throws SailException
-	{
+			throws SailException {
 		wrapper.addConnectionListener(listener);
 		addStatement("a");
 		assertThat(listener.getCount()).isEqualTo(1);
@@ -104,16 +99,14 @@ public class NotifyingSailConnectionWrapperTest {
 	}
 
 	private void removeStatement(String objectValue)
-		throws SailException
-	{
+			throws SailException {
 		wrapper.begin();
 		wrapper.removeStatements(null, factory.createIRI("urn:pred"), factory.createLiteral(objectValue));
 		wrapper.commit();
 	}
 
 	private void addStatement(String objectValue)
-		throws SailException
-	{
+			throws SailException {
 		wrapper.begin();
 		wrapper.addStatement(factory.createBNode(), factory.createIRI("urn:pred"),
 				factory.createLiteral(objectValue));

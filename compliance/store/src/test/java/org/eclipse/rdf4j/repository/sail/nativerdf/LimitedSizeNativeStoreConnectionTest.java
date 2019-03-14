@@ -39,28 +39,24 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	@Override
 	protected Repository createRepository()
-		throws IOException
-	{
+			throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new LimitedSizeNativeStore(dataDir, "spoc"));
 	}
 
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}
 
 	@Test
 	public void testSES715()
-		throws Exception
-	{
+			throws Exception {
 		// load 1000 triples in two different contexts
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
@@ -95,10 +91,10 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	@Test
 	public void testLimit()
-		throws Exception
-	{
-		((LimitedSizeNativeStoreConnection)((SailRepositoryConnection)testCon).getSailConnection()).setMaxCollectionsSize(
-				2);
+			throws Exception {
+		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
+				.setMaxCollectionsSize(
+						2);
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
 		IRI context1 = vf.createIRI("http://my.context.1");
@@ -124,10 +120,10 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	@Test
 	public void testOrderAndLimit()
-		throws Exception
-	{
-		((LimitedSizeNativeStoreConnection)((SailRepositoryConnection)testCon).getSailConnection()).setMaxCollectionsSize(
-				2);
+			throws Exception {
+		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
+				.setMaxCollectionsSize(
+						2);
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
 		IRI context1 = vf.createIRI("http://my.context.1");
@@ -156,8 +152,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 			while (r.hasNext()) {
 				assertNotNull(r.next());
 			}
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			shouldThrow = e;
 		}
 		return shouldThrow;

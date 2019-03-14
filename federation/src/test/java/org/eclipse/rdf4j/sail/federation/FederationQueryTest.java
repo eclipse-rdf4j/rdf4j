@@ -105,14 +105,12 @@ public class FederationQueryTest {
 
 	@Test
 	public void test()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		assertQuery(pattern);
 	}
 
 	private void assertQuery(String qry)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		TupleQueryResult expected = reference.prepareTupleQuery(SPARQL, WHERE + qry).evaluate();
 		TupleQueryResult result = con.prepareTupleQuery(SPARQL, WHERE + qry).evaluate();
 		compareTupleQueryResults(expected, result);
@@ -120,8 +118,7 @@ public class FederationQueryTest {
 
 	@Before
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		SailRepository ref = new SailRepository(new MemoryStore());
 		ref.initialize();
 		reference = ref.getConnection();
@@ -133,8 +130,7 @@ public class FederationQueryTest {
 	}
 
 	protected void configure(Federation federation)
-		throws Exception
-	{
+			throws Exception {
 		federation.addMember(createMember("1"));
 		federation.addMember(createMember("2"));
 		federation.addMember(createMember("3"));
@@ -142,8 +138,7 @@ public class FederationQueryTest {
 	}
 
 	private Repository createMember(String memberID)
-		throws RepositoryException, RDFParseException, IOException
-	{
+			throws RepositoryException, RDFParseException, IOException {
 		SailRepository member = new SailRepository(new MemoryStore());
 		member.initialize();
 		try (SailRepositoryConnection con = member.getConnection()) {
@@ -155,8 +150,7 @@ public class FederationQueryTest {
 	}
 
 	private void compareTupleQueryResults(TupleQueryResult expectedResult, TupleQueryResult queryResult)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);

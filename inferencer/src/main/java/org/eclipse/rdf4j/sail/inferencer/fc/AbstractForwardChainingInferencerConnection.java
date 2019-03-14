@@ -22,8 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
-		implements SailConnectionListener
-{
+		implements SailConnectionListener {
 
 	/*-----------*
 	* Constants *
@@ -92,8 +91,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	@Override
 	public void flushUpdates()
-		throws SailException
-	{
+			throws SailException {
 		if (needsFullRecomputation()) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();
@@ -104,8 +102,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 			newStatements = new SailModel(getWrappedConnection(), true);
 			statementsRemoved = false;
-		}
-		else {
+		} else {
 			super.flushUpdates();
 		}
 
@@ -118,15 +115,13 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	@Override
 	public void begin()
-		throws SailException
-	{
+			throws SailException {
 		this.begin(null);
 	}
 
 	@Override
 	public void begin(IsolationLevel level)
-		throws SailException
-	{
+			throws SailException {
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
 		}
@@ -142,8 +137,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	@Override
 	public void rollback()
-		throws SailException
-	{
+			throws SailException {
 		super.rollback();
 
 		statementsRemoved = false;
@@ -151,15 +145,13 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	/**
-	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying
-	 * Sail.
+	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying Sail.
 	 */
 	protected abstract void addAxiomStatements()
-		throws SailException;
+			throws SailException;
 
 	protected void doInferencing()
-		throws SailException
-	{
+			throws SailException {
 		// initialize some vars
 		totalInferred = 0;
 		int iteration = 0;
@@ -183,7 +175,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	 * Returns the number of newly inferred statements.
 	 */
 	protected abstract int applyRules(Model iteration)
-		throws SailException;
+			throws SailException;
 
 	protected Model prepareIteration() {
 		Model newThisIteration = newStatements;
@@ -194,9 +186,9 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	protected boolean hasNewStatements() {
 		return newStatements != null;
 	}
-	
+
 	/**
-	 * Indicates if a full recomputation of the deductive closure is needed. 
+	 * Indicates if a full recomputation of the deductive closure is needed.
 	 */
 	protected boolean needsFullRecomputation() {
 		return statementsRemoved;

@@ -22,8 +22,7 @@ public class CurrentTimeMillis implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+			throws ValueExprEvaluationException {
 		return valueFactory.createLiteral(System.currentTimeMillis());
 	}
 }

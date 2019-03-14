@@ -36,8 +36,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 *--------------*/
 
 	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.join = join;
 
@@ -53,8 +52,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 	@Override
 	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		try {
 			while (rightIter.hasNext() || leftIter.hasNext()) {
 				if (rightIter.hasNext()) {
@@ -68,8 +66,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 					rightIter = strategy.evaluate(join.getRightArg(), leftIter.next());
 				}
 			}
-		}
-		catch (NoSuchElementException ignore) {
+		} catch (NoSuchElementException ignore) {
 			// probably, one of the iterations has been closed concurrently in
 			// handleClose()
 		}
@@ -79,16 +76,13 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 	@Override
 	protected void handleClose()
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				leftIter.close();
-			}
-			finally {
+			} finally {
 				rightIter.close();
 			}
 		}

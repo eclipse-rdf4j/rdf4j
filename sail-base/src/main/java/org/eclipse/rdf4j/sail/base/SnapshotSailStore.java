@@ -50,19 +50,16 @@ public class SnapshotSailStore implements SailStore {
 
 	@Override
 	public void close()
-		throws SailException
-	{
+			throws SailException {
 		try {
 			try {
 				explicitAutoFlush.flush();
 				inferredAutoFlush.flush();
-			}
-			finally {
+			} finally {
 				explicitAutoFlush.close();
 				inferredAutoFlush.close();
 			}
-		}
-		finally {
+		} finally {
 			backingStore.close();
 		}
 	}

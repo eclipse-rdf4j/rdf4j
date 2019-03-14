@@ -52,8 +52,7 @@ public class CompareOptimizer implements QueryOptimizer {
 				boolean rightIsResource = isResource(rightArg);
 
 				if (leftIsVar && rightIsResource || leftIsResource && rightIsVar
-						|| leftIsResource && rightIsResource)
-				{
+						|| leftIsResource && rightIsResource) {
 					SameTerm sameTerm = new SameTerm(leftArg, rightArg);
 					compare.replaceWith(sameTerm);
 				}
@@ -70,12 +69,12 @@ public class CompareOptimizer implements QueryOptimizer {
 
 		protected boolean isResource(ValueExpr valueExpr) {
 			if (valueExpr instanceof ValueConstant) {
-				Value value = ((ValueConstant)valueExpr).getValue();
+				Value value = ((ValueConstant) valueExpr).getValue();
 				return value instanceof Resource;
 			}
 
 			if (valueExpr instanceof Var) {
-				Value value = ((Var)valueExpr).getValue();
+				Value value = ((Var) valueExpr).getValue();
 				return value instanceof Resource;
 			}
 

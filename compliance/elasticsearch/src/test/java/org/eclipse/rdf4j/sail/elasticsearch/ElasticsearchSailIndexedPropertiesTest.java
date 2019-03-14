@@ -36,10 +36,9 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	@Before
 	@Override
 	public void setUp()
-		throws Exception
-	{
+			throws Exception {
 		super.setUp();
-		TransportClient client = (TransportClient)internalCluster().transportClient();
+		TransportClient client = (TransportClient) internalCluster().transportClient();
 		delegateTest = new AbstractLuceneSailIndexedPropertiesTest() {
 
 			@Override
@@ -71,27 +70,23 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	@After
 	@Override
 	public void tearDown()
-		throws Exception
-	{
+			throws Exception {
 		try {
 			delegateTest.tearDown();
-		}
-		finally {
+		} finally {
 			super.tearDown();
 		}
 	}
 
 	@Test
 	public void testTriplesStored()
-		throws Exception
-	{
+			throws Exception {
 		delegateTest.testTriplesStored();
 	}
 
 	@Test
 	public void testRegularQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testRegularQuery();
 	}
 
