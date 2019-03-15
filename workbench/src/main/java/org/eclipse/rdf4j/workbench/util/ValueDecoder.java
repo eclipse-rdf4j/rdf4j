@@ -47,8 +47,7 @@ class ValueDecoder {
 	 *         {@link java.lang.String#equals(Object)} "null".
 	 * @throws BadRequestException if a problem occurs during parsing
 	 */
-	protected Value decodeValue(String string)
-			throws BadRequestException {
+	protected Value decodeValue(String string) throws BadRequestException {
 		Value result = null;
 		try {
 			if (string != null) {
@@ -77,8 +76,7 @@ class ValueDecoder {
 		return result;
 	}
 
-	private Value parseURI(String value)
-			throws RepositoryException, BadRequestException {
+	private Value parseURI(String value) throws RepositoryException, BadRequestException {
 		String prefix = value.substring(0, value.indexOf(':'));
 		String localPart = value.substring(prefix.length() + 1);
 		String namespace = getNamespace(prefix);
@@ -88,8 +86,7 @@ class ValueDecoder {
 		return factory.createIRI(namespace, localPart);
 	}
 
-	private Value parseLiteral(String value)
-			throws BadRequestException {
+	private Value parseLiteral(String value) throws BadRequestException {
 		String label = value.substring(1, value.lastIndexOf('"'));
 		Value result;
 		if (value.length() == (label.length() + 2)) {
@@ -112,8 +109,7 @@ class ValueDecoder {
 		return result;
 	}
 
-	private String getNamespace(String prefix)
-			throws RepositoryException {
+	private String getNamespace(String prefix) throws RepositoryException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			return con.getNamespace(prefix);
 		}

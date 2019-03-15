@@ -104,8 +104,7 @@ public class HttpServerUtil {
 	 * @param rightMimeTypeElem
 	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false otherwise.
 	 */
-	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem,
-			HeaderElement rightMimeTypeElem) {
+	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem, HeaderElement rightMimeTypeElem) {
 
 		String[] leftMimeType = splitMIMEType(leftMimeTypeElem.getValue());
 		String[] rightMimeType = splitMIMEType(rightMimeTypeElem.getValue());

@@ -36,8 +36,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
-			Exception exception)
-			throws Exception {
+			Exception exception) throws Exception {
 		try {
 			cleanUpResources();
 		} finally {
@@ -51,8 +50,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	 * @return a name that makes sense based on the request
 	 * @throws ServerHTTPException if it was impossible to determine a name due to an internal error
 	 */
-	protected abstract String getThreadName()
-			throws ServerHTTPException;
+	protected abstract String getThreadName() throws ServerHTTPException;
 
 	/**
 	 * Set attributes for this request. Called before the request is forwarded to a handler. By default, this method
@@ -63,8 +61,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	 *                             of the client
 	 * @throws ServerHTTPException if it was impossible to set one or more attributes due to an internal error
 	 */
-	protected void setRequestAttributes(HttpServletRequest request)
-			throws ClientHTTPException, ServerHTTPException {
+	protected void setRequestAttributes(HttpServletRequest request) throws ClientHTTPException, ServerHTTPException {
 	}
 
 	/**
@@ -73,7 +70,6 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	 * 
 	 * @throws ServerHTTPException if some resources could not be cleaned up because of an internal error
 	 */
-	protected void cleanUpResources()
-			throws ServerHTTPException {
+	protected void cleanUpResources() throws ServerHTTPException {
 	}
 }

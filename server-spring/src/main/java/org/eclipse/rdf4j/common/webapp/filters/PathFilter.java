@@ -27,8 +27,7 @@ import javax.servlet.http.HttpServletResponseWrapper;
 public class PathFilter implements Filter {
 
 	@Override
-	public void init(FilterConfig filterConf)
-			throws ServletException {
+	public void init(FilterConfig filterConf) throws ServletException {
 		// do nothing
 	}
 

@@ -29,8 +29,8 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	@Override
-	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response,
-			Object handler, Exception exception) {
+	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response, Object handler,
+			Exception exception) {
 		logger.debug("ProtocolExceptionResolver.resolveException() called");
 
 		int statusCode = HttpServletResponse.SC_INTERNAL_SERVER_ERROR;

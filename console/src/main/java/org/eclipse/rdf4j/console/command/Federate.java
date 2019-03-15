@@ -180,8 +180,7 @@ public class Federate extends ConsoleCommand {
 		builder.append(".\n  Distinct set to ")
 				.append(distinct)
 				.append(", and readonly set to ")
-				.append(
-						readonly)
+				.append(readonly)
 				.append(".\n");
 		LOGGER.debug(builder.toString());
 	}
@@ -210,8 +209,7 @@ public class Federate extends ConsoleCommand {
 		String result = defaultValue;
 
 		for (String parameter : parameters) {
-			if (parameter.length() >= name.length()
-					&& parameter.substring(0, name.length()).equalsIgnoreCase(name)) {
+			if (parameter.length() >= name.length() && parameter.substring(0, name.length()).equalsIgnoreCase(name)) {
 				String[] parsed = parameter.split("=");
 
 				if (parsed.length == 2 && parsed[0].equalsIgnoreCase(name)) {

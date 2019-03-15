@@ -86,8 +86,7 @@ public class LogConfigurator extends JoranConfigurator {
 		@Override
 		public void begin(InterpretationContext ec, String name, Attributes attributes) {
 			className = attributes.getValue(CLASS_ATTRIBUTE);
-			def = (attributes.getValue("default") != null)
-					&& attributes.getValue("default").equalsIgnoreCase("true");
+			def = (attributes.getValue("default") != null) && attributes.getValue("default").equalsIgnoreCase("true");
 			ec.pushObject(className);
 		}
 

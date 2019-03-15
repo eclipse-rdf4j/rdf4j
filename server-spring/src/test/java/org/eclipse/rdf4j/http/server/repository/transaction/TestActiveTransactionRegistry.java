@@ -33,8 +33,7 @@ public class TestActiveTransactionRegistry {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		System.setProperty(ActiveTransactionRegistry.CACHE_TIMEOUT_PROPERTY, "1");
 		registry = ActiveTransactionRegistry.INSTANCE;
 		repository = Mockito.mock(Repository.class);

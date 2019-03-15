@@ -47,8 +47,7 @@ public class Load extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+		return PrintHelp.USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
 				+ "  <file-or-url>   The path or URL identifying the data file\n"
 				+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
 				+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
@@ -186,8 +185,7 @@ public class Load extends ConsoleCommand {
 			}
 		}
 		final long endTime = System.nanoTime();
-		consoleIO.writeln(
-				"Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
+		consoleIO.writeln("Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 
 	/**

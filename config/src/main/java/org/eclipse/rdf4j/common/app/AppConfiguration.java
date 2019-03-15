@@ -321,8 +321,7 @@ public class AppConfiguration implements Configuration {
 				final File dataDirCandidate = new File(dataDirName);
 				dataDirCandidate.mkdirs();
 				// change data directory if the previous code was successful
-				dataDir = (dataDirCandidate.canRead() && dataDirCandidate.canWrite()) ? dataDirCandidate
-						: dataDir;
+				dataDir = (dataDirCandidate.canRead() && dataDirCandidate.canWrite()) ? dataDirCandidate : dataDir;
 			}
 		}
 		if (dataDir == null) {

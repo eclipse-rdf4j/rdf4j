@@ -132,8 +132,7 @@ public enum ActiveTransactionRegistry {
 				logger.debug("registered transaction {} ", txn.getID());
 			} else {
 				logger.error("transaction already registered: {}", txn.getID());
-				throw new RepositoryException(
-						"transaction with id " + txn.getID().toString() + " already registered.");
+				throw new RepositoryException("transaction with id " + txn.getID().toString() + " already registered.");
 			}
 		}
 	}
@@ -195,8 +194,7 @@ public enum ActiveTransactionRegistry {
 			secondaryCache.get(transaction.getID(), new Callable<Transaction>() {
 
 				@Override
-				public Transaction call()
-						throws Exception {
+				public Transaction call() throws Exception {
 					return transaction;
 				}
 			});

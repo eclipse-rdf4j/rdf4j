@@ -102,8 +102,7 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		this.config = config;
 		this.appConfig = new AppConfiguration("Workbench", "RDF4J Workbench");
 		try {
@@ -126,13 +125,11 @@ public abstract class AbstractServlet implements Servlet {
 		service(hreq, hresp);
 	}
 
-	public void service(HttpServletRequest req, HttpServletResponse resp)
-			throws ServletException, IOException {
+	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
 		// default empty implementation
 	}
 
-	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req,
-			final ServletResponse resp) {
+	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = null;
 		if (req instanceof WorkbenchRequest) {
 			header = ((WorkbenchRequest) req).getParameter(ACCEPT);
@@ -150,13 +147,11 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req,
-			final ServletResponse resp) {
+	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			// Then try boolean format
-			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(
-					header);
+			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(header);
 			if (booleanFormat.isPresent()) {
 				return booleanFormat.get();
 			}
@@ -165,8 +160,7 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req,
-			final ServletResponse resp) {
+	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			if (header.equals(APPLICATION_JAVASCRIPT)) {
@@ -178,8 +172,7 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	protected QueryResultWriter getResultWriter(final HttpServletRequest req, final ServletResponse resp,
-			final OutputStream outputStream)
-			throws UnsupportedQueryResultFormatException, IOException {
+			final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		QueryResultFormat resultFormat = getTupleResultFormat(req, resp);
 
 		if (resultFormat == null) {
@@ -211,8 +204,7 @@ public abstract class AbstractServlet implements Servlet {
 	 * @throws UnsupportedQueryResultFormatException
 	 */
 	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
-			OutputStream outputStream)
-			throws UnsupportedQueryResultFormatException, IOException {
+			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		String contentType = null;
 		QueryResultWriter resultWriter = checkJSONP(req, outputStream);
 
@@ -270,17 +262,14 @@ public abstract class AbstractServlet implements Servlet {
 
 		// Convert rdf:langString back to language literals where this behaviour
 		// is supported
-		if (resultWriter.getSupportedSettings()
-				.contains(
-						BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL)) {
+		if (resultWriter.getSupportedSettings().contains(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL)) {
 			resultWriter.getWriterConfig().set(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL, true);
 		}
 
 		return new TupleResultBuilder(resultWriter, SimpleValueFactory.getInstance());
 	}
 
-	protected QueryResultWriter checkJSONP(HttpServletRequest req, OutputStream outputStream)
-			throws IOException {
+	protected QueryResultWriter checkJSONP(HttpServletRequest req, OutputStream outputStream) throws IOException {
 		QueryResultWriter resultWriter = null;
 		// HACK : SES-2043 : Need to support Chrome who decide to send Accept: */*
 		// instead of application/javascript for JSONP queries, so need to check

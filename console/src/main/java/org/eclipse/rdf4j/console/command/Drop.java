@@ -39,8 +39,7 @@ public class Drop extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "drop <repositoryID>   Drops the repository with the specified id\n";
+		return PrintHelp.USAGE + "drop <repositoryID>   Drops the repository with the specified id\n";
 	}
 
 	/**
@@ -79,8 +78,7 @@ public class Drop extends ConsoleCommand {
 					LOGGER.error("Failed to restart system", e2);
 				}
 			} catch (RepositoryException e) {
-				consoleIO.writeError(
-						"Failed to update configuration in system repository: " + e.getMessage());
+				consoleIO.writeError("Failed to update configuration in system repository: " + e.getMessage());
 				LOGGER.warn("Failed to update configuration in system repository", e);
 			}
 		}
@@ -96,11 +94,10 @@ public class Drop extends ConsoleCommand {
 	 */
 	private void dropRepository(final String repoID)
 			throws IOException, RepositoryException, RepositoryConfigException {
-		boolean proceed = consoleIO.askProceed("WARNING: you are about to drop repository '" + repoID + "'.",
-				true);
+		boolean proceed = consoleIO.askProceed("WARNING: you are about to drop repository '" + repoID + "'.", true);
 		if (proceed && !state.getManager().isSafeToRemove(repoID)) {
-			proceed = consoleIO.askProceed(
-					"WARNING: dropping this repository may break another that is proxying it.", false);
+			proceed = consoleIO.askProceed("WARNING: dropping this repository may break another that is proxying it.",
+					false);
 		}
 		if (proceed) {
 			if (repoID.equals(state.getRepositoryID())) {

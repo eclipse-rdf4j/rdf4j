@@ -58,8 +58,7 @@ public abstract class QueryResultView implements View {
 
 	@SuppressWarnings("rawtypes")
 	@Override
-	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws IOException {
+	public final void render(Map model, HttpServletRequest request, HttpServletResponse response) throws IOException {
 		try {
 			renderInternal(model, request, response);
 		} finally {
@@ -71,12 +70,10 @@ public abstract class QueryResultView implements View {
 	}
 
 	@SuppressWarnings("rawtypes")
-	protected abstract void renderInternal(Map model, HttpServletRequest request,
-			HttpServletResponse response)
+	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException;
 
-	protected void setContentType(HttpServletResponse response, FileFormat fileFormat)
-			throws IOException {
+	protected void setContentType(HttpServletResponse response, FileFormat fileFormat) throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();
 		if (fileFormat.hasCharset()) {
 			Charset charset = fileFormat.getCharset();

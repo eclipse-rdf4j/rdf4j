@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 public class NamespacesServlet extends TransformationServlet {
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws Exception {
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		try (RepositoryConnection con = repository.getConnection()) {
 			String prefix = req.getParameter("prefix");
 			String namespace = req.getParameter("namespace");

@@ -39,9 +39,7 @@ public class SetParameters extends ConsoleCommand {
 		for (ConsoleSetting setting : settings.values()) {
 			builder.append(setting.getHelpLong());
 		}
-		return PrintHelp.USAGE
-				+ "set                            Shows all parameter values\n"
-				+ builder.toString();
+		return PrintHelp.USAGE + "set                            Shows all parameter values\n" + builder.toString();
 	}
 
 	/**

@@ -49,8 +49,7 @@ public class NamespacesController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public NamespacesController()
-			throws ApplicationContextException {
+	public NamespacesController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "DELETE" });
 	}
 
@@ -70,8 +69,7 @@ public class NamespacesController extends AbstractController {
 			return getClearNamespacesResult(request, response);
 		}
 
-		throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-				"Method not allowed: " + reqMethod);
+		throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Method not allowed: " + reqMethod);
 	}
 
 	private ModelAndView getExportNamespacesResult(HttpServletRequest request, HttpServletResponse response)
@@ -83,8 +81,7 @@ public class NamespacesController extends AbstractController {
 			List<String> columnNames = Arrays.asList("prefix", "namespace");
 			List<BindingSet> namespaces = new ArrayList<>();
 
-			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
-					request)) {
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
 					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon
@@ -103,8 +100,7 @@ public class NamespacesController extends AbstractController {
 					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 				}
 			}
-			model.put(QueryResultView.QUERY_RESULT_KEY,
-					new IteratingTupleQueryResult(columnNames, namespaces));
+			model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, namespaces));
 		}
 
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,

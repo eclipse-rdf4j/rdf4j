@@ -36,8 +36,7 @@ public class TestInfoServlet {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		servlet.setRepositoryInfo(info);
 		manager = mock(RepositoryManager.class);
 		servlet.setRepositoryManager(manager);
@@ -50,8 +49,7 @@ public class TestInfoServlet {
 	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1770">SES-1770</a>
 	 */
 	@Test
-	public final void testSES1770regression()
-			throws Exception {
+	public final void testSES1770regression() throws Exception {
 		when(manager.hasRepositoryConfig(null)).thenThrow(new NullPointerException());
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		when(req.getParameter(anyString())).thenReturn(SESAME.NIL.toString());

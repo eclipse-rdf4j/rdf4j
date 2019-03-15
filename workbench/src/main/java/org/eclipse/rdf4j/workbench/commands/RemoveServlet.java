@@ -59,8 +59,8 @@ public class RemoveServlet extends TransformationServlet {
 			builder.transform(xslPath, "remove.xsl");
 			builder.start("error-message", "subj", "pred", "obj", CONTEXT);
 			builder.link(Arrays.asList(INFO));
-			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"),
-					objectParameter, req.getParameter(CONTEXT));
+			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"), objectParameter,
+					req.getParameter(CONTEXT));
 			builder.end();
 		}
 	}

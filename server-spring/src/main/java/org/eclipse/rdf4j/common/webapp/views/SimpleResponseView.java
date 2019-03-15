@@ -46,8 +46,7 @@ public class SimpleResponseView implements View {
 
 	@SuppressWarnings("rawtypes")
 	@Override
-	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+	public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
 		Integer sc = (Integer) model.get(SC_KEY);
 		if (sc == null) {
 			sc = DEFAULT_SC;

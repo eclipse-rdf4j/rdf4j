@@ -97,8 +97,7 @@ public class AbstractCommandTest {
 	 * @throws IOException
 	 * @throws UnsupportedRDFormatException
 	 */
-	protected void loadData(String repId, URL data, String file)
-			throws IOException, UnsupportedRDFormatException {
+	protected void loadData(String repId, URL data, String file) throws IOException, UnsupportedRDFormatException {
 		RDFFormat fmt = Rio.getParserFormatForFileName(file)
 				.orElseThrow(() -> new UnsupportedRDFormatException("No parser for " + file));
 
@@ -150,22 +149,19 @@ public class AbstractCommandTest {
 
 		Model graph = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(graph));
-		rdfParser.parse(new StringReader(IOUtil.readString(
-				new InputStreamReader(configStream, StandardCharsets.UTF_8))),
+		rdfParser.parse(
+				new StringReader(IOUtil.readString(new InputStreamReader(configStream, StandardCharsets.UTF_8))),
 				RepositoryConfigSchema.NAMESPACE);
 		configStream.close();
 
-		Resource repositoryNode = Models.subject(
-				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-				.orElseThrow(
-						() -> new RepositoryConfigException("could not find subject resource"));
+		Resource repositoryNode = Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+				.orElseThrow(() -> new RepositoryConfigException("could not find subject resource"));
 
 		RepositoryConfig repoConfig = RepositoryConfig.create(graph, repositoryNode);
 		repoConfig.validate();
 		manager.addRepositoryConfig(repoConfig);
 
-		String repId = Models.objectLiteral(
-				graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null))
+		String repId = Models.objectLiteral(graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null))
 				.orElseThrow(() -> new RepositoryConfigException("missing repository id"))
 				.stringValue();
 

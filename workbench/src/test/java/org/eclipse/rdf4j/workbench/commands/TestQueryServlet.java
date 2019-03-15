@@ -40,32 +40,27 @@ public class TestQueryServlet {
 	private String longQuery;
 
 	@Before
-	public void setUp()
-			throws IOException {
+	public void setUp() throws IOException {
 		longQuery = ResourceUtil.getString("long.rq");
 	}
 
 	@Test
-	public final void testLongQuery()
-			throws ServletException, IOException {
+	public final void testLongQuery() throws ServletException, IOException {
 		assertThat(servlet.shouldWriteQueryCookie(longQuery)).isFalse();
 	}
 
 	@Test
-	public final void testShortQuery()
-			throws ServletException, IOException {
+	public final void testShortQuery() throws ServletException, IOException {
 		assertThat(servlet.shouldWriteQueryCookie(SHORT_QUERY)).isTrue();
 	}
 
 	@Test
-	public final void testNoQuery()
-			throws ServletException, IOException {
+	public final void testNoQuery() throws ServletException, IOException {
 		assertThat(servlet.shouldWriteQueryCookie(null)).isTrue();
 	}
 
 	@Test
-	public void testGetQueryTextRefText()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextRefText() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -75,8 +70,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryNoQuery()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryNoQuery() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
 		assertThat(servlet.getQueryText(request)).isEmpty();
@@ -84,8 +78,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryTextUnrecognizedRef()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextUnrecognizedRef() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -95,8 +88,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryTextNoRef()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextNoRef() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -105,8 +97,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryTextRefHash()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextRefHash() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		String hash = String.valueOf(longQuery.hashCode());
@@ -118,8 +109,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryTextRefHashNoEntry()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextRefHashNoEntry() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		String hash = String.valueOf(longQuery.hashCode());
@@ -131,8 +121,7 @@ public class TestQueryServlet {
 	}
 
 	@Test
-	public void testGetQueryTextRefId()
-			throws BadRequestException, RDF4JException {
+	public void testGetQueryTextRefId() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("test save name");

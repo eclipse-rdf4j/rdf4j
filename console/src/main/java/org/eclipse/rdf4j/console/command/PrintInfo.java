@@ -29,8 +29,7 @@ public class PrintInfo extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "info                  Shows information about the console\n";
+		return PrintHelp.USAGE + "info                  Shows information about the console\n";
 	}
 
 	/**

@@ -96,8 +96,7 @@ public class TransactionController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public TransactionController()
-			throws ApplicationContextException {
+	public TransactionController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST, "PUT", "DELETE" });
 	}
 
@@ -166,8 +165,8 @@ public class TransactionController extends AbstractController {
 		default:
 			// TODO Action.ROLLBACK check is for backward compatibility with
 			// older 2.8.x releases only. It's not in the protocol spec.
-			if ("DELETE".equals(reqMethod) || (action.equals(Action.ROLLBACK)
-					&& ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)))) {
+			if ("DELETE".equals(reqMethod)
+					|| (action.equals(Action.ROLLBACK) && ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)))) {
 				logger.info("transaction rollback");
 				try {
 					transaction.rollback();
@@ -191,8 +190,7 @@ public class TransactionController extends AbstractController {
 		return result;
 	}
 
-	private UUID getTransactionID(HttpServletRequest request)
-			throws ClientHTTPException {
+	private UUID getTransactionID(HttpServletRequest request) throws ClientHTTPException {
 		String pathInfoStr = request.getPathInfo();
 
 		UUID txnID = null;
@@ -205,8 +203,7 @@ public class TransactionController extends AbstractController {
 					txnID = UUID.fromString(pathInfo[2]);
 					logger.debug("txnID is '{}'", txnID);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"not a valid transaction id: " + pathInfo[2]);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
 				}
 			} else {
 				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);
@@ -217,8 +214,7 @@ public class TransactionController extends AbstractController {
 	}
 
 	private ModelAndView processModificationOperation(Transaction transaction, Action action,
-			HttpServletRequest request, HttpServletResponse response)
-			throws IOException, HTTPException {
+			HttpServletRequest request, HttpServletResponse response) throws IOException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();
@@ -231,22 +227,20 @@ public class TransactionController extends AbstractController {
 		final Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME,
 				SimpleValueFactory.getInstance());
 
-		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request,
-				Protocol.PRESERVE_BNODE_ID_PARAM_NAME, false);
+		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,
+				false);
 
 		try {
 			RDFFormat format = null;
 			switch (action) {
 			case ADD:
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
-						.orElseThrow(
-								Rio.unsupportedFormat(request.getContentType()));
+						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));
 				transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);
 				break;
 			case DELETE:
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
-						.orElseThrow(
-								Rio.unsupportedFormat(request.getContentType()));
+						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));
 				transaction.delete(format, request.getInputStream(), baseURI);
 
 				break;
@@ -275,8 +269,7 @@ public class TransactionController extends AbstractController {
 		}
 	}
 
-	private ModelAndView getSize(Transaction transaction, HttpServletRequest request,
-			HttpServletResponse response)
+	private ModelAndView getSize(Transaction transaction, HttpServletRequest request, HttpServletResponse response)
 			throws HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
@@ -308,8 +301,7 @@ public class TransactionController extends AbstractController {
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Transaction transaction, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ClientHTTPException {
+			HttpServletResponse response) throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -341,14 +333,12 @@ public class TransactionController extends AbstractController {
 	 * {@link QueryResultView} will take care of correctly releasing the connection back to the
 	 * {@link ActiveTransactionRegistry}, after fully rendering the query result for sending over the wire.
 	 */
-	private ModelAndView processQuery(Transaction txn, HttpServletRequest request,
-			HttpServletResponse response)
+	private ModelAndView processQuery(Transaction txn, HttpServletRequest request, HttpServletResponse response)
 			throws IOException, HTTPException {
 		String queryStr = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
-			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding()
-					: "UTF-8";
+			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding() : "UTF-8";
 			queryStr = IOUtils.toString(request.getInputStream(), encoding);
 		} else {
 			queryStr = request.getParameter(QUERY_PARAM_NAME);
@@ -380,8 +370,7 @@ public class TransactionController extends AbstractController {
 				registry = BooleanQueryResultWriterRegistry.getInstance();
 				view = BooleanQueryResultView.getInstance();
 			} else {
-				throw new ClientHTTPException(SC_BAD_REQUEST,
-						"Unsupported query type: " + query.getClass().getName());
+				throw new ClientHTTPException(SC_BAD_REQUEST, "Unsupported query type: " + query.getClass().getName());
 			}
 		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
 			logger.info("Query interrupted", e);
@@ -407,8 +396,7 @@ public class TransactionController extends AbstractController {
 		return new ModelAndView(view, model);
 	}
 
-	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request,
-			HttpServletResponse response)
+	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request, HttpServletResponse response)
 			throws IOException, ClientHTTPException, InterruptedException, ExecutionException {
 		Query result = null;
 
@@ -473,8 +461,7 @@ public class TransactionController extends AbstractController {
 						}
 						dataset.addNamedGraph(uri);
 					} catch (IllegalArgumentException e) {
-						throw new ClientHTTPException(SC_BAD_REQUEST,
-								"Illegal URI for named graph: " + namedGraphURI);
+						throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
 					}
 				}
 			}
@@ -499,8 +486,7 @@ public class TransactionController extends AbstractController {
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
-				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length()) {
+				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							SimpleValueFactory.getInstance());
@@ -522,14 +508,12 @@ public class TransactionController extends AbstractController {
 	}
 
 	private ModelAndView getSparqlUpdateResult(Transaction transaction, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
 		String sparqlUpdateString = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {
-				final String encoding = request.getCharacterEncoding() != null
-						? request.getCharacterEncoding()
+				final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding()
 						: "UTF-8";
 				sparqlUpdateString = IOUtils.toString(request.getInputStream(), encoding);
 			} catch (IOException e) {
@@ -583,8 +567,7 @@ public class TransactionController extends AbstractController {
 					}
 					dataset.addDefaultRemoveGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for default remove graph: " + graphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default remove graph: " + graphURI);
 				}
 			}
 		}
@@ -598,8 +581,7 @@ public class TransactionController extends AbstractController {
 				}
 				dataset.setDefaultInsertGraph(uri);
 			} catch (IllegalArgumentException e) {
-				throw new ClientHTTPException(SC_BAD_REQUEST,
-						"Illegal URI for default insert graph: " + graphURI);
+				throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default insert graph: " + graphURI);
 			}
 		}
 
@@ -612,8 +594,7 @@ public class TransactionController extends AbstractController {
 					}
 					dataset.addDefaultGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for default graph: " + defaultGraphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default graph: " + defaultGraphURI);
 				}
 			}
 		}
@@ -627,8 +608,7 @@ public class TransactionController extends AbstractController {
 					}
 					dataset.addNamedGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for named graph: " + namedGraphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
 				}
 			}
 		}
@@ -642,8 +622,7 @@ public class TransactionController extends AbstractController {
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
-				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length()) {
+				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							SimpleValueFactory.getInstance());
@@ -651,8 +630,7 @@ public class TransactionController extends AbstractController {
 				}
 			}
 
-			transaction.executeUpdate(queryLn, sparqlUpdateString, baseURI, includeInferred, dataset,
-					bindings);
+			transaction.executeUpdate(queryLn, sparqlUpdateString, baseURI, includeInferred, dataset, bindings);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		} catch (UpdateExecutionException | InterruptedException | ExecutionException e) {

@@ -30,8 +30,7 @@ public class Close extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "close   Closes the current repository\n";
+		return PrintHelp.USAGE + "close   Closes the current repository\n";
 	}
 
 	/**

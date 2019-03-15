@@ -47,8 +47,7 @@ public class NavigationXmlParser {
 		}
 	}
 
-	private void fillModel(NavigationModel result, Node modelNode)
-			throws XPathExpressionException {
+	private void fillModel(NavigationModel result, Node modelNode) throws XPathExpressionException {
 		String id = xpath.evaluate("@id", modelNode);
 		result.setId(id);
 
@@ -92,8 +91,7 @@ public class NavigationXmlParser {
 		setGroupsAndViews(result, modelNode);
 	}
 
-	private void setAttributes(NavigationNode navNode, Node xmlNode)
-			throws XPathExpressionException {
+	private void setAttributes(NavigationNode navNode, Node xmlNode) throws XPathExpressionException {
 		boolean hidden = getBooleanAttribute(xpath.evaluate("@hidden", xmlNode), false);
 		navNode.setHidden(hidden);
 
@@ -121,8 +119,7 @@ public class NavigationXmlParser {
 		}
 	}
 
-	private void setGroupsAndViews(Group parent, Node xmlNode)
-			throws XPathExpressionException {
+	private void setGroupsAndViews(Group parent, Node xmlNode) throws XPathExpressionException {
 		NodeList groupList = (NodeList) xpath.evaluate("group", xmlNode, XPathConstants.NODESET);
 		int groupCount = groupList.getLength();
 		for (int groupIndex = 0; groupIndex < groupCount; groupIndex++) {

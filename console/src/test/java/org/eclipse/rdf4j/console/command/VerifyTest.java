@@ -60,8 +60,8 @@ public class VerifyTest extends AbstractCommandTest {
 	 */
 	private String copyFromRes(String str) throws IOException {
 		File f = LOCATION.newFile(str);
-		Files.copy(this.getClass().getResourceAsStream("/verify/" + str),
-				f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		Files.copy(this.getClass().getResourceAsStream("/verify/" + str), f.toPath(),
+				StandardCopyOption.REPLACE_EXISTING);
 		return f.getAbsolutePath();
 	}
 

@@ -45,8 +45,7 @@ public class TransactionStartController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public TransactionStartController()
-			throws ApplicationContextException {
+	public TransactionStartController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST });
 	}
 
@@ -71,8 +70,7 @@ public class TransactionStartController extends AbstractController {
 	}
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws IOException, ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 

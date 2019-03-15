@@ -55,8 +55,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		this.config = config;
 		if (config.getInitParameter(DEFAULT_PATH) == null) {
 			throw new MissingInitParameterException(DEFAULT_PATH);
@@ -118,8 +117,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	 * @throws ServletException
 	 * @throws QueryResultHandlerException
 	 */
-	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp,
-			final String pathInfo)
+	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp, final String pathInfo)
 			throws IOException, ServletException, QueryResultHandlerException {
 		int idx = pathInfo.indexOf('/', 1);
 		if (idx < 0) {
@@ -161,8 +159,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		builder.end();
 	}
 
-	private RepositoryManager createRepositoryManager(final String param)
-			throws IOException, RepositoryException {
+	private RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
 		if (param.startsWith("file:")) {
 			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
@@ -173,8 +170,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		return manager;
 	}
 
-	private File asLocalFile(final URL rdf)
-			throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
 		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
 	}
 

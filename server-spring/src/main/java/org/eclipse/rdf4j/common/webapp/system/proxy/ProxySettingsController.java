@@ -23,8 +23,7 @@ public class ProxySettingsController {
 	// FIXME: fix this non-implementation
 	private ProxySettings PROXY_SETTINGS = null;
 
-	private void setProxies(Map<String, Object> params, HttpServletResponse response)
-			throws IOException {
+	private void setProxies(Map<String, Object> params, HttpServletResponse response) throws IOException {
 		boolean useProxies = HttpServerUtil.isTrue(HttpServerUtil.getPostDataParameter(params, "connection"));
 
 		if (!useProxies) {
@@ -77,8 +76,7 @@ public class ProxySettingsController {
 		PROXY_SETTINGS.save();
 	}
 
-	private boolean checkPort(String proxyPort)
-			throws IOException {
+	private boolean checkPort(String proxyPort) throws IOException {
 		boolean result = false;
 
 		int port = -1;

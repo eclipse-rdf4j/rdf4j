@@ -41,8 +41,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class ContextsController extends AbstractController {
 
-	public ContextsController()
-			throws ApplicationContextException {
+	public ContextsController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
@@ -65,8 +64,7 @@ public class ContextsController extends AbstractController {
 						contexts.add(bindingSet);
 					}
 				}
-				model.put(QueryResultView.QUERY_RESULT_KEY,
-						new IteratingTupleQueryResult(columnNames, contexts));
+				model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, contexts));
 				model.put(QueryResultView.FILENAME_HINT_KEY, "contexts");
 				model.put(QueryResultView.FACTORY_KEY, factory);
 				model.put(QueryResultView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));

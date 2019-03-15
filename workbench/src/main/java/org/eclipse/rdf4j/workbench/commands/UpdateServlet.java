@@ -56,8 +56,7 @@ public class UpdateServlet extends TransformationServlet {
 		}
 	}
 
-	private void executeUpdate(String updateString)
-			throws Exception {
+	private void executeUpdate(String updateString) throws Exception {
 		RepositoryConnection con = repository.getConnection();
 		Update update;
 		try {

@@ -151,8 +151,7 @@ public class Console {
 	 * @param location
 	 * @param otherArg         last argument, if any
 	 */
-	private static void connectAndOpen(Console console, String selectedLocation, String location,
-			String otherArg) {
+	private static void connectAndOpen(Console console, String selectedLocation, String location, String otherArg) {
 		boolean connected;
 		if ("s".equals(selectedLocation)) {
 			connected = console.connect.connectRemote(location);

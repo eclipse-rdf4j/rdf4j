@@ -51,8 +51,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	protected CookieHandler cookies;
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		cookies = new CookieHandler(config, this);
 		if (config.getInitParameter(TRANSFORMATIONS) == null) {
@@ -112,10 +111,8 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		service(getTupleResultBuilder(req, resp, resp.getOutputStream()), xslPath);
 	}
 
-	protected void service(final TupleResultBuilder writer, final String xslPath)
-			throws Exception {
-		LOGGER.info(
-				"Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
+	protected void service(final TupleResultBuilder writer, final String xslPath) throws Exception {
+		LOGGER.info("Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
 				xslPath);
 	}
 

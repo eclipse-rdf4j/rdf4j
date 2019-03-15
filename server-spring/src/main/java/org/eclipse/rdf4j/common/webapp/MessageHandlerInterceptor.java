@@ -31,8 +31,7 @@ public class MessageHandlerInterceptor implements HandlerInterceptor {
 	}
 
 	@Override
-	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
-			ModelAndView mav) {
+	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
 		HttpSession session = request.getSession();
 
 		if (session != null) {

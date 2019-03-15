@@ -35,8 +35,7 @@ public class Serql extends QueryEvaluator {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "serql                         Starts multi-line input for large SeRQL queries.\n"
+		return PrintHelp.USAGE + "serql                         Starts multi-line input for large SeRQL queries.\n"
 				+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
 				+ "serql INFILE=\"infile.ext\"            Evaluates the query stored in a file.\n"
 				+ "serql OUTFILE=\"outfile.ext\" <query>  Save the results to a file.\n"

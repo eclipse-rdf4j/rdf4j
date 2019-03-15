@@ -72,8 +72,7 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	private void add(InputStream stream, String baseURI, String contentType, String contentFileName,
-			Resource... context)
-			throws BadRequestException, RepositoryException, IOException {
+			Resource... context) throws BadRequestException, RepositoryException, IOException {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
@@ -81,14 +80,11 @@ public class AddServlet extends TransformationServlet {
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
 			format = Rio.getParserFormatForFileName(contentFileName)
-					.orElseThrow(
-							() -> new BadRequestException(
-									"Could not automatically determine Content-Type for content: "
-											+ contentFileName));
+					.orElseThrow(() -> new BadRequestException(
+							"Could not automatically determine Content-Type for content: " + contentFileName));
 		} else {
 			format = Rio.getParserFormatForMIMEType(contentType)
-					.orElseThrow(
-							() -> new BadRequestException("Unknown Content-Type: " + contentType));
+					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -113,8 +109,7 @@ public class AddServlet extends TransformationServlet {
 							"Could not automatically determine Content-Type for content: " + url.getFile()));
 		} else {
 			format = Rio.getParserFormatForMIMEType(contentType)
-					.orElseThrow(
-							() -> new BadRequestException("Unknown Content-Type: " + contentType));
+					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
 		try {

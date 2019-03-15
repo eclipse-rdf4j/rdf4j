@@ -61,9 +61,8 @@ public class ExploreServlet extends TupleServlet {
 	}
 
 	@Override
-	protected void service(final WorkbenchRequest req, final HttpServletResponse resp,
-			final TupleResultBuilder builder, final RepositoryConnection con)
-			throws BadRequestException, RDF4JException {
+	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final TupleResultBuilder builder,
+			final RepositoryConnection con) throws BadRequestException, RDF4JException {
 		final Value value = req.getValue("resource");
 		logger.debug("resource = {}", value);
 
@@ -71,8 +70,7 @@ public class ExploreServlet extends TupleServlet {
 		// reporting of count in page.
 		int count = req.getInt("know_total");
 		if (count == 0) {
-			count = this.processResource(con, builder, value, 0, Integer.MAX_VALUE,
-					false).getTotalResultCount();
+			count = this.processResource(con, builder, value, 0, Integer.MAX_VALUE, false).getTotalResultCount();
 		}
 		this.cookies.addTotalResultCountCookie(req, resp, (int) count);
 		final int offset = req.getInt("offset");
@@ -99,8 +97,7 @@ public class ExploreServlet extends TupleServlet {
 	 * @return The count of all triples in the repository using the given value.
 	 */
 	protected ResultCursor processResource(final RepositoryConnection con, final TupleResultBuilder builder,
-			final Value value, final int offset, final int limit, final boolean render)
-			throws RDF4JException {
+			final Value value, final int offset, final int limit, final boolean render) throws RDF4JException {
 		final ResultCursor cursor = new ResultCursor(offset, limit, render);
 		boolean resource = value instanceof Resource;
 		if (resource) {
@@ -143,16 +140,16 @@ public class ExploreServlet extends TupleServlet {
 	 * @param obj     the triple object
 	 * @param context the triple context
 	 */
-	private void export(RepositoryConnection con, TupleResultBuilder builder, ResultCursor cursor,
-			Resource subj, IRI pred, Value obj, Resource... context)
+	private void export(RepositoryConnection con, TupleResultBuilder builder, ResultCursor cursor, Resource subj,
+			IRI pred, Value obj, Resource... context)
 			throws RDF4JException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryResult<Statement> result = con.getStatements(subj, pred, obj, true, context)) {
 			while (result.hasNext()) {
 				Statement statement = result.next();
 				if (isFirstTimeSeen(statement, pred, obj, context)) {
 					if (cursor.mayRender()) {
-						builder.result(statement.getSubject(), statement.getPredicate(),
-								statement.getObject(), statement.getContext());
+						builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+								statement.getContext());
 					}
 					cursor.advance();
 				}
@@ -178,8 +175,7 @@ public class ExploreServlet extends TupleServlet {
 		if (1 == patternContext.length) {
 			// I.e., when context matches explore value.
 			Resource ctx = patternContext[0];
-			firstTimeSeen = !(ctx.equals(resultSubject) || ctx.equals(resultPredicate)
-					|| ctx.equals(resultObject));
+			firstTimeSeen = !(ctx.equals(resultSubject) || ctx.equals(resultPredicate) || ctx.equals(resultObject));
 		} else if (null != patternObject) {
 			// I.e., when object matches explore value.
 			firstTimeSeen = !(resultObject.equals(resultSubject) || resultObject.equals(resultPredicate));

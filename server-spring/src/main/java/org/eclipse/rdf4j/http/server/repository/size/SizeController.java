@@ -34,8 +34,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class SizeController extends AbstractController {
 
-	public SizeController()
-			throws ApplicationContextException {
+	public SizeController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
@@ -55,8 +54,7 @@ public class SizeController extends AbstractController {
 
 			long size = -1;
 
-			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
-					request)) {
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 				size = repositoryCon.size(contexts);
 			} catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);

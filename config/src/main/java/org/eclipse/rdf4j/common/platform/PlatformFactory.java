@@ -95,8 +95,7 @@ public class PlatformFactory {
 					logger.debug("Detected Mac OS X platform");
 					platform = new MacOSXPlatform();
 				} else {
-					logger.warn("Unrecognized operating system: '{}', falling back to default platform",
-							osName);
+					logger.warn("Unrecognized operating system: '{}', falling back to default platform", osName);
 					platform = new DefaultPlatform();
 				}
 			} else {

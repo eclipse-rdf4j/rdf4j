@@ -43,8 +43,7 @@ public class Open extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "open <repositoryID>   Opens the repository with the specified ID\n";
+		return PrintHelp.USAGE + "open <repositoryID>   Opens the repository with the specified ID\n";
 	}
 
 	/**

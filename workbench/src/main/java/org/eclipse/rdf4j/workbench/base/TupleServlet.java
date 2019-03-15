@@ -30,8 +30,7 @@ public abstract class TupleServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
@@ -52,12 +51,10 @@ public abstract class TupleServlet extends TransformationServlet {
 	}
 
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, TupleResultBuilder builder,
-			RepositoryConnection con)
-			throws Exception {
+			RepositoryConnection con) throws Exception {
 		service(builder, con);
 	}
 
-	protected void service(TupleResultBuilder builder, RepositoryConnection con)
-			throws Exception {
+	protected void service(TupleResultBuilder builder, RepositoryConnection con) throws Exception {
 	}
 }

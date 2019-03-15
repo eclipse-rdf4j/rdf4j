@@ -40,8 +40,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		try {
 			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
@@ -94,8 +93,8 @@ public class SavedQueriesServlet extends TransformationServlet {
 			user = "";
 		}
 		if (!storage.checkAccess(repo)) {
-			throw new BadRequestException("User '" + user + "' not authorized to access repository '"
-					+ repo.getRepositoryURL() + "'");
+			throw new BadRequestException(
+					"User '" + user + "' not authorized to access repository '" + repo.getRepositoryURL() + "'");
 		}
 		storage.selectSavedQueries(repo, user, builder);
 	}

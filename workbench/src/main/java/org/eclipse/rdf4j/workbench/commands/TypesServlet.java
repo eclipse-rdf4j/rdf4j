@@ -24,8 +24,7 @@ public class TypesServlet extends TupleServlet {
 	private static final String DISTINCT_TYPE = "SELECT DISTINCT ?type WHERE { ?subj a ?type }";
 
 	@Override
-	protected void service(TupleResultBuilder builder, RepositoryConnection con)
-			throws Exception {
+	protected void service(TupleResultBuilder builder, RepositoryConnection con) throws Exception {
 		TupleQuery query = con.prepareTupleQuery(SPARQL, DISTINCT_TYPE);
 		try (TupleQueryResult result = query.evaluate()) {
 			while (result.hasNext()) {

@@ -66,8 +66,7 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("all.nq");
 		export.execute("export", nq.toString());
-		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8),
-				"http://example.com", RDFFormat.NQUADS);
+		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
 		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
@@ -79,8 +78,7 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("default.nq");
 		export.execute("export", nq.toString(), "null", "http://example.org/ns/context/resurrection");
-		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8),
-				"http://example.com", RDFFormat.NQUADS);
+		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
 

@@ -40,13 +40,11 @@ public class TupleResultBuilder {
 		this.vf = valueFactory;
 	}
 
-	public void prefix(String prefix, String namespace)
-			throws QueryResultHandlerException {
+	public void prefix(String prefix, String namespace) throws QueryResultHandlerException {
 		out.handleNamespace(prefix, namespace);
 	}
 
-	public TupleResultBuilder transform(String path, String xsl)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder transform(String path, String xsl) throws QueryResultHandlerException {
 		out.handleStylesheet(path + "/" + xsl);
 		return this;
 	}
@@ -58,8 +56,7 @@ public class TupleResultBuilder {
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
-	public TupleResultBuilder start(String... variables)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder start(String... variables) throws QueryResultHandlerException {
 		variables(variables);
 		return this;
 	}
@@ -69,21 +66,18 @@ public class TupleResultBuilder {
 		return this;
 	}
 
-	public TupleResultBuilder variables(String... names)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder variables(String... names) throws QueryResultHandlerException {
 		variables = Arrays.asList(names);
 		out.startQueryResult(variables);
 		return this;
 	}
 
-	public TupleResultBuilder link(List<String> url)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder link(List<String> url) throws QueryResultHandlerException {
 		out.handleLinks(url);
 		return this;
 	}
 
-	public TupleResultBuilder bool(boolean result)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder bool(boolean result) throws QueryResultHandlerException {
 		out.handleBoolean(result);
 		return this;
 	}
@@ -95,8 +89,7 @@ public class TupleResultBuilder {
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
-	public TupleResultBuilder result(Object... result)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder result(Object... result) throws QueryResultHandlerException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		for (int i = 0; i < result.length; i++) {
 			if (result[i] == null)
@@ -115,16 +108,14 @@ public class TupleResultBuilder {
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
-	public TupleResultBuilder namedResult(String name, Object result)
-			throws QueryResultHandlerException {
+	public TupleResultBuilder namedResult(String name, Object result) throws QueryResultHandlerException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		bindingSet.addBinding(outputNamedResult(name, result));
 		out.handleSolution(bindingSet);
 		return this;
 	}
 
-	private Binding outputNamedResult(String name, Object result)
-			throws QueryResultHandlerException {
+	private Binding outputNamedResult(String name, Object result) throws QueryResultHandlerException {
 		final Value nextValue;
 		if (result instanceof Value) {
 			nextValue = (Value) result;
@@ -149,8 +140,7 @@ public class TupleResultBuilder {
 	 * @return This object, for chaining with other calls.
 	 * @throws QueryResultHandlerException
 	 */
-	public TupleResultBuilder end()
-			throws QueryResultHandlerException {
+	public TupleResultBuilder end() throws QueryResultHandlerException {
 		out.endQueryResult();
 		return this;
 	}

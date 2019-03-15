@@ -66,8 +66,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 				throw new UnsupportedOperationException("Must be TimeBasedRollingPolicy!");
 			}
 		} else {
-			throw new RuntimeException(
-					"MultipleFileLogReader appender must be an instance of RollingFileAppender!");
+			throw new RuntimeException("MultipleFileLogReader appender must be an instance of RollingFileAppender!");
 		}
 	}
 
@@ -259,8 +258,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		 * @param startCal
 		 * @param endCal
 		 */
-		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal,
-				Calendar endCal) {
+		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal, Calendar endCal) {
 			this.pattern = pattern;
 			this.df = df;
 			this.startCal = startCal;

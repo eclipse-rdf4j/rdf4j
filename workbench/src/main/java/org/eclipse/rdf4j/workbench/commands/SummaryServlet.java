@@ -37,8 +37,7 @@ public class SummaryServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-			throws RepositoryException, QueryEvaluationException, MalformedQueryException,
-			QueryResultHandlerException {
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.transform(xslPath, "summary.xsl");
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(Arrays.asList(INFO));
@@ -52,8 +51,7 @@ public class SummaryServlet extends TransformationServlet {
 			} catch (InterruptedException e) {
 				LOGGER.warn("Interrupted while requesting repository statistics.", e);
 			}
-			builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), size,
-					numContexts);
+			builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), size, numContexts);
 			builder.end();
 		}
 	}
@@ -78,22 +76,19 @@ public class SummaryServlet extends TransformationServlet {
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<Future<String>> getRepositoryStatistics(final RepositoryConnection con)
-			throws InterruptedException {
+	private List<Future<String>> getRepositoryStatistics(final RepositoryConnection con) throws InterruptedException {
 		List<Future<String>> futures;
 		futures = executorService.invokeAll(Arrays.asList(new Callable<String>() {
 
 			@Override
-			public String call()
-					throws RepositoryException {
+			public String call() throws RepositoryException {
 				return Long.toString(con.size());
 			}
 
 		}, new Callable<String>() {
 
 			@Override
-			public String call()
-					throws RepositoryException {
+			public String call() throws RepositoryException {
 				return Integer.toString(Iterations.asList(con.getContextIDs()).size());
 			}
 

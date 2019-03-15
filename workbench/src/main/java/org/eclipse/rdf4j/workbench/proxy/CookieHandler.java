@@ -38,8 +38,7 @@ public class CookieHandler {
 		return value;
 	}
 
-	protected String getCookie(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name) {
+	protected String getCookie(final HttpServletRequest req, final HttpServletResponse resp, final String name) {
 		String value = null;
 		final Cookie[] cookies = req.getCookies();
 		if (cookies != null) {
@@ -70,8 +69,8 @@ public class CookieHandler {
 	 * @param name  cookie name
 	 * @param value cookie value
 	 */
-	protected void addNewCookie(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name, final String value) {
+	protected void addNewCookie(final HttpServletRequest req, final HttpServletResponse resp, final String name,
+			final String value) {
 		final Cookie cookie = new Cookie(name, value);
 		initCookie(cookie, req);
 		resp.addCookie(cookie);

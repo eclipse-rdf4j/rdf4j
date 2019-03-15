@@ -46,8 +46,7 @@ public class CreateServlet extends TransformationServlet {
 	private RepositoryManagerFederator rmf;
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		this.rmf = new RepositoryManagerFederator(manager);
 	}
@@ -97,43 +96,35 @@ public class CreateServlet extends TransformationServlet {
 		builder.end();
 	}
 
-	private String createRepositoryConfig(final WorkbenchRequest req)
-			throws IOException, RDF4JException {
+	private String createRepositoryConfig(final WorkbenchRequest req) throws IOException, RDF4JException {
 		String type = req.getTypeParameter();
 		String newID;
 		if ("federate".equals(type)) {
 			newID = req.getParameter("Local repository ID");
-			rmf.addFed(newID, req.getParameter("Repository title"),
-					Arrays.asList(req.getParameterValues("memberID")),
+			rmf.addFed(newID, req.getParameter("Repository title"), Arrays.asList(req.getParameterValues("memberID")),
 					Boolean.parseBoolean(req.getParameter("readonly")),
 					Boolean.parseBoolean(req.getParameter("distinct")));
 		} else {
-			newID = updateRepositoryConfig(
-					getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
+			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
 		}
 		return newID;
 	}
 
-	private RepositoryConfig updateRepositoryConfig(final String configString)
-			throws IOException, RDF4JException {
+	private RepositoryConfig updateRepositoryConfig(final String configString) throws IOException, RDF4JException {
 		final Model graph = new LinkedHashModel();
 		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
-		Resource res = Models.subject(
-				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-				.orElseThrow(
-						() -> new RepositoryException(
-								"could not find instance of Repository class in config"));
+		Resource res = Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+				.orElseThrow(() -> new RepositoryException("could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
 		manager.addRepositoryConfig(repConfig);
 		return repConfig;
 	}
 
-	private ConfigTemplate getConfigTemplate(final String type)
-			throws IOException {
+	private ConfigTemplate getConfigTemplate(final String type) throws IOException {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
 			return new ConfigTemplate(template);

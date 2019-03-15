@@ -23,16 +23,14 @@ public interface LogReader extends Iterator<LogRecord> {
 	 * 
 	 * @throws Exception
 	 */
-	public void init()
-			throws Exception;
+	public void init() throws Exception;
 
 	/**
 	 * Destroy the log reader and release all used resources.
 	 * 
 	 * @throws Exception
 	 */
-	public void destroy()
-			throws Exception;
+	public void destroy() throws Exception;
 
 	/**
 	 * Logging appender associated with this reader.

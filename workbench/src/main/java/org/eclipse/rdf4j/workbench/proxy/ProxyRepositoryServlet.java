@@ -38,8 +38,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 
 	@Override
 	@SuppressWarnings("unchecked")
-	public void init(ServletConfig config)
-			throws ServletException {
+	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
 		lastModified = System.currentTimeMillis();
 		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null)
@@ -73,8 +72,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	@Override
-	public void service(HttpServletRequest req, HttpServletResponse resp)
-			throws ServletException, IOException {
+	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
 		if (isCachable(req)) {
 			long ifModifiedSince = req.getDateHeader(HEADER_IFMODSINCE);
 			if (ifModifiedSince < lastModified) {

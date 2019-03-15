@@ -22,8 +22,7 @@ public class ConsoleIOTest {
 	private ConsoleIO io;
 
 	@Before
-	public void initConsoleObject()
-			throws IOException {
+	public void initConsoleObject() throws IOException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);

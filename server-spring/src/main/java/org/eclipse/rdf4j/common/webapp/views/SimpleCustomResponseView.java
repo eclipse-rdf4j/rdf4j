@@ -45,8 +45,7 @@ public class SimpleCustomResponseView implements View {
 
 	@SuppressWarnings("rawtypes")
 	@Override
-	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+	public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
 		int sc = DEFAULT_SC;
 		if (model.containsKey(SC_KEY)) {
 			sc = (Integer) model.get(SC_KEY);

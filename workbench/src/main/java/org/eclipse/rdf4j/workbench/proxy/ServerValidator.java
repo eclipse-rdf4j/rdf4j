@@ -115,8 +115,7 @@ class ServerValidator {
 		return success;
 	}
 
-	private File asLocalFile(final URL rdf)
-			throws UnsupportedEncodingException {
+	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
 		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
 	}
 }

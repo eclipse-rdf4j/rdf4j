@@ -39,8 +39,7 @@ public class RepositoryListController extends AbstractController {
 
 	private RepositoryManager repositoryManager;
 
-	public RepositoryListController()
-			throws ApplicationContextException {
+	public RepositoryListController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
@@ -84,8 +83,7 @@ public class RepositoryListController extends AbstractController {
 				bindingNames.add("title");
 				bindingNames.add("readable");
 				bindingNames.add("writable");
-				model.put(QueryResultView.QUERY_RESULT_KEY,
-						new IteratingTupleQueryResult(bindingNames, bindingSets));
+				model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(bindingNames, bindingSets));
 			} catch (RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
 			}

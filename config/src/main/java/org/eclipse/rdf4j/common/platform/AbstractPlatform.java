@@ -67,8 +67,8 @@ public abstract class AbstractPlatform implements Platform {
 
 	@Override
 	public String getRelativeApplicationDataDir(String applicationName) {
-		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(),
-				dataDirReplaceWhitespace(), dataDirReplaceColon());
+		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(), dataDirReplaceWhitespace(),
+				dataDirReplaceColon());
 	}
 
 	/**

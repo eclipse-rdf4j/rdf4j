@@ -52,29 +52,25 @@ public class DropTest extends AbstractCommandTest {
 
 		addRepositories("drop", MEMORY_MEMBER_ID1);
 
-		manager.addRepositoryConfig(
-				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
+		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
 		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state));
 	}
 
-	private void setUserDropConfirm(boolean confirm)
-			throws IOException {
-		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"),
-				anyBoolean())).thenReturn(confirm);
+	private void setUserDropConfirm(boolean confirm) throws IOException {
+		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"), anyBoolean()))
+				.thenReturn(confirm);
 	}
 
 	@After
 	@Override
-	public void tearDown()
-			throws RDF4JException {
+	public void tearDown() throws RDF4JException {
 		manager.shutDown();
 	}
 
 	@Test
-	public final void testSafeDrop()
-			throws RepositoryException, IOException {
+	public final void testSafeDrop() throws RepositoryException, IOException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
 		drop.execute("drop", PROXY_ID);
@@ -85,19 +81,17 @@ public class DropTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public final void testUnsafeDropCancel()
-			throws RepositoryException, IOException {
+	public final void testUnsafeDropCancel() throws RepositoryException, IOException {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isFalse();
-		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"),
-				anyBoolean())).thenReturn(false);
+		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"), anyBoolean()))
+				.thenReturn(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO).writeln("Drop aborted");
 	}
 
 	@Test
-	public final void testUserAbortedUnsafeDropBeforeWarning()
-			throws IOException {
+	public final void testUserAbortedUnsafeDropBeforeWarning() throws IOException {
 		setUserDropConfirm(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO, never()).askProceed(startsWith("WARNING: dropping this repository may break"),

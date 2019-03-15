@@ -81,8 +81,7 @@ public class ConfigurationUtil {
 	 * @return the contents of the resource as Properties
 	 * @throws IOException if the resource could not be read due to an I/O problem
 	 */
-	public static Properties loadConfigurationProperties(String resourceName, Properties defaults)
-			throws IOException {
+	public static Properties loadConfigurationProperties(String resourceName, Properties defaults) throws IOException {
 		Properties result = null;
 
 		String defaultResourceName = getDefaultResourceName(resourceName);

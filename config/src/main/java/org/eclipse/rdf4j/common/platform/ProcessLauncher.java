@@ -196,8 +196,7 @@ public final class ProcessLauncher {
 	 */
 	public String getErrorOutput() {
 		if (!this.listeners.isEmpty()) {
-			throw new IllegalStateException(
-					"Cannot get error output, because outputlisteners have been registered.");
+			throw new IllegalStateException("Cannot get error output, because outputlisteners have been registered.");
 		}
 		return this.err.toString();
 	}
@@ -248,13 +247,9 @@ public final class ProcessLauncher {
 			Process nextSubProcess = subProcess;
 			try {
 				if (this.commandArray != null) {
-					nextSubProcess = subProcess = Runtime.getRuntime()
-							.exec(this.commandArray, null,
-									this.baseDir);
+					nextSubProcess = subProcess = Runtime.getRuntime().exec(this.commandArray, null, this.baseDir);
 				} else {
-					nextSubProcess = subProcess = Runtime.getRuntime()
-							.exec(this.commandLine, null,
-									this.baseDir);
+					nextSubProcess = subProcess = Runtime.getRuntime().exec(this.commandLine, null, this.baseDir);
 				}
 				stdout = new BackgroundPrinter(nextSubProcess.getInputStream(), false);
 				stderr = new BackgroundPrinter(nextSubProcess.getErrorStream(), true);
@@ -265,8 +260,7 @@ public final class ProcessLauncher {
 				stdout.join(10000);
 				stderr.join(10000);
 				if (exitValue != 0) {
-					logger.info(
-							"WARNING: exit value " + exitValue + " for command \"" + getCommandLine() + "\"");
+					logger.info("WARNING: exit value " + exitValue + " for command \"" + getCommandLine() + "\"");
 				}
 				return exitValue;
 			} finally {
@@ -358,8 +352,7 @@ public final class ProcessLauncher {
 		}
 
 		@Override
-		public void close()
-				throws IOException {
+		public void close() throws IOException {
 			try {
 				this.in.close();
 			} catch (Exception e) {

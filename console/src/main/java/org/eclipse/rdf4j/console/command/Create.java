@@ -77,12 +77,9 @@ public class Create extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "create <template>   Create a new repository using this configuration template\n"
-				+ "  built-in: \n"
-				+ Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
-				+ "  template-dir (" + templatesDir + "):\n"
-				+ Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
+		return PrintHelp.USAGE + "create <template>   Create a new repository using this configuration template\n"
+				+ "  built-in: \n" + Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
+				+ "  template-dir (" + templatesDir + "):\n" + Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
 	}
 
 	/**
@@ -193,23 +190,21 @@ public class Create extends ConsoleCommand {
 					final String configString = configTemplate.render(valueMap);
 					final Model graph = new LinkedHashModel();
 
-					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE,
-							SimpleValueFactory.getInstance());
+					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 					rdfParser.setRDFHandler(new StatementCollector(graph));
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
-					final Resource repositoryNode = Models.subject(
-							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-							.orElseThrow(
-									() -> new RepositoryConfigException("missing repository node"));
+					final Resource repositoryNode = Models
+							.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+							.orElseThrow(() -> new RepositoryConfigException("missing repository node"));
 
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
 
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
-					boolean proceedOverwrite = this.state.getManager()
-							.hasRepositoryConfig(
-									repConfig.getID()) ? consoleIO.askProceed(overwrite, false) : true;
+					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(repConfig.getID())
+							? consoleIO.askProceed(overwrite, false)
+							: true;
 
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
@@ -253,9 +248,8 @@ public class Create extends ConsoleCommand {
 	 * @return
 	 * @throws IOException
 	 */
-	private boolean inputParameters(final Map<String, String> valueMap,
-			final Map<String, List<String>> variableMap, Map<String, String> multilineInput)
-			throws IOException {
+	private boolean inputParameters(final Map<String, String> valueMap, final Map<String, List<String>> variableMap,
+			Map<String, String> multilineInput) throws IOException {
 		if (!variableMap.isEmpty()) {
 			consoleIO.writeln("Please specify values for the following variables:");
 		}
@@ -310,8 +304,7 @@ public class Create extends ConsoleCommand {
 	 * @throws FileNotFoundException
 	 */
 	private InputStream createTemplateStream(final String templateName, final String templateFileName,
-			final File templatesDir, final File templateFile)
-			throws FileNotFoundException {
+			final File templatesDir, final File templateFile) throws FileNotFoundException {
 		InputStream templateStream = null;
 		if (templateFile.exists()) {
 			if (templateFile.canRead()) {

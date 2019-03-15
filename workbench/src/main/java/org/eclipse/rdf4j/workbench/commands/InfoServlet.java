@@ -36,8 +36,7 @@ public class InfoServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		String id = info.getId();
 
 		// "Caching" of servlet instances can cause this request to succeed even

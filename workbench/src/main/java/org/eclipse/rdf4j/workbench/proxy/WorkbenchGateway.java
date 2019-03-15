@@ -48,8 +48,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	private ServerValidator serverValidator;
 
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		if (getDefaultServerPath() == null) {
 			throw new MissingInitParameterException(DEFAULT_SERVER);
@@ -220,8 +219,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * @return a WorkbenchServlet instance allocated for the requested server
 	 * @throws ServletException if a problem occurs initializing a new servlet
 	 */
-	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req,
-			final HttpServletResponse resp)
+	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException {
 		WorkbenchServlet servlet = null;
 		final String server = findServer(req, resp);

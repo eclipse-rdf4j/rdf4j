@@ -49,8 +49,7 @@ public class PagedQuery {
 	 */
 	public PagedQuery(final String query, final QueryLanguage language, final int requestLimit,
 			final int requestOffset) {
-		LOGGER.debug(
-				"Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
+		LOGGER.debug("Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
 				language);
 		LOGGER.debug("Query: {}", query);
 
@@ -118,8 +117,7 @@ public class PagedQuery {
 		return buffer.append(append).toString();
 	}
 
-	private static String modifyLimit(final QueryLanguage language, final String query,
-			final int limitSubstitute) {
+	private static String modifyLimit(final QueryLanguage language, final String query, final int limitSubstitute) {
 		String rval = query;
 
 		/*
@@ -144,8 +142,7 @@ public class PagedQuery {
 	 * @param insert  string to insert on own line
 	 * @returns result of inserting text
 	 */
-	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig,
-			final String insert) {
+	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig, final String insert) {
 		final Matcher matcher = pattern.matcher(orig);
 		final boolean found = matcher.find();
 		final int location = found ? matcher.start() : orig.length();

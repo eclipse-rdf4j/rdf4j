@@ -38,8 +38,7 @@ public class SystemOverviewController implements Controller {
 	}
 
 	@Override
-	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
 		ModelAndView result = new ModelAndView();
 		result.setViewName(view);
 

@@ -26,8 +26,7 @@ public class WebXmlValidationTest {
 
 	@Test
 	@Ignore("temporarily disabled to avoid problems with downloading of XML Schema on Hudson instance")
-	public void testValidXml()
-			throws MalformedURLException, IOException, SAXException {
+	public void testValidXml() throws MalformedURLException, IOException, SAXException {
 		File webXml = new File("src/main/webapp/WEB-INF/web.xml");
 
 		DocumentUtil.getDocument(webXml.toURL(),

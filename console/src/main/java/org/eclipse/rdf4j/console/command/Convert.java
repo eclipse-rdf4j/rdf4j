@@ -48,8 +48,7 @@ public class Convert extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "convert <fileFrom> <fileTo>   Converts a file from one RDF format to another\n";
+		return PrintHelp.USAGE + "convert <fileFrom> <fileTo>   Converts a file from one RDF format to another\n";
 	}
 
 	@Override

@@ -70,11 +70,9 @@ public class CacheFilter implements Filter {
 	 * @see #MAX_EXPIRY
 	 */
 	@Override
-	public void init(FilterConfig config)
-			throws ServletException {
+	public void init(FilterConfig config) throws ServletException {
 		try {
-			expiry = Math.min(Math.max(MIN_EXPIRY, Long.parseLong(config.getInitParameter(CACHE_CONTROL))),
-					MAX_EXPIRY);
+			expiry = Math.min(Math.max(MIN_EXPIRY, Long.parseLong(config.getInitParameter(CACHE_CONTROL))), MAX_EXPIRY);
 		} catch (NumberFormatException nfe) {
 			LOGGER.warn("Failed to parse " + CACHE_CONTROL + " value.", nfe);
 			expiry = null;

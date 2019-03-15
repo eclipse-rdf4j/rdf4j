@@ -54,8 +54,7 @@ public class TestExploreServlet {
 	 * @throws UpdateExecutionException if an issue occurs inserting data
 	 */
 	@Before
-	public void setUp()
-			throws RepositoryException, MalformedQueryException, UpdateExecutionException {
+	public void setUp() throws RepositoryException, MalformedQueryException, UpdateExecutionException {
 		Repository repo = new SailRepository(new MemoryStore());
 		repo.initialize();
 		connection = repo.getConnection();
@@ -72,15 +71,13 @@ public class TestExploreServlet {
 	}
 
 	@After
-	public void tearDown()
-			throws RepositoryException {
+	public void tearDown() throws RepositoryException {
 		connection.close();
 		servlet.destroy();
 	}
 
 	@Test
-	public final void testRegressionSES1748()
-			throws RDF4JException {
+	public final void testRegressionSES1748() throws RDF4JException {
 		for (int i = 0; i < foos.length; i++) {
 			connection.add(foo, bar, foos[i]);
 		}
@@ -94,40 +91,35 @@ public class TestExploreServlet {
 	 * @throws RepositoryException if a problem occurs executing the method under test
 	 */
 	@Test
-	public final void testSubjectSameAsContext()
-			throws RDF4JException {
+	public final void testSubjectSameAsContext() throws RDF4JException {
 		addToFooContext(":foo a :bar");
 		assertStatementCount(foo, 1, 1);
 		verify(builder).result(foo, RDF.TYPE, bar, foo);
 	}
 
 	@Test
-	public final void testPredicateSameAsContext()
-			throws RDF4JException {
+	public final void testPredicateSameAsContext() throws RDF4JException {
 		addToFooContext(":bar :foo :bar");
 		assertStatementCount(foo, 1, 1);
 		verify(builder).result(bar, foo, bar, foo);
 	}
 
 	@Test
-	public final void testObjectSameAsContext()
-			throws RDF4JException {
+	public final void testObjectSameAsContext() throws RDF4JException {
 		addToFooContext(":bar a :foo");
 		assertStatementCount(foo, 1, 1);
 		verify(builder).result(bar, RDF.TYPE, foo, foo);
 	}
 
 	@Test
-	public final void testNoValueSameAsContext()
-			throws RDF4JException {
+	public final void testNoValueSameAsContext() throws RDF4JException {
 		addToFooContext(":bar a :bar");
 		assertStatementCount(foo, 1, 1);
 		verify(builder).result(bar, RDF.TYPE, bar, foo);
 	}
 
 	@Test
-	public final void testOneObjectSameAsContext()
-			throws RDF4JException {
+	public final void testOneObjectSameAsContext() throws RDF4JException {
 		addToFooContext(":bar a :bar , :foo");
 		assertStatementCount(foo, 2, 2);
 		verify(builder).result(bar, RDF.TYPE, bar, foo);
@@ -135,40 +127,35 @@ public class TestExploreServlet {
 	}
 
 	@Test
-	public final void testSubjectSameAsPredicate()
-			throws RDF4JException {
+	public final void testSubjectSameAsPredicate() throws RDF4JException {
 		addToFooContext(":bar :bar :bang");
 		assertStatementCount(bar, 1, 1);
 		verify(builder).result(bar, bar, bang, foo);
 	}
 
 	@Test
-	public final void testSubjectSameAsObject()
-			throws RDF4JException {
+	public final void testSubjectSameAsObject() throws RDF4JException {
 		addToFooContext(":bar a :bar");
 		assertStatementCount(bar, 1, 1);
 		verify(builder).result(bar, RDF.TYPE, bar, foo);
 	}
 
 	@Test
-	public final void testPredicateSameAsObject()
-			throws RDF4JException {
+	public final void testPredicateSameAsObject() throws RDF4JException {
 		addToFooContext(":bar :bang :bang");
 		assertStatementCount(bang, 1, 1);
 		verify(builder).result(bar, bang, bang, foo);
 	}
 
 	@Test
-	public final void testWorstCaseDuplication()
-			throws RDF4JException {
+	public final void testWorstCaseDuplication() throws RDF4JException {
 		addToFooContext(":foo :foo :foo");
 		assertStatementCount(foo, 1, 1);
 		verify(builder).result(foo, foo, foo, foo);
 	}
 
 	@Test
-	public final void testSES1723regression()
-			throws RDF4JException {
+	public final void testSES1723regression() throws RDF4JException {
 		addToFooContext(":foo :foo :foo");
 		connection.add(foo, foo, foo);
 		assertStatementCount(foo, 2, 2);
@@ -181,8 +168,7 @@ public class TestExploreServlet {
 		connection.prepareUpdate(QueryLanguage.SPARQL, PREFIX + pattern + SUFFIX).execute();
 	}
 
-	private void assertStatementCount(IRI uri, int expectedTotal, int expectedRendered)
-			throws RDF4JException {
+	private void assertStatementCount(IRI uri, int expectedTotal, int expectedRendered) throws RDF4JException {
 		// limit = 0 means render all
 		assertStatementCount(uri, 0, expectedTotal, expectedRendered);
 	}

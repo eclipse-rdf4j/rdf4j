@@ -83,8 +83,7 @@ public class StatementsController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public StatementsController()
-			throws ApplicationContextException {
+	public StatementsController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_HEAD, "PUT", "DELETE" });
 	}
 
@@ -132,8 +131,7 @@ public class StatementsController extends AbstractController {
 	}
 
 	private ModelAndView getSparqlUpdateResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
@@ -189,8 +187,7 @@ public class StatementsController extends AbstractController {
 					IRI uri = createURIOrNull(repository, graphURI);
 					dataset.addDefaultRemoveGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for default remove graph: " + graphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default remove graph: " + graphURI);
 				}
 			}
 		}
@@ -201,8 +198,7 @@ public class StatementsController extends AbstractController {
 				IRI uri = createURIOrNull(repository, graphURI);
 				dataset.setDefaultInsertGraph(uri);
 			} catch (IllegalArgumentException e) {
-				throw new ClientHTTPException(SC_BAD_REQUEST,
-						"Illegal URI for default insert graph: " + graphURI);
+				throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default insert graph: " + graphURI);
 			}
 		}
 
@@ -212,8 +208,7 @@ public class StatementsController extends AbstractController {
 					IRI uri = createURIOrNull(repository, defaultGraphURI);
 					dataset.addDefaultGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for default graph: " + defaultGraphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default graph: " + defaultGraphURI);
 				}
 			}
 		}
@@ -224,8 +219,7 @@ public class StatementsController extends AbstractController {
 					IRI uri = createURIOrNull(repository, namedGraphURI);
 					dataset.addNamedGraph(uri);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST,
-							"Illegal URI for named graph: " + namedGraphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
 				}
 			}
 		}
@@ -249,8 +243,7 @@ public class StatementsController extends AbstractController {
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
-				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length()) {
+				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							repository.getValueFactory());
@@ -299,8 +292,7 @@ public class StatementsController extends AbstractController {
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ClientHTTPException {
+			HttpServletResponse response) throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -329,8 +321,7 @@ public class StatementsController extends AbstractController {
 	 * Process several actions as a transaction.
 	 */
 	private ModelAndView getTransactionResultResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
+			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
 		InputStream in = request.getInputStream();
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			logger.debug("Processing transaction...");
@@ -379,15 +370,14 @@ public class StatementsController extends AbstractController {
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)
 				.orElseThrow(
-						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-								"Unsupported MIME type: " + mimeType));
+						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 
 		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);
 		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);
-		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request,
-				Protocol.PRESERVE_BNODE_ID_PARAM_NAME, false);
+		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,
+				false);
 
 		if (baseURI == null) {
 			baseURI = vf.createIRI("foo:bar");
@@ -434,8 +424,7 @@ public class StatementsController extends AbstractController {
 	 * Delete data from the repository.
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();

@@ -85,8 +85,7 @@ public class RepositoryController extends AbstractController {
 
 	private static final String METHOD_DELETE = "DELETE";
 
-	public RepositoryController()
-			throws ApplicationContextException {
+	public RepositoryController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_DELETE, METHOD_HEAD });
 	}
 
@@ -103,10 +102,8 @@ public class RepositoryController extends AbstractController {
 		if (METHOD_POST.equals(reqMethod)) {
 			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
-			if (!(Protocol.FORM_MIME_TYPE.equals(mimeType)
-					|| Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType))) {
-				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-						"Unsupported MIME type: " + mimeType);
+			if (!(Protocol.FORM_MIME_TYPE.equals(mimeType) || Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType))) {
+				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType);
 			}
 
 			if (Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType)) {
@@ -114,8 +111,7 @@ public class RepositoryController extends AbstractController {
 				try {
 					queryStr = IOUtils.toString(request.getReader());
 				} catch (IOException e) {
-					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body",
-							e);
+					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body", e);
 				}
 				if (queryStr.isEmpty())
 					queryStr = null;
@@ -185,11 +181,10 @@ public class RepositoryController extends AbstractController {
 							TupleQuery tQuery = (TupleQuery) query;
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
-							boolean distinct = ProtocolUtil.parseBooleanParam(request,
-									Protocol.DISTINCT_PARAM_NAME, false);
+							boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
+									false);
 
-							final TupleQueryResult tqr = distinct
-									? QueryResults.distinctResults(tQuery.evaluate())
+							final TupleQueryResult tqr = distinct ? QueryResults.distinctResults(tQuery.evaluate())
 									: tQuery.evaluate();
 							queryResult = QueryResults.limitResults(tqr, limit, offset);
 						}
@@ -200,11 +195,10 @@ public class RepositoryController extends AbstractController {
 							GraphQuery gQuery = (GraphQuery) query;
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
-							boolean distinct = ProtocolUtil.parseBooleanParam(request,
-									Protocol.DISTINCT_PARAM_NAME, false);
+							boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
+									false);
 
-							final GraphQueryResult qqr = distinct
-									? QueryResults.distinctResults(gQuery.evaluate())
+							final GraphQueryResult qqr = distinct ? QueryResults.distinctResults(gQuery.evaluate())
 									: gQuery.evaluate();
 							queryResult = QueryResults.limitResults(qqr, limit, offset);
 						}
@@ -256,8 +250,7 @@ public class RepositoryController extends AbstractController {
 	}
 
 	private Query getQuery(Repository repository, RepositoryConnection repositoryCon, String queryStr,
-			HttpServletRequest request, HttpServletResponse response)
-			throws IOException, ClientHTTPException {
+			HttpServletRequest request, HttpServletResponse response) throws IOException, ClientHTTPException {
 		Query result = null;
 
 		// default query language is SPARQL
@@ -307,8 +300,7 @@ public class RepositoryController extends AbstractController {
 						IRI uri = createURIOrNull(repository, namedGraphURI);
 						dataset.addNamedGraph(uri);
 					} catch (IllegalArgumentException e) {
-						throw new ClientHTTPException(SC_BAD_REQUEST,
-								"Illegal URI for named graph: " + namedGraphURI);
+						throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
 					}
 				}
 			}
@@ -334,8 +326,7 @@ public class RepositoryController extends AbstractController {
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
-				if (parameterName.startsWith(BINDING_PREFIX)
-						&& parameterName.length() > BINDING_PREFIX.length()) {
+				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
 							repository.getValueFactory());

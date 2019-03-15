@@ -68,8 +68,7 @@ public class TransactionExportStatementsView implements View {
 
 	@SuppressWarnings("rawtypes")
 	@Override
-	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+	public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
 		Resource subj = (Resource) model.get(SUBJECT_KEY);
 		IRI pred = (IRI) model.get(PREDICATE_KEY);
 		Value obj = (Value) model.get(OBJECT_KEY);

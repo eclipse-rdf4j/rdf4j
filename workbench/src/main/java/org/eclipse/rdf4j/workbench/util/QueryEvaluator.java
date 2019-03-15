@@ -66,8 +66,7 @@ public final class QueryEvaluator {
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
-			final WorkbenchRequest req, final CookieHandler cookies)
-			throws BadRequestException, RDF4JException {
+			final WorkbenchRequest req, final CookieHandler cookies) throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);
 		boolean evaluateCookie = false;
@@ -114,9 +113,8 @@ public final class QueryEvaluator {
 	 * @throws QueryResultHandlerException
 	 */
 	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
-			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie,
-			boolean paged, int offset, int limit)
-			throws QueryEvaluationException, QueryResultHandlerException {
+			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
+			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
 		final TupleQueryResult result = query.evaluate();
 		final String[] names = result.getBindingNames().toArray(new String[0]);
 		List<BindingSet> bindings = Iterations.asList(result);
@@ -133,8 +131,7 @@ public final class QueryEvaluator {
 			// query. Just-in-case parameter massaging below to avoid array index
 			// issues.
 			int fromIndex = Math.min(0, offset);
-			bindings = bindings.subList(fromIndex,
-					Math.max(fromIndex, Math.min(offset + limit, bindings.size())));
+			bindings = bindings.subList(fromIndex, Math.max(fromIndex, Math.min(offset + limit, bindings.size())));
 		}
 		for (BindingSet set : bindings) {
 			addResult(builder, names, values, set);
@@ -143,8 +140,7 @@ public final class QueryEvaluator {
 	}
 
 	private void addResult(final TupleResultBuilder builder, final String[] names, final List<Object> values,
-			BindingSet set)
-			throws QueryResultHandlerException {
+			BindingSet set) throws QueryResultHandlerException {
 		values.clear();
 		for (int i = 0; i < names.length; i++) {
 			values.add(set.getValue(names[i]));
@@ -189,9 +185,8 @@ public final class QueryEvaluator {
 	 * @throws QueryResultHandlerException
 	 */
 	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
-			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie,
-			boolean paged, int offset, int limit)
-			throws QueryEvaluationException, QueryResultHandlerException {
+			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
+			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
 		List<Statement> statements = Iterations.asList(query.evaluate());
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
@@ -229,11 +224,10 @@ public final class QueryEvaluator {
 
 	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
 			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
-			boolean writeCookie, boolean paged, int offset, int limit)
-			throws RDF4JException, BadRequestException {
+			boolean writeCookie, boolean paged, int offset, int limit) throws RDF4JException, BadRequestException {
 		if (query instanceof TupleQuery) {
-			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie,
-					paged, offset, limit);
+			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
+					offset, limit);
 		} else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
 					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null)
@@ -241,8 +235,8 @@ public final class QueryEvaluator {
 			if (query instanceof GraphQuery) {
 				GraphQuery graphQuery = (GraphQuery) query;
 				if (null == format) {
-					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie,
-							paged, offset, limit);
+					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
+							offset, limit);
 				} else {
 					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);
 				}

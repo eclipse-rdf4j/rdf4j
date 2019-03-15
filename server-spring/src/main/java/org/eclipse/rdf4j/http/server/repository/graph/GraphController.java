@@ -55,8 +55,7 @@ public class GraphController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public GraphController()
-			throws ApplicationContextException {
+	public GraphController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, METHOD_POST, "PUT", "DELETE" });
 	}
 
@@ -96,8 +95,7 @@ public class GraphController extends AbstractController {
 		return result;
 	}
 
-	private IRI getGraphName(HttpServletRequest request, ValueFactory vf)
-			throws ClientHTTPException {
+	private IRI getGraphName(HttpServletRequest request, ValueFactory vf) throws ClientHTTPException {
 		String requestURL = request.getRequestURL().toString();
 		boolean isServiceRequest = requestURL.endsWith("/service");
 
@@ -128,8 +126,7 @@ public class GraphController extends AbstractController {
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ClientHTTPException {
+			HttpServletResponse response) throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -160,8 +157,7 @@ public class GraphController extends AbstractController {
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)
 				.orElseThrow(
-						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-								"Unsupported MIME type: " + mimeType));
+						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);
@@ -207,8 +203,7 @@ public class GraphController extends AbstractController {
 	 * Delete data from the graph.
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
-			HttpServletResponse response)
-			throws ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response) throws ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();

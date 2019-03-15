@@ -45,8 +45,7 @@ public class TestValueDecoder {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		factory = SimpleValueFactory.getInstance();
 
 		// Build a mock repository instance that provides 'decoder' with all
@@ -61,24 +60,21 @@ public class TestValueDecoder {
 	}
 
 	@Test
-	public final void testQnamePropertyValue()
-			throws BadRequestException {
+	public final void testQnamePropertyValue() throws BadRequestException {
 		Value value = decoder.decodeValue("rdfs:label");
 		assertThat(value).isInstanceOf(IRI.class);
 		assertThat((IRI) value).isEqualTo(RDFS.LABEL);
 	}
 
 	@Test
-	public final void testPlainStringLiteral()
-			throws BadRequestException {
+	public final void testPlainStringLiteral() throws BadRequestException {
 		Value value = decoder.decodeValue("\"plain string\"");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral("plain string"));
 	}
 
 	@Test
-	public final void testUnexpectedLiteralAttribute()
-			throws BadRequestException {
+	public final void testUnexpectedLiteralAttribute() throws BadRequestException {
 		try {
 			decoder.decodeValue("\"datatype oops\"^rdfs:label");
 			fail("Expected BadRequestException.");
@@ -90,24 +86,21 @@ public class TestValueDecoder {
 	}
 
 	@Test
-	public final void testLiteralWithQNameType()
-			throws BadRequestException {
+	public final void testLiteralWithQNameType() throws BadRequestException {
 		Value value = decoder.decodeValue("\"1\"^^xsd:int");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral(1));
 	}
 
 	@Test
-	public final void testLiteralWithURIType()
-			throws BadRequestException {
+	public final void testLiteralWithURIType() throws BadRequestException {
 		Value value = decoder.decodeValue("\"1\"^^<" + XMLSchema.INT + ">");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral(1));
 	}
 
 	@Test
-	public final void testLanguageLiteral()
-			throws BadRequestException {
+	public final void testLanguageLiteral() throws BadRequestException {
 		Value value = decoder.decodeValue("\"color\"@en-US");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral("color", "en-US"));

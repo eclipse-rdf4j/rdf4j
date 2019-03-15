@@ -31,11 +31,10 @@ public class CommonValuesHandlerInterceptor implements HandlerInterceptor {
 	}
 
 	@Override
-	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
-			ModelAndView mav) {
+	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
 		mav.addObject("path", request.getContextPath());
-		mav.addObject("basePath", request.getScheme() + "://" + request.getServerName() + ":"
-				+ request.getServerPort() + request.getContextPath() + "/");
+		mav.addObject("basePath", request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort()
+				+ request.getContextPath() + "/");
 		mav.addObject("currentYear", Calendar.getInstance().get(Calendar.YEAR));
 	}
 

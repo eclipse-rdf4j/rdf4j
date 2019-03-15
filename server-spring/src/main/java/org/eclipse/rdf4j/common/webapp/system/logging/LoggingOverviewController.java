@@ -31,16 +31,11 @@ public class LoggingOverviewController implements Controller {
 
 	String appenderName = null;
 
-	String[] loglevels = {
-			"All",
-			LogLevel.ERROR.toString(),
-			LogLevel.WARN.toString(),
-			LogLevel.INFO.toString(),
+	String[] loglevels = { "All", LogLevel.ERROR.toString(), LogLevel.WARN.toString(), LogLevel.INFO.toString(),
 			LogLevel.DEBUG.toString() };
 
 	@Override
-	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
 		int offset = getOffset(request);
 		int count = getCount(request);
 		Map<String, Object> model = new HashMap<>();
@@ -48,12 +43,8 @@ public class LoggingOverviewController implements Controller {
 		model.put("logreader", logReader);
 		model.put("offset", new Integer(offset));
 		model.put("count", new Integer(count));
-		model.put("countsAvailable",
-				Arrays.asList(new Integer[] {
-						Integer.valueOf(50),
-						Integer.valueOf(100),
-						Integer.valueOf(200),
-						Integer.valueOf(500) }));
+		model.put("countsAvailable", Arrays.asList(new Integer[] { Integer.valueOf(50), Integer.valueOf(100),
+				Integer.valueOf(200), Integer.valueOf(500) }));
 		if (logReader.supportsLevelFilter()) {
 			LogLevel level = logReader.getLevel();
 			model.put("level", (level == null) ? "ALL" : level.toString());
@@ -100,8 +91,7 @@ public class LoggingOverviewController implements Controller {
 
 	public LogReader getLogReader(int offset, int count, HttpServletRequest request) {
 		LogReader logReader = (LogReader) request.getSession()
-				.getAttribute(
-						"logreader" + (appenderName != null ? "+" + appenderName : ""));
+				.getAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""));
 		if (logReader == null) {
 			if (appenderName == null) {
 				logReader = config.getLogConfiguration().getDefaultLogReader();
@@ -109,8 +99,7 @@ public class LoggingOverviewController implements Controller {
 				logReader = config.getLogConfiguration().getLogReader(appenderName);
 			}
 			request.getSession()
-					.setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""),
-							logReader);
+					.setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""), logReader);
 		}
 		logReader.setOffset(offset);
 		logReader.setLimit(count);

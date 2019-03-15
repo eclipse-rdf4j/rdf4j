@@ -73,8 +73,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * @param state
 	 * @param settings
 	 */
-	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state,
-			Map<String, ConsoleSetting> settings) {
+	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.settings = settings;

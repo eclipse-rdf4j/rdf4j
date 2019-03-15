@@ -65,8 +65,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 	}
 
 	@Override
-	public void init(ServletConfig config)
-			throws ServletException {
+	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
 		if (repository == null) {
 			if (config.getInitParameter(REPOSITORY_PARAM) != null)
@@ -101,8 +100,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 		}
 	}
 
-	private Object lookup(ServletConfig config, String name)
-			throws ServletException {
+	private Object lookup(ServletConfig config, String name) throws ServletException {
 		String param = config.getInitParameter(name);
 		try {
 			InitialContext ctx = new InitialContext();

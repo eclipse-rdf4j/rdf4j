@@ -46,8 +46,7 @@ public class Verify extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "verify <file-or-url>\n"
+		return PrintHelp.USAGE + "verify <file-or-url>\n"
 				+ "  <file-or-url>   The path or URL identifying the data file\n"
 				+ "Verifies the validity of the specified data file\n";
 	}
@@ -70,9 +69,7 @@ public class Verify extends ConsoleCommand {
 		String dataPath = parseDataPath(tokens);
 		try {
 			URL dataURL = new URL(dataPath);
-			RDFFormat format = Rio.getParserFormatForFileName(dataPath)
-					.orElseThrow(
-							Rio.unsupportedFormat(dataPath));
+			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(Rio.unsupportedFormat(dataPath));
 			consoleIO.writeln("RDF Format is " + format.getName());
 
 			RDFParser parser = Rio.createParser(format);

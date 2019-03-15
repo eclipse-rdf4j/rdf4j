@@ -32,15 +32,13 @@ public class DeleteServlet extends TransformationServlet {
 	 * parameter, instead returns JSON response with safe field set to true if safe, false if not.
 	 */
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws Exception {
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		dropRepository(req.getParameter("id"));
 		resp.sendRedirect("../");
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		String checkSafe = req.getParameter("checkSafe");
 		if (null == checkSafe) {
 			// Display the form.
@@ -54,8 +52,7 @@ public class DeleteServlet extends TransformationServlet {
 
 	}
 
-	private void dropRepository(String identity)
-			throws RepositoryException, RepositoryConfigException {
+	private void dropRepository(String identity) throws RepositoryException, RepositoryConfigException {
 		manager.removeRepository(identity);
 	}
 

@@ -102,8 +102,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @return the value of the parameter, or zero if it is not present
 	 * @throws BadRequestException if the parameter is present but does not parse as an integer
 	 */
-	public int getInt(String name)
-			throws BadRequestException {
+	public int getInt(String name) throws BadRequestException {
 		int result = 0;
 		String limit = getParameter(name);
 		if (limit != null && !limit.isEmpty()) {
@@ -183,8 +182,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @return value corresponding to the given parameter name
 	 * @throws BadRequestException if a problem occurs parsing the parameter value
 	 */
-	public Resource getResource(String name)
-			throws BadRequestException, RepositoryException {
+	public Resource getResource(String name) throws BadRequestException, RepositoryException {
 		Value value = getValue(name);
 		if (value == null || value instanceof Resource) {
 			return (Resource) value;
@@ -229,8 +227,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @throws BadRequestException if the value doesn't parse as a URI
 	 * @throws RepositoryException if the name space prefix is not resolvable
 	 */
-	public IRI getURI(String name)
-			throws BadRequestException, RepositoryException {
+	public IRI getURI(String name) throws BadRequestException, RepositoryException {
 		Value value = getValue(name);
 		if (value == null || value instanceof IRI) {
 			return (IRI) value;
@@ -245,8 +242,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @return the URL
 	 * @throws BadRequestException if the value doesn't parse as a URL
 	 */
-	public URL getUrl(String name)
-			throws BadRequestException {
+	public URL getUrl(String name) throws BadRequestException {
 		String url = getParameter(name);
 		try {
 			return new URL(url);
@@ -263,13 +259,11 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @throws BadRequestException if the value doesn't parse as a URI
 	 * @throws RepositoryException if any name space prefix is not resolvable
 	 */
-	public Value getValue(String name)
-			throws BadRequestException, RepositoryException {
+	public Value getValue(String name) throws BadRequestException, RepositoryException {
 		return decoder.decodeValue(getParameter(name));
 	}
 
-	private String firstLine(FileItemStream item)
-			throws IOException {
+	private String firstLine(FileItemStream item) throws IOException {
 		InputStream stream = item.openStream();
 		try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
 			return reader.readLine();
@@ -295,8 +289,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		return parameters;
 	}
 
-	private Map<String, String> getUrlParameterMap(String url)
-			throws UnsupportedEncodingException {
+	private Map<String, String> getUrlParameterMap(String url) throws UnsupportedEncodingException {
 		String qry = url.substring(url.indexOf(';') + 1);
 		Map<String, String> parameters = new HashMap<>();
 		for (String param : qry.split("&")) {

@@ -72,8 +72,7 @@ public class ProtocolUtil {
 		}
 	}
 
-	public static IRI parseGraphParam(HttpServletRequest request, ValueFactory vf)
-			throws ClientHTTPException {
+	public static IRI parseGraphParam(HttpServletRequest request, ValueFactory vf) throws ClientHTTPException {
 		String paramValue = request.getParameter(Protocol.GRAPH_PARAM_NAME);
 		if (paramValue == null) {
 			return null;
@@ -98,8 +97,7 @@ public class ProtocolUtil {
 		}
 	}
 
-	public static boolean parseBooleanParam(HttpServletRequest request, String paramName,
-			boolean defaultValue) {
+	public static boolean parseBooleanParam(HttpServletRequest request, String paramName, boolean defaultValue) {
 		String paramValue = request.getParameter(paramName);
 		if (paramValue == null) {
 			return defaultValue;
@@ -141,8 +139,7 @@ public class ProtocolUtil {
 	}
 
 	public static <FF extends FileFormat, S> S getAcceptableService(HttpServletRequest request,
-			HttpServletResponse response, FileFormatServiceRegistry<FF, S> serviceRegistry)
-			throws ClientHTTPException {
+			HttpServletResponse response, FileFormatServiceRegistry<FF, S> serviceRegistry) throws ClientHTTPException {
 		// Accept-parameter takes precedence over request headers
 		String mimeType = request.getParameter(Protocol.ACCEPT_PARAM_NAME);
 		boolean hasAcceptParam = mimeType != null;
@@ -191,8 +188,7 @@ public class ProtocolUtil {
 	 *         timeout parameter is specified in the request.
 	 * @throws ClientHTTPException if the value of the timeout parameter is not a valid integer.
 	 */
-	public static int parseTimeoutParam(HttpServletRequest request)
-			throws ClientHTTPException {
+	public static int parseTimeoutParam(HttpServletRequest request) throws ClientHTTPException {
 		final String timeoutParam = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);
 		int maxExecutionTime = 0;
 		if (timeoutParam != null) {

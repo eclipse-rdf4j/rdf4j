@@ -78,8 +78,7 @@ public class QueryServlet extends TransformationServlet {
 
 	// Poor Man's Cache: At the very least, garbage collection can clean up keys
 	// followed by values whenever the JVM faces memory pressure.
-	private static Map<String, String> queryCache = Collections.synchronizedMap(
-			new WeakHashMap<String, String>());
+	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<String, String>());
 
 	/**
 	 * For testing purposes only.
@@ -101,14 +100,7 @@ public class QueryServlet extends TransformationServlet {
 	public String[] getCookieNames() {
 		String[] result;
 		if (writeQueryCookie) {
-			result = new String[] {
-					QUERY,
-					REF,
-					LIMIT,
-					QUERY_LN,
-					INFER,
-					"total_result_count",
-					"show-datatypes" };
+			result = new String[] { QUERY, REF, LIMIT, QUERY_LN, INFER, "total_result_count", "show-datatypes" };
 		} else {
 			result = new String[] { REF, LIMIT, QUERY_LN, INFER, "total_result_count", "show-datatypes" };
 		}
@@ -121,8 +113,7 @@ public class QueryServlet extends TransformationServlet {
 	 * @param config configuration passed in by the application container
 	 */
 	@Override
-	public void init(final ServletConfig config)
-			throws ServletException {
+	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		try {
 			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
@@ -238,8 +229,7 @@ public class QueryServlet extends TransformationServlet {
 				final String query = getQueryText(req);
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
 				final Literal limit = SimpleValueFactory.getInstance()
-						.createLiteral(
-								req.getParameter(EDIT_PARAMS[3]), XMLSchema.INTEGER);
+						.createLiteral(req.getParameter(EDIT_PARAMS[3]), XMLSchema.INTEGER);
 				builder.result(queryLn, query, infer, limit);
 				builder.end();
 			} else {
@@ -273,16 +263,13 @@ public class QueryServlet extends TransformationServlet {
 				final boolean shared = !Boolean.valueOf(req.getParameter("save-private"));
 				final QueryLanguage queryLanguage = QueryLanguage.valueOf(req.getParameter(QUERY_LN));
 				final String queryText = req.getParameter(QUERY);
-				final boolean infer = req.isParameterPresent(INFER) ? Boolean.valueOf(req.getParameter(INFER))
-						: false;
+				final boolean infer = req.isParameterPresent(INFER) ? Boolean.valueOf(req.getParameter(INFER)) : false;
 				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));
 				if (existed) {
 					final IRI query = storage.selectSavedQuery(http, userName, queryName);
-					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer,
-							rowsPerPage);
+					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
 				} else {
-					storage.saveQuery(http, queryName, userName, shared, queryLanguage, queryText, infer,
-							rowsPerPage);
+					storage.saveQuery(http, queryName, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
 				}
 			}
 			json.put("written", written);
@@ -310,15 +297,14 @@ public class QueryServlet extends TransformationServlet {
 				result = format.get().getDefaultMIMEType();
 				ext = format.get().getDefaultFileExtension();
 			} else {
-				final Optional<QueryResultFormat> tupleFormat = QueryResultIO.getWriterFormatForMIMEType(
-						accept);
+				final Optional<QueryResultFormat> tupleFormat = QueryResultIO.getWriterFormatForMIMEType(accept);
 
 				if (tupleFormat.isPresent()) {
 					result = tupleFormat.get().getDefaultMIMEType();
 					ext = tupleFormat.get().getDefaultFileExtension();
 				} else {
-					final Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanWriterFormatForMIMEType(
-							accept);
+					final Optional<QueryResultFormat> booleanFormat = QueryResultIO
+							.getBooleanWriterFormatForMIMEType(accept);
 
 					if (booleanFormat.isPresent()) {
 						result = booleanFormat.get().getDefaultMIMEType();
@@ -374,8 +360,7 @@ public class QueryServlet extends TransformationServlet {
 	 * @throws BadRequestException if a problem occurs grabbing the request from storage
 	 * @throws RDF4JException      if a problem occurs grabbing the request from storage
 	 */
-	protected String getQueryText(WorkbenchRequest req)
-			throws BadRequestException, RDF4JException {
+	protected String getQueryText(WorkbenchRequest req) throws BadRequestException, RDF4JException {
 		String result;
 		if (req.isParameterPresent(QUERY)) {
 			String query = req.getParameter(QUERY);
@@ -389,8 +374,8 @@ public class QueryServlet extends TransformationServlet {
 						result = "";
 					}
 				} else if ("id".equals(ref)) {
-					result = storage.getQueryText((HTTPRepository) repository,
-							getUserNameFromParameter(req, "owner"), query);
+					result = storage.getQueryText((HTTPRepository) repository, getUserNameFromParameter(req, "owner"),
+							query);
 				} else {
 					// if ref not recognized assume request meant "text"
 					result = query;
@@ -404,13 +389,14 @@ public class QueryServlet extends TransformationServlet {
 		return result;
 	}
 
-	private boolean canReadSavedQuery(WorkbenchRequest req)
-			throws BadRequestException, RDF4JException {
+	private boolean canReadSavedQuery(WorkbenchRequest req) throws BadRequestException, RDF4JException {
 		if (req.isParameterPresent(REF)) {
-			return "id".equals(req.getParameter(REF)) ? storage.canRead(
-					storage.selectSavedQuery((HTTPRepository) repository,
-							getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-					getUserNameFromParameter(req, SERVER_USER)) : true;
+			return "id".equals(req.getParameter(REF))
+					? storage.canRead(
+							storage.selectSavedQuery((HTTPRepository) repository,
+									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
+							getUserNameFromParameter(req, SERVER_USER))
+					: true;
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");
 		}

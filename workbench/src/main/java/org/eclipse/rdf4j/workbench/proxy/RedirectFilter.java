@@ -24,8 +24,7 @@ public class RedirectFilter implements Filter {
 	private FilterConfig config;
 
 	@Override
-	public void init(FilterConfig config)
-			throws ServletException {
+	public void init(FilterConfig config) throws ServletException {
 		this.config = config;
 	}
 

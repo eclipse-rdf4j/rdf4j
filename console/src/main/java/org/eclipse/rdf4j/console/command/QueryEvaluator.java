@@ -81,15 +81,14 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private final Map<String, ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator evaluator;
 
-	private final List<String> sparqlQueryStart = Arrays.asList(
-			new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
+	private final List<String> sparqlQueryStart = Arrays
+			.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
 
 	private final long MAX_INPUT = 1_000_000;
 
 	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
-	private final static Pattern PATTERN_IO = Pattern.compile("^(?<in>INFILE=\"(?<i>[^\"]+)\"" +
-			",?(?<enc>\\w[\\w-]+)?)? ?" +
-			"(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
+	private final static Pattern PATTERN_IO = Pattern.compile(
+			"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?" + "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
 			Pattern.CASE_INSENSITIVE);
 
 	/**
@@ -351,8 +350,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out)
-			throws IllegalArgumentException {
+	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) throws IllegalArgumentException {
 		QueryResultWriter w;
 
 		if (path == null) {
@@ -404,10 +402,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @throws IOException
 	 */
 	private OutputStream getOutputStream(Path path) throws IOException {
-		return (path != null)
-				? Files.newOutputStream(path, StandardOpenOption.CREATE,
-						StandardOpenOption.TRUNCATE_EXISTING,
-						StandardOpenOption.WRITE)
+		return (path != null) ? Files.newOutputStream(path, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
 				: new UncloseableOutputStream(consoleIO.getOutputStream());
 	}
 

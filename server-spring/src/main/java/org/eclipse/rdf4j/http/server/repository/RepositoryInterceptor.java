@@ -63,8 +63,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	}
 
 	@Override
-	public boolean preHandle(HttpServletRequest request, HttpServletResponse respons, Object handler)
-			throws Exception {
+	public boolean preHandle(HttpServletRequest request, HttpServletResponse respons, Object handler) throws Exception {
 		String pathInfoStr = request.getPathInfo();
 		logger.debug("path info: {}", pathInfoStr);
 
@@ -96,8 +95,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	}
 
 	@Override
-	protected void setRequestAttributes(HttpServletRequest request)
-			throws ClientHTTPException, ServerHTTPException {
+	protected void setRequestAttributes(HttpServletRequest request) throws ClientHTTPException, ServerHTTPException {
 		String nextRepositoryID = repositoryID;
 		if (RepositoryConfigRepository.ID.equals(nextRepositoryID)) {
 			request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);

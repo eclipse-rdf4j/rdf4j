@@ -34,8 +34,7 @@ public class Disconnect extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-				+ "disconnect   Disconnects from the current set of repositories or server\n";
+		return PrintHelp.USAGE + "disconnect   Disconnects from the current set of repositories or server\n";
 	}
 
 	/**

@@ -118,8 +118,7 @@ public class QueryStorage {
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 * @throws IOException
 	 */
-	protected QueryStorage(final AppConfiguration appConfig)
-			throws RepositoryException, IOException {
+	protected QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
 		queries.initialize();
 	}
@@ -141,8 +140,7 @@ public class QueryStorage {
 	 * @return true, if it is possible to request a statement from the repository with the given credentials
 	 * @throws RepositoryException if there is an issue closing the connection
 	 */
-	public boolean checkAccess(final HTTPRepository repository)
-			throws RepositoryException {
+	public boolean checkAccess(final HTTPRepository repository) throws RepositoryException {
 		LOGGER.info("repository: {}", repository.getRepositoryURL());
 		boolean rval = true;
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -170,15 +168,13 @@ public class QueryStorage {
 	 * @throws RDF4JException
 	 */
 	public void saveQuery(final HTTPRepository repository, final String queryName, final String userName,
-			final boolean shared, final QueryLanguage queryLanguage, final String queryText,
-			final boolean infer, final int rowsPerPage)
-			throws RDF4JException {
+			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
+			final int rowsPerPage) throws RDF4JException {
 		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
-			throw new RepositoryException(
-					"May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
+			throw new RepositoryException("May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
 		}
-		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage
-				&& 100 != rowsPerPage && 200 != rowsPerPage) {
+		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
+				&& 200 != rowsPerPage) {
 			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
 		}
 		this.checkQueryText(queryText);
@@ -271,8 +267,7 @@ public class QueryStorage {
 	 * @throws MalformedQueryException  if a problem occurs during the update
 	 */
 	public void updateQuery(final IRI query, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer,
-			final int rowsPerPage)
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
 		update.replaceURI(QUERY, query);
@@ -296,14 +291,12 @@ public class QueryStorage {
 	 */
 	public void selectSavedQueries(final HTTPRepository repository, final String userName,
 			final TupleResultBuilder builder)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException,
-			QueryResultHandlerException {
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
 		select.replaceQuote(USER_NAME, userName);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			EVAL.evaluateTupleQuery(builder,
-					connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
+			EVAL.evaluateTupleQuery(builder, connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
 		}
 	}
 
@@ -386,17 +379,15 @@ public class QueryStorage {
 	 * @param infer
 	 * @param rowsPerPage   the rows per page to display for results
 	 */
-	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName,
-			final boolean shared, final QueryLanguage queryLanguage, final String queryText,
-			final boolean infer, final int rowsPerPage) {
+	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage) {
 		builder.replaceQuote(USER_NAME, userName);
 		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
 		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());
 		checkQueryText(queryText);
 		builder.replace("$<queryText>", QueryStringBuilder.quote(queryText, "'''", "'''"));
 		builder.replace("$<infer>", QueryStringBuilder.xsdQuote(String.valueOf(infer), "boolean"));
-		builder.replace("$<rowsPerPage>",
-				QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
+		builder.replace("$<rowsPerPage>", QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
 	}
 
 	/**

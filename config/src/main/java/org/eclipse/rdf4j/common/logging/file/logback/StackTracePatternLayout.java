@@ -21,8 +21,8 @@ public class StackTracePatternLayout extends PatternLayout {
 
 	static final String DEFAULT_CONVERSION_PATTERN = "[%-5p] %d{ISO8601} [%t] %m%n%ex";
 
-	public static final Pattern DEFAULT_PARSER_PATTERN = Pattern.compile(
-			"\\[([^\\]]*)\\] ([^\\[]*)\\[([^\\]]*)\\] (.*)");
+	public static final Pattern DEFAULT_PARSER_PATTERN = Pattern
+			.compile("\\[([^\\]]*)\\] ([^\\[]*)\\[([^\\]]*)\\] (.*)");
 
 	/**
 	 * Construct a StacktracePatternLayout with the default conversion pattern.
