@@ -50,8 +50,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 	private Filter filter;
 
-	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar,
-			Filter filter) {
+	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar, Filter filter) {
 		this.distanceFunction = distanceFunction;
 		this.distanceExpr = distanceExpr;
 		this.distanceVar = distVar;
@@ -74,8 +73,8 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		}
 	}
 
-	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty,
-			String geoVar, String subjectVar, Var contextVar) {
+	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty, String geoVar,
+			String subjectVar, Var contextVar) {
 		this.from = from;
 		this.units = units;
 		this.distance = dist;

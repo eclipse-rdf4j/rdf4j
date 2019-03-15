@@ -114,8 +114,8 @@ public class MemIRI implements IRI, MemResource {
 		} else if (other instanceof IRI) {
 			String otherStr = other.toString();
 
-			return namespace.length() + localName.length() == otherStr.length()
-					&& otherStr.endsWith(localName) && otherStr.startsWith(namespace);
+			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
+					&& otherStr.startsWith(namespace);
 		}
 
 		return false;

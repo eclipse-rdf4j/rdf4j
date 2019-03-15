@@ -55,8 +55,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleTest()
-			throws Exception {
+	public void simpleTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
 		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
@@ -77,12 +76,10 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleSearchTest()
-			throws Exception {
+	public void simpleSearchTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?predicate ?score ?subject where {\n");
-		buffer.append(
-				"(\"ornare\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
+		buffer.append("(\"ornare\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred <urn:test.org/onto#number> ?subject .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
@@ -110,13 +107,11 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test220Issue()
-			throws Exception {
+	public void test220Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
-		buffer.append(
-				"  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
+		buffer.append("  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
@@ -143,8 +138,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test235Issue()
-			throws Exception {
+	public void test235Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
 		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
@@ -152,8 +146,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("  ?pred <urn:ontology/score> ?score .\n");
 		buffer.append(" } where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
-		buffer.append(
-				"  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
+		buffer.append("  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("  bind(fn:upper-case(?label) as ?label2)\n");
 		buffer.append(" }");
@@ -168,8 +161,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	}
 
 	@Test
-	public void testDistanceFunction()
-			throws Exception {
+	public void testDistanceFunction() throws Exception {
 		RepositoryConnection connection = getConnection();
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
@@ -234,14 +226,12 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test771issue()
-			throws Exception {
+	public void test771issue() throws Exception {
 		StringBuilder sb = new StringBuilder();
 		sb.append("prefix t: <urn:test.org/onto#> \n");
 		sb.append("prefix kw: <urn:test.org/key-words/> \n\n");
 		sb.append("select ?term_string ?sub ?score where { \n");
-		sb.append(
-				"  (?term_string <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?sub ?score) . \n");
+		sb.append("  (?term_string <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?sub ?score) . \n");
 		sb.append("  ?sub a t:Data . \n");
 		sb.append("   { \n");
 		sb.append("   select ?term_string where { \n");
@@ -271,19 +261,16 @@ public abstract class AbstractLuceneSailSpinTest {
 		}
 	}
 
-	public int countStatements(RepositoryConnection connection)
-			throws Exception {
+	public int countStatements(RepositoryConnection connection) throws Exception {
 		RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
 		return Iterations.asList(sts).size();
 	}
 
-	public int countTupleResults(TupleQueryResult results)
-			throws Exception {
+	public int countTupleResults(TupleQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 
-	public int countGraphResults(GraphQueryResult results)
-			throws Exception {
+	public int countGraphResults(GraphQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 

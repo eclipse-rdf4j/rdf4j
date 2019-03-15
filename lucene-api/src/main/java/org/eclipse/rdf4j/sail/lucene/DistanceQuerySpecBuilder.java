@@ -41,8 +41,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	@Override
-	public void process(TupleExpr tupleExpr, BindingSet bindings,
-			final Collection<SearchQueryEvaluator> results)
+	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
 			throws SailException {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
@@ -50,8 +49,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 			final Map<String, DistanceQuerySpec> specs = new HashMap<>();
 
 			@Override
-			public void meet(FunctionCall f)
-					throws SailException {
+			public void meet(FunctionCall f) throws SailException {
 				if (GEOF.DISTANCE.stringValue().equals(f.getURI())) {
 					List<ValueExpr> args = f.getArgs();
 					if (args.size() != 3) {

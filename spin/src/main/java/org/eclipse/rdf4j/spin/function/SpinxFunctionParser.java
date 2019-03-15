@@ -43,8 +43,7 @@ public class SpinxFunctionParser implements FunctionParser {
 	}
 
 	@Override
-	public Function parse(IRI funcUri, TripleSource store)
-			throws RDF4JException {
+	public Function parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		Value codeValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_CODE_PROPERTY, store);
 		String code = (codeValue instanceof Literal) ? ((Literal) codeValue).getLabel() : null;
 		Value fileValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_FILE_PROPERTY, store);

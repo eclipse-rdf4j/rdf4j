@@ -108,10 +108,7 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SetFilterNode{" +
-				"targetNodeList=" + Arrays.toString(targetNodeList.toArray()) +
-				", index=" + index +
-				", returnValid=" + returnValid +
-				'}';
+		return "SetFilterNode{" + "targetNodeList=" + Arrays.toString(targetNodeList.toArray()) + ", index=" + index
+				+ ", returnValid=" + returnValid + '}';
 	}
 }

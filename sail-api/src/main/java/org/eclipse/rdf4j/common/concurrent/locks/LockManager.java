@@ -115,8 +115,7 @@ public class LockManager {
 	 *                              waiting for a notification. The interrupted status of the current thread is cleared
 	 *                              when this exception is thrown.
 	 */
-	public void waitForActiveLocks()
-			throws InterruptedException {
+	public void waitForActiveLocks() throws InterruptedException {
 		long now = -1;
 		while (true) {
 			boolean nochange;
@@ -154,8 +153,7 @@ public class LockManager {
 		weak.acquiredName = Thread.currentThread().getName();
 		weak.acquiredId = Thread.currentThread().getId();
 		if (trackLocks) {
-			weak.stack = new Throwable(
-					alias + " lock " + seq.incrementAndGet() + " acquired in " + weak.acquiredName);
+			weak.stack = new Throwable(alias + " lock " + seq.incrementAndGet() + " acquired in " + weak.acquiredName);
 		}
 		Lock lock = new Lock() {
 
@@ -262,8 +260,8 @@ public class LockManager {
 					alias = alias + ", " + lock.alias;
 				}
 			}
-			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active "
-					+ alias + " locks";
+			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active " + alias
+					+ " locks";
 			if (warn) {
 				logger.warn(msg);
 			} else {

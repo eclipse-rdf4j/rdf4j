@@ -148,13 +148,11 @@ class TripleStore implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public TripleStore(File dir, String indexSpecStr)
-			throws IOException, SailException {
+	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
 		this(dir, indexSpecStr, false);
 	}
 
-	public TripleStore(File dir, String indexSpecStr, boolean forceSync)
-			throws IOException, SailException {
+	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
 		this.txnStatusFile = new TxnStatusFile(dir);
@@ -216,8 +214,7 @@ class TripleStore implements Closeable {
 	 * Methods *
 	 *---------*/
 
-	private void checkVersion()
-			throws SailException {
+	private void checkVersion() throws SailException {
 		// Check version number
 		String versionStr = properties.getProperty(VERSION_KEY);
 		if (versionStr == null) {
@@ -236,8 +233,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private Set<String> getIndexSpecs()
-			throws SailException {
+	private Set<String> getIndexSpecs() throws SailException {
 		String indexesStr = properties.getProperty(INDEXES_KEY);
 
 		if (indexesStr == null) {
@@ -260,8 +256,7 @@ class TripleStore implements Closeable {
 	 * @param indexSpecStr A string like "spoc, pocs, cosp".
 	 * @return A Set containing the parsed index specifications.
 	 */
-	private Set<String> parseIndexSpecList(String indexSpecStr)
-			throws SailException {
+	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
 		Set<String> indexes = new HashSet<>();
 
 		if (indexSpecStr != null) {
@@ -272,8 +267,7 @@ class TripleStore implements Closeable {
 				// sanity checks
 				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
 						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
-					throw new SailException(
-							"invalid value '" + index + "' in index specification: " + indexSpecStr);
+					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
 				}
 
 				indexes.add(index);
@@ -283,16 +277,14 @@ class TripleStore implements Closeable {
 		return indexes;
 	}
 
-	private void initIndexes(Set<String> indexSpecs)
-			throws IOException {
+	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : indexSpecs) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(fieldSeq));
 		}
 	}
 
-	private void processUncompletedTransaction(TxnStatus txnStatus)
-			throws IOException {
+	private void processUncompletedTransaction(TxnStatus txnStatus) throws IOException {
 		switch (txnStatus) {
 		case COMMITTING:
 			logger.info("Detected uncompleted commit, trying to complete");
@@ -328,8 +320,7 @@ class TripleStore implements Closeable {
 			logger.info("Read invalid or unknown transaction status, trying to roll back");
 			try {
 				rollback();
-				logger.info(
-						"Successfully performed a rollback for invalid or unknown transaction status");
+				logger.info("Successfully performed a rollback for invalid or unknown transaction status");
 			} catch (IOException e) {
 				logger.error("Failed to perform rollback for invalid or unknown transaction status", e);
 				throw e;
@@ -338,8 +329,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
-			throws IOException, SailException {
+	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs) throws IOException, SailException {
 		Map<String, TripleIndex> currentIndexes = new HashMap<>();
 		for (TripleIndex index : indexes) {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
@@ -422,8 +412,7 @@ class TripleStore implements Closeable {
 	}
 
 	@Override
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		try {
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			for (TripleIndex index : indexes) {
@@ -451,8 +440,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public RecordIterator getTriples(int subj, int pred, int obj, int context)
-			throws IOException {
+	public RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
 		// Return all triples except those that were added but not yet committed
 		return getTriples(subj, pred, obj, context, 0, ADDED_FLAG);
 	}
@@ -475,8 +463,7 @@ class TripleStore implements Closeable {
 	 * @return All triples sorted by context or null if no context index exists
 	 * @throws IOException
 	 */
-	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction)
-			throws IOException {
+	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) throws IOException {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getAllTriplesSortedByContext(0, TripleStore.REMOVED_FLAG);
@@ -487,8 +474,7 @@ class TripleStore implements Closeable {
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
-			boolean readTransaction)
-			throws IOException {
+			boolean readTransaction) throws IOException {
 		int flags = 0;
 		int flagsMask = 0;
 
@@ -530,8 +516,7 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next()
-				throws IOException {
+		public byte[] next() throws IOException {
 			byte[] result;
 
 			while ((result = wrappedIter.next()) != null) {
@@ -550,14 +535,12 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public void set(byte[] value)
-				throws IOException {
+		public void set(byte[] value) throws IOException {
 			wrappedIter.set(value);
 		}
 
 		@Override
-		public void close()
-				throws IOException {
+		public void close() throws IOException {
 			wrappedIter.close();
 		}
 	} // end inner class ExplicitStatementFilter
@@ -571,8 +554,7 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next()
-				throws IOException {
+		public byte[] next() throws IOException {
 			byte[] result;
 
 			while ((result = wrappedIter.next()) != null) {
@@ -589,14 +571,12 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public void set(byte[] value)
-				throws IOException {
+		public void set(byte[] value) throws IOException {
 			wrappedIter.set(value);
 		}
 
 		@Override
-		public void close()
-				throws IOException {
+		public void close() throws IOException {
 			wrappedIter.close();
 		}
 	} // end inner class ImplicitStatementFilter
@@ -608,8 +588,7 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);
 	}
 
-	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask)
-			throws IOException {
+	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) throws IOException {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
@@ -620,8 +599,8 @@ class TripleStore implements Closeable {
 		return null;
 	}
 
-	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags,
-			int flagsMask, TripleIndex index, boolean rangeSearch) {
+	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags, int flagsMask,
+			TripleIndex index, boolean rangeSearch) {
 		byte[] searchKey = getSearchKey(subj, pred, obj, context, flags);
 		byte[] searchMask = getSearchMask(subj, pred, obj, context, flagsMask);
 
@@ -637,8 +616,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	protected double cardinality(int subj, int pred, int obj, int context)
-			throws IOException {
+	protected double cardinality(int subj, int pred, int obj, int context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		BTree btree = index.btree;
 
@@ -670,20 +648,17 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		for (TripleIndex index : indexes) {
 			index.getBTree().clear();
 		}
 	}
 
-	public boolean storeTriple(int subj, int pred, int obj, int context)
-			throws IOException {
+	public boolean storeTriple(int subj, int pred, int obj, int context) throws IOException {
 		return storeTriple(subj, pred, obj, context, true);
 	}
 
-	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit)
-			throws IOException {
+	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
 		boolean stAdded = false;
 
 		byte[] data = getData(subj, pred, obj, context, 0);
@@ -751,8 +726,7 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
-	public int removeTriples(int subj, int pred, int obj, int context)
-			throws IOException {
+	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
 		RecordIterator iter = getTriples(subj, pred, obj, context, 0, 0);
 		return removeTriples(iter);
 	}
@@ -768,15 +742,13 @@ class TripleStore implements Closeable {
 	 * @return The number of triples that were removed.
 	 * @throws IOException
 	 */
-	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit)
-			throws IOException {
+	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
 		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
 		return removeTriples(iter);
 	}
 
-	private int removeTriples(RecordIterator iter)
-			throws IOException {
+	private int removeTriples(RecordIterator iter) throws IOException {
 		byte[] data = iter.next();
 
 		if (data == null) {
@@ -819,16 +791,14 @@ class TripleStore implements Closeable {
 		return count;
 	}
 
-	public void startTransaction()
-			throws IOException {
+	public void startTransaction() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE);
 
 		// Create a record cache for storing updated triples with a maximum of
 		// some 10% of the number of triples
 		long maxRecords = indexes.get(0).getBTree().getValueCountEstimate() / 10L;
 		if (updatedTriplesCache == null) {
-			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords,
-					new TripleComparator("spoc"));
+			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords, new TripleComparator("spoc"));
 		} else {
 			assert updatedTriplesCache
 					.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
@@ -836,8 +806,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public void commit()
-			throws IOException {
+	public void commit() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
 
 		// updatedTriplesCache will be null when recovering from a crashed commit
@@ -897,8 +866,7 @@ class TripleStore implements Closeable {
 		// checkAllCommitted();
 	}
 
-	private void checkAllCommitted()
-			throws IOException {
+	private void checkAllCommitted() throws IOException {
 		for (TripleIndex index : indexes) {
 			System.out.println("Checking " + index + " index");
 			BTree btree = index.getBTree();
@@ -916,8 +884,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public void rollback()
-			throws IOException {
+	public void rollback() throws IOException {
 		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK);
 
 		// updatedTriplesCache will be null when recovering from a crash
@@ -975,8 +942,7 @@ class TripleStore implements Closeable {
 		txnStatusFile.setTxnStatus(TxnStatus.NONE);
 	}
 
-	protected void sync()
-			throws IOException {
+	protected void sync() throws IOException {
 		List<Throwable> exceptions = new ArrayList<>();
 		for (TripleIndex index : indexes) {
 			try {
@@ -1050,8 +1016,7 @@ class TripleStore implements Closeable {
 		return maxValue;
 	}
 
-	private Properties loadProperties(File propFile)
-			throws IOException {
+	private Properties loadProperties(File propFile) throws IOException {
 		try (InputStream in = new FileInputStream(propFile)) {
 			Properties properties = new Properties();
 			properties.load(in);
@@ -1059,8 +1024,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void storeProperties(File propFile)
-			throws IOException {
+	private void storeProperties(File propFile) throws IOException {
 		try (OutputStream out = new FileOutputStream(propFile)) {
 			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
 		}
@@ -1076,11 +1040,9 @@ class TripleStore implements Closeable {
 
 		private final BTree btree;
 
-		public TripleIndex(String fieldSeq)
-				throws IOException {
+		public TripleIndex(String fieldSeq) throws IOException {
 			tripleComparator = new TripleComparator(fieldSeq);
-			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator,
-					forceSync);
+			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);
 		}
 
 		private String getFilenamePrefix(String fieldSeq) {
@@ -1187,8 +1149,8 @@ class TripleStore implements Closeable {
 					fieldIdx = CONTEXT_IDX;
 					break;
 				default:
-					throw new IllegalArgumentException("invalid character '" + field
-							+ "' in field sequence: " + new String(fieldSeq));
+					throw new IllegalArgumentException(
+							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
 				}
 
 				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);

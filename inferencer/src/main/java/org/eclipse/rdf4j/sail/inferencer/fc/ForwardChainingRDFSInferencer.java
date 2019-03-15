@@ -40,8 +40,7 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 	 *---------*/
 
 	@Override
-	public ForwardChainingRDFSInferencerConnection getConnection()
-			throws SailException {
+	public ForwardChainingRDFSInferencerConnection getConnection() throws SailException {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new ForwardChainingRDFSInferencerConnection(this, con);
@@ -54,8 +53,7 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 	 * Adds axiom statements to the underlying Sail.
 	 */
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		super.initialize();
 
 		try (ForwardChainingRDFSInferencerConnection con = getConnection()) {

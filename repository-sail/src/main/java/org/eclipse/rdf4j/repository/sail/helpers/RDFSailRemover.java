@@ -98,8 +98,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-			throws RDFHandlerException {
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();

@@ -58,8 +58,7 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 		return query != null;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Dataset dataset,
-			BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Dataset dataset, BindingSet bindings)
 			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> rval = null;
 		if (query != null) {
@@ -85,8 +84,7 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meetOther(this);
 	}
 

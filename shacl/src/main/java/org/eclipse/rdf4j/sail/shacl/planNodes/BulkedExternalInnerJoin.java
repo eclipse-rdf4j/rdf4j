@@ -231,9 +231,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" +
-				"parsedQuery=" + parsedQuery.getSourceString() +
-				'}';
+		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
 	}
 
 	@Override

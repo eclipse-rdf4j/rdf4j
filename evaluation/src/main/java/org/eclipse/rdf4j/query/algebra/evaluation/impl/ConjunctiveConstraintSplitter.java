@@ -85,8 +85,7 @@ public class ConjunctiveConstraintSplitter implements QueryOptimizer {
 			}
 		}
 
-		protected void getConjunctiveConstraints(ValueExpr valueExpr,
-				List<ValueExpr> conjunctiveConstraints) {
+		protected void getConjunctiveConstraints(ValueExpr valueExpr, List<ValueExpr> conjunctiveConstraints) {
 			if (valueExpr instanceof And) {
 				And and = (And) valueExpr;
 				getConjunctiveConstraints(and.getLeftArg(), conjunctiveConstraints);

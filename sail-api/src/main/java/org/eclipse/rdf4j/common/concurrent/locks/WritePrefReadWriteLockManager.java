@@ -74,8 +74,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * released.
 	 */
 	@Override
-	public Lock getReadLock()
-			throws InterruptedException {
+	public Lock getReadLock() throws InterruptedException {
 		while (true) {
 			Lock lock = tryReadLock();
 			if (lock != null)
@@ -108,8 +107,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * released.
 	 */
 	@Override
-	public synchronized Lock getWriteLock()
-			throws InterruptedException {
+	public synchronized Lock getWriteLock() throws InterruptedException {
 		writeRequested = true;
 		try {
 			// Wait for the write lock to be released

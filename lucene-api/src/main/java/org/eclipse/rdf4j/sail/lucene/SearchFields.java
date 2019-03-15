@@ -62,8 +62,8 @@ public final class SearchFields {
 
 	public static final String HIGHLIGHTER_POST_TAG = "</B>";
 
-	public static final Pattern HIGHLIGHTER_PATTERN = Pattern.compile(
-			"(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
+	public static final Pattern HIGHLIGHTER_PATTERN = Pattern
+			.compile("(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
 
 	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 

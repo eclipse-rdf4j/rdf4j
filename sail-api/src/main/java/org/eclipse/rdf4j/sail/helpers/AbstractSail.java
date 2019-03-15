@@ -177,8 +177,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	@Override
-	public void init()
-			throws SailException {
+	public void init() throws SailException {
 		initializationLock.writeLock().lock();
 		try {
 			logger.trace("is initialized: {}", isInitialized());
@@ -198,13 +197,11 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Do store-specific operations to initialize the store. The default implementation of this method does nothing.
 	 */
-	protected void initializeInternal()
-			throws SailException {
+	protected void initializeInternal() throws SailException {
 	}
 
 	@Override
-	public void shutDown()
-			throws SailException {
+	public void shutDown() throws SailException {
 		initializationLock.writeLock().lock();
 		try {
 			if (!isInitialized()) {
@@ -237,12 +234,10 @@ public abstract class AbstractSail implements Sail {
 				Throwable stackTrace = entry.getValue();
 
 				if (stackTrace == null) {
-					logger.warn(
-							"Closing active connection due to shut down; consider setting the {} system property",
+					logger.warn("Closing active connection due to shut down; consider setting the {} system property",
 							DEBUG_PROP);
 				} else {
-					logger.warn("Closing active connection due to shut down, connection was acquired in",
-							stackTrace);
+					logger.warn("Closing active connection due to shut down, connection was acquired in", stackTrace);
 				}
 
 				try {
@@ -267,12 +262,10 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Do store-specific operations to ensure proper shutdown of the store.
 	 */
-	protected abstract void shutDownInternal()
-			throws SailException;
+	protected abstract void shutDownInternal() throws SailException;
 
 	@Override
-	public SailConnection getConnection()
-			throws SailException {
+	public SailConnection getConnection() throws SailException {
 		initializationLock.readLock().lock();
 		try {
 			if (!isInitialized()) {
@@ -297,8 +290,7 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @return A connection to the store.
 	 */
-	protected abstract SailConnection getConnectionInternal()
-			throws SailException;
+	protected abstract SailConnection getConnectionInternal() throws SailException;
 
 	/**
 	 * Signals to the store that the supplied connection has been closed; called by

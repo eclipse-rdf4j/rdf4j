@@ -41,8 +41,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new RegexAsStringFunctionVisitor());
 	}
 
-	protected class RegexAsStringFunctionVisitor
-			extends AbstractQueryModelVisitor<RuntimeException> {
+	protected class RegexAsStringFunctionVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
 		public void meet(Regex node) {

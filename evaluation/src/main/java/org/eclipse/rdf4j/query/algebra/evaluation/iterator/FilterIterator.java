@@ -41,8 +41,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 *--------------*/
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy)
-			throws QueryEvaluationException {
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filter = filter;
 		this.strategy = strategy;
@@ -68,8 +67,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	}
 
 	@Override
-	protected boolean accept(BindingSet bindings)
-			throws QueryEvaluationException {
+	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
 		try {
 			// Limit the bindings to the ones that are in scope for this filter
 			QueryBindingSet scopeBindings = new QueryBindingSet(bindings);

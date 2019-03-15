@@ -30,8 +30,7 @@ import java.util.UUID;
  */
 public class Utils {
 
-	public static void loadShapeData(ShaclSail sail, String resourceName)
-			throws IOException {
+	public static void loadShapeData(ShaclSail sail, String resourceName) throws IOException {
 		sail.disableValidation();
 		Model shapes;
 		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
@@ -48,8 +47,7 @@ public class Utils {
 
 	}
 
-	public static void loadShapeData(SailRepository repo, String resourceName)
-			throws IOException {
+	public static void loadShapeData(SailRepository repo, String resourceName) throws IOException {
 		((ShaclSail) repo.getSail()).disableValidation();
 
 		Model shapes;

@@ -36,12 +36,8 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-				shaclSailConnection,
-				nodeShape,
-				(parent) -> new MinLengthFilter(parent, minLength),
-				this,
-				overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

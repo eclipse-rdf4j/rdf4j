@@ -33,27 +33,23 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 	 * @param used    An atomic long used to monitor how many elements are in the set collections.
 	 * @param maxSize Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
-	public LimitedSizeIntersectIteration(
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, AtomicLong used,
-			long maxSize) {
+	public LimitedSizeIntersectIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
+			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, AtomicLong used, long maxSize) {
 		this(arg1, arg2, false, used, maxSize);
 
 	}
 
-	public LimitedSizeIntersectIteration(
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, boolean distinct,
-			AtomicLong used, long maxSize) {
+	public LimitedSizeIntersectIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
+			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, boolean distinct, AtomicLong used,
+			long maxSize) {
 		super(arg1, arg2, distinct);
 		this.used = used;
 		this.maxSize = maxSize;
 	}
 
 	@Override
-	public Set<BindingSet> addSecondSet(
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, Set<BindingSet> set)
-			throws QueryEvaluationException {
+	public Set<BindingSet> addSecondSet(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
+			Set<BindingSet> set) throws QueryEvaluationException {
 
 		LimitedSizeIteratorUtil.addAll(arg2, set, used, maxSize);
 		return set;
@@ -63,8 +59,7 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 	 * After closing the set is cleared and any "used" capacity for collections is returned.
 	 */
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

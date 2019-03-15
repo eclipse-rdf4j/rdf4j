@@ -72,21 +72,18 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				}
 
 				Set<String> assuredBindingNames = filterArg.getAssuredBindingNames();
-				if (isUnboundVar(leftArg, assuredBindingNames)
-						|| isUnboundVar(rightArg, assuredBindingNames)) {
+				if (isUnboundVar(leftArg, assuredBindingNames) || isUnboundVar(rightArg, assuredBindingNames)) {
 					// One or both var(s) are potentially unbound, inlining could
 					// invalidate the result e.g. in case of left joins
 					return;
 				}
 
 				if (leftArg instanceof Var || rightArg instanceof Var) {
-					if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var
-							&& rightArg instanceof Var) {
+					if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var && rightArg instanceof Var) {
 						final ArbitraryLengthPath alp = (ArbitraryLengthPath) filterArg;
 						final List<Var> sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);
 
-						if (sameTermArgs.contains(alp.getSubjectVar())
-								&& sameTermArgs.contains(alp.getObjectVar())) {
+						if (sameTermArgs.contains(alp.getSubjectVar()) && sameTermArgs.contains(alp.getObjectVar())) {
 							// SameTerm provides a deferred mapping to allow arbitrary-length property path to produce
 							// cyclic paths. See SES-1685.
 							// we can not inline.
@@ -185,8 +182,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(ProjectionElem projElem)
-				throws RuntimeException {
+		public void meet(ProjectionElem projElem) throws RuntimeException {
 			if (projElem.getSourceName().equals(oldVar.getName())) {
 				projElem.setSourceName(newVar.getName());
 			}

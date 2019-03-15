@@ -25,8 +25,7 @@ final class DefaultWktWriter implements WktWriter {
 	}
 
 	@Override
-	public String toWkt(Shape shape)
-			throws IOException {
+	public String toWkt(Shape shape) throws IOException {
 		if (shape.isEmpty()) {
 			if (shape instanceof Point) {
 				return "POINT EMPTY";

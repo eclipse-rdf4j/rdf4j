@@ -33,11 +33,9 @@ public class Replace implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 3 || args.length > 4) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for REPLACE: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for REPLACE: " + args.length);
 		}
 
 		try {

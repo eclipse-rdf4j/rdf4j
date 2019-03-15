@@ -32,11 +32,9 @@ public class EncodeForUri implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(
-					"ENCODE_FOR_URI requires exactly 1 argument, got " + args.length);
+			throw new ValueExprEvaluationException("ENCODE_FOR_URI requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
@@ -96,7 +94,7 @@ public class EncodeForUri implements Function {
 	}
 
 	private final boolean isUnreserved(char c) {
-		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.'
-				|| c == '_' || c == '~';
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_'
+				|| c == '~';
 	}
 }

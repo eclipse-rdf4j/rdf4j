@@ -32,8 +32,7 @@ public class UpperCase implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("UCASE requires exactly 1 argument, got " + args.length);
 		}

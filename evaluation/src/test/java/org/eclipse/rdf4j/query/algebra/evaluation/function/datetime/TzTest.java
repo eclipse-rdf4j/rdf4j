@@ -33,8 +33,7 @@ public class TzTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		tz = new Tz();
 	}
 
@@ -42,16 +41,14 @@ public class TzTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 	}
 
 	@Test
 	public void testEvaluate1() {
 		try {
 
-			Literal result = tz.evaluate(f,
-					f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
+			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
 
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());

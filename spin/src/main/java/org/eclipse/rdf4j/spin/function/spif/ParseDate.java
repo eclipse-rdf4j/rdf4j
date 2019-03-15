@@ -46,8 +46,7 @@ public class ParseDate extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-			throws ValueExprEvaluationException {
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
@@ -106,8 +105,7 @@ public class ParseDate extends BinaryFunction {
 		boolean isDateSet() {
 			return fieldsSet.contains(Calendar.YEAR) || fieldsSet.contains(Calendar.MONTH)
 					|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)
-					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH)
-					|| fieldsSet.contains(Calendar.DAY_OF_YEAR);
+					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH) || fieldsSet.contains(Calendar.DAY_OF_YEAR);
 		}
 
 		boolean isTimeSet() {

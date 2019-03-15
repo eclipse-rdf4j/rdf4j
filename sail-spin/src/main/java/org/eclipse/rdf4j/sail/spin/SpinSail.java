@@ -130,15 +130,13 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	}
 
 	@Override
-	public SpinSailConnection getConnection()
-			throws SailException {
+	public SpinSailConnection getConnection() throws SailException {
 		InferencerConnection con = (InferencerConnection) super.getConnection();
 		return new SpinSailConnection(this, con);
 	}
 
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		super.initialize();
 
 		SpinFunctionInterpreter.registerSpinParsingFunctions(parser, functionRegistry);
@@ -146,8 +144,8 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 		try (SpinSailConnection con = getConnection()) {
 			con.begin();
-			Set<Statement> stmts = Iterations.asSet(con.getStatements(
-					getValueFactory().createIRI("http://spinrdf.org/sp"), RDF.TYPE, OWL.ONTOLOGY, true));
+			Set<Statement> stmts = Iterations.asSet(con
+					.getStatements(getValueFactory().createIRI("http://spinrdf.org/sp"), RDF.TYPE, OWL.ONTOLOGY, true));
 			if (stmts.isEmpty()) {
 				con.addAxiomStatements();
 			}

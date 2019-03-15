@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.common.io.FileUtil;
  */
 public class DataStorePerfTest {
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		System.out.println("DataStore performance test");
 		System.out.println("==========================");
 
@@ -49,8 +48,7 @@ public class DataStorePerfTest {
 		}
 	}
 
-	private static long[] runPerformanceTest(int stringCount)
-			throws Exception {
+	private static long[] runPerformanceTest(int stringCount) throws Exception {
 		System.out.println("Running performance test with " + stringCount + " strings...");
 
 		long[] timeData = new long[4];

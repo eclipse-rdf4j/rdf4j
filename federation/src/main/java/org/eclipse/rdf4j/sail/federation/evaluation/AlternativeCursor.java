@@ -32,8 +32,7 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 	}
 
 	@Override
-	public void handleClose()
-			throws QueryEvaluationException {
+	public void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {
@@ -46,8 +45,7 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 	}
 
 	@Override
-	public E getNextElement()
-			throws QueryEvaluationException {
+	public E getNextElement() throws QueryEvaluationException {
 		if (delegate == null) {
 			delegate = primary.hasNext() ? primary : alternative;
 		}

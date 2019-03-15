@@ -114,9 +114,7 @@ public class Select implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Select{" +
-				"query='" + query + '\'' +
-				'}';
+		return "Select{" + "query='" + query + '\'' + '}';
 	}
 
 	@Override
@@ -135,8 +133,7 @@ public class Select implements PlanNode {
 				select.connection instanceof MemoryStoreConnection
 						? ((MemoryStoreConnection) select.connection).getSail()
 						: select.connection)
-				&&
-				query.equals(select.query);
+				&& query.equals(select.query);
 	}
 
 	@Override

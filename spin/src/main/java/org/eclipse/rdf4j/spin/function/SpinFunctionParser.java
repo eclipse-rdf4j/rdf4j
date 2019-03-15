@@ -33,8 +33,7 @@ public class SpinFunctionParser implements FunctionParser {
 	}
 
 	@Override
-	public Function parse(IRI funcUri, TripleSource store)
-			throws RDF4JException {
+	public Function parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		Value body = TripleSources.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
 		if (!(body instanceof Resource)) {
 			return null;

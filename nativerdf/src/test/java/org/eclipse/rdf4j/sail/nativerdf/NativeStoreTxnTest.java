@@ -40,8 +40,7 @@ public class NativeStoreTxnTest {
 	protected IRI ctx = vf.createIRI("http://ex.org/ctx");
 
 	@Before
-	public void before()
-			throws Exception {
+	public void before() throws Exception {
 
 		File dataDir = tempFolder.newFolder("dbmodel");
 		repo = new SailRepository(new NativeStore(dataDir, "spoc,posc"));
@@ -49,14 +48,12 @@ public class NativeStoreTxnTest {
 	}
 
 	@After
-	public void after()
-			throws Exception {
+	public void after() throws Exception {
 		repo.shutDown();
 	}
 
 	@Test
-	public void testTxncacheCleanup()
-			throws Exception {
+	public void testTxncacheCleanup() throws Exception {
 
 		/*
 		 * Test for issue # On windows the txncacheXXX.dat files did not get properly deleted, as the file is locked
@@ -83,8 +80,7 @@ public class NativeStoreTxnTest {
 
 		// make sure there is no txncacheXXX.dat file
 		Assert.assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
-				.anyMatch(
-						file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
+				.anyMatch(file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			Assert.assertEquals(1, conn.size());

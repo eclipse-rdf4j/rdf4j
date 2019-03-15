@@ -38,8 +38,6 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" +
-				"languageIn=" + Arrays.toString(languageIn.toArray()) +
-				'}';
+		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
 	}
 }

@@ -44,11 +44,7 @@ public class Tuple implements Comparable<Tuple> {
 	}
 
 	public Tuple(BindingSet bindingset) {
-		bindingset
-				.getBindingNames()
-				.stream()
-				.sorted()
-				.forEach(name -> line.add(bindingset.getValue(name)));
+		bindingset.getBindingNames().stream().sorted().forEach(name -> line.add(bindingset.getValue(name)));
 
 	}
 

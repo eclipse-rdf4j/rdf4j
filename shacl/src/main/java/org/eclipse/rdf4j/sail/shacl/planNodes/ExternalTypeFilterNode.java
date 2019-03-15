@@ -131,9 +131,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" +
-				"filterOnType=" + filterOnType +
-				'}';
+		return "ExternalTypeFilterNode{" + "filterOnType=" + filterOnType + '}';
 	}
 
 	@Override

@@ -33,8 +33,7 @@ public class TestRepositoryManagerFederator {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		RepositoryManager manager = mock(RepositoryManager.class);
 		Repository system = mock(Repository.class);
 		when(system.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
@@ -43,8 +42,7 @@ public class TestRepositoryManagerFederator {
 	}
 
 	@Test
-	public final void testDirectRecursiveAddThrowsException()
-			throws MalformedURLException, RDF4JException {
+	public final void testDirectRecursiveAddThrowsException() throws MalformedURLException, RDF4JException {
 		String id = "fedtest";
 		assertThatThrownBy(() -> federator.addFed(id, "Federation Test", Arrays.asList(new String[] { id, "ignore" }),
 				true, false)).isInstanceOf(RepositoryConfigException.class)

@@ -27,15 +27,13 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	 * @param iter       the wrapped iteration over sail objects.
 	 * @param connection the connection from which this iteration originates.
 	 */
-	public SailBaseIteration(CloseableIteration<? extends T, ? extends E> iter,
-			AbstractSailConnection connection) {
+	public SailBaseIteration(CloseableIteration<? extends T, ? extends E> iter, AbstractSailConnection connection) {
 		super(iter);
 		this.connection = connection;
 	}
 
 	@Override
-	public boolean hasNext()
-			throws E {
+	public boolean hasNext() throws E {
 		if (isClosed()) {
 			return false;
 		}
@@ -50,8 +48,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	}
 
 	@Override
-	protected void handleClose()
-			throws E {
+	protected void handleClose() throws E {
 		try {
 			super.handleClose();
 		} finally {
@@ -60,8 +57,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	}
 
 	@Deprecated
-	protected void forceClose()
-			throws E {
+	protected void forceClose() throws E {
 		close();
 	}
 }

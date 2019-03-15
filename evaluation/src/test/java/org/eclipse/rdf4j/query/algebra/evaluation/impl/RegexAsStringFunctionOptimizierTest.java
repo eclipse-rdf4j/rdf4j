@@ -28,16 +28,14 @@ import org.junit.Test;
 public class RegexAsStringFunctionOptimizierTest {
 
 	@Test
-	public void testEqualsTerm()
-			throws MalformedQueryException {
+	public void testEqualsTerm() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(?o, '^a$'))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(?o =  'a')}";
 		testOptimizer(optimizedQuery, unoptimizedQuery);
 	}
 
 	@Test
-	public void testStrStartsTerm()
-			throws MalformedQueryException {
+	public void testStrStartsTerm() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(?o, '^a'))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(strStarts(?o, 'a'))}";
 
@@ -45,8 +43,7 @@ public class RegexAsStringFunctionOptimizierTest {
 	}
 
 	@Test
-	public void testStrEndsTerm()
-			throws MalformedQueryException {
+	public void testStrEndsTerm() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(?o, 'a$'))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(strEnds(?o, 'a'))}";
 
@@ -54,40 +51,35 @@ public class RegexAsStringFunctionOptimizierTest {
 	}
 
 	@Test
-	public void testContains()
-			throws MalformedQueryException {
+	public void testContains() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(?o, 'a'))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(contains(?o, 'a'))}";
 		testOptimizer(optimizedQuery, unoptimizedQuery);
 	}
 
 	@Test
-	public void testContainsWithDollar()
-			throws MalformedQueryException {
+	public void testContainsWithDollar() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX($o, 'a'))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(contains(?o, 'a'))}";
 		testOptimizer(optimizedQuery, unoptimizedQuery);
 	}
 
 	@Test
-	public void testContainsWithStrangeSpacingAndCaptials()
-			throws MalformedQueryException {
+	public void testContainsWithStrangeSpacingAndCaptials() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REgeX(  $o , \"a\" ))}";
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(contains(?o,  'a'))}";
 		testOptimizer(optimizedQuery, unoptimizedQuery);
 	}
 
 	@Test
-	public void testNotContains()
-			throws MalformedQueryException {
+	public void testNotContains() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(?o, 'a', 'i'))}";
 
 		testOptimizer(unoptimizedQuery, unoptimizedQuery);
 	}
 
 	@Test
-	public void testContainsFunction()
-			throws MalformedQueryException {
+	public void testContainsFunction() throws MalformedQueryException {
 		String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(CONTAINS(STR(?o), 'a'))}";
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(STR(?o), 'a'))}";
 
@@ -112,8 +104,7 @@ public class RegexAsStringFunctionOptimizierTest {
 	}
 
 	@Test
-	public void testContainsAsIs()
-			throws MalformedQueryException {
+	public void testContainsAsIs() throws MalformedQueryException {
 		String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(contains(?o, 'a*'))}";
 
 		testOptimizer(unoptimizedQuery, unoptimizedQuery);
@@ -126,8 +117,7 @@ public class RegexAsStringFunctionOptimizierTest {
 		QueryRoot optRoot = new QueryRoot(pq.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
-		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery,
-				null);
+		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
 		QueryRoot root = new QueryRoot(expectedParsedQuery.getTupleExpr());
 		assertQueryModelTrees(root, optRoot);
 	}

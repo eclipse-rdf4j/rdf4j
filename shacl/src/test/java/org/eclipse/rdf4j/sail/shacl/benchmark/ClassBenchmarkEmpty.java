@@ -67,12 +67,10 @@ public class ClassBenchmarkEmpty {
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, FOAF.PERSON));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.KNOWS,
-								vf.createIRI("http://example.com/friend" + i + "_" + j)));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/friend" + i + "_" + j), RDF.TYPE,
-								FOAF.PERSON));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.KNOWS,
+						vf.createIRI("http://example.com/friend" + i + "_" + j)));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/friend" + i + "_" + j), RDF.TYPE,
+						FOAF.PERSON));
 			}
 		}
 		System.gc();

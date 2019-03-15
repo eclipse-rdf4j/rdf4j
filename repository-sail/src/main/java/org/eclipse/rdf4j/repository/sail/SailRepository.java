@@ -141,8 +141,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	protected void initializeInternal()
-			throws RepositoryException {
+	protected void initializeInternal() throws RepositoryException {
 		try {
 			sail.init();
 		} catch (SailLockedException e) {
@@ -156,8 +155,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal()
-			throws RepositoryException {
+	protected void shutDownInternal() throws RepositoryException {
 		try {
 			sail.shutDown();
 		} catch (SailException e) {
@@ -175,8 +173,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public boolean isWritable()
-			throws RepositoryException {
+	public boolean isWritable() throws RepositoryException {
 		try {
 			return sail.isWritable();
 		} catch (SailException e) {
@@ -190,8 +187,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public SailRepositoryConnection getConnection()
-			throws RepositoryException {
+	public SailRepositoryConnection getConnection() throws RepositoryException {
 		try {
 			return new SailRepositoryConnection(this, sail.getConnection());
 		} catch (SailException e) {

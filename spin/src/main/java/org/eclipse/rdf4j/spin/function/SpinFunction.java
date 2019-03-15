@@ -60,8 +60,7 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		Value result;
 		if (parsedQuery instanceof ParsedBooleanQuery) {
@@ -82,8 +81,7 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 				if (queryResult.hasNext()) {
 					BindingSet bs = queryResult.next();
 					if (bs.size() != 1) {
-						throw new ValueExprEvaluationException(
-								"Only a single result variables is supported: " + bs);
+						throw new ValueExprEvaluationException("Only a single result variables is supported: " + bs);
 					}
 					result = bs.iterator().next().getValue();
 				} else {

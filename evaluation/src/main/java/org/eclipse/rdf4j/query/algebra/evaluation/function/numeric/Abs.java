@@ -32,8 +32,7 @@ public class Abs implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("ABS requires exactly 1 argument, got " + args.length);
 		}
@@ -53,8 +52,7 @@ public class Abs implements Function {
 					double absoluteValue = Math.abs(literal.doubleValue());
 					return valueFactory.createLiteral(Double.toString(absoluteValue), datatype);
 				} else {
-					throw new ValueExprEvaluationException(
-							"unexpected datatype for function operand: " + args[0]);
+					throw new ValueExprEvaluationException("unexpected datatype for function operand: " + args[0]);
 				}
 			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);

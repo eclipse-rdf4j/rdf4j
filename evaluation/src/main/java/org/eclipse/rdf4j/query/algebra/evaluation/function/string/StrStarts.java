@@ -30,8 +30,7 @@ public class StrStarts implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException("STRSTARTS requires 2 arguments, got " + args.length);
 		}

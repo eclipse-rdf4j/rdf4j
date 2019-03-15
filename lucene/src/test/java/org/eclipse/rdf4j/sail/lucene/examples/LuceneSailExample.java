@@ -39,16 +39,14 @@ public class LuceneSailExample {
 	 * 
 	 * @param args
 	 */
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		createSimple();
 	}
 
 	/**
 	 * Create a LuceneSail and add some triples to it, ask a query.
 	 */
-	public static void createSimple()
-			throws Exception {
+	public static void createSimple() throws Exception {
 		// create a sesame memory sail
 		MemoryStore memoryStore = new MemoryStore();
 
@@ -71,8 +69,8 @@ public class LuceneSailExample {
 		try ( // add some test data, the FOAF ont
 				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
-			connection.add(LuceneSailExample.class.getResourceAsStream(
-					"/org/openrdf/sail/lucene/examples/foaf.rdfs"), "", RDFFormat.RDFXML);
+			connection.add(LuceneSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
+					"", RDFFormat.RDFXML);
 			connection.commit();
 
 			// search for resources that mention "person"
@@ -105,11 +103,10 @@ public class LuceneSailExample {
 			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
 					+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
 					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
-					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n"
-					+ "?x rdfs:domain foaf:Person . \n" + "?x search:matches ?match . \n"
-					+ "?match search:query \"homepage\" ; \n" + "       search:property ?property ; \n"
-					+ "       search:score ?score ; \n" + "       search:snippet ?snippet . \n"
-					+ "} LIMIT 3 \n";
+					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n" + "?x rdfs:domain foaf:Person . \n"
+					+ "?x search:matches ?match . \n" + "?match search:query \"homepage\" ; \n"
+					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
+					+ "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
 			graphQuery(queryString, connection);
 		} finally {
 			repository.shutDown();

@@ -33,8 +33,7 @@ public class ProxyRepositoryFactory implements RepositoryFactory {
 	}
 
 	@Override
-	public Repository getRepository(RepositoryImplConfig config)
-			throws RepositoryConfigException {
+	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
 		ProxyRepository result = null;
 
 		if (config instanceof ProxyRepositoryConfig) {

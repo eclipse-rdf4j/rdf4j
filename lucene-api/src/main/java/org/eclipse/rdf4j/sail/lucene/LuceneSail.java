@@ -313,8 +313,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection()
-			throws SailException {
+	public NotifyingSailConnection getConnection() throws SailException {
 		if (!closed.get()) {
 			return new LuceneSailConnection(super.getConnection(), luceneIndex, this);
 		} else {
@@ -323,8 +322,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void shutDown()
-			throws SailException {
+	public void shutDown() throws SailException {
 		if (closed.compareAndSet(false, true)) {
 			logger.debug("LuceneSail shutdown");
 			try {
@@ -353,8 +351,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		super.initialize();
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
@@ -384,12 +381,10 @@ public class LuceneSail extends NotifyingSailWrapper {
 				setReindexQuery(parameters.getProperty(REINDEX_QUERY_KEY));
 			}
 			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY)) {
-				setIncompleteQueryFails(
-						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
+				setIncompleteQueryFails(Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
 			}
 			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
-				setEvaluationMode(
-						TupleFunctionEvaluationMode.valueOf(parameters.getProperty(EVALUATION_MODE_KEY)));
+				setEvaluationMode(TupleFunctionEvaluationMode.valueOf(parameters.getProperty(EVALUATION_MODE_KEY)));
 			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
@@ -408,13 +403,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * @deprecated
 	 */
 	@Deprecated
-	protected static SearchIndex createSearchIndex(Properties parameters)
-			throws Exception {
+	protected static SearchIndex createSearchIndex(Properties parameters) throws Exception {
 		return SearchIndexUtils.createSearchIndex(parameters);
 	}
 
-	protected void initializeLuceneIndex()
-			throws Exception {
+	protected void initializeLuceneIndex() throws Exception {
 		SearchIndex index = SearchIndexUtils.createSearchIndex(parameters);
 		setLuceneIndex(index);
 	}
@@ -507,8 +500,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * 
 	 * @throws IOException
 	 */
-	public void reindex()
-			throws Exception {
+	public void reindex() throws Exception {
 		// clear
 		logger.info("Reindexing sail: clearing...");
 		luceneIndex.clear();

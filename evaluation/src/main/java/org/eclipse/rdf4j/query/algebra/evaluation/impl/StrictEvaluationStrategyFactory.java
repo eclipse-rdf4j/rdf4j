@@ -37,7 +37,6 @@ public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyF
 
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver,
-				getQuerySolutionCacheThreshold());
+		return new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold());
 	}
 }

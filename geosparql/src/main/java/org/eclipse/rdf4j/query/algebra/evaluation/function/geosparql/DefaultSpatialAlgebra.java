@@ -34,8 +34,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	private Shape createEmptyGeometry() {
-		return new ShapeCollection<>(Collections.<Shape>emptyList(),
-				SpatialSupport.getSpatialContext());
+		return new ShapeCollection<>(Collections.<Shape>emptyList(), SpatialSupport.getSpatialContext());
 	}
 
 	@Override

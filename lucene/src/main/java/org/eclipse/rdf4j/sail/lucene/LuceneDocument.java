@@ -38,8 +38,7 @@ public class LuceneDocument implements SearchDocument {
 		this(new Document(), geoStrategyMapper);
 	}
 
-	public LuceneDocument(Document doc,
-			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
+	public LuceneDocument(Document doc, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this.doc = doc;
 		this.geoStrategyMapper = geoStrategyMapper;
 	}

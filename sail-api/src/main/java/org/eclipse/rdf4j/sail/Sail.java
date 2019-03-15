@@ -47,8 +47,7 @@ public interface Sail {
 	 * @deprecated Use {{@link #init()} instead.
 	 */
 	@Deprecated
-	void initialize()
-			throws SailException;
+	void initialize() throws SailException;
 
 	/**
 	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
@@ -70,14 +69,12 @@ public interface Sail {
 	 * 
 	 * @throws SailException If the Sail object encountered an error or unexpected situation internally.
 	 */
-	void shutDown()
-			throws SailException;
+	void shutDown() throws SailException;
 
 	/**
 	 * Checks whether this Sail object is writable, i.e. if the data contained in this Sail object can be changed.
 	 */
-	boolean isWritable()
-			throws SailException;
+	boolean isWritable() throws SailException;
 
 	/**
 	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the implementation
@@ -86,8 +83,7 @@ public interface Sail {
 	 * @throws SailException         If no transaction could be started, for example because the Sail is not writable.
 	 * @throws IllegalStateException If the Sail has not been initialized or has been shut down.
 	 */
-	SailConnection getConnection()
-			throws SailException;
+	SailConnection getConnection() throws SailException;
 
 	/**
 	 * Gets a ValueFactory object that can be used to create IRI-, blank node-, literal- and statement objects.

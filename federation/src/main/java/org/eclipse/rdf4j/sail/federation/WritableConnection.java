@@ -28,8 +28,7 @@ class WritableConnection extends AbstractEchoWriteConnection {
 
 	private int addIndex;
 
-	public WritableConnection(Federation federation, List<RepositoryConnection> members)
-			throws SailException {
+	public WritableConnection(Federation federation, List<RepositoryConnection> members) throws SailException {
 		super(federation, members);
 		int size = members.size();
 		int rnd = (new Random().nextInt() % size + size) % size;
@@ -46,8 +45,7 @@ class WritableConnection extends AbstractEchoWriteConnection {
 	}
 
 	@Override
-	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		add(members.get(addIndex), subj, pred, obj, contexts);
 	}
 
@@ -61,8 +59,7 @@ class WritableConnection extends AbstractEchoWriteConnection {
 	}
 
 	@Override
-	protected void clearInternal(Resource... contexts)
-			throws SailException {
+	protected void clearInternal(Resource... contexts) throws SailException {
 		removeStatementsInternal(null, null, null, contexts);
 	}
 

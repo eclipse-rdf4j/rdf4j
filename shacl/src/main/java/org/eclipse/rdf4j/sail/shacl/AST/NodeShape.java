@@ -115,9 +115,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 						}
 					}
 					return null;
-				})
-						.filter(Objects::nonNull)
-						.collect(Collectors.toList());
+				}).filter(Objects::nonNull).collect(Collectors.toList());
 			}
 		}
 

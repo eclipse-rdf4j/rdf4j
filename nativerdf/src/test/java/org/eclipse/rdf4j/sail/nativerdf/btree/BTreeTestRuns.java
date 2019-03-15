@@ -14,8 +14,7 @@ public class BTreeTestRuns {
 	 * Test methods *
 	 *--------------*/
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		System.out.println("Running BTree test...");
 		if (args.length > 2) {
 			runPerformanceTest(args);
@@ -25,8 +24,7 @@ public class BTreeTestRuns {
 		System.out.println("Done.");
 	}
 
-	public static void runPerformanceTest(String[] args)
-			throws Exception {
+	public static void runPerformanceTest(String[] args) throws Exception {
 		File dataDir = new File(args[0]);
 		String filenamePrefix = args[1];
 		int valueCount = Integer.parseInt(args[2]);
@@ -41,8 +39,8 @@ public class BTreeTestRuns {
 				random.nextBytes(value);
 				btree.insert(value);
 				if (i % 50000 == 0) {
-					System.out.println("Inserted " + i + " values in "
-							+ (System.currentTimeMillis() - startTime) + " ms");
+					System.out.println(
+							"Inserted " + i + " values in " + (System.currentTimeMillis() - startTime) + " ms");
 				}
 			}
 
@@ -77,8 +75,7 @@ public class BTreeTestRuns {
 		}
 	}
 
-	public static void runDebugTest(String[] args)
-			throws Exception {
+	public static void runDebugTest(String[] args) throws Exception {
 		File dataDir = new File(args[0]);
 		String filenamePrefix = args[1];
 		try (BTree btree = new BTree(dataDir, filenamePrefix, 28, 1);) {

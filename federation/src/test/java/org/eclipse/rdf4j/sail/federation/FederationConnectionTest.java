@@ -33,8 +33,7 @@ import org.junit.Test;
 public class FederationConnectionTest {
 
 	@Test
-	public void testSize()
-			throws Exception {
+	public void testSize() throws Exception {
 		Federation federation = new Federation();
 
 		SailRepository repository = new SailRepository(new MemoryStore());
@@ -60,8 +59,7 @@ public class FederationConnectionTest {
 	}
 
 	@Test
-	public void testSizeWithInferredStatements()
-			throws Exception {
+	public void testSizeWithInferredStatements() throws Exception {
 		Federation federation = new Federation();
 
 		SailRepository repository = new SailRepository(new TestInferencer(new MemoryStore()));
@@ -75,10 +73,8 @@ public class FederationConnectionTest {
 				connection.addStatement(OWL.CLASS, RDFS.COMMENT, RDF.REST);
 				connection.commit();
 
-				assertHasStatement("Should find explicit statement", OWL.CLASS, RDFS.COMMENT, RDF.REST,
-						connection);
-				assertHasStatement("Should find inferred statement", OWL.THING, RDFS.COMMENT, RDF.ALT,
-						connection);
+				assertHasStatement("Should find explicit statement", OWL.CLASS, RDFS.COMMENT, RDF.REST, connection);
+				assertHasStatement("Should find inferred statement", OWL.THING, RDFS.COMMENT, RDF.ALT, connection);
 
 				assertEquals("Should get explicit statement size", 1, connection.size());
 			}
@@ -88,8 +84,7 @@ public class FederationConnectionTest {
 	}
 
 	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
-			SailConnection connection)
-			throws SailException {
+			SailConnection connection) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
 				(IRI) predicate, object, true)) {
 			assertTrue(message, statements.hasNext());
@@ -103,8 +98,7 @@ public class FederationConnectionTest {
 		}
 
 		@Override
-		public TestInferencerConnection getConnection()
-				throws SailException {
+		public TestInferencerConnection getConnection() throws SailException {
 			try {
 				return new TestInferencerConnection((InferencerConnection) super.getConnection());
 			} catch (ClassCastException e) {
@@ -135,8 +129,7 @@ public class FederationConnectionTest {
 			}
 
 			@Override
-			public void flushUpdates()
-					throws SailException {
+			public void flushUpdates() throws SailException {
 				if (m_added) {
 					addInferredStatement(OWL.THING, RDFS.COMMENT, RDF.ALT);
 					m_added = false;

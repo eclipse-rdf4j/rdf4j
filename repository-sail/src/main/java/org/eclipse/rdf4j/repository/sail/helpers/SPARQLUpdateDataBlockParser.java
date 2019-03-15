@@ -68,15 +68,13 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	}
 
 	@Override
-	protected void parseGraph()
-			throws RDFParseException, RDFHandlerException, IOException {
+	protected void parseGraph() throws RDFParseException, RDFHandlerException, IOException {
 		super.parseGraph();
 		skipOptionalPeriod();
 	}
 
 	@Override
-	protected Resource parseImplicitBlank()
-			throws IOException, RDFParseException, RDFHandlerException {
+	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
 		if (isAllowBlankNodes()) {
 			return super.parseImplicitBlank();
 		} else {
@@ -85,8 +83,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	}
 
 	@Override
-	protected Resource parseNodeID()
-			throws IOException, RDFParseException {
+	protected Resource parseNodeID() throws IOException, RDFParseException {
 		if (isAllowBlankNodes()) {
 			return super.parseNodeID();
 		} else {
@@ -113,8 +110,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 		return super.getLineNumber() - this.lineNumberOffset;
 	}
 
-	private void skipOptionalPeriod()
-			throws RDFHandlerException, IOException {
+	private void skipOptionalPeriod() throws RDFHandlerException, IOException {
 		skipWSC();
 		int c = peekCodePoint();
 		if (c == '.') {

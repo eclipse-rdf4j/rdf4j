@@ -31,8 +31,7 @@ public class CompatibleBindingSetFilter extends FilterIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected boolean accept(BindingSet outputBindings)
-			throws QueryEvaluationException {
+	protected boolean accept(BindingSet outputBindings) throws QueryEvaluationException {
 		return QueryResults.bindingSetsCompatible(inputBindings, outputBindings);
 	}
 }

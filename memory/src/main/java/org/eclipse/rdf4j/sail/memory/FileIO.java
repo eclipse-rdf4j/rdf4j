@@ -132,8 +132,7 @@ class FileIO {
 		}
 	}
 
-	private void write(SailDataset explicit, SailDataset inferred, File dataFile)
-			throws IOException, SailException {
+	private void write(SailDataset explicit, SailDataset inferred, File dataFile) throws IOException, SailException {
 
 		try (OutputStream out = new FileOutputStream(dataFile);) {
 			// Write header
@@ -193,8 +192,7 @@ class FileIO {
 		}
 	}
 
-	private void writeNamespaces(SailDataset store, DataOutputStream dataOut)
-			throws IOException, SailException {
+	private void writeNamespaces(SailDataset store, DataOutputStream dataOut) throws IOException, SailException {
 		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces();) {
 			while (iter.hasNext()) {
 				Namespace ns = iter.next();
@@ -205,8 +203,7 @@ class FileIO {
 		}
 	}
 
-	private void readNamespace(DataInputStream dataIn, SailSink store)
-			throws IOException, SailException {
+	private void readNamespace(DataInputStream dataIn, SailSink store) throws IOException, SailException {
 		String prefix = readString(dataIn);
 		String name = readString(dataIn);
 
@@ -221,15 +218,13 @@ class FileIO {
 	private void writeStatements(final SailDataset explicit, SailDataset inferred, DataOutputStream dataOut)
 			throws IOException, SailException {
 		// write explicit only statements
-		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER,
-				dataOut);
+		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER, dataOut);
 		// write inferred only statements
 		writeStatement(inferred.getStatements(null, null, null), INF_TRIPLE_MARKER, INF_QUAD_MARKER, dataOut);
 	}
 
-	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter,
-			int tripleMarker, int quadMarker, DataOutputStream dataOut)
-			throws IOException, SailException {
+	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
+			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
 		try {
 			while (stIter.hasNext()) {
 				Statement st = stIter.next();
@@ -251,9 +246,8 @@ class FileIO {
 		}
 	}
 
-	private void readStatement(boolean hasContext, boolean isExplicit, DataInputStream dataIn,
-			SailSink explicit, SailSink inferred)
-			throws IOException, ClassCastException, SailException {
+	private void readStatement(boolean hasContext, boolean isExplicit, DataInputStream dataIn, SailSink explicit,
+			SailSink inferred) throws IOException, ClassCastException, SailException {
 		MemResource memSubj = (MemResource) readValue(dataIn);
 		MemIRI memPred = (MemIRI) readValue(dataIn);
 		MemValue memObj = (MemValue) readValue(dataIn);
@@ -269,8 +263,7 @@ class FileIO {
 		}
 	}
 
-	private void writeValue(Value value, DataOutputStream dataOut)
-			throws IOException {
+	private void writeValue(Value value, DataOutputStream dataOut) throws IOException {
 		if (value instanceof IRI) {
 			dataOut.writeByte(URI_MARKER);
 			writeString(((IRI) value).toString(), dataOut);
@@ -297,8 +290,7 @@ class FileIO {
 		}
 	}
 
-	private Value readValue(DataInputStream dataIn)
-			throws IOException, ClassCastException {
+	private Value readValue(DataInputStream dataIn) throws IOException, ClassCastException {
 		int valueTypeMarker = dataIn.readByte();
 
 		if (valueTypeMarker == URI_MARKER) {
@@ -323,15 +315,13 @@ class FileIO {
 		}
 	}
 
-	private void writeString(String s, DataOutputStream dataOut)
-			throws IOException {
+	private void writeString(String s, DataOutputStream dataOut) throws IOException {
 		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
 		dataOut.writeInt(byteBuf.remaining());
 		dataOut.write(byteBuf.array(), 0, byteBuf.remaining());
 	}
 
-	private String readString(DataInputStream dataIn)
-			throws IOException {
+	private String readString(DataInputStream dataIn) throws IOException {
 		if (formatVersion == 1) {
 			return readStringV1(dataIn);
 		} else {
@@ -342,8 +332,7 @@ class FileIO {
 	/**
 	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified UTF-8}.
 	 */
-	private String readStringV1(DataInputStream dataIn)
-			throws IOException {
+	private String readStringV1(DataInputStream dataIn) throws IOException {
 		return dataIn.readUTF();
 	}
 
@@ -351,8 +340,7 @@ class FileIO {
 	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit integer
 	 * (high byte first) specifying the length of the encoded string.
 	 */
-	private String readStringV2(DataInputStream dataIn)
-			throws IOException {
+	private String readStringV2(DataInputStream dataIn) throws IOException {
 		int stringLength = dataIn.readInt();
 		byte[] encodedString = IOUtil.readBytes(dataIn, stringLength);
 

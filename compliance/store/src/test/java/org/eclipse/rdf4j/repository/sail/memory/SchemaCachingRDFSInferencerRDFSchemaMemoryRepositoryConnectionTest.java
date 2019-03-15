@@ -34,8 +34,7 @@ import static org.junit.Assert.assertThat;
 public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		extends RDFSchemaRepositoryConnectionTest {
 
-	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(
-			IsolationLevel level) {
+	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
 	}
 
@@ -50,32 +49,28 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Override
 	@Test
 	@Ignore
-	public void testQueryDefaultGraph()
-			throws Exception {
+	public void testQueryDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testDeleteDefaultGraph()
-			throws Exception {
+	public void testDeleteDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated()
-			throws Exception {
+	public void testContextStatementsNotDuplicated() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated2()
-			throws Exception {
+	public void testContextStatementsNotDuplicated2() throws Exception {
 		// ignore
 	}
 
@@ -110,9 +105,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		}
 		System.out.println("-----------");
 		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
-			stream
-					.peek(statement -> assertEquals(graph3, statement.getContext()))
-					.forEach(System.out::println);
+			stream.peek(statement -> assertEquals(graph3, statement.getContext())).forEach(System.out::println);
 		}
 
 		System.out.println("-----------");

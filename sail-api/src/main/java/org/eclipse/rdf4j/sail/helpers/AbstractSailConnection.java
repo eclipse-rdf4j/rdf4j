@@ -118,13 +118,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *---------*/
 
 	@Override
-	public final boolean isOpen()
-			throws SailException {
+	public final boolean isOpen() throws SailException {
 		return isOpen;
 	}
 
-	protected void verifyIsOpen()
-			throws SailException {
+	protected void verifyIsOpen() throws SailException {
 		if (!isOpen) {
 			throw new IllegalStateException("Connection has been closed");
 		}
@@ -135,22 +133,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * 
 	 * @throws SailException if no transaction is active.
 	 */
-	protected void verifyIsActive()
-			throws SailException {
+	protected void verifyIsActive() throws SailException {
 		if (!isActive()) {
 			throw new SailException("No active transaction");
 		}
 	}
 
 	@Override
-	public void begin()
-			throws SailException {
+	public void begin() throws SailException {
 		begin(null);
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-			throws SailException {
+	public void begin(IsolationLevel level) throws SailException {
 		if (level == null) {
 			level = this.sailBase.getDefaultIsolationLevel();
 		}
@@ -194,14 +189,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public boolean isActive()
-			throws UnknownSailTransactionStateException {
+	public boolean isActive() throws UnknownSailTransactionStateException {
 		return transactionActive();
 	}
 
 	@Override
-	public final void close()
-			throws SailException {
+	public final void close() throws SailException {
 		// obtain an exclusive lock so that any further operations on this
 		// connection (including those from any concurrent threads) are blocked.
 		connectionLock.writeLock().lock();
@@ -239,9 +232,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-			throws SailException {
+	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
@@ -277,8 +269,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final CloseableIteration<? extends Resource, SailException> getContextIDs()
-			throws SailException {
+	public final CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
@@ -291,15 +282,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-			Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
 			boolean registered = false;
-			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj,
-					pred, obj, includeInferred, contexts);
+			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj, pred, obj,
+					includeInferred, contexts);
 			try {
 				CloseableIteration<? extends Statement, SailException> registeredIteration = registerIteration(
 						iteration);
@@ -316,8 +306,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final long size(Resource... contexts)
-			throws SailException {
+	public final long size(Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
@@ -345,14 +334,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * @throws SailException if no transaction is active.
 	 */
 	@Deprecated
-	protected void autoStartTransaction()
-			throws SailException {
+	protected void autoStartTransaction() throws SailException {
 		verifyIsActive();
 	}
 
 	@Override
-	public void flush()
-			throws SailException {
+	public void flush() throws SailException {
 		if (isActive()) {
 			endUpdate(null);
 			startUpdate(null);
@@ -360,8 +347,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void prepare()
-			throws SailException {
+	public final void prepare() throws SailException {
 		if (isActive()) {
 			endUpdate(null);
 		}
@@ -384,8 +370,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void commit()
-			throws SailException {
+	public final void commit() throws SailException {
 		if (isActive()) {
 			endUpdate(null);
 		}
@@ -412,8 +397,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void rollback()
-			throws SailException {
+	public final void rollback() throws SailException {
 		synchronized (added) {
 			added.clear();
 		}
@@ -446,8 +430,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
@@ -455,15 +438,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		removeStatement(null, subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void startUpdate(UpdateContext op)
-			throws SailException {
+	public void startUpdate(UpdateContext op) throws SailException {
 		if (op != null) {
 			flushPendingUpdates();
 		}
@@ -531,8 +512,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void endUpdate(UpdateContext op)
-			throws SailException {
+	public final void endUpdate(UpdateContext op) throws SailException {
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
@@ -552,8 +532,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	protected void endUpdateInternal(UpdateContext op)
-			throws SailException {
+	protected void endUpdateInternal(UpdateContext op) throws SailException {
 		Collection<Statement> model;
 		// realize DELETE
 		synchronized (removed) {
@@ -581,8 +560,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void clear(Resource... contexts)
-			throws SailException {
+	public final void clear(Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
@@ -601,8 +579,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final CloseableIteration<? extends Namespace, SailException> getNamespaces()
-			throws SailException {
+	public final CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
@@ -613,8 +590,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final String getNamespace(String prefix)
-			throws SailException {
+	public final String getNamespace(String prefix) throws SailException {
 		if (prefix == null) {
 			throw new NullPointerException("prefix must not be null");
 		}
@@ -628,8 +604,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void setNamespace(String prefix, String name)
-			throws SailException {
+	public final void setNamespace(String prefix, String name) throws SailException {
 		if (prefix == null) {
 			throw new NullPointerException("prefix must not be null");
 		}
@@ -653,8 +628,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void removeNamespace(String prefix)
-			throws SailException {
+	public final void removeNamespace(String prefix) throws SailException {
 		if (prefix == null) {
 			throw new NullPointerException("prefix must not be null");
 		}
@@ -675,8 +649,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public final void clearNamespaces()
-			throws SailException {
+	public final void clearNamespaces() throws SailException {
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
@@ -696,16 +669,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock()
-			throws SailException {
+	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.readLock());
 	}
 
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock()
-			throws SailException {
+	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.writeLock());
 	}
 
@@ -713,8 +684,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * @deprecated Use {@link #updateLock} directly instead.
 	 */
 	@Deprecated
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getTransactionLock()
-			throws SailException {
+	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getTransactionLock() throws SailException {
 		return new JavaLock(updateLock);
 	}
 
@@ -722,8 +692,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * Registers an iteration as active by wrapping it in a {@link SailBaseIteration} object and adding it to the list
 	 * of active iterations.
 	 */
-	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(
-			CloseableIteration<T, E> iter) {
+	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(CloseableIteration<T, E> iter) {
 		SailBaseIteration<T, E> result = new SailBaseIteration<>(iter, this);
 		Throwable stackTrace = debugEnabled ? new Throwable() : null;
 		synchronized (activeIterations) {
@@ -741,36 +710,28 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	protected abstract void closeInternal()
-			throws SailException;
+	protected abstract void closeInternal() throws SailException;
 
 	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-			throws SailException;
+			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	protected abstract CloseableIteration<? extends Resource, SailException> getContextIDsInternal()
 			throws SailException;
 
-	protected abstract CloseableIteration<? extends Statement, SailException> getStatementsInternal(
-			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException;
+	protected abstract CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj,
+			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
 
-	protected abstract long sizeInternal(Resource... contexts)
-			throws SailException;
+	protected abstract long sizeInternal(Resource... contexts) throws SailException;
 
-	protected abstract void startTransactionInternal()
-			throws SailException;
+	protected abstract void startTransactionInternal() throws SailException;
 
-	protected void prepareInternal()
-			throws SailException {
+	protected void prepareInternal() throws SailException {
 		// do nothing
 	}
 
-	protected abstract void commitInternal()
-			throws SailException;
+	protected abstract void commitInternal() throws SailException;
 
-	protected abstract void rollbackInternal()
-			throws SailException;
+	protected abstract void rollbackInternal() throws SailException;
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
@@ -778,23 +739,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
 
-	protected abstract void clearInternal(Resource... contexts)
-			throws SailException;
+	protected abstract void clearInternal(Resource... contexts) throws SailException;
 
 	protected abstract CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
 			throws SailException;
 
-	protected abstract String getNamespaceInternal(String prefix)
-			throws SailException;
+	protected abstract String getNamespaceInternal(String prefix) throws SailException;
 
-	protected abstract void setNamespaceInternal(String prefix, String name)
-			throws SailException;
+	protected abstract void setNamespaceInternal(String prefix, String name) throws SailException;
 
-	protected abstract void removeNamespaceInternal(String prefix)
-			throws SailException;
+	protected abstract void removeNamespaceInternal(String prefix) throws SailException;
 
-	protected abstract void clearNamespacesInternal()
-			throws SailException;
+	protected abstract void clearNamespacesInternal() throws SailException;
 
 	protected boolean isActiveOperation() {
 		synchronized (activeIterations) {
@@ -802,8 +758,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	private void forceCloseActiveOperations()
-			throws SailException {
+	private void forceCloseActiveOperations() throws SailException {
 		final Map<SailBaseIteration, Throwable> activeIterationsCopy;
 
 		synchronized (activeIterations) {
@@ -843,8 +798,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * 
 	 * @throws SailException
 	 */
-	private void flushPendingUpdates()
-			throws SailException {
+	private void flushPendingUpdates() throws SailException {
 		if (!isActiveOperation()
 				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 			flush();

@@ -59,8 +59,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final EvaluationStrategy evaluationStrategy;
 
-	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar,
-			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings) {
+	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
+			Value obj, Var contextVar, BindingSet bindings) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		result = new QueryBindingSet(bindings);
 		this.subjectVar = subjectVar;
@@ -72,8 +72,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
 				reportedValues = makeSet();
@@ -141,13 +140,11 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	 * @param v
 	 * @return true if v added to set and not yet present
 	 */
-	protected boolean add(Set<Value> reportedValues2, Value v)
-			throws QueryEvaluationException {
+	protected boolean add(Set<Value> reportedValues2, Value v) throws QueryEvaluationException {
 		return reportedValues2.add(v);
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration()
-			throws QueryEvaluationException {
+	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
 		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
 		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
 		Var endVar = createAnonVar(ANON_OBJECT_VAR);
@@ -158,8 +155,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			subjects.setScope(Scope.NAMED_CONTEXTS);
 			subjects.setContextVar(contextVar);
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluationStrategy.evaluate(subjects,
-				bindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluationStrategy.evaluate(subjects, bindings);
 
 		return iter;
 	}

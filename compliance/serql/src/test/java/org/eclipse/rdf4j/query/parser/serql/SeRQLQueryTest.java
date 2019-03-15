@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class SeRQLQueryTest extends SeRQLQueryTestCase {
 
-	public static Test suite()
-			throws Exception {
+	public static Test suite() throws Exception {
 		return SeRQLQueryTestCase.suite(new Factory() {
 
 			@Override
@@ -29,8 +28,8 @@ public class SeRQLQueryTest extends SeRQLQueryTestCase {
 		});
 	}
 
-	public SeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile,
-			String resultFile, String entailment) {
+	public SeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile, String resultFile,
+			String entailment) {
 		super(name, dataFile, graphNames, queryFile, resultFile, entailment);
 	}
 

@@ -30,8 +30,6 @@ public class MinCountFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MinCountFilter{" +
-				"minCount=" + minCount +
-				'}';
+		return "MinCountFilter{" + "minCount=" + minCount + '}';
 	}
 }

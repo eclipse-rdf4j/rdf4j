@@ -148,9 +148,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 						.flatMap(propertyShapeId -> {
 							List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
 									propertyShapeId);
-
 							return propertyShapes.stream();
-
 						})
 						.collect(Collectors.toList());
 			}

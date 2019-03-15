@@ -37,8 +37,7 @@ public class ConcatTest {
 	private static final Literal foo_nl = vf.createLiteral("foo", "nl");
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		concatFunc = new Concat();
 	}
 

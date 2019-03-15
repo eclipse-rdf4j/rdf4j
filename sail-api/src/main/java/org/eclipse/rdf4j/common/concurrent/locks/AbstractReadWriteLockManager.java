@@ -76,8 +76,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 * 
 	 * @throws InterruptedException
 	 */
-	protected void waitForActiveWriter()
-			throws InterruptedException {
+	protected void waitForActiveWriter() throws InterruptedException {
 		activeWriter.waitForActiveLocks();
 	}
 
@@ -86,8 +85,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 * 
 	 * @throws InterruptedException
 	 */
-	protected void waitForActiveReaders()
-			throws InterruptedException {
+	protected void waitForActiveReaders() throws InterruptedException {
 		activeReaders.waitForActiveLocks();
 	}
 

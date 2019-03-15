@@ -109,8 +109,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * @throws SailException
 	 */
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		// Add support for indexed fields
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
@@ -156,8 +155,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * @return @throws SailException
 	 */
 	@Override
-	public NotifyingSailConnection getConnection()
-			throws SailException {
+	public NotifyingSailConnection getConnection() throws SailException {
 		if (si == null) {
 			throw new SailException("Index is not created");
 		}

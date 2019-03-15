@@ -41,8 +41,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 
 		if (currentInputBinding == null) {
 			inputBindingsIterator = inputBindings.iterator();
@@ -66,8 +65,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

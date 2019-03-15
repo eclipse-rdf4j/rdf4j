@@ -90,8 +90,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		again: while (true) {
 			while (!currentIter.hasNext()) {
 				Iterations.closeCloseable(currentIter);
@@ -121,8 +120,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
 				} else if (startVarFixed && endVarFixed && currentLength == 2) {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue(
-							JOINVAR_PREFIX + (currentLength - 1) + "-" + this.hashCode());
+					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "-" + this.hashCode());
 				} else {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
 					v2 = getVarValue(endVar, endVarFixed, nextElement);
@@ -193,8 +191,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {
@@ -207,8 +204,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	 * @param valueQueue2
 	 * @param vp
 	 */
-	protected boolean addToQueue(Queue<ValuePair> valueQueue2, ValuePair vp)
-			throws QueryEvaluationException {
+	protected boolean addToQueue(Queue<ValuePair> valueQueue2, ValuePair vp) throws QueryEvaluationException {
 		return valueQueue2.add(vp);
 	}
 
@@ -216,8 +212,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	 * @param valueSet
 	 * @param vp
 	 */
-	protected boolean add(Set<ValuePair> valueSet, ValuePair vp)
-			throws QueryEvaluationException {
+	protected boolean add(Set<ValuePair> valueSet, ValuePair vp) throws QueryEvaluationException {
 		return valueSet.add(vp);
 	}
 
@@ -244,8 +239,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	}
 
-	private void createIteration()
-			throws QueryEvaluationException {
+	private void createIteration() throws QueryEvaluationException {
 
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
@@ -258,8 +252,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Var replacement = createAnonVar(
-						JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -276,8 +269,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(
-							JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
 					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
 					startReplacement.setAnonymous(false);
 					endReplacement.setAnonymous(false);
@@ -301,8 +293,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 						v = currentVp.getStartValue();
 					}
 
-					Var replacement = createAnonVar(
-							JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
 					replacement.setValue(v);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);

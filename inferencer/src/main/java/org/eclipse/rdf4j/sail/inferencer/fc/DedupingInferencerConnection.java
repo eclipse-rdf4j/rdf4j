@@ -46,8 +46,7 @@ public class DedupingInferencerConnection extends InferencerConnectionWrapper {
 	}
 
 	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 0) {
 			// most inferred statements don't have a context so let's just deal
 			// with those
@@ -72,23 +71,20 @@ public class DedupingInferencerConnection extends InferencerConnectionWrapper {
 	}
 
 	@Override
-	public void clearInferred(Resource... contexts)
-			throws SailException {
+	public void clearInferred(Resource... contexts) throws SailException {
 		resetDedupBuffer();
 		super.clearInferred(contexts);
 	}
 
 	@Override
-	public void commit()
-			throws SailException {
+	public void commit() throws SailException {
 		super.commit();
 		logger.debug("Added {} unique statements, deduped {}", addedStmts.size(), dedupCount);
 		resetDedupBuffer();
 	}
 
 	@Override
-	public void rollback()
-			throws SailException {
+	public void rollback() throws SailException {
 		super.rollback();
 		resetDedupBuffer();
 	}

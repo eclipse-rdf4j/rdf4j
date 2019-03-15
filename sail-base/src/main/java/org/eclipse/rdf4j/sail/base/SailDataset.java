@@ -30,8 +30,7 @@ public interface SailDataset extends SailClosable {
 	 * {@link SailDataset} dose not change between the first call to this object until {@link #release()} is called.
 	 */
 	@Override
-	void close()
-			throws SailException;
+	void close() throws SailException;
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this object.
@@ -39,8 +38,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
 	 * @throws SailException If this object encountered an error or unexpected situation internally.
 	 */
-	CloseableIteration<? extends Namespace, SailException> getNamespaces()
-			throws SailException;
+	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
@@ -51,16 +49,14 @@ public interface SailDataset extends SailClosable {
 	 * @throws SailException        If this object encountered an error or unexpected situation internally.
 	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
 	 */
-	String getNamespace(String prefix)
-			throws SailException;
+	String getNamespace(String prefix) throws SailException;
 
 	/**
 	 * Returns the set of all unique context identifiers that are used to store statements.
 	 * 
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 */
-	CloseableIteration<? extends Resource, SailException> getContextIDs()
-			throws SailException;
+	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
@@ -76,7 +72,6 @@ public interface SailDataset extends SailClosable {
 	 * @throws SailException If the triple source failed to get the statements.
 	 */
 	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-			throws SailException;
+			Resource... contexts) throws SailException;
 
 }

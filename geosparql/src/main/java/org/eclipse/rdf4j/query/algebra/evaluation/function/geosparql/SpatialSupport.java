@@ -36,8 +36,8 @@ abstract class SpatialSupport {
 		SpatialSupport support;
 		try {
 			Class<?> cls = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer",
-					true, Thread.currentThread().getContextClassLoader());
+					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer", true,
+					Thread.currentThread().getContextClassLoader());
 			support = (SpatialSupport) cls.newInstance();
 		} catch (Exception e) {
 			support = new JtsSpatialSupport();

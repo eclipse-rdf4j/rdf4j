@@ -116,8 +116,7 @@ public class DirectoryLockManager implements LockManager {
 	 * @throws SailLockedException if the directory is already locked.
 	 */
 	@Override
-	public Lock lockOrFail()
-			throws SailLockedException {
+	public Lock lockOrFail() throws SailLockedException {
 		Lock lock = tryLock();
 
 		if (lock != null) {
@@ -247,8 +246,7 @@ public class DirectoryLockManager implements LockManager {
 		};
 	}
 
-	private void sign(File infoFile)
-			throws IOException {
+	private void sign(File infoFile) throws IOException {
 		try (FileWriter out = new FileWriter(infoFile)) {
 			out.write(getProcessName());
 			out.flush();

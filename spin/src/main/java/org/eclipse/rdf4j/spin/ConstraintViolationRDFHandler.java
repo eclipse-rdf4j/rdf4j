@@ -38,8 +38,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 	}
 
 	@Override
-	public void startRDF()
-			throws RDFHandlerException {
+	public void startRDF() throws RDFHandlerException {
 		hasStatements = false;
 		label = null;
 		root = null;
@@ -50,8 +49,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-			throws RDFHandlerException {
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		hasStatements = true;
 		URI pred = st.getPredicate();
 		if (RDFS.LABEL.equals(pred)) {
@@ -72,15 +70,14 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 				level = ConstraintViolationLevel.valueOf((URI) levelValue);
 			}
 			if (level == null) {
-				throw new RDFHandlerException("Invalid value " + levelValue + " for "
-						+ SPIN.VIOLATION_LEVEL_PROPERTY + ": " + st.getSubject());
+				throw new RDFHandlerException("Invalid value " + levelValue + " for " + SPIN.VIOLATION_LEVEL_PROPERTY
+						+ ": " + st.getSubject());
 			}
 		}
 	}
 
 	@Override
-	public void endRDF()
-			throws RDFHandlerException {
+	public void endRDF() throws RDFHandlerException {
 		if (hasStatements) {
 			violation = new ConstraintViolation(label, root, path, value, level);
 		}

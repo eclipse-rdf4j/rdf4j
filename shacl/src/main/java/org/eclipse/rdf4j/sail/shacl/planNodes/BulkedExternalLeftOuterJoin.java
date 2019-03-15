@@ -81,8 +81,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
-				List<BindingSet> newBindindingset = left
-						.stream()
+				List<BindingSet> newBindindingset = left.stream()
 						.map(tuple -> tuple.line.get(0))
 						.map(v -> (Resource) v)
 						.filter(r -> {
@@ -213,9 +212,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalLeftOuterJoin{" +
-				"parsedQuery=" + parsedQuery.getSourceString() +
-				'}';
+		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
 	}
 
 	@Override

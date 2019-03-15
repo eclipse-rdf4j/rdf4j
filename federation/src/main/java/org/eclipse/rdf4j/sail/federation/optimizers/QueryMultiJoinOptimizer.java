@@ -75,8 +75,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meetOther(QueryModelNode node)
-				throws RuntimeException {
+		public void meetOther(QueryModelNode node) throws RuntimeException {
 			if (node instanceof NaryJoin) {
 				meetJoin((NaryJoin) node);
 			} else {
@@ -85,8 +84,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Join node)
-				throws RuntimeException {
+		public void meet(Join node) throws RuntimeException {
 			meetJoin(node);
 		}
 
@@ -116,8 +114,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				List<TupleExpr> orderedJoinArgs = new ArrayList<>(joinArgs.size());
 				while (!joinArgs.isEmpty()) {
-					TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
-							boundVars);
+					TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap, boundVars);
 
 					joinArgs.remove(tupleExpr);
 					orderedJoinArgs.add(tupleExpr);
@@ -178,16 +175,14 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
-		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions,
-				Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap,
-				Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double lowestCardinality = Double.MAX_VALUE;
 			TupleExpr result = null;
 
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
-				double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap,
-						boundVars);
+				double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
 
 				if (cardinality < lowestCardinality) {
 					// More specific path expression found

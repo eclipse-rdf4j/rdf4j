@@ -30,8 +30,7 @@ public class Contains implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException("CONTAINS requires 2 arguments, got " + args.length);
 		}
@@ -43,8 +42,7 @@ public class Contains implements Function {
 			Literal rightLit = (Literal) rightVal;
 
 			if (leftLit.getLanguage().isPresent()) {
-				if (!rightLit.getLanguage().isPresent()
-						|| rightLit.getLanguage().equals(leftLit.getLanguage())) {
+				if (!rightLit.getLanguage().isPresent() || rightLit.getLanguage().equals(leftLit.getLanguage())) {
 
 					String leftLexVal = leftLit.getLabel();
 					String rightLexVal = rightLit.getLabel();

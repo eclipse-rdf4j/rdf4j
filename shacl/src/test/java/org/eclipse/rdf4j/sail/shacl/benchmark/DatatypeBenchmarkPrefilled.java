@@ -80,9 +80,8 @@ public class DatatypeBenchmarkPrefilled {
 			for (int i = 0; i < 100; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
-								vf.createLiteral(i)));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+						vf.createLiteral(i)));
 			}
 		}
 
@@ -91,9 +90,8 @@ public class DatatypeBenchmarkPrefilled {
 		for (int i = 0; i < 100000; i++) {
 			allStatements2.add(
 					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
-			allStatements2.add(
-					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), FOAF.AGE,
-							vf.createLiteral(i)));
+			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), FOAF.AGE,
+					vf.createLiteral(i)));
 		}
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");

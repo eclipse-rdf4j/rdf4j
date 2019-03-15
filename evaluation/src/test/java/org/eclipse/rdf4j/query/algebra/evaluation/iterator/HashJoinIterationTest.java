@@ -33,8 +33,7 @@ public class HashJoinIterationTest {
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 
 	@Test
-	public void testCartesianJoin()
-			throws QueryEvaluationException {
+	public void testCartesianJoin() throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
@@ -49,8 +48,7 @@ public class HashJoinIterationTest {
 			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),
-				false);
+		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());
@@ -58,8 +56,7 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
-	public void testInnerJoin()
-			throws QueryEvaluationException {
+	public void testInnerJoin() throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
@@ -76,8 +73,7 @@ public class HashJoinIterationTest {
 			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),
-				false);
+		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());
@@ -86,8 +82,7 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
-	public void testLeftJoin()
-			throws QueryEvaluationException {
+	public void testLeftJoin() throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
@@ -104,8 +99,7 @@ public class HashJoinIterationTest {
 			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
 		}
 
-		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(),
-				true);
+		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), true);
 		BindingSet actual = iter.next();
 
 		assertEquals("1", actual.getValue("a").stringValue());

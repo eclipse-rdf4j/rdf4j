@@ -32,11 +32,9 @@ public class StrAfter implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for STRAFTER: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for STRAFTER: " + args.length);
 		}
 
 		Value leftArg = args[0];
@@ -77,8 +75,7 @@ public class StrAfter implements Function {
 						"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 			}
 		} else {
-			throw new ValueExprEvaluationException(
-					"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
+			throw new ValueExprEvaluationException("incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 		}
 	}
 }

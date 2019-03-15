@@ -77,8 +77,7 @@ public class SailModel extends AbstractModel {
 	public Optional<Namespace> getNamespace(String prefix) {
 		try {
 			String name = conn.getNamespace(prefix);
-			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name))
-					: Optional.ofNullable(null);
+			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name)) : Optional.ofNullable(null);
 		} catch (SailException e) {
 			throw new ModelException(e);
 		}
@@ -178,8 +177,8 @@ public class SailModel extends AbstractModel {
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
-					Value obj, Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
 				SailModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -205,8 +204,7 @@ public class SailModel extends AbstractModel {
 
 	private Iterator<Statement> iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
-			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred,
-					contexts);
+			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
 			return new CloseableIterationIterator<Statement>(
 					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
 
@@ -274,14 +272,12 @@ public class SailModel extends AbstractModel {
 		return (lsize < Integer.MAX_VALUE) ? (int) lsize : Integer.MAX_VALUE;
 	}
 
-	private void writeObject(ObjectOutputStream out)
-			throws IOException {
+	private void writeObject(ObjectOutputStream out) throws IOException {
 		this.connKey = NonSerializables.register(this.conn);
 		out.defaultWriteObject();
 	}
 
-	private void readObject(ObjectInputStream in)
-			throws IOException, ClassNotFoundException {
+	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
 		in.defaultReadObject();
 		this.conn = SailConnection.class.cast(NonSerializables.get(this.connKey));
 	}

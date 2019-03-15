@@ -30,9 +30,6 @@ public class MaxCountFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MaxCountFilter{" +
-				"maxCount=" + maxCount +
-				" 'true means <= " + maxCount + "'" +
-				'}';
+		return "MaxCountFilter{" + "maxCount=" + maxCount + " 'true means <= " + maxCount + "'" + '}';
 	}
 }

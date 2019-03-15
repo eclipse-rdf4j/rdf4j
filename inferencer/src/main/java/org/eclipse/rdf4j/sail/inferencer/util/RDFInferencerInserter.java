@@ -49,16 +49,14 @@ public class RDFInferencerInserter extends AbstractRDFInserter {
 	 *---------*/
 
 	@Override
-	protected void addNamespace(String prefix, String name)
-			throws RDF4JException {
+	protected void addNamespace(String prefix, String name) throws RDF4JException {
 		if (con.getNamespace(prefix) == null) {
 			con.setNamespace(prefix, name);
 		}
 	}
 
 	@Override
-	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
-			throws RDF4JException {
+	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException {
 		if (enforcesContext()) {
 			con.addInferredStatement(subj, pred, obj, contexts);
 		} else {

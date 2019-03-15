@@ -41,8 +41,7 @@ public class SolrSearchQuery implements SearchQuery {
 	}
 
 	@Override
-	public Iterable<? extends DocumentScore> query(Resource resource)
-			throws IOException {
+	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		QueryResponse response;
 		if (query.getHighlight()) {
 			query.addField("*");
@@ -66,8 +65,7 @@ public class SolrSearchQuery implements SearchQuery {
 			@Override
 			public DocumentScore apply(SolrDocument document) {
 				SolrSearchDocument doc = new SolrSearchDocument(document);
-				Map<String, List<String>> docHighlighting = (highlighting != null)
-						? highlighting.get(doc.getId())
+				Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
 						: null;
 				return new SolrDocumentScore(doc, docHighlighting);
 			}

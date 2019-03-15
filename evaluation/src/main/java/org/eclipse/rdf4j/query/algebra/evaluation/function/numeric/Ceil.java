@@ -33,8 +33,7 @@ public class Ceil implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("CEIL requires exactly 1 argument, got " + args.length);
 		}
@@ -55,8 +54,7 @@ public class Ceil implements Function {
 					double ceilingValue = Math.ceil(literal.doubleValue());
 					return valueFactory.createLiteral(Double.toString(ceilingValue), datatype);
 				} else {
-					throw new ValueExprEvaluationException(
-							"unexpected datatype for function operand: " + args[0]);
+					throw new ValueExprEvaluationException("unexpected datatype for function operand: " + args[0]);
 				}
 			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);

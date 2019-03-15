@@ -37,8 +37,7 @@ import org.junit.Test;
 public class QueryJoinOptimizerTest {
 
 	@Test
-	public void testBindingSetAssignmentOptimization()
-			throws RDF4JException {
+	public void testBindingSetAssignmentOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
 				+ " ex:s2 ex:pred 'bah'. {" + "  ?s ?p ?o. " + "  optional {"
 				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
@@ -52,10 +51,9 @@ public class QueryJoinOptimizerTest {
 	}
 
 	@Test(expected = AssertionError.class)
-	public void testContextOptimization()
-			throws RDF4JException {
-		String query = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {"
-				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
+	public void testContextOptimization() throws RDF4JException {
+		String query = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {" + "  ex:s ?sp ?so. "
+				+ "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 		// optimal order should be ?g graph first
 		// as it is all statements about a subject in all graphs
 		// rather than all subjects in the default graph:
@@ -68,8 +66,7 @@ public class QueryJoinOptimizerTest {
 	}
 
 	@Test
-	public void testSES2306AggregateOrderBy()
-			throws Exception {
+	public void testSES2306AggregateOrderBy() throws Exception {
 		String select = "PREFIX ex: <ex:>\n" + "SELECT ((MIN(?x+1) + MAX(?y-1))/2 AS ?r) {\n"
 				+ "	?this ex:name ?n . ?this ex:id ?id . ?this ex:prop1 ?x . ?this ex:prop2 ?y .\n"
 				+ "} GROUP BY concat(?n, ?id) HAVING (SUM(?x) + SUM(?y) < 5) ORDER BY (COUNT(?x) + COUNT(?y))";
@@ -79,8 +76,7 @@ public class QueryJoinOptimizerTest {
 		q.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
 
 			@Override
-			protected void meetUnaryTupleOperator(UnaryTupleOperator node)
-					throws Exception {
+			protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws Exception {
 				assertNotEquals(node, node.getArg());
 				super.meetUnaryTupleOperator(node);
 			}
@@ -88,12 +84,11 @@ public class QueryJoinOptimizerTest {
 	}
 
 	@Test
-	public void testSES2116JoinBind()
-			throws Exception {
+	public void testSES2116JoinBind() throws Exception {
 
 		StringBuilder qb = new StringBuilder();
-		qb.append("SELECT ?subject ?name ?row {\n"
-				+ "  ?subject <http://localhost/table_1> ?uri .\n" + "  BIND(STR(?uri) AS ?name)\n"
+		qb.append("SELECT ?subject ?name ?row {\n" + "  ?subject <http://localhost/table_1> ?uri .\n"
+				+ "  BIND(STR(?uri) AS ?name)\n"
 				+ "  ?table <http://linked.opendata.cz/ontology/odcs/tabular/hasRow> ?row .\n"
 				+ "  ?table <http://linked.opendata.cz/ontology/odcs/tabular/symbolicName> ?name .\n" + "}");
 
@@ -109,14 +104,8 @@ public class QueryJoinOptimizerTest {
 
 	@Test
 	public void bindSubselectJoinOrder() throws Exception {
-		String query = "SELECT * WHERE {\n" +
-				"    BIND (bnode() as ?ct01) \n" +
-				"    { SELECT ?s WHERE {\n" +
-				"            ?s ?p ?o .\n" +
-				"      }\n" +
-				"      LIMIT 10\n" +
-				"    }\n" +
-				"}";
+		String query = "SELECT * WHERE {\n" + "    BIND (bnode() as ?ct01) \n" + "    { SELECT ?s WHERE {\n"
+				+ "            ?s ?p ?o .\n" + "      }\n" + "      LIMIT 10\n" + "    }\n" + "}";
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
@@ -149,8 +138,7 @@ public class QueryJoinOptimizerTest {
 		QueryRoot optRoot = new QueryRoot(pq.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
-		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery,
-				null);
+		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
 		QueryRoot root = new QueryRoot(expectedParsedQuery.getTupleExpr());
 		assertQueryModelTrees(root, optRoot);
 	}

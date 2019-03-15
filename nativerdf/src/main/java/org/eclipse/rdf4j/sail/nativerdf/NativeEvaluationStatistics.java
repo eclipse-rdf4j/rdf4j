@@ -66,8 +66,7 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 				}
 				return cardinality((Resource) subj, (IRI) pred, obj, (Resource) context);
 			} catch (IOException e) {
-				log.error(
-						"Failed to estimate statement pattern cardinality, falling back to generic implementation",
+				log.error("Failed to estimate statement pattern cardinality, falling back to generic implementation",
 						e);
 				return super.getCardinality(sp);
 			}
@@ -78,8 +77,7 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 		}
 	}
 
-	private double cardinality(Resource subj, IRI pred, Value obj, Resource context)
-			throws IOException {
+	private double cardinality(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);

@@ -41,8 +41,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		Literal(SHACL.LITERAL),
 		BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
 		BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL),
-		IRIOrLiteral(SHACL.IRI_OR_LITERAL),
-		;
+		IRIOrLiteral(SHACL.IRI_OR_LITERAL),;
 
 		IRI iri;
 
@@ -65,12 +64,8 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-				shaclSailConnection,
-				nodeShape,
-				(parent) -> new NodeKindFilter(parent, nodeKind),
-				this,
-				overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new NodeKindFilter(parent, nodeKind), this, overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

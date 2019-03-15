@@ -29,14 +29,12 @@ import org.junit.Test;
 public class EvaluationModeTest {
 
 	@Test
-	public void testServiceEvaluationMode()
-			throws RDFParseException, RepositoryException, IOException {
+	public void testServiceEvaluationMode() throws RDFParseException, RepositoryException, IOException {
 		testEvaluationMode(TupleFunctionEvaluationMode.SERVICE);
 	}
 
 	@Test
-	public void testTripleSourceEvaluationMode()
-			throws RDFParseException, RepositoryException, IOException {
+	public void testTripleSourceEvaluationMode() throws RDFParseException, RepositoryException, IOException {
 		testEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 	}
 

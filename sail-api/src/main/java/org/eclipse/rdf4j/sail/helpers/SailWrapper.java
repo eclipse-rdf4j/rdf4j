@@ -91,29 +91,25 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	}
 
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		verifyBaseSailSet();
 		baseSail.initialize();
 	}
 
 	@Override
-	public void shutDown()
-			throws SailException {
+	public void shutDown() throws SailException {
 		verifyBaseSailSet();
 		baseSail.shutDown();
 	}
 
 	@Override
-	public boolean isWritable()
-			throws SailException {
+	public boolean isWritable() throws SailException {
 		verifyBaseSailSet();
 		return baseSail.isWritable();
 	}
 
 	@Override
-	public SailConnection getConnection()
-			throws SailException {
+	public SailConnection getConnection() throws SailException {
 		verifyBaseSailSet();
 		return baseSail.getConnection();
 	}

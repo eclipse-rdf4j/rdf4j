@@ -56,8 +56,7 @@ public class CalendarMemLiteral extends MemLiteral {
 		return calendar;
 	}
 
-	private void readObject(java.io.ObjectInputStream in)
-			throws IOException {
+	private void readObject(java.io.ObjectInputStream in) throws IOException {
 		try {
 			in.defaultReadObject();
 			calendar = XMLDatatypeUtil.parseCalendar(this.getLabel());

@@ -123,8 +123,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public void close()
-			throws SailException {
+	public void close() throws SailException {
 		semaphore.lock();
 		try {
 			try {
@@ -155,15 +154,13 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level)
-			throws SailException {
+	public SailSink sink(IsolationLevel level) throws SailException {
 		Changeset changeset = new Changeset() {
 
 			private boolean prepared;
 
 			@Override
-			public void prepare()
-					throws SailException {
+			public void prepare() throws SailException {
 				if (!prepared) {
 					preparedChangeset(this);
 					prepared = true;
@@ -172,14 +169,12 @@ class SailSourceBranch implements SailSource {
 			}
 
 			@Override
-			public void flush()
-					throws SailException {
+			public void flush() throws SailException {
 				merge(this);
 			}
 
 			@Override
-			public void close()
-					throws SailException {
+			public void close() throws SailException {
 				try {
 					super.close();
 				} finally {
@@ -206,13 +201,11 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level)
-			throws SailException {
+	public SailDataset dataset(IsolationLevel level) throws SailException {
 		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
 
 			@Override
-			public void close()
-					throws SailException {
+			public void close() throws SailException {
 				super.close();
 				try {
 					semaphore.lock();
@@ -239,8 +232,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public void prepare()
-			throws SailException {
+	public void prepare() throws SailException {
 		try {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
@@ -258,8 +250,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public void flush()
-			throws SailException {
+	public void flush() throws SailException {
 		try {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
@@ -339,8 +330,7 @@ class SailSourceBranch implements SailSource {
 		semaphore.unlock();
 	}
 
-	void autoFlush()
-			throws SailException {
+	void autoFlush() throws SailException {
 		if (autoFlush && semaphore.tryLock()) {
 			try {
 				if (serializable == null && observers.isEmpty()) {
@@ -353,15 +343,13 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private boolean isChanged(Changeset change) {
-		return change.getApproved() != null || change.getDeprecated() != null
-				|| change.getApprovedContexts() != null || change.getDeprecatedContexts() != null
-				|| change.getAddedNamespaces() != null || change.getRemovedPrefixes() != null
-				|| change.isStatementCleared() || change.isNamespaceCleared()
+		return change.getApproved() != null || change.getDeprecated() != null || change.getApprovedContexts() != null
+				|| change.getDeprecatedContexts() != null || change.getAddedNamespaces() != null
+				|| change.getRemovedPrefixes() != null || change.isStatementCleared() || change.isNamespaceCleared()
 				|| change.getObservations() != null;
 	}
 
-	private SailDataset derivedFromSerializable(IsolationLevel level)
-			throws SailException {
+	private SailDataset derivedFromSerializable(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
 			if (serializable == null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
@@ -378,8 +366,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private SailDataset derivedFromSnapshot(IsolationLevel level)
-			throws SailException {
+	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
 			SailDataset derivedFrom;
@@ -388,8 +375,7 @@ class SailSourceBranch implements SailSource {
 				derivedFrom = new DelegatingSailDataset(this.snapshot) {
 
 					@Override
-					public void close()
-							throws SailException {
+					public void close() throws SailException {
 						// don't close snapshot yet
 					}
 				};
@@ -401,8 +387,7 @@ class SailSourceBranch implements SailSource {
 					derivedFrom = new DelegatingSailDataset(derivedFrom) {
 
 						@Override
-						public void close()
-								throws SailException {
+						public void close() throws SailException {
 							// don't close snapshot yet
 						}
 					};
@@ -418,8 +403,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private void prepare(SailSink sink)
-			throws SailException {
+	private void prepare(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
 			Iterator<Changeset> iter = changes.iterator();
@@ -431,8 +415,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private void prepare(Changeset change, SailSink sink)
-			throws SailException {
+	private void prepare(Changeset change, SailSink sink) throws SailException {
 		Set<StatementPattern> observations = change.getObservations();
 		if (observations != null) {
 			for (StatementPattern p : observations) {
@@ -449,8 +432,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private void flush(SailSink sink)
-			throws SailException {
+	private void flush(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
 			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset
@@ -470,8 +452,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private void flush(Changeset change, SailSink sink)
-			throws SailException {
+	private void flush(Changeset change, SailSink sink) throws SailException {
 		prepare(change, sink);
 		if (change.isNamespaceCleared()) {
 			sink.clearNamespaces();

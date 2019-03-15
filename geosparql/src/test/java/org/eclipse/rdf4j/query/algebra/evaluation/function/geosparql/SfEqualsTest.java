@@ -31,8 +31,7 @@ public class SfEqualsTest extends GeometricRelationFunctionTest {
 	}
 
 	@Test
-	public void matchesMultiPolygonWKT()
-			throws IOException {
+	public void matchesMultiPolygonWKT() throws IOException {
 
 		String polygon = IOUtils.toString(
 				getClass().getResourceAsStream(

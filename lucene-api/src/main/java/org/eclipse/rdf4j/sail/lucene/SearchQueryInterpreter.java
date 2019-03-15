@@ -22,6 +22,5 @@ public interface SearchQueryInterpreter {
 	 * @param bindings  any bindings.
 	 * @param specs     the Collection to add any SearchQueryEvaluators to.
 	 */
-	void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> specs)
-			throws SailException;
+	void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> specs) throws SailException;
 }

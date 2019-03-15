@@ -27,8 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public abstract class IntegerCastFunction extends CastFunction {
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-			throws ValueExprEvaluationException {
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
@@ -51,15 +50,14 @@ public abstract class IntegerCastFunction extends CastFunction {
 					integerValue = literal.integerValue();
 				}
 				try {
-					return createTypedLiteral(valueFactory, integerValue).orElseThrow(
-							() -> typeError(literal, null));
+					return createTypedLiteral(valueFactory, integerValue).orElseThrow(() -> typeError(literal, null));
 				} catch (ArithmeticException | NumberFormatException e) {
 					throw typeError(literal, e);
 				}
 			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
-					return createTypedLiteral(valueFactory, literal.booleanValue()).orElseThrow(
-							() -> typeError(literal, null));
+					return createTypedLiteral(valueFactory, literal.booleanValue())
+							.orElseThrow(() -> typeError(literal, null));
 				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}

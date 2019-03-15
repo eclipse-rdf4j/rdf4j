@@ -33,8 +33,7 @@ public abstract class HashFunction implements Function {
 	 * @return hexadecimal string (padded with leading zeros if needed)
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected String hash(String text, String algorithm)
-			throws NoSuchAlgorithmException {
+	protected String hash(String text, String algorithm) throws NoSuchAlgorithmException {
 		byte[] hash = MessageDigest.getInstance(algorithm).digest(text.getBytes(StandardCharsets.UTF_8));
 		BigInteger bi = new BigInteger(1, hash);
 
@@ -42,6 +41,5 @@ public abstract class HashFunction implements Function {
 	}
 
 	@Override
-	public abstract Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException;
+	public abstract Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException;
 }

@@ -58,13 +58,11 @@ public class IDFile implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public IDFile(File file)
-			throws IOException {
+	public IDFile(File file) throws IOException {
 		this(file, false);
 	}
 
-	public IDFile(File file, boolean forceSync)
-			throws IOException {
+	public IDFile(File file, boolean forceSync) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
 
@@ -111,16 +109,14 @@ public class IDFile implements Closeable {
 	 * @return The largest ID, or <tt>0</tt> if the file does not contain any data.
 	 * @throws IOException If an I/O error occurs.
 	 */
-	public int getMaxID()
-			throws IOException {
+	public int getMaxID() throws IOException {
 		return (int) (nioFile.size() / ITEM_SIZE) - 1;
 	}
 
 	/**
 	 * Stores the offset of a new data entry, returning the ID under which is stored.
 	 */
-	public int storeOffset(long offset)
-			throws IOException {
+	public int storeOffset(long offset) throws IOException {
 		long fileSize = nioFile.size();
 		nioFile.writeLong(offset, fileSize);
 		return (int) (fileSize / ITEM_SIZE);
@@ -132,8 +128,7 @@ public class IDFile implements Closeable {
 	 * @param id     The ID to set the offset for, must be larger than 0.
 	 * @param offset The (new) offset for the specified ID.
 	 */
-	public void setOffset(int id, long offset)
-			throws IOException {
+	public void setOffset(int id, long offset) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 		nioFile.writeLong(offset, ITEM_SIZE * id);
 	}
@@ -144,8 +139,7 @@ public class IDFile implements Closeable {
 	 * @param id The ID to get the offset for, must be larger than 0.
 	 * @return The offset for the ID.
 	 */
-	public long getOffset(int id)
-			throws IOException {
+	public long getOffset(int id) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 		return nioFile.readLong(ITEM_SIZE * id);
 	}
@@ -155,16 +149,14 @@ public class IDFile implements Closeable {
 	 * 
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 	}
 
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		if (forceSync) {
 			nioFile.force(false);
 		}
@@ -176,8 +168,7 @@ public class IDFile implements Closeable {
 	 * @throws IOException
 	 */
 	@Override
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		nioFile.close();
 	}
 }

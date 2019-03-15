@@ -82,8 +82,8 @@ public class QueryModelPruner implements QueryOptimizer {
 			} else if (condition instanceof ValueConstant) {
 				boolean conditionValue;
 				try {
-					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
-							((ValueConstant) condition).getValue());
+					conditionValue = QueryEvaluationUtil
+							.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
 				} catch (ValueExprEvaluationException e) {
 					conditionValue = false;
 				}

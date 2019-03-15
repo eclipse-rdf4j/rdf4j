@@ -38,8 +38,7 @@ public class DateTimeCast extends CastFunction {
 	}
 
 	@Override
-	protected Literal convert(ValueFactory vf, Value value)
-			throws ValueExprEvaluationException {
+	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
@@ -59,8 +58,7 @@ public class DateTimeCast extends CastFunction {
 					int day = calValue.getDay();
 					int timezoneOffset = calValue.getTimezone();
 
-					if (DatatypeConstants.FIELD_UNDEFINED != year
-							&& DatatypeConstants.FIELD_UNDEFINED != month
+					if (DatatypeConstants.FIELD_UNDEFINED != year && DatatypeConstants.FIELD_UNDEFINED != month
 							&& DatatypeConstants.FIELD_UNDEFINED != day) {
 						StringBuilder dtBuilder = new StringBuilder();
 						dtBuilder.append(year);

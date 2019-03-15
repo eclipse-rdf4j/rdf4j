@@ -62,8 +62,7 @@ class TxnStatusFile {
 	 * @param dataDir The directory for the transaction status file.
 	 * @throws IOException If the file did not yet exist and could not be written to.
 	 */
-	public TxnStatusFile(File dataDir)
-			throws IOException {
+	public TxnStatusFile(File dataDir) throws IOException {
 		File statusFile = new File(dataDir, FILE_NAME);
 		nioFile = new NioFile(statusFile, "rwd");
 
@@ -72,8 +71,7 @@ class TxnStatusFile {
 		}
 	}
 
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		nioFile.close();
 	}
 
@@ -83,8 +81,7 @@ class TxnStatusFile {
 	 * @param txnStatus The transaction status to write.
 	 * @throws IOException If the transaction status could not be written to file.
 	 */
-	public void setTxnStatus(TxnStatus txnStatus)
-			throws IOException {
+	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
 		byte[] bytes = txnStatus.name().getBytes(US_ASCII);
 		nioFile.truncate(bytes.length);
 		nioFile.writeBytes(bytes, 0);
@@ -97,8 +94,7 @@ class TxnStatusFile {
 	 *         string.
 	 * @throws IOException If the transaction status file could not be read.
 	 */
-	public TxnStatus getTxnStatus()
-			throws IOException {
+	public TxnStatus getTxnStatus() throws IOException {
 		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
 		String s = new String(bytes, US_ASCII);
 		try {

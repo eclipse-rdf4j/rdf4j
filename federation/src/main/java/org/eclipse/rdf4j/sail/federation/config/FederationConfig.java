@@ -122,8 +122,7 @@ public class FederationConfig extends AbstractSailImplConfig {
 	}
 
 	@Override
-	public void parse(Model graph, Resource implNode)
-			throws SailConfigException {
+	public void parse(Model graph, Resource implNode) throws SailConfigException {
 		super.parse(graph, implNode);
 		LinkedHashModel model = new LinkedHashModel(graph);
 		for (Value member : model.filter(implNode, MEMBER, null).objects()) {
@@ -151,8 +150,7 @@ public class FederationConfig extends AbstractSailImplConfig {
 	}
 
 	@Override
-	public void validate()
-			throws SailConfigException {
+	public void validate() throws SailConfigException {
 		super.validate();
 		if (members.isEmpty()) {
 			throw new SailConfigException("No federation members specified");

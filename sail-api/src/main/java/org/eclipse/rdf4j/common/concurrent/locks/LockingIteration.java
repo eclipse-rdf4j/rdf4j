@@ -50,8 +50,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	 *---------*/
 
 	@Override
-	public synchronized boolean hasNext()
-			throws X {
+	public synchronized boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -65,8 +64,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	}
 
 	@Override
-	public synchronized E next()
-			throws X {
+	public synchronized E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -75,8 +73,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	}
 
 	@Override
-	public synchronized void remove()
-			throws X {
+	public synchronized void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException("Iteration has been closed");
 		}
@@ -85,8 +82,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	}
 
 	@Override
-	protected void handleClose()
-			throws X {
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

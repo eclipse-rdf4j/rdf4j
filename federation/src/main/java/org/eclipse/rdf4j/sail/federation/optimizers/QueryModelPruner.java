@@ -45,8 +45,7 @@ public class QueryModelPruner implements QueryOptimizer {
 	protected class TreeSanitizer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
-		public void meetOther(QueryModelNode node)
-				throws RuntimeException {
+		public void meetOther(QueryModelNode node) throws RuntimeException {
 			if (node instanceof NaryJoin) {
 				meetMultiJoin((NaryJoin) node);
 			} else {
@@ -100,8 +99,8 @@ public class QueryModelPruner implements QueryOptimizer {
 			} else if (condition instanceof ValueConstant) {
 				boolean conditionValue;
 				try {
-					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
-							((ValueConstant) condition).getValue());
+					conditionValue = QueryEvaluationUtil
+							.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
 				} catch (ValueExprEvaluationException e) {
 					conditionValue = false;
 				}

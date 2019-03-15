@@ -79,9 +79,8 @@ public class MinCountBenchmarkPrefilled {
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
-								vf.createLiteral("label" + i)));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
+						vf.createLiteral("label" + i)));
 			}
 		}
 
@@ -90,9 +89,8 @@ public class MinCountBenchmarkPrefilled {
 		for (int i = 0; i < 100000; i++) {
 			allStatements2.add(
 					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
-			allStatements2.add(
-					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL,
-							vf.createLiteral("label" + i)));
+			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL,
+					vf.createLiteral("label" + i)));
 		}
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");

@@ -32,11 +32,9 @@ public class Substring implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 2 || args.length > 3) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for SUBSTR: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for SUBSTR: " + args.length);
 		}
 
 		Value argValue = args[0];
@@ -104,12 +102,10 @@ public class Substring implements Function {
 					throw new ValueExprEvaluationException("could not determine substring", e);
 				}
 			} else {
-				throw new ValueExprEvaluationException(
-						"unexpected input value for function substring: " + argValue);
+				throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);
 			}
 		} else {
-			throw new ValueExprEvaluationException(
-					"unexpected input value for function substring: " + argValue);
+			throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);
 		}
 	}
 

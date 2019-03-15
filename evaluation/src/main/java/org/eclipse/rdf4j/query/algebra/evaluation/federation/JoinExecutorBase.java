@@ -22,12 +22,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
  */
 @Deprecated
-public abstract class JoinExecutorBase<T>
-		extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T> {
+public abstract class JoinExecutorBase<T> extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T> {
 
 	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings)
-			throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		super(leftIter, rightArg, bindings);
 	}
 }

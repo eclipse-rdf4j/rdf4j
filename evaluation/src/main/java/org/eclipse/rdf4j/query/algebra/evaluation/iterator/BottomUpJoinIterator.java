@@ -73,8 +73,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (hashTable == null) {
 			setupHashTable();
 		}
@@ -131,8 +130,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {
@@ -173,8 +171,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		return q;
 	}
 
-	private void setupHashTable()
-			throws QueryEvaluationException {
+	private void setupHashTable() throws QueryEvaluationException {
 
 		hashTable = makeMap();
 
@@ -214,19 +211,16 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	}
 
-	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey,
-			List<BindingSet> hashValue)
+	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue)
 			throws QueryEvaluationException {
 		hashTable.put(hashKey, hashValue);
 	}
 
-	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values)
-			throws QueryEvaluationException {
+	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values) throws QueryEvaluationException {
 		hashTableValues.addAll(values);
 	}
 
-	protected void add(List<BindingSet> leftArgResults, BindingSet b)
-			throws QueryEvaluationException {
+	protected void add(List<BindingSet> leftArgResults, BindingSet b) throws QueryEvaluationException {
 		leftArgResults.add(b);
 	}
 
@@ -263,8 +257,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * @param list which is worked on.
 	 * @return the removed BindingSet
 	 */
-	protected BindingSet removeFirstElement(List<BindingSet> list)
-			throws QueryEvaluationException {
+	protected BindingSet removeFirstElement(List<BindingSet> list) throws QueryEvaluationException {
 		return list.remove(0);
 	}
 }

@@ -95,8 +95,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					"CONSTRUCT * FROM {X} sesame:directSubPropertyOf {Y}", null);
 
 			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-					"CONSTRUCT {X} sesame:directSubClassOf {Y} " + "FROM {X} rdfs:subClassOf {Y} "
-							+ "WHERE X != Y AND "
+					"CONSTRUCT {X} sesame:directSubClassOf {Y} " + "FROM {X} rdfs:subClassOf {Y} " + "WHERE X != Y AND "
 							+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subClassOf {Z} rdfs:subClassOf {Y} WHERE X != Z AND Z != Y)",
 					null);
 
@@ -133,8 +132,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	 *---------*/
 
 	@Override
-	public InferencerConnection getConnection()
-			throws SailException {
+	public InferencerConnection getConnection() throws SailException {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new DirectTypeHierarchyInferencerConnection(con);
@@ -144,8 +142,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		super.initialize();
 
 		try (InferencerConnection con = getConnection()) {
@@ -193,15 +190,13 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		@Override
-		public void rollback()
-				throws SailException {
+		public void rollback() throws SailException {
 			super.rollback();
 			updateNeeded = false;
 		}
 
 		@Override
-		public void flushUpdates()
-				throws SailException {
+		public void flushUpdates() throws SailException {
 			super.flushUpdates();
 
 			while (updateNeeded) {
@@ -261,8 +256,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
-					.evaluate(
-							query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {

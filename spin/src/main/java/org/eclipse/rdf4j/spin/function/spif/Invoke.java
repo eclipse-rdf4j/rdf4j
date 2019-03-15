@@ -23,8 +23,7 @@ public class Invoke extends AbstractSpinFunction implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length == 0) {
 			throw new ValueExprEvaluationException("At least one argument is required");
 		}

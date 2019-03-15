@@ -35,8 +35,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Constructors *
 	 *--------------*/
 
-	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
-			throws QueryEvaluationException {
+	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.join = join;
 
@@ -51,8 +50,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
 			while (rightIter.hasNext() || leftIter.hasNext()) {
 				if (rightIter.hasNext()) {
@@ -75,8 +73,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

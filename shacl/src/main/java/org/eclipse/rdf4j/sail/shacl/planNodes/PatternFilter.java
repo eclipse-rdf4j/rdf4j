@@ -74,8 +74,6 @@ public class PatternFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "PatternFilter{" +
-				"pattern=" + pattern +
-				'}';
+		return "PatternFilter{" + "pattern=" + pattern + '}';
 	}
 }

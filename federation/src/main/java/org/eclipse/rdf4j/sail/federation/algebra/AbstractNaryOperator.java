@@ -133,8 +133,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(final QueryModelVisitor<X> visitor)
-			throws X {
+	public <X extends Exception> void visitChildren(final QueryModelVisitor<X> visitor) throws X {
 		for (Expr arg : args) {
 			if (arg != null) {
 				arg.visit(visitor);

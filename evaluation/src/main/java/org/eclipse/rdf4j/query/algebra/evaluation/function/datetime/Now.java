@@ -35,8 +35,7 @@ public class Now implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 0) {
 			throw new ValueExprEvaluationException("NOW requires 0 argument, got " + args.length);
 		}

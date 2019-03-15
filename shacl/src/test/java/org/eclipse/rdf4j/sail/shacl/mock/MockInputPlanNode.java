@@ -34,8 +34,7 @@ public class MockInputPlanNode implements PlanNode {
 
 	public MockInputPlanNode(List<String>... list) {
 
-		initialData = Arrays
-				.stream(list)
+		initialData = Arrays.stream(list)
 				.map(strings -> strings.stream()
 						.map(SimpleValueFactory.getInstance()::createLiteral)
 						.map(l -> (Value) l)
@@ -53,25 +52,21 @@ public class MockInputPlanNode implements PlanNode {
 			Iterator<Tuple> iterator = initialData.iterator();
 
 			@Override
-			public void close()
-					throws SailException {
+			public void close() throws SailException {
 			}
 
 			@Override
-			public boolean hasNext()
-					throws SailException {
+			public boolean hasNext() throws SailException {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public Tuple next()
-					throws SailException {
+			public Tuple next() throws SailException {
 				return iterator.next();
 			}
 
 			@Override
-			public void remove()
-					throws SailException {
+			public void remove() throws SailException {
 
 			}
 		};

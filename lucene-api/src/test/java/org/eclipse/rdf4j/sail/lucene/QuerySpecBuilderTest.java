@@ -38,15 +38,13 @@ public class QuerySpecBuilderTest {
 	private SeRQLParser parser;
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		interpreter = new QuerySpecBuilder(true);
 		parser = new SeRQLParser();
 	}
 
 	@Test
-	public void testQueryInterpretation()
-			throws Exception {
+	public void testQueryInterpretation() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT Subject, Score, Snippet ");
 		buffer.append("FROM {Subject} <" + MATCHES + "> {} ");
@@ -62,8 +60,7 @@ public class QuerySpecBuilderTest {
 
 		QuerySpec querySpec = (QuerySpec) queries.iterator().next();
 		assertEquals("Subject", querySpec.getMatchesPattern().getSubjectVar().getName());
-		assertEquals("my Lucene query",
-				((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+		assertEquals("my Lucene query", ((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 		assertEquals("Score", querySpec.getScorePattern().getObjectVar().getName());
 		assertEquals("Snippet", querySpec.getSnippetPattern().getObjectVar().getName());
 		assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
@@ -72,8 +69,7 @@ public class QuerySpecBuilderTest {
 	}
 
 	@Test
-	public void testMultipleQueriesInterpretation()
-			throws Exception {
+	public void testMultipleQueriesInterpretation() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT sub1, score1, snippet1, sub2, score2, snippet2, x, p1, p2 ");
 		buffer.append("FROM {sub1} <" + MATCHES + "> {} ");
@@ -136,24 +132,23 @@ public class QuerySpecBuilderTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testIncompleteFail()
-			throws Exception {
+	public void testIncompleteFail() throws Exception {
 		// default works
-		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<"
-				+ TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<"
-				+ SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE
+				+ "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
+				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		checkQuery(queryString);
 
 		// minimal works
-		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<"
-				+ LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"} ";
+		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
+				+ "<" + QUERY + "> {\"my Lucene query\"} ";
 		checkQuery(queryString);
 
 		// matches missing
 		queryString = "SELECT sub1, score1, snippet1 FROM "
 				// + "{sub1} <" + MATCHES + "> {} "
-				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; "
-				+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
+				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		try {
 			checkQuery(queryString);
 			fail("invalid query ignored");
@@ -174,8 +169,8 @@ public class QuerySpecBuilderTest {
 		}
 
 		// query missing
-		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE
-				+ "> {<" + LUCENE_QUERY + ">}; "
+		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<"
+				+ LUCENE_QUERY + ">}; "
 				// +"<" + QUERY + "> {\"my Lucene query\"}; "
 				+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		try {
@@ -192,8 +187,7 @@ public class QuerySpecBuilderTest {
 	 *
 	 * @param queryString
 	 */
-	private void checkQuery(String queryString)
-			throws Exception {
+	private void checkQuery(String queryString) throws Exception {
 		ParsedQuery query = parser.parseQuery(queryString, null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 		Collection<SearchQueryEvaluator> queries = process(interpreter, tupleExpr);

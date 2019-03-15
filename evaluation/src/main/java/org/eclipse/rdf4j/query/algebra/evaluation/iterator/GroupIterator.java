@@ -95,8 +95,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			long iterationCacheSyncThreshold)
-			throws QueryEvaluationException {
+			long iterationCacheSyncThreshold) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -120,8 +119,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 *---------*/
 
 	@Override
-	public boolean hasNext()
-			throws QueryEvaluationException {
+	public boolean hasNext() throws QueryEvaluationException {
 		if (!initialized) {
 			synchronized (lock) {
 				if (!initialized) {
@@ -134,8 +132,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	@Override
-	public BindingSet next()
-			throws QueryEvaluationException {
+	public BindingSet next() throws QueryEvaluationException {
 		if (!initialized) {
 			synchronized (lock) {
 				if (!initialized) {
@@ -148,8 +145,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {
@@ -167,8 +163,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private Iterator<BindingSet> createIterator()
-			throws QueryEvaluationException {
+	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
 		Collection<Entry> entries = buildEntries();
 		Set<BindingSet> bindingSets = createSet("bindingsets");
 
@@ -194,8 +189,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return bindingSets.iterator();
 	}
 
-	private Collection<Entry> buildEntries()
-			throws QueryEvaluationException {
+	private Collection<Entry> buildEntries() throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter;
 		iter = strategy.evaluate(group.getArg(), parentBindings);
 
@@ -297,14 +291,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private volatile Map<String, Aggregate> aggregates;
 
-		public Entry(BindingSet prototype)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+		public Entry(BindingSet prototype) throws ValueExprEvaluationException, QueryEvaluationException {
 			this.prototype = prototype;
 
 		}
 
-		private Map<String, Aggregate> getAggregates()
-				throws ValueExprEvaluationException, QueryEvaluationException {
+		private Map<String, Aggregate> getAggregates() throws ValueExprEvaluationException, QueryEvaluationException {
 			Map<String, Aggregate> result = aggregates;
 			if (result == null) {
 				synchronized (this) {
@@ -327,15 +319,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			return prototype;
 		}
 
-		public void addSolution(BindingSet bindingSet)
-				throws QueryEvaluationException {
+		public void addSolution(BindingSet bindingSet) throws QueryEvaluationException {
 			for (Aggregate aggregate : getAggregates().values()) {
 				aggregate.processAggregate(bindingSet);
 			}
 		}
 
-		public void bindSolution(QueryBindingSet sol)
-				throws QueryEvaluationException {
+		public void bindSolution(QueryBindingSet sol) throws QueryEvaluationException {
 			for (String name : getAggregates().keySet()) {
 				try {
 					Value value = getAggregates().get(name).getValue();
@@ -389,11 +379,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 		}
 
-		public abstract Value getValue()
-				throws ValueExprEvaluationException;
+		public abstract Value getValue() throws ValueExprEvaluationException;
 
-		public abstract void processAggregate(BindingSet bindingSet)
-				throws QueryEvaluationException;
+		public abstract void processAggregate(BindingSet bindingSet) throws QueryEvaluationException;
 
 		protected boolean distinctValue(Value value) {
 			if (distinctValues == null) {
@@ -413,8 +401,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			return arg;
 		}
 
-		protected Value evaluate(BindingSet s)
-				throws QueryEvaluationException {
+		protected Value evaluate(BindingSet s) throws QueryEvaluationException {
 			try {
 				return strategy.evaluate(getArg(), s);
 			} catch (ValueExprEvaluationException e) {
@@ -442,8 +429,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			if (getArg() != null) {
 				Value value = evaluate(s);
 				if (value != null && distinctValue(value)) {
@@ -488,8 +474,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
@@ -517,8 +502,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
@@ -546,8 +530,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			if (typeError != null) {
 				// halt further processing if a type error has been raised
 				return;
@@ -570,8 +553,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public Value getValue()
-				throws ValueExprEvaluationException {
+		public Value getValue() throws ValueExprEvaluationException {
 			if (typeError != null) {
 				throw typeError;
 			}
@@ -593,8 +575,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			if (typeError != null) {
 				// Prevent calculating the aggregate further if a type error has
 				// occured.
@@ -623,8 +604,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public Value getValue()
-				throws ValueExprEvaluationException {
+		public Value getValue() throws ValueExprEvaluationException {
 			if (typeError != null) {
 				// a type error occurred while processing the aggregate, throw it
 				// now.
@@ -652,8 +632,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			// we flip a coin to determine if we keep the current value or set a
 			// new value to report.
 			if (sample == null || random.nextFloat() < 0.5f) {
@@ -687,8 +666,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public void processAggregate(BindingSet s)
-				throws QueryEvaluationException {
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				concatenated.append(v.stringValue());

@@ -48,8 +48,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
-			BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		if (expr instanceof NaryJoin) {
@@ -65,8 +64,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getLeftArg(),
-				bindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getLeftArg(), bindings);
 		for (int i = 1, n = 2; i < n; i++) {
 			result = new ParallelJoinCursor(this, result, join.getRightArg()); // NOPMD
 			executor.execute((Runnable) result);
@@ -74,8 +72,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		return result;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join,
-			BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join, BindingSet bindings)
 			throws QueryEvaluationException {
 		assert join.getNumberOfArguments() > 0;
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getArg(0), bindings);
@@ -88,8 +85,8 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 					|| (rightArg instanceof OwnedTupleExpr && ((OwnedTupleExpr) rightArg).hasQuery())) {
 				TupleExpr leftArg = join.getArg(i - 1);
 				collectedBindingNames.addAll(leftArg.getBindingNames());
-				result = new HashJoinIteration(this, result, collectedBindingNames,
-						evaluate(rightArg, bindings), rightArg.getBindingNames(), false);
+				result = new HashJoinIteration(this, result, collectedBindingNames, evaluate(rightArg, bindings),
+						rightArg.getBindingNames(), false);
 			} else {
 				result = new ParallelJoinCursor(this, result, join.getArg(i)); // NOPMD
 				executor.execute((Runnable) result);
@@ -101,8 +98,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
-			final BindingSet bindings)
-			throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		// Check whether optional join is "well designed" as defined in section
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 		Set<String> boundVars = bindings.getBindingNames();
@@ -134,13 +130,11 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		return new UnionIteration<>(iters);
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> evaluate(OwnedTupleExpr expr,
-			BindingSet bindings)
+	private CloseableIteration<BindingSet, QueryEvaluationException> evaluate(OwnedTupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result = expr.evaluate(dataset, bindings);
 		if (result == null) {
-			TripleSource source = new org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource(
-					expr.getOwner());
+			TripleSource source = new org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource(expr.getOwner());
 			EvaluationStrategy eval = new FederationStrategy(executor, source, dataset, serviceResolver);
 			result = eval.evaluate(expr.getArg(), bindings);
 		}

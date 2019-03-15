@@ -26,17 +26,15 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	private final EvaluationStrategy strategy;
 
-	public ExtensionIterator(Extension extension,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, EvaluationStrategy strategy)
-			throws QueryEvaluationException {
+	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.extension = extension;
 		this.strategy = strategy;
 	}
 
 	@Override
-	public BindingSet convert(BindingSet sourceBindings)
-			throws QueryEvaluationException {
+	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		QueryBindingSet targetBindings = new QueryBindingSet(sourceBindings);
 
 		for (ExtensionElem extElem : extension.getElements()) {

@@ -69,8 +69,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * released.
 	 */
 	@Override
-	public synchronized Lock getReadLock()
-			throws InterruptedException {
+	public synchronized Lock getReadLock() throws InterruptedException {
 		// Wait for the writer to finish
 		while (isWriterActive()) {
 			waitForActiveWriter();
@@ -102,8 +101,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * released.
 	 */
 	@Override
-	public Lock getWriteLock()
-			throws InterruptedException {
+	public Lock getWriteLock() throws InterruptedException {
 		while (true) {
 			Lock lock = tryWriteLock();
 			if (lock != null)

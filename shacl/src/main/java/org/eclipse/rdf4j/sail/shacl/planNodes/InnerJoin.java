@@ -271,9 +271,8 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public void close() {
 
-		if ((discardedLeft == null || discardedLeft.isClosed()) &&
-				(discardedRight == null || discardedRight.isClosed()) &&
-				(joined == null || joined.isClosed())) {
+		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed())
+				&& (joined == null || joined.isClosed())) {
 			iterator.close();
 			iterator = null;
 		}

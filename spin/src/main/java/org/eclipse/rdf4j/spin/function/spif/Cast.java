@@ -25,8 +25,7 @@ public class Cast extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-			throws ValueExprEvaluationException {
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal)) {
 			throw new ValueExprEvaluationException("First argument must be a literal");
 		}

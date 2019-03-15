@@ -37,8 +37,7 @@ public interface SailSource extends SailClosable {
 	 * @return Newly created {@link SailSink}
 	 * @throws SailException
 	 */
-	SailSink sink(IsolationLevel level)
-			throws SailException;
+	SailSink sink(IsolationLevel level) throws SailException;
 
 	/**
 	 * Create an observable {@link SailDataset} of the current state of this {@link SailSource}. Repeatedly calling with
@@ -52,8 +51,7 @@ public interface SailSource extends SailClosable {
 	 * @return an {@link SailDataset} of the current state
 	 * @throws SailException
 	 */
-	SailDataset dataset(IsolationLevel level)
-			throws SailException;
+	SailDataset dataset(IsolationLevel level) throws SailException;
 
 	/**
 	 * Check the consistency of this branch and throws a {@link SailConflictException} if {@link #flush()}ing this
@@ -62,8 +60,7 @@ public interface SailSource extends SailClosable {
 	 * 
 	 * @throws SailException
 	 */
-	void prepare()
-			throws SailException;
+	void prepare() throws SailException;
 
 	/**
 	 * Apply all the changes to this branch to the backing {@link SailSource}, if applicable. If this is the final
@@ -71,7 +68,6 @@ public interface SailSource extends SailClosable {
 	 * 
 	 * @throws SailException
 	 */
-	void flush()
-			throws SailException;
+	void flush() throws SailException;
 
 }

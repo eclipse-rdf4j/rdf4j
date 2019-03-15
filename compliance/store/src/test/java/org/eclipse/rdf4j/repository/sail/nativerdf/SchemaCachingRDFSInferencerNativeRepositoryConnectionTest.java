@@ -33,8 +33,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
-		extends RDFSchemaRepositoryConnectionTest {
+public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 
 	private File dataDir;
 
@@ -43,8 +42,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 	}
 
 	@Override
-	protected Repository createRepository()
-			throws IOException {
+	protected Repository createRepository() throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true);
 		sail.setAddInferredStatementsToDefaultContext(false);
@@ -52,8 +50,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 	}
 
 	@Override
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		try {
 			super.tearDown();
 		} finally {
@@ -64,32 +61,28 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 	@Override
 	@Test
 	@Ignore
-	public void testQueryDefaultGraph()
-			throws Exception {
+	public void testQueryDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testDeleteDefaultGraph()
-			throws Exception {
+	public void testDeleteDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated()
-			throws Exception {
+	public void testContextStatementsNotDuplicated() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated2()
-			throws Exception {
+	public void testContextStatementsNotDuplicated2() throws Exception {
 		// ignore
 	}
 
@@ -124,9 +117,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 		}
 		System.out.println("-----------");
 		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
-			stream
-					.peek(statement -> assertEquals(statement.getContext(), graph3))
-					.forEach(System.out::println);
+			stream.peek(statement -> assertEquals(statement.getContext(), graph3)).forEach(System.out::println);
 		}
 
 		System.out.println("-----------");

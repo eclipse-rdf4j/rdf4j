@@ -92,8 +92,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @throws SailException                     if a problem occurs interpreting the rule pattern
 	 */
 	public CustomGraphQueryInferencer(NotifyingSail baseSail, QueryLanguage language, String queryText,
-			String matcherText)
-			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
+			String matcherText) throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
 		super(baseSail);
 		setFields(language, queryText, matcherText);
 	}
@@ -112,15 +111,13 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		customQuery = QueryParserUtil.parseGraphQuery(language, queryText, null);
 		String matcherQuery = matcherText;
 		if (matcherText.trim().isEmpty()) {
-			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language,
-					queryText);
+			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language, queryText);
 		}
 		customMatcher = QueryParserUtil.parseGraphQuery(language, matcherQuery, null);
 		customQuery.getTupleExpr().visit(new AbstractQueryModelVisitor<SailException>() {
 
 			@Override
-			public void meet(StatementPattern statement)
-					throws SailException {
+			public void meet(StatementPattern statement) throws SailException {
 				Var var = statement.getSubjectVar();
 				if (var.hasValue()) {
 					watchSubjects.add(var.getValue());
@@ -139,8 +136,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public InferencerConnection getConnection()
-			throws SailException {
+	public InferencerConnection getConnection() throws SailException {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new Connection(con);
@@ -150,8 +146,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		super.initialize();
 		try (InferencerConnection con = getConnection()) {
 			con.begin();
@@ -214,20 +209,18 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 		private void setUpdateNeededIfMatching(Statement statement) {
 			updateNeeded = hasWatchValues ? watchPredicates.contains(statement.getPredicate())
-					|| watchSubjects.contains(statement.getSubject())
-					|| watchObjects.contains(statement.getObject()) : true;
+					|| watchSubjects.contains(statement.getSubject()) || watchObjects.contains(statement.getObject())
+					: true;
 		}
 
 		@Override
-		public void rollback()
-				throws SailException {
+		public void rollback() throws SailException {
 			super.rollback();
 			updateNeeded = false;
 		}
 
 		@Override
-		public void flushUpdates()
-				throws SailException {
+		public void flushUpdates() throws SailException {
 			super.flushUpdates();
 			Collection<Statement> forRemoval = new HashSet<>(256);
 			Collection<Statement> forAddition = new HashSet<>(256);
@@ -277,8 +270,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
-					.evaluate(
-							query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory factory = getValueFactory();
 				while (bindingsIter.hasNext()) {
 					BindingSet bindings = bindingsIter.next();

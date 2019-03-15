@@ -92,8 +92,7 @@ public class ValueComparator implements Comparator<Value> {
 				if (isSmaller) {
 					return -1;
 				} else {
-					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit,
-							CompareOp.EQ);
+					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ);
 					if (isEquivalent) {
 						return 0;
 					}

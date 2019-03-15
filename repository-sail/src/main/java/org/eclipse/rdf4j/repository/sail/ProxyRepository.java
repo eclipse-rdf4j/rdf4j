@@ -122,14 +122,12 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 	}
 
 	@Override
-	public boolean isWritable()
-			throws RepositoryException {
+	public boolean isWritable() throws RepositoryException {
 		return getProxiedRepository().isWritable();
 	}
 
 	@Override
-	public RepositoryConnection getConnection()
-			throws RepositoryException {
+	public RepositoryConnection getConnection() throws RepositoryException {
 		return getProxiedRepository().getConnection();
 	}
 
@@ -139,8 +137,7 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 	}
 
 	@Override
-	protected void initializeInternal()
-			throws RepositoryException {
+	protected void initializeInternal() throws RepositoryException {
 		if (resolver == null) {
 			throw new RepositoryException("Expected RepositoryResolver to be set.");
 		}
@@ -148,8 +145,7 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 	}
 
 	@Override
-	protected void shutDownInternal()
-			throws RepositoryException {
+	protected void shutDownInternal() throws RepositoryException {
 		getProxiedRepository().shutDown();
 	}
 }

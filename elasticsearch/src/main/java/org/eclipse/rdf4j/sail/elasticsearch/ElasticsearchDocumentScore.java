@@ -38,19 +38,16 @@ public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult impl
 
 	@Override
 	public Iterable<String> getSnippets(String property) {
-		HighlightField highlightField = hit.getHighlightFields()
-				.get(
-						ElasticsearchIndex.toPropertyFieldName(property));
+		HighlightField highlightField = hit.getHighlightFields().get(ElasticsearchIndex.toPropertyFieldName(property));
 		if (highlightField == null) {
 			return null;
 		}
-		return Iterables.transform(Arrays.asList(highlightField.getFragments()),
-				new Function<Text, String>() {
+		return Iterables.transform(Arrays.asList(highlightField.getFragments()), new Function<Text, String>() {
 
-					@Override
-					public String apply(Text fragment) {
-						return SearchFields.getSnippet(fragment.string());
-					}
-				});
+			@Override
+			public String apply(Text fragment) {
+				return SearchFields.getSnippet(fragment.string());
+			}
+		});
 	}
 }

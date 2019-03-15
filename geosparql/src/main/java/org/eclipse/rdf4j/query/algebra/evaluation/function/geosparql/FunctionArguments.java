@@ -77,15 +77,13 @@ class FunctionArguments {
 	 * @return shape
 	 * @throws ValueExprEvaluationException
 	 */
-	public static Shape getShape(Function func, Value v, SpatialContext context)
-			throws ValueExprEvaluationException {
+	public static Shape getShape(Function func, Value v, SpatialContext context) throws ValueExprEvaluationException {
 		Literal wktLiteral = getLiteral(func, v, GEO.WKT_LITERAL);
 		try {
 			ShapeReader reader = context.getFormats().getWktReader();
 			return reader.read(wktLiteral.getLabel());
 		} catch (IOException | InvalidShapeException | ParseException e) {
-			throw new ValueExprEvaluationException(
-					"Invalid argument for " + func.getURI() + ": " + wktLiteral, e);
+			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + wktLiteral, e);
 		}
 	}
 
@@ -102,8 +100,7 @@ class FunctionArguments {
 			throws ValueExprEvaluationException {
 		Shape p = FunctionArguments.getShape(func, v, geoContext);
 		if (!(p instanceof Point)) {
-			throw new ValueExprEvaluationException(
-					"Invalid argument for " + func.getURI() + " (not a point): " + v);
+			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + " (not a point): " + v);
 		}
 		return (Point) p;
 	}
@@ -117,8 +114,7 @@ class FunctionArguments {
 	 * @return literal
 	 * @throws ValueExprEvaluationException
 	 */
-	public static Literal getLiteral(Function func, Value v, IRI expectedDatatype)
-			throws ValueExprEvaluationException {
+	public static Literal getLiteral(Function func, Value v, IRI expectedDatatype) throws ValueExprEvaluationException {
 		if (!(v instanceof Literal)) {
 			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + v);
 		}
@@ -144,8 +140,7 @@ class FunctionArguments {
 		}
 		IRI unitUri = (IRI) v;
 		if (!unitUri.getNamespace().equals(GEOF.UOM_NAMESPACE)) {
-			throw new ValueExprEvaluationException(
-					"Invalid unit of measurement URI for " + func.getURI() + ": " + v);
+			throw new ValueExprEvaluationException("Invalid unit of measurement URI for " + func.getURI() + ": " + v);
 		}
 		return unitUri;
 	}

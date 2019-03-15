@@ -91,10 +91,7 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 	}
 
 	@Test
-	public void testRollback()
-			throws NoSuchMethodException,
-			InvocationTargetException,
-			IllegalAccessException {
+	public void testRollback() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
@@ -137,16 +134,12 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 					incorrectInference);
 
 			boolean correctInference = connection.hasStatement(aInstance, RDF.TYPE, C, true);
-			assertTrue("aInstance should be instance of C because A subClassOfC was added earlier.",
-					correctInference);
+			assertTrue("aInstance should be instance of C because A subClassOfC was added earlier.", correctInference);
 		}
 	}
 
 	@Test
-	public void testFastInstantiate()
-			throws NoSuchMethodException,
-			InvocationTargetException,
-			IllegalAccessException {
+	public void testFastInstantiate() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();

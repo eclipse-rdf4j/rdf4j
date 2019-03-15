@@ -76,8 +76,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	}
 
 	@Override
-	public void parse(Model graph, Resource implNode)
-			throws SailConfigException {
+	public void parse(Model graph, Resource implNode) throws SailConfigException {
 		super.parse(graph, implNode);
 
 		try {
@@ -95,8 +94,8 @@ public class MemoryStoreConfig extends BaseSailConfig {
 				try {
 					setSyncDelay((syncDelayValue).longValue());
 				} catch (NumberFormatException e) {
-					throw new SailConfigException("Long integer value required for " + SYNC_DELAY
-							+ " property, found " + syncDelayValue);
+					throw new SailConfigException(
+							"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
 				}
 			});
 		} catch (ModelException e) {

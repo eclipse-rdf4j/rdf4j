@@ -344,8 +344,8 @@ class SailSourceModel extends AbstractModel {
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
-					Value obj, Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
 				SailSourceModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -371,16 +371,14 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
-	private synchronized SailSink sink()
-			throws SailException {
+	private synchronized SailSink sink() throws SailException {
 		if (sink == null) {
 			sink = source.sink(level);
 		}
 		return sink;
 	}
 
-	private synchronized SailDataset dataset()
-			throws SailException {
+	private synchronized SailDataset dataset() throws SailException {
 		if (sink != null) {
 			try {
 				sink.flush();

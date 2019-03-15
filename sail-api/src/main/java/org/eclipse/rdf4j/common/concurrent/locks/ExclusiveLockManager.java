@@ -66,8 +66,7 @@ public class ExclusiveLockManager {
 	/**
 	 * Gets the exclusive lock. This method blocks when the exclusive lock is currently in use until it is released.
 	 */
-	public synchronized Lock getExclusiveLock()
-			throws InterruptedException {
+	public synchronized Lock getExclusiveLock() throws InterruptedException {
 		while (lock.isActiveLock()) {
 			// Someone else currently has the lock
 			lock.waitForActiveLocks();

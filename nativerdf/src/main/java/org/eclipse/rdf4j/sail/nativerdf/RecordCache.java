@@ -32,13 +32,11 @@ abstract class RecordCache {
 	 * Constructors *
 	 *--------------*/
 
-	public RecordCache()
-			throws IOException {
+	public RecordCache() throws IOException {
 		this(Long.MAX_VALUE);
 	}
 
-	public RecordCache(long maxRecords)
-			throws IOException {
+	public RecordCache(long maxRecords) throws IOException {
 		this.maxRecords = new AtomicLong(maxRecords);
 		this.recordCount = new AtomicLong();
 	}
@@ -75,8 +73,7 @@ abstract class RecordCache {
 	 * 
 	 * @param data The record to store.
 	 */
-	public final void storeRecord(byte[] data)
-			throws IOException {
+	public final void storeRecord(byte[] data) throws IOException {
 		long spareSlots = maxRecords.get() - recordCount.get();
 
 		if (spareSlots > 0L) {
@@ -93,33 +90,28 @@ abstract class RecordCache {
 	 * 
 	 * @param otherCache The cache to copy the records from.
 	 */
-	public final void storeRecords(RecordCache otherCache)
-			throws IOException {
+	public final void storeRecords(RecordCache otherCache) throws IOException {
 		if (recordCount.get() <= maxRecords.get()) {
 			try (RecordIterator recIter = otherCache.getRecords()) {
 				byte[] record;
-				while ((record = recIter.next()) != null
-						&& recordCount.incrementAndGet() <= maxRecords.get()) {
+				while ((record = recIter.next()) != null && recordCount.incrementAndGet() <= maxRecords.get()) {
 					storeRecordInternal(record);
 				}
 			}
 		}
 	}
 
-	protected abstract void storeRecordInternal(byte[] data)
-			throws IOException;
+	protected abstract void storeRecordInternal(byte[] data) throws IOException;
 
 	/**
 	 * Clears the cache, deleting all stored records.
 	 */
-	public final void clear()
-			throws IOException {
+	public final void clear() throws IOException {
 		clearInternal();
 		recordCount.set(0L);
 	}
 
-	protected abstract void clearInternal()
-			throws IOException;
+	protected abstract void clearInternal() throws IOException;
 
 	/**
 	 * Gets all records that are stored in the cache, throwing an {@link IllegalStateException} if the cache is no
@@ -149,6 +141,5 @@ abstract class RecordCache {
 	/**
 	 * Discards the cache, deleting any allocated files.
 	 */
-	public abstract void discard()
-			throws IOException;
+	public abstract void discard() throws IOException;
 }

@@ -127,8 +127,8 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Creates a new MemoryStore.
 	 */
 	public MemoryStore() {
-		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
-				IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 	}
 
@@ -241,8 +241,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * @throws SailException when initialization of the store failed.
 	 */
 	@Override
-	protected void initializeInternal()
-			throws SailException {
+	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing MemoryStore...");
 
 		this.store = new MemorySailStore(debugEnabled());
@@ -329,8 +328,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal()
-			throws SailException {
+	protected void shutDownInternal() throws SailException {
 		try {
 			cancelSyncTimer();
 			sync();
@@ -358,8 +356,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal()
-			throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new MemoryStoreConnection(this);
 	}
 
@@ -380,8 +377,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
-	protected void scheduleSyncTask()
-			throws SailException {
+	protected void scheduleSyncTask() throws SailException {
 		if (!persist) {
 			return;
 		}
@@ -442,8 +438,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Synchronizes the contents of this repository with the data that is stored on disk. Data will only be written when
 	 * the contents of the repository and data in the file are out of sync.
 	 */
-	public void sync()
-			throws SailException {
+	public void sync() throws SailException {
 		// syncSemaphore prevents concurrent file synchronizations
 		synchronized (syncSemaphore) {
 			if (persist && contentsChanged) {

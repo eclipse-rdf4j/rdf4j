@@ -27,8 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 public class DecimalCast extends CastFunction {
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-			throws ValueExprEvaluationException {
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
@@ -44,8 +43,7 @@ public class DecimalCast extends CastFunction {
 				}
 			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
-					return valueFactory.createLiteral(literal.booleanValue() ? "1.0" : "0.0",
-							XMLSchema.DECIMAL);
+					return valueFactory.createLiteral(literal.booleanValue() ? "1.0" : "0.0", XMLSchema.DECIMAL);
 				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}

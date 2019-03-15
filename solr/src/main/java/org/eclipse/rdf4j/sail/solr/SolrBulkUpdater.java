@@ -31,27 +31,23 @@ public class SolrBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void add(SearchDocument doc)
-			throws IOException {
+	public void add(SearchDocument doc) throws IOException {
 		SolrDocument document = ((SolrSearchDocument) doc).getDocument();
 		addOrUpdateList.add(SolrUtil.toSolrInputDocument(document));
 	}
 
 	@Override
-	public void update(SearchDocument doc)
-			throws IOException {
+	public void update(SearchDocument doc) throws IOException {
 		add(doc);
 	}
 
 	@Override
-	public void delete(SearchDocument doc)
-			throws IOException {
+	public void delete(SearchDocument doc) throws IOException {
 		deleteList.add(doc.getId());
 	}
 
 	@Override
-	public void end()
-			throws IOException {
+	public void end() throws IOException {
 		try {
 			if (!deleteList.isEmpty()) {
 				client.deleteById(deleteList);

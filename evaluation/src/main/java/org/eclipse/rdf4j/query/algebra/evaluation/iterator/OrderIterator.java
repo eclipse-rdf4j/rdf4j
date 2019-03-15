@@ -43,8 +43,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationException> {
 
-	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E>
-			implements Closeable {
+	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E> implements Closeable {
 
 		private final File file;
 
@@ -58,13 +57,11 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 
 		private E last;
 
-		public SerializedQueue(String prefix)
-				throws IOException {
+		public SerializedQueue(String prefix) throws IOException {
 			this(prefix, null);
 		}
 
-		public SerializedQueue(String prefix, File directory)
-				throws IOException {
+		public SerializedQueue(String prefix, File directory) throws IOException {
 			file = File.createTempFile(prefix, "", directory);
 			output = new ObjectOutputStream(new FileOutputStream(file));
 		}
@@ -144,8 +141,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		}
 
 		@Override
-		public void close()
-				throws IOException {
+		public void close() throws IOException {
 			if (output != null) {
 				output.close();
 			}
@@ -272,8 +268,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *---------*/
 
 	@Override
-	protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-			throws QueryEvaluationException {
+	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
 		List<BindingSet> list = new LinkedList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
@@ -340,14 +335,12 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	}
 
 	@Override
-	public void remove()
-			throws QueryEvaluationException {
+	public void remove() throws QueryEvaluationException {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

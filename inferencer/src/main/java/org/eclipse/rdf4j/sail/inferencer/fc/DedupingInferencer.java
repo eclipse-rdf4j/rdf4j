@@ -28,8 +28,7 @@ public class DedupingInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public InferencerConnection getConnection()
-			throws SailException {
+	public InferencerConnection getConnection() throws SailException {
 		try {
 			InferencerConnection con = (InferencerConnection) super.getConnection();
 			return new DedupingInferencerConnection(con, getValueFactory());

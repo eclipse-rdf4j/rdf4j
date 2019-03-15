@@ -35,8 +35,8 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 		return fields;
 	}
 
-	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, IRI units, Point origin,
-			boolean includeContext, LuceneIndex index) {
+	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, IRI units, Point origin, boolean includeContext,
+			LuceneIndex index) {
 		super(doc, index, requiredFields(geoProperty, includeContext));
 		this.geoProperty = geoProperty;
 		this.units = units;

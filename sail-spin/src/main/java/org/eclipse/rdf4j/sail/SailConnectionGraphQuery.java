@@ -44,8 +44,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 	}
 
 	@Override
-	public GraphQueryResult evaluate()
-			throws QueryEvaluationException {
+	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
@@ -57,8 +56,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 		boolean allGood = false;
 		try {
 			SailConnection sailCon = getSailConnection();
-			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred());
+			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
@@ -133,8 +131,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler)
-			throws QueryEvaluationException, RDFHandlerException {
+	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 		GraphQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

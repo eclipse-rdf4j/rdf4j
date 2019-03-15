@@ -21,8 +21,7 @@ public class IteratorCloseableIteration<E, X extends Exception> extends Iterator
 	}
 
 	@Override
-	public void close()
-			throws X {
+	public void close() throws X {
 		// nothing to do
 	}
 }

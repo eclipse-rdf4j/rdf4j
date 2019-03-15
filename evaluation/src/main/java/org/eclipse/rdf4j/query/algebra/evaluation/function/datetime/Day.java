@@ -34,8 +34,7 @@ public class Day implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("DAY requires 1 argument, got " + args.length);
 		}
@@ -54,8 +53,7 @@ public class Day implements Function {
 					if (DatatypeConstants.FIELD_UNDEFINED != day) {
 						return valueFactory.createLiteral(String.valueOf(day), XMLSchema.INTEGER);
 					} else {
-						throw new ValueExprEvaluationException(
-								"can not determine day from value: " + argValue);
+						throw new ValueExprEvaluationException("can not determine day from value: " + argValue);
 					}
 				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);

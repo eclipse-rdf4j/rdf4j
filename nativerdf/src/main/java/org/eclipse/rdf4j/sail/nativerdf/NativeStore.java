@@ -50,8 +50,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * Variables *
 	 *-----------*/
 
-	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf",
-			"devel");
+	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
 
 	/**
 	 * Specifies which triple indexes this native store must use.
@@ -111,8 +110,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	public NativeStore() {
 		super();
-		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
-				IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 	}
 
@@ -227,8 +226,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * @exception SailException If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
-	protected void initializeInternal()
-			throws SailException {
+	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing NativeStore...");
 
 		// Check initialization parameters
@@ -258,8 +256,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
 				FileUtils.writeStringToFile(versionFile, VERSION);
 			}
-			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync,
-					valueCacheSize, valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
+			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
+					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
 			this.store = new SnapshotSailStore(master, new ModelFactory() {
 
 				@Override
@@ -267,8 +265,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 					return new MemoryOverflowModel() {
 
 						@Override
-						protected SailStore createSailStore(File dataDir)
-								throws IOException, SailException {
+						protected SailStore createSailStore(File dataDir) throws IOException, SailException {
 							// Model can't fit into memory, use another NativeSailStore to store delta
 							return new NativeSailStore(dataDir, getTripleIndexes());
 						}
@@ -307,8 +304,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected void shutDownInternal()
-			throws SailException {
+	protected void shutDownInternal() throws SailException {
 		logger.debug("Shutting down NativeStore...");
 
 		try {
@@ -330,8 +326,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	@Override
-	protected NotifyingSailConnection getConnectionInternal()
-			throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		try {
 			return new NativeStoreConnection(this);
 		} catch (IOException e) {
@@ -355,8 +350,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * @return Lock used to prevent Store from switching isolation modes
 	 * @throws SailException
 	 */
-	protected Lock getTransactionLock(IsolationLevel level)
-			throws SailException {
+	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
 		txnLockManager.lock();
 		try {
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -391,8 +385,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		return store;
 	}
 
-	private boolean upgradeStore(File dataDir, String version)
-			throws IOException, SailException {
+	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
 		if (version == null) {
 			// either a new store or a pre-2.8.2 store
 			ValueStore valueStore = new ValueStore(dataDir);

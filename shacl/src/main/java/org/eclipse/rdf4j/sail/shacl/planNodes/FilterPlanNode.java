@@ -188,8 +188,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public void close() {
-		if ((trueNode == null || trueNode.isClosed()) &&
-				(falseNode == null || falseNode.isClosed())) {
+		if ((trueNode == null || trueNode.isClosed()) && (falseNode == null || falseNode.isClosed())) {
 			iterator.close();
 			iterator = null;
 		}

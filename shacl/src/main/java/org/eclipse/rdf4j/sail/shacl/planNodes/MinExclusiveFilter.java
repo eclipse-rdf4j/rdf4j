@@ -40,8 +40,6 @@ public class MinExclusiveFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MinLengthFilter{" +
-				"min=" + min +
-				'}';
+		return "MinLengthFilter{" + "min=" + min + '}';
 	}
 }

@@ -30,8 +30,7 @@ public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEv
 	}
 
 	@Override
-	public BindingSet next()
-			throws QueryEvaluationException {
+	public BindingSet next() throws QueryEvaluationException {
 		BindingSet next = super.next();
 		QueryBindingSet result;
 		if (next == null) {

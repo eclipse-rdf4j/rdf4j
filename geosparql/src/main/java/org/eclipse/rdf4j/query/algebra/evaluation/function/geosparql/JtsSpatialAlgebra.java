@@ -44,8 +44,8 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 
 	@Override
 	public Shape union(Shape s1, Shape s2) {
-		return shapeFactory.makeShapeFromGeometry(
-				shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
+		return shapeFactory
+				.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
 	}
 
 	@Override

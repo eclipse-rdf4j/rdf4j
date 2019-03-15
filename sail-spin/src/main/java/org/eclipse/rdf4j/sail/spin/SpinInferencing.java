@@ -44,9 +44,8 @@ public class SpinInferencing {
 	private SpinInferencing() {
 	}
 
-	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer,
-			SpinParser parser, InferencerConnection conn)
-			throws OpenRDFException {
+	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer, SpinParser parser,
+			InferencerConnection conn) throws OpenRDFException {
 		int nofInferred;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedOperation parsedOp = parser.parse(rule, tripleSource);
@@ -74,9 +73,8 @@ public class SpinInferencing {
 		return nofInferred;
 	}
 
-	public static ConstraintViolation checkConstraint(Resource subj, Resource constraint,
-			QueryPreparer queryPreparer, SpinParser parser)
-			throws OpenRDFException {
+	public static ConstraintViolation checkConstraint(Resource subj, Resource constraint, QueryPreparer queryPreparer,
+			SpinParser parser) throws OpenRDFException {
 		ConstraintViolation violation;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedQuery parsedQuery = parser.parseQuery(constraint, tripleSource);
@@ -102,9 +100,8 @@ public class SpinInferencing {
 		return violation;
 	}
 
-	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp,
-			Operation op, TripleSource tripleSource, SpinParser parser)
-			throws OpenRDFException {
+	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp, Operation op,
+			TripleSource tripleSource, SpinParser parser) throws OpenRDFException {
 		if (!parser.isThisUnbound(opResource, tripleSource)) {
 			op.setBinding(THIS_VAR, subj);
 		}
@@ -149,8 +146,7 @@ public class SpinInferencing {
 		}
 
 		@Override
-		protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
-				throws OpenRDFException {
+		protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws OpenRDFException {
 			super.addStatement(subj, pred, obj, ctxt);
 			stmtCount++;
 		}

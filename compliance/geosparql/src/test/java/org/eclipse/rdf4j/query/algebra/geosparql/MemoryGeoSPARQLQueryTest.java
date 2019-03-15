@@ -17,22 +17,21 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 
-	public static Test suite()
-			throws Exception {
+	public static Test suite() throws Exception {
 		return GeoSPARQLManifestTest.suite(new Factory() {
 
 			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, false);
+				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
+						false);
 			}
 
 			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
-				return new MemoryGeoSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder);
+				return new MemoryGeoSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
+						checkOrder);
 			}
 
 		});
@@ -44,8 +43,7 @@ public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 	}
 
 	@Override
-	protected Repository newRepository()
-			throws Exception {
+	protected Repository newRepository() throws Exception {
 		return new SailRepository(new MemoryStore());
 	}
 }

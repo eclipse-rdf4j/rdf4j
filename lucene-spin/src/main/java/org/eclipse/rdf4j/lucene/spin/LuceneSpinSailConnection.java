@@ -120,8 +120,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void close()
-			throws SailException {
+	public void close() throws SailException {
 		if (closed.compareAndSet(false, true)) {
 			super.close();
 		}
@@ -130,8 +129,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to indexing
 
 	@Override
-	public synchronized void clear(Resource... resources)
-			throws SailException {
+	public synchronized void clear(Resource... resources) throws SailException {
 		// remove the connection listener, this is safe as the changing methods
 		// are synchronized
 		// during the clear(), no other operation can be invoked
@@ -145,8 +143,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void begin()
-			throws SailException {
+	public void begin() throws SailException {
 		super.begin();
 		buffer.reset();
 		try {
@@ -157,8 +154,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void commit()
-			throws SailException {
+	public void commit() throws SailException {
 		super.commit();
 
 		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
@@ -180,8 +176,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 					logger.debug("clearing index...");
 					luceneIndex.clear();
 				} else {
-					throw new SailException(
-							"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+					throw new SailException("Cannot interpret operation " + op + " of type " + op.getClass().getName());
 				}
 				i.remove();
 			}
@@ -195,8 +190,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove)
-			throws IOException {
+	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove) throws IOException {
 		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
 		luceneIndex.begin();
 		try {
@@ -209,8 +203,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void clearContexts(Resource... contexts)
-			throws IOException {
+	private void clearContexts(Resource... contexts) throws IOException {
 		logger.debug("clearing contexts...");
 		luceneIndex.begin();
 		try {
@@ -233,8 +226,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void rollback()
-			throws SailException {
+	public void rollback() throws SailException {
 		super.rollback();
 		buffer.reset();
 		try {

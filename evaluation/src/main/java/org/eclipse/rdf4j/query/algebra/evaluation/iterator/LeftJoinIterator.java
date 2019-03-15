@@ -61,8 +61,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
 			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 			while (nextRightIter.hasNext() || leftIter.hasNext()) {
@@ -111,8 +110,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

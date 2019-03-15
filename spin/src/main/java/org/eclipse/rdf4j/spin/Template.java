@@ -57,8 +57,7 @@ public class Template {
 		return arguments;
 	}
 
-	public ParsedOperation call(Map<IRI, Value> argValues)
-			throws MalformedSpinException {
+	public ParsedOperation call(Map<IRI, Value> argValues) throws MalformedSpinException {
 		MapBindingSet args = new MapBindingSet();
 		for (Argument arg : arguments) {
 			IRI argPred = arg.getPredicate();

@@ -34,8 +34,7 @@ public class Timezone implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("TIMEZONE requires 1 argument, got " + args.length);
 		}
@@ -75,8 +74,7 @@ public class Timezone implements Function {
 						}
 						return valueFactory.createLiteral(tzDuration.toString(), XMLSchema.DAYTIMEDURATION);
 					} else {
-						throw new ValueExprEvaluationException(
-								"can not determine timezone from value: " + argValue);
+						throw new ValueExprEvaluationException("can not determine timezone from value: " + argValue);
 					}
 				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);

@@ -28,8 +28,7 @@ public interface ReadWriteLockManager {
 	 * 
 	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
 	 */
-	public Lock getReadLock()
-			throws InterruptedException;
+	public Lock getReadLock() throws InterruptedException;
 
 	/**
 	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is not
@@ -42,6 +41,5 @@ public interface ReadWriteLockManager {
 	 * 
 	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
 	 */
-	public Lock getWriteLock()
-			throws InterruptedException;
+	public Lock getWriteLock() throws InterruptedException;
 }

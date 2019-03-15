@@ -263,8 +263,7 @@ public class LeftOuterJoinTest {
 
 	public void verify(List<Tuple> actual, List<String>... expect) {
 
-		Set<Tuple> collect = Arrays
-				.stream(expect)
+		Set<Tuple> collect = Arrays.stream(expect)
 				.map(strings -> strings.stream()
 						.map(SimpleValueFactory.getInstance()::createLiteral)
 						.map(l -> (Value) l)

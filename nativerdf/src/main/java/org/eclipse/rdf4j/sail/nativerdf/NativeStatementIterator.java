@@ -39,8 +39,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	/**
 	 * Creates a new NativeStatementIterator.
 	 */
-	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore)
-			throws IOException {
+	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) throws IOException {
 		this.btreeIter = btreeIter;
 		this.valueStore = valueStore;
 	}
@@ -50,8 +49,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	 *---------*/
 
 	@Override
-	public Statement getNextElement()
-			throws SailException {
+	public Statement getNextElement() throws SailException {
 		try {
 			byte[] nextValue = btreeIter.next();
 
@@ -81,8 +79,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	}
 
 	@Override
-	protected void handleClose()
-			throws SailException {
+	protected void handleClose() throws SailException {
 		try {
 			super.handleClose();
 		} finally {

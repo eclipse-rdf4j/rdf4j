@@ -18,8 +18,7 @@ import org.junit.BeforeClass;
 public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@BeforeClass
-	public static void setUpClass()
-			throws Exception {
+	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
@@ -30,8 +29,7 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 	}
 
 	@AfterClass
-	public static void tearDown()
-			throws Exception {
+	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 	}
 }

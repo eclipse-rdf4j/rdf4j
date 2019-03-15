@@ -77,8 +77,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
 
@@ -101,8 +100,7 @@ public class LuceneSailTupleFunctionTest {
 	}
 
 	@After
-	public void tearDown()
-			throws IOException, RepositoryException {
+	public void tearDown() throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -114,14 +112,12 @@ public class LuceneSailTupleFunctionTest {
 		}
 	}
 
-	protected void configure(LuceneSail sail)
-			throws IOException {
+	protected void configure(LuceneSail sail) throws IOException {
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, tempDir.newFolder().getAbsolutePath());
 	}
 
-	protected void populate(RepositoryConnection connection)
-			throws Exception {
+	protected void populate(RepositoryConnection connection) throws Exception {
 		// process transaction
 		try {
 			// load resources
@@ -130,8 +126,7 @@ public class LuceneSailTupleFunctionTest {
 			connection.begin();
 
 			assert resourceURL instanceof URL;
-			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE,
-					new Resource[] {});
+			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE, new Resource[] {});
 
 		} catch (Exception e) {
 			connection.rollback();
@@ -148,8 +143,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleTest()
-			throws Exception {
+	public void simpleTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
 		try {
@@ -183,8 +177,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleSearchTest()
-			throws Exception {
+	public void simpleSearchTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?label where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
@@ -231,8 +224,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test220Issue()
-			throws Exception {
+	public void test220Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
@@ -281,8 +273,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test235Issue()
-			throws Exception {
+	public void test235Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
 		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
@@ -327,8 +318,7 @@ public class LuceneSailTupleFunctionTest {
 	}
 
 	@Test
-	public void testDistanceFunction()
-			throws Exception {
+	public void testDistanceFunction() throws Exception {
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
 				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
@@ -350,8 +340,7 @@ public class LuceneSailTupleFunctionTest {
 		}
 	}
 
-	public int countStatements(RepositoryConnection con)
-			throws Exception {
+	public int countStatements(RepositoryConnection con) throws Exception {
 		try {
 			connection.begin();
 
@@ -365,13 +354,11 @@ public class LuceneSailTupleFunctionTest {
 		}
 	}
 
-	public int countTupleResults(TupleQueryResult results)
-			throws Exception {
+	public int countTupleResults(TupleQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 
-	public int countGraphResults(GraphQueryResult results)
-			throws Exception {
+	public int countGraphResults(GraphQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 

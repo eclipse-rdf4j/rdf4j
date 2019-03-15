@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
-public class ProjectionIterator
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *
@@ -36,9 +35,8 @@ public class ProjectionIterator
 	 * Constructors *
 	 *--------------*/
 
-	public ProjectionIterator(Projection projection,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet parentBindings)
-			throws QueryEvaluationException {
+	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			BindingSet parentBindings) throws QueryEvaluationException {
 		super(iter);
 		this.projection = projection;
 		this.parentBindings = parentBindings;
@@ -61,10 +59,8 @@ public class ProjectionIterator
 	 *---------*/
 
 	@Override
-	protected BindingSet convert(BindingSet sourceBindings)
-			throws QueryEvaluationException {
-		return project(projection.getProjectionElemList(), sourceBindings, parentBindings,
-				!isOuterProjection);
+	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
+		return project(projection.getProjectionElemList(), sourceBindings, parentBindings, !isOuterProjection);
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,

@@ -170,32 +170,23 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 		try {
 			Models.objectLiteral(m.filter(implNode, PARALLEL_VALIDATION, null))
-					.ifPresent(
-							l -> setParallelValidation(l.booleanValue()));
+					.ifPresent(l -> setParallelValidation(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null))
-					.ifPresent(
-							l -> setUndefinedTargetValidatesAllSubjects(l.booleanValue()));
+					.ifPresent(l -> setUndefinedTargetValidatesAllSubjects(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, LOG_VALIDATION_PLANS, null))
-					.ifPresent(
-							l -> setLogValidationPlans(l.booleanValue()));
+					.ifPresent(l -> setLogValidationPlans(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, LOG_VALIDATION_VIOLATIONS, null))
-					.ifPresent(
-							l -> setLogValidationViolations(l.booleanValue()));
+					.ifPresent(l -> setLogValidationViolations(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null))
-					.ifPresent(
-							l -> setIgnoreNoShapesLoadedException(l.booleanValue()));
+					.ifPresent(l -> setIgnoreNoShapesLoadedException(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, VALIDATION_ENABLED, null))
-					.ifPresent(
-							l -> setValidationEnabled(l.booleanValue()));
+					.ifPresent(l -> setValidationEnabled(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, CACHE_SELECT_NODES, null))
-					.ifPresent(
-							l -> setCacheSelectNodes(l.booleanValue()));
+					.ifPresent(l -> setCacheSelectNodes(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null))
-					.ifPresent(
-							l -> setGlobalLogValidationExecution(l.booleanValue()));
+					.ifPresent(l -> setGlobalLogValidationExecution(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, RDFS_SUB_CLASS_REASONING, null))
-					.ifPresent(
-							l -> setRdfsSubClassReasoning(l.booleanValue()));
+					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);
 		}

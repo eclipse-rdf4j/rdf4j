@@ -51,8 +51,7 @@ public class OrPropertyShape extends PropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
 
-		List<List<PlanNode>> initialPlanNodes = or
-				.stream()
+		List<List<PlanNode>> initialPlanNodes = or.stream()
 				.map(shapes -> shapes.stream()
 						.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
 						.collect(Collectors.toList()))
@@ -60,30 +59,24 @@ public class OrPropertyShape extends PropertyShape {
 
 		BufferedSplitter targetNodesToValidate;
 		if (overrideTargetNode == null) {
-			targetNodesToValidate = new BufferedSplitter(unionAll(
-					initialPlanNodes
-							.stream()
-							.flatMap(Collection::stream)
-							.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
-							.collect(Collectors.toList())));
+			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
+					.flatMap(Collection::stream)
+					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+					.collect(Collectors.toList())));
 
 		} else {
 			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
 		}
 
-		List<List<PlanNode>> plannodes = or
-				.stream()
-				.map(shapes -> shapes.stream().map(shape -> {
-					if (shaclSailConnection.stats.isBaseSailEmpty()) {
-						return shape.getPlan(shaclSailConnection, nodeShape, false, null);
-					}
-					return shape.getPlan(shaclSailConnection, nodeShape, false,
-							new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
-				}).collect(Collectors.toList()))
-				.collect(Collectors.toList());
+		List<List<PlanNode>> plannodes = or.stream().map(shapes -> shapes.stream().map(shape -> {
+			if (shaclSailConnection.stats.isBaseSailEmpty()) {
+				return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+			}
+			return shape.getPlan(shaclSailConnection, nodeShape, false,
+					new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+		}).collect(Collectors.toList())).collect(Collectors.toList());
 
-		List<IteratorData> iteratorDataTypes = plannodes
-				.stream()
+		List<IteratorData> iteratorDataTypes = plannodes.stream()
 				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
 				.distinct()
 				.collect(Collectors.toList());
@@ -150,13 +143,11 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
-		return super.requiresEvaluation(addedStatements, removedStatements) ||
-				or
-						.stream()
-						.flatMap(Collection::stream)
-						.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
-						.reduce((a, b) -> a || b)
-						.orElse(false);
+		return super.requiresEvaluation(addedStatements, removedStatements) || or.stream()
+				.flatMap(Collection::stream)
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 	}
 
 	@Override

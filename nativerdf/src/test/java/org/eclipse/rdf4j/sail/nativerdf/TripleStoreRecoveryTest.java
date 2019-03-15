@@ -27,21 +27,18 @@ public class TripleStoreRecoveryTest {
 	private File dataDir;
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		dataDir = FileUtil.createTempDir("nativestore");
 	}
 
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		FileUtil.deleteDir(dataDir);
 		dataDir = null;
 	}
 
 	@Test
-	public void testRollbackRecovery()
-			throws Exception {
+	public void testRollbackRecovery() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
@@ -63,8 +60,7 @@ public class TripleStoreRecoveryTest {
 	}
 
 	@Test
-	public void testCommitRecovery()
-			throws Exception {
+	public void testCommitRecovery() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();

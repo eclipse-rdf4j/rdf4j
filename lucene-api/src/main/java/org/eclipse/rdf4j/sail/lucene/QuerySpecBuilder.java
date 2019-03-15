@@ -66,8 +66,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 */
 	@SuppressWarnings("unchecked")
 	@Deprecated
-	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings)
-			throws SailException {
+	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings) throws SailException {
 		HashSet<QuerySpec> result = new HashSet<>();
 		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>) (Collection<?>) result);
 		return result;
@@ -125,8 +124,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 			if (queryPattern != null) {
 				Var queryVar = queryPattern.getObjectVar();
-				Value queryValue = queryVar.hasValue() ? queryVar.getValue()
-						: bindings.getValue(queryVar.getName());
+				Value queryValue = queryVar.hasValue() ? queryVar.getValue() : bindings.getValue(queryVar.getName());
 
 				if (queryValue instanceof Literal) {
 					queryString = ((Literal) queryValue).getLabel();
@@ -217,18 +215,15 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		// fail on superflous typePattern, query, score, or snippet patterns.
 	}
 
-	private void failOrWarn(Exception exception)
-			throws SailException {
+	private void failOrWarn(Exception exception) throws SailException {
 		if (incompleteQueryFails) {
-			throw exception instanceof SailException ? (SailException) exception
-					: new SailException(exception);
+			throw exception instanceof SailException ? (SailException) exception : new SailException(exception);
 		} else {
 			logger.warn(exception.getMessage(), exception);
 		}
 	}
 
-	private void failOrWarn(String message)
-			throws SailException {
+	private void failOrWarn(String message) throws SailException {
 		if (incompleteQueryFails) {
 			throw new SailException("Invalid Text Query: " + message);
 		} else {

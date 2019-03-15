@@ -126,8 +126,7 @@ public class EqualsJoinTest {
 
 		System.out.println(actual);
 
-		Set<Tuple> collect = Arrays
-				.stream(expect)
+		Set<Tuple> collect = Arrays.stream(expect)
 				.map(strings -> strings.stream()
 						.map(SimpleValueFactory.getInstance()::createLiteral)
 						.map(l -> (Value) l)

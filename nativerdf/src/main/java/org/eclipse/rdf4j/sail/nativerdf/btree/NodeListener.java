@@ -29,11 +29,9 @@ interface NodeListener {
 	 */
 	public boolean valueRemoved(Node node, int index);
 
-	public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode)
-			throws IOException;
+	public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
-	public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode)
-			throws IOException;
+	public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
 	/**
 	 * Signals to registered node listeners that a node has been split.
@@ -44,8 +42,7 @@ interface NodeListener {
 	 *                  parent.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
-	public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-			throws IOException;
+	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException;
 
 	/**
 	 * Signals to registered node listeners that two nodes have been merged. All values from the source node have been
@@ -57,6 +54,5 @@ interface NodeListener {
 	 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as a result of
 	 *         this event.
 	 */
-	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-			throws IOException;
+	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException;
 }

@@ -24,8 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * 
  * @author James Leigh
  */
-public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException>
-		implements Runnable {
+public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException> implements Runnable {
 
 	/*-----------*
 	 * Constants *
@@ -77,8 +76,8 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 		evaluationThread = Thread.currentThread();
 		try {
 			while (!isClosed() && leftIter.hasNext()) {
-				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(
-						rightArg, leftIter.next());
+				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(rightArg,
+						leftIter.next());
 				toCloseList.add(evaluate);
 				rightQueue.put(evaluate);
 			}
@@ -95,8 +94,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	}
 
 	@Override
-	public BindingSet getNextElement()
-			throws QueryEvaluationException {
+	public BindingSet getNextElement() throws QueryEvaluationException {
 		BindingSet result = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 		while (!isClosed() && (nextRightIter != null || rightQueue.hasNext())) {
@@ -118,8 +116,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	}
 
 	@Override
-	public void handleClose()
-			throws QueryEvaluationException {
+	public void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();

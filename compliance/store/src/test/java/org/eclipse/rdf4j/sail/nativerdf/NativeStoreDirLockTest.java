@@ -23,8 +23,7 @@ public class NativeStoreDirLockTest {
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	@Test
-	public void testLocking()
-			throws Exception {
+	public void testLocking() throws Exception {
 		File dataDir = tempDir.newFolder("nativestore");
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.initialize();

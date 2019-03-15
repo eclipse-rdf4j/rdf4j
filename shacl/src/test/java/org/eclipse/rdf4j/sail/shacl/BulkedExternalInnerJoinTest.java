@@ -30,11 +30,9 @@ public class BulkedExternalInnerJoinTest {
 		IRI c = vf.createIRI("http://c");
 		IRI d = vf.createIRI("http://d");
 
-		PlanNode left = new MockInputPlanNode(Arrays.asList(
-				new Tuple(Collections.singletonList(a)),
-				new Tuple(Collections.singletonList(b)),
-				new Tuple(Collections.singletonList(c)),
-				new Tuple(Collections.singletonList(d))));
+		PlanNode left = new MockInputPlanNode(
+				Arrays.asList(new Tuple(Collections.singletonList(a)), new Tuple(Collections.singletonList(b)),
+						new Tuple(Collections.singletonList(c)), new Tuple(Collections.singletonList(d))));
 
 		MemoryStore sailRepository = new MemoryStore();
 		sailRepository.init();

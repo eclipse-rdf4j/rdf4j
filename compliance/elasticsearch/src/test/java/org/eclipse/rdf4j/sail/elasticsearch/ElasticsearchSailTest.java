@@ -35,20 +35,17 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 
 	@Before
 	@Override
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		super.setUp();
 		TransportClient client = (TransportClient) internalCluster().transportClient();
 		delegateTest = new AbstractLuceneSailTest() {
 
 			@Override
 			protected void configure(LuceneSail sail) {
-				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY,
-						client.transportAddresses().get(0).toString());
+				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
 						client.settings().get("cluster.name"));
-				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY,
-						ElasticsearchTestUtils.getNextTestIndexName());
+				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
@@ -69,8 +66,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 
 	@After
 	@Override
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		try {
 			delegateTest.tearDown();
 		} finally {
@@ -79,26 +75,22 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testTriplesStored()
-			throws Exception {
+	public void testTriplesStored() throws Exception {
 		delegateTest.testTriplesStored();
 	}
 
 	@Test
-	public void testRegularQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testRegularQuery();
 	}
 
 	@Test
-	public void testComplexQueryOne()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+	public void testComplexQueryOne() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testComplexQueryOne();
 	}
 
 	@Test
-	public void testComplexQueryTwo()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+	public void testComplexQueryTwo() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testComplexQueryTwo();
 	}
 
@@ -115,8 +107,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testSnippetQueries()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+	public void testSnippetQueries() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testSnippetQueries();
 	}
 
@@ -127,8 +118,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testGraphQuery()
-			throws QueryEvaluationException, MalformedQueryException, RepositoryException {
+	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
 		delegateTest.testGraphQuery();
 	}
 
@@ -139,50 +129,42 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testUnionQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	public void testUnionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testUnionQuery();
 	}
 
 	@Test
-	public void testContextHandling()
-			throws Exception {
+	public void testContextHandling() throws Exception {
 		delegateTest.testContextHandling();
 	}
 
 	@Test
-	public void testConcurrentReadingAndWriting()
-			throws Exception {
+	public void testConcurrentReadingAndWriting() throws Exception {
 		delegateTest.testConcurrentReadingAndWriting();
 	}
 
 	@Test
-	public void testNullContextHandling()
-			throws Exception {
+	public void testNullContextHandling() throws Exception {
 		delegateTest.testNullContextHandling();
 	}
 
 	@Test
-	public void testFuzzyQuery()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+	public void testFuzzyQuery() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testFuzzyQuery();
 	}
 
 	@Test
-	public void testReindexing()
-			throws Exception {
+	public void testReindexing() throws Exception {
 		delegateTest.testReindexing();
 	}
 
 	@Test
-	public void testPropertyVar()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+	public void testPropertyVar() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testPropertyVar();
 	}
 
 	@Test
-	public void testMultithreadedAdd()
-			throws InterruptedException {
+	public void testMultithreadedAdd() throws InterruptedException {
 		delegateTest.testMultithreadedAdd();
 	}
 

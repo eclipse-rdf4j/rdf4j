@@ -31,8 +31,6 @@ public class MinLengthFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MinLengthFilter{" +
-				"minLength=" + minLength +
-				'}';
+		return "MinLengthFilter{" + "minLength=" + minLength + '}';
 	}
 }

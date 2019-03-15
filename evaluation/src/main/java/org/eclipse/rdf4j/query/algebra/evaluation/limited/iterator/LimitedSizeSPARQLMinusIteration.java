@@ -50,8 +50,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 * @param maxSize  Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
-			Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used,
-			long maxSize) {
+			Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used, long maxSize) {
 		super(leftArg, rightArg, distinct);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -67,8 +66,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 * After closing the set is cleared and any "used" capacity for collections is returned.
 	 */
 	@Override
-	protected void handleClose()
-			throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

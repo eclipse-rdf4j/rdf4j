@@ -35,18 +35,16 @@ public class TestProxyRepositoryFactory {
 	}
 
 	@Test(expected = RepositoryConfigException.class)
-	public final void testGetConfig()
-			throws RepositoryConfigException {
+	public final void testGetConfig() throws RepositoryConfigException {
 		RepositoryImplConfig factoryConfig = factory.getConfig();
 		assertThat(factoryConfig).isInstanceOf(ProxyRepositoryConfig.class);
 		factoryConfig.validate();
 	}
 
 	@Test
-	public final void testGetRepository()
-			throws RDF4JException, IOException {
-		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"),
-				RepositoryConfigSchema.NAMESPACE, RDFFormat.TURTLE);
+	public final void testGetRepository() throws RDF4JException, IOException {
+		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"), RepositoryConfigSchema.NAMESPACE,
+				RDFFormat.TURTLE);
 		RepositoryConfig config = RepositoryConfig.create(graph,
 				GraphUtil.getUniqueSubject(graph, RDF.TYPE, RepositoryConfigSchema.REPOSITORY));
 		config.validate();

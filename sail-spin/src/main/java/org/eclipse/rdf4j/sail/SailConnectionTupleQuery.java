@@ -36,16 +36,14 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 	}
 
 	@Override
-	public TupleQueryResult evaluate()
-			throws QueryEvaluationException {
+	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
 
 			SailConnection sailCon = getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred());
+			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 

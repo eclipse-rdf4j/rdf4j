@@ -49,8 +49,7 @@ public class DatasetRepository extends RepositoryWrapper {
 		if (delegate instanceof SailRepository) {
 			super.setDelegate(delegate);
 		} else {
-			throw new IllegalArgumentException(
-					"delegate must be a SailRepository, is: " + delegate.getClass());
+			throw new IllegalArgumentException("delegate must be a SailRepository, is: " + delegate.getClass());
 		}
 	}
 
@@ -60,8 +59,7 @@ public class DatasetRepository extends RepositoryWrapper {
 	}
 
 	@Override
-	public RepositoryConnection getConnection()
-			throws RepositoryException {
+	public RepositoryConnection getConnection() throws RepositoryException {
 		return new DatasetRepositoryConnection(this, getDelegate().getConnection());
 	}
 
@@ -74,8 +72,7 @@ public class DatasetRepository extends RepositoryWrapper {
 	 * @param config  parser configuration to use for processing the dataset
 	 * @throws RepositoryException if an error occurred while loading the dataset.
 	 */
-	public void loadDataset(URL url, IRI context, ParserConfig config)
-			throws RepositoryException {
+	public void loadDataset(URL url, IRI context, ParserConfig config) throws RepositoryException {
 		try {
 			Long since = lastModified.get(url);
 			URLConnection urlCon = url.openConnection();
@@ -106,8 +103,7 @@ public class DatasetRepository extends RepositoryWrapper {
 			mimeType = mimeType.substring(0, semiColonIdx);
 		}
 		RDFFormat format = Rio.getParserFormatForMIMEType(mimeType)
-				.orElse(
-						Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+				.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
 
 		try (InputStream stream = urlCon.getInputStream()) {
 			RepositoryConnection repCon = super.getConnection();

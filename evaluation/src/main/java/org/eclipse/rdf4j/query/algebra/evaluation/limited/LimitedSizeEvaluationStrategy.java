@@ -73,16 +73,14 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct,
-			BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new LimitedSizeDistinctIteration(evaluate(distinct.getArg(), bindings), used, maxSize);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
-			final BindingSet bindings)
-			throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
@@ -108,8 +106,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
-			final BindingSet bindings)
-			throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
@@ -139,8 +136,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		if (join.getRightArg() instanceof Service) {
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(),
-					bindings);
+			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(), bindings);
 			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
 		}
 
@@ -153,8 +149,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
-			final BindingSet bindings)
-			throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		final Scope scope = alp.getScope();
 		final Var subjectVar = alp.getSubjectVar();
 		final TupleExpr pathExpression = alp.getPathExpression();
@@ -162,15 +157,15 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 
-		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar,
-				minLength, bindings, used, maxSize);
+		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength,
+				bindings, used, maxSize);
 	}
 
 	@Override
-	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar,
-			Var objVar, Var contextVar, Value subj, Value obj) {
-		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar,
-				bindings, used, maxSize);
+	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar, Var objVar,
+			Var contextVar, Value subj, Value obj) {
+		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar, bindings, used,
+				maxSize);
 	}
 
 	@Override
@@ -181,8 +176,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 			ValueComparator vcmp = new ValueComparator();
 			OrderComparator cmp = new OrderComparator(this, node, vcmp);
 			boolean reduced = isReducedOrDistinct(node);
-			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used,
-					maxSize);
+			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used, maxSize);
 		} else {
 			return super.evaluate(node, bindings);
 		}

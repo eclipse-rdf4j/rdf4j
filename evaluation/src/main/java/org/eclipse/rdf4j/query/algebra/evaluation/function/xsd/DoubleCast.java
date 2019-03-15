@@ -24,8 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public class DoubleCast extends CastFunction {
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-			throws ValueExprEvaluationException {
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();

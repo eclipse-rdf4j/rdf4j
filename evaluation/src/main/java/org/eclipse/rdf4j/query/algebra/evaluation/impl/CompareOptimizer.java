@@ -51,8 +51,7 @@ public class CompareOptimizer implements QueryOptimizer {
 				boolean leftIsResource = isResource(leftArg);
 				boolean rightIsResource = isResource(rightArg);
 
-				if (leftIsVar && rightIsResource || leftIsResource && rightIsVar
-						|| leftIsResource && rightIsResource) {
+				if (leftIsVar && rightIsResource || leftIsResource && rightIsVar || leftIsResource && rightIsResource) {
 					SameTerm sameTerm = new SameTerm(leftArg, rightArg);
 					compare.replaceWith(sameTerm);
 				}

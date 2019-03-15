@@ -30,8 +30,7 @@ abstract class AbstractStringReplacer implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 1 || args.length > 2) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}

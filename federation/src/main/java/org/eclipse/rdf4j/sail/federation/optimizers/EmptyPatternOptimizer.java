@@ -35,8 +35,7 @@ import com.google.common.base.MoreObjects;
  * 
  * @author James Leigh
  */
-public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException>
-		implements QueryOptimizer {
+public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {
 	private final Collection<? extends RepositoryConnection> members;
 
 	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
@@ -61,15 +60,13 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(StatementPattern node)
-			throws RepositoryException {
+	public void meet(StatementPattern node) throws RepositoryException {
 		Resource subj = (Resource) node.getSubjectVar().getValue();
 		IRI pred = (IRI) node.getPredicateVar().getValue();
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
-					bloomFilters.apply(member.getRepository()),
+			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(bloomFilters.apply(member.getRepository()),
 					AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 			if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
@@ -79,8 +76,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private Resource[] getContexts(Var var) {
-		return (var == null || !var.hasValue()) ? new Resource[0]
-				: new Resource[] { (Resource) var.getValue() };
+		return (var == null || !var.hasValue()) ? new Resource[0] : new Resource[] { (Resource) var.getValue() };
 	}
 
 }

@@ -35,8 +35,7 @@ public class Seconds implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("SECONDS requires 1 argument, got " + args.length);
 		}
@@ -59,8 +58,7 @@ public class Seconds implements Function {
 
 						return valueFactory.createLiteral(str, XMLSchema.DECIMAL);
 					} else {
-						throw new ValueExprEvaluationException(
-								"can not determine minutes from value: " + argValue);
+						throw new ValueExprEvaluationException("can not determine minutes from value: " + argValue);
 					}
 				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);

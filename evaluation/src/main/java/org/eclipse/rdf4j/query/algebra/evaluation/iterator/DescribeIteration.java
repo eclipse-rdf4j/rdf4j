@@ -62,8 +62,8 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
 
-	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
-			EvaluationStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings) {
+	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
+			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
 		this.describeExprNames = new ArrayList<>(describeExprNames);
@@ -76,8 +76,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private BindingSet parentBindings;
 
-	private void resetCurrentDescribeExprIter()
-			throws QueryEvaluationException {
+	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
 		while (currentDescribeExprIter == null) {
 			if (currentBindings == null && startValue == null) {
 				if (sourceIter.hasNext()) {
@@ -127,8 +126,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-			throws QueryEvaluationException {
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		resetCurrentDescribeExprIter();
 		if (currentDescribeExprIter == null) {
 			return null;
@@ -204,8 +202,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject,
-			Value object)
+	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();

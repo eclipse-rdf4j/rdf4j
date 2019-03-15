@@ -41,8 +41,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
 		// return result of non-strict comparison.
-		return BooleanLiteral.valueOf(
-				QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), false));
+		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), false));
 	}
 
 	@Override

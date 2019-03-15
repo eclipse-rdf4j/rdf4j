@@ -256,9 +256,8 @@ public class ConstantOptimizer implements QueryOptimizer {
 		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
 			Function function = FunctionRegistry.getInstance()
 					.get(functionCall.getURI())
-					.orElseThrow(
-							() -> new QueryEvaluationException(
-									"Unable to find function with the URI: " + functionCall.getURI()));
+					.orElseThrow(() -> new QueryEvaluationException(
+							"Unable to find function with the URI: " + functionCall.getURI()));
 
 			// we treat constant functions as the 'regular case' and make
 			// exceptions for specific SPARQL built-in functions that require
@@ -306,8 +305,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(Regex node) {
 			super.meetNode(node);
 
-			if (isConstant(node.getArg()) && isConstant(node.getPatternArg())
-					&& isConstant(node.getFlagsArg())) {
+			if (isConstant(node.getArg()) && isConstant(node.getPatternArg()) && isConstant(node.getFlagsArg())) {
 				try {
 					Value value = strategy.evaluate(node, EmptyBindingSet.getInstance());
 					node.replaceWith(new ValueConstant(value));

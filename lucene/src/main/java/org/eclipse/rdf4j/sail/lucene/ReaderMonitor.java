@@ -49,8 +49,7 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	 * @throws IOException
 	 */
 	@Override
-	protected void handleClose()
-			throws IOException {
+	protected void handleClose() throws IOException {
 		try {
 			if (indexSearcher != null) {
 				indexSearcher.getIndexReader().close();
@@ -62,8 +61,7 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 
 	// //////////////////////////////Methods for controlled index access
 
-	protected IndexSearcher getIndexSearcher()
-			throws IOException {
+	protected IndexSearcher getIndexSearcher() throws IOException {
 		if (indexSearcherCreateException != null)
 			throw indexSearcherCreateException;
 		return indexSearcher;

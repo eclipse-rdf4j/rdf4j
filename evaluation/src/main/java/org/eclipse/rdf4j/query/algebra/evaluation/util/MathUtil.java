@@ -47,8 +47,7 @@ public class MathUtil {
 	 *         to the most specific data type the two operands have in common per the SPARQL/XPath spec.
 	 * @throws ValueExprEvaluationException
 	 */
-	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op)
-			throws ValueExprEvaluationException {
+	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
 		final ValueFactory vf = SimpleValueFactory.getInstance();
 
 		IRI leftDatatype = leftLit.getDatatype();
@@ -141,8 +140,7 @@ public class MathUtil {
 						// non-terminating decimal expansion in quotient, using
 						// scaling and rounding.
 						result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)
-								.divide(
-										right, RoundingMode.HALF_UP);
+								.divide(right, RoundingMode.HALF_UP);
 					}
 
 					return vf.createLiteral(result);
@@ -161,8 +159,7 @@ public class MathUtil {
 				case MULTIPLY:
 					return vf.createLiteral(left.multiply(right));
 				case DIVIDE:
-					throw new RuntimeException(
-							"Integer divisions should be processed as decimal divisions");
+					throw new RuntimeException("Integer divisions should be processed as decimal divisions");
 				default:
 					throw new IllegalArgumentException("Unknown operator: " + op);
 				}

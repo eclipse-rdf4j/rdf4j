@@ -96,8 +96,8 @@ import com.google.common.collect.Sets;
 public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	@SuppressWarnings("unchecked")
-	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(
-			Projection.class, MultiProjection.class);
+	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(Projection.class,
+			MultiProjection.class);
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -154,8 +154,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	 */
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
-	public LuceneSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex,
-			LuceneSail sail) {
+	public LuceneSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex, LuceneSail sail) {
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
 		this.sail = sail;
@@ -186,8 +185,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void close()
-			throws SailException {
+	public void close() throws SailException {
 		if (closed.compareAndSet(false, true)) {
 			super.close();
 		}
@@ -196,8 +194,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to indexing
 
 	@Override
-	public synchronized void clear(Resource... contexts)
-			throws SailException {
+	public synchronized void clear(Resource... contexts) throws SailException {
 		// remove the connection listener, this is safe as the changing methods
 		// are synchronized
 		// during the clear(), no other operation can be invoked
@@ -211,8 +208,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void begin()
-			throws SailException {
+	public void begin() throws SailException {
 		super.begin();
 		buffer.reset();
 		try {
@@ -223,8 +219,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void commit()
-			throws SailException {
+	public void commit() throws SailException {
 		super.commit();
 
 		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
@@ -246,8 +241,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 					logger.debug("clearing index...");
 					luceneIndex.clear();
 				} else {
-					throw new SailException(
-							"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+					throw new SailException("Cannot interpret operation " + op + " of type " + op.getClass().getName());
 				}
 				i.remove();
 			}
@@ -261,8 +255,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove)
-			throws IOException {
+	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove) throws IOException {
 		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
 		luceneIndex.begin();
 		try {
@@ -275,8 +268,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void clearContexts(Resource... contexts)
-			throws IOException {
+	private void clearContexts(Resource... contexts) throws IOException {
 		logger.debug("clearing contexts...");
 		luceneIndex.begin();
 		try {
@@ -292,9 +284,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to querying
 
 	@Override
-	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-			throws SailException {
+	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		QueryContext qctx = new QueryContext();
 		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
 
@@ -311,9 +302,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		return new QueryContextIteration(iter, qctx);
 	}
 
-	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-			throws SailException {
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
 
@@ -341,8 +331,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-					new SailTripleSource(this, includeInferred, vf), dataset,
-					sail.getFederatedServiceResolver(), sail.getTupleFunctionRegistry());
+					new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),
+					sail.getTupleFunctionRegistry());
 
 			// do standard optimizations
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
@@ -352,8 +342,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
 			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset,
-					bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
 			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
 			// bindings);
 			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
@@ -439,8 +428,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		QueryModelVisitor<RuntimeException> assignmentVisitor = new AbstractQueryModelVisitor<RuntimeException>() {
 
 			@Override
-			public void meet(BindingSetAssignment node)
-					throws RuntimeException {
+			public void meet(BindingSetAssignment node) throws RuntimeException {
 				// does the node belong to the same (sub-)query?
 				QueryModelNode parent = getParentNodeOfTypes(node, PROJECTION_TYPES);
 				if (parent != null && parent.equals(projection))
@@ -481,8 +469,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * Returns the closest parent node of the given type.
 	 */
-	private QueryModelNode getParentNodeOfTypes(QueryModelNode node,
-			Set<Class<? extends QueryModelNode>> types) {
+	private QueryModelNode getParentNodeOfTypes(QueryModelNode node, Set<Class<? extends QueryModelNode>> types) {
 		QueryModelNode parent = node.getParentNode();
 		if (parent == null) {
 			return null;
@@ -556,8 +543,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void rollback()
-			throws SailException {
+	public void rollback() throws SailException {
 		super.rollback();
 		buffer.reset();
 		try {

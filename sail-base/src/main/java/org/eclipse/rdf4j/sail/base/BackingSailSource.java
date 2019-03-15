@@ -23,20 +23,17 @@ public abstract class BackingSailSource implements SailSource {
 	}
 
 	@Override
-	public void close()
-			throws SailException {
+	public void close() throws SailException {
 		// no-op
 	}
 
 	@Override
-	public void prepare()
-			throws SailException {
+	public void prepare() throws SailException {
 		// no-op
 	}
 
 	@Override
-	public void flush()
-			throws SailException {
+	public void flush() throws SailException {
 		// no-op
 	}
 

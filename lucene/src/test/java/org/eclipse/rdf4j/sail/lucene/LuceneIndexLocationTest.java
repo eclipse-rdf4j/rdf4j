@@ -46,8 +46,7 @@ public class LuceneIndexLocationTest {
 	 * @throws Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		File dataDir = tmpFolder.newFolder();
 
 		sail = new MemoryStore();
@@ -66,17 +65,15 @@ public class LuceneIndexLocationTest {
 			cnx.begin();
 
 			IntStream.rangeClosed(0, 50)
-					.forEach(i -> cnx.add(
-							vf.createStatement(vf.createIRI("urn:subject" + i), vf.createIRI("urn:predicate:" + i),
-									vf.createLiteral("Value" + i))));
+					.forEach(i -> cnx.add(vf.createStatement(vf.createIRI("urn:subject" + i),
+							vf.createIRI("urn:predicate:" + i), vf.createLiteral("Value" + i))));
 			cnx.commit();
 		}
 		connection = repository.getConnection();
 	}
 
 	@After
-	public void tearDown()
-			throws IOException, RepositoryException {
+	public void tearDown() throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -94,14 +91,12 @@ public class LuceneIndexLocationTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void IndexLocationTest()
-			throws Exception {
+	public void IndexLocationTest() throws Exception {
 		File dataDir = repository.getDataDir();
 		Path lucenePath = repository.getDataDir().toPath().resolve(luceneIndexPath);
 
 		log.info("Lucene index location: {}", lucenePath);
-		Assert.assertEquals(dataDir.getAbsolutePath() + "/" + luceneIndexPath,
-				lucenePath.toAbsolutePath().toString());
+		Assert.assertEquals(dataDir.getAbsolutePath() + "/" + luceneIndexPath, lucenePath.toAbsolutePath().toString());
 
 		Assert.assertTrue(lucenePath.toFile().exists());
 		Assert.assertTrue(lucenePath.toFile().isDirectory());

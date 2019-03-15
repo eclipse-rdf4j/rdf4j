@@ -72,19 +72,16 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	}
 
 	private boolean datatypesMatch(IRI datatype) {
-		return (numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype)) ||
-				(calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
+		return (numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype))
+				|| (calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
 						&& (timeDatatype || !XMLSchema.TIME.equals(datatype)))
-				||
-				(durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype)) ||
-				(booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
+				|| (durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype))
+				|| (booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
 
 	}
 
 	@Override
 	public String toString() {
-		return "LiteralComparatorFilter{" +
-				"function=" + function +
-				'}';
+		return "LiteralComparatorFilter{" + "function=" + function + '}';
 	}
 }

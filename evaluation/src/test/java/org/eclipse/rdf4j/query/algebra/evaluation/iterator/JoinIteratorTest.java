@@ -39,8 +39,7 @@ public class JoinIteratorTest {
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.
 	 */
 	@Test
-	public void testBindingSetAssignmentJoin()
-			throws QueryEvaluationException {
+	public void testBindingSetAssignmentJoin() throws QueryEvaluationException {
 		testBindingSetAssignmentJoin(5, 5, EmptyBindingSet.getInstance());
 
 		{

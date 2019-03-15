@@ -26,8 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 public class StringCast extends CastFunction {
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
@@ -56,8 +55,7 @@ public class StringCast extends CastFunction {
 	}
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-			throws ValueExprEvaluationException {
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof IRI) {
 			return valueFactory.createLiteral(value.toString(), XMLSchema.STRING);
 		} else if (value instanceof Literal) {

@@ -65,8 +65,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
-	private final ExecutorService executor = Executors.newCachedThreadPool(
-			new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
+	private final ExecutorService executor = Executors
+			.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
 
 	private PrefixHashSet localPropertySpace; // NOPMD
 
@@ -98,8 +98,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public boolean isWritable()
-			throws SailException {
+	public boolean isWritable() throws SailException {
 		return !isReadOnly();
 	}
 
@@ -250,14 +249,12 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Deprecated
-	public void initialize()
-			throws SailException {
+	public void initialize() throws SailException {
 		init();
 	}
 
 	@Override
-	public void init()
-			throws SailException {
+	public void init() throws SailException {
 		for (Repository member : members) {
 			try {
 				member.initialize();
@@ -268,8 +265,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public void shutDown()
-			throws SailException {
+	public void shutDown() throws SailException {
 		List<SailException> toThrowExceptions = new ArrayList<>();
 		try {
 			for (Repository member : members) {
@@ -315,8 +311,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public SailConnection getConnection()
-			throws SailException {
+	public SailConnection getConnection() throws SailException {
 		List<RepositoryConnection> connections = new ArrayList<>(members.size());
 		boolean allGood = false;
 		try {

@@ -41,13 +41,11 @@ public class DataStore implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public DataStore(File dataDir, String filePrefix)
-			throws IOException {
+	public DataStore(File dataDir, String filePrefix) throws IOException {
 		this(dataDir, filePrefix, false);
 	}
 
-	public DataStore(File dataDir, String filePrefix, boolean forceSync)
-			throws IOException {
+	public DataStore(File dataDir, String filePrefix, boolean forceSync) throws IOException {
 		dataFile = new DataFile(new File(dataDir, filePrefix + ".dat"), forceSync);
 		idFile = new IDFile(new File(dataDir, filePrefix + ".id"), forceSync);
 		hashFile = new HashFile(new File(dataDir, filePrefix + ".hash"), forceSync);
@@ -64,8 +62,7 @@ public class DataStore implements Closeable {
 	 * @return The value for the ID, or <tt>null</tt> if no such value could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public byte[] getData(int id)
-			throws IOException {
+	public byte[] getData(int id) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 
 		// Data not in cache or cache not used, fetch from file
@@ -85,8 +82,7 @@ public class DataStore implements Closeable {
 	 * @return The ID for the specified value, or <tt>-1</tt> if no such ID could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public int getID(byte[] queryData)
-			throws IOException {
+	public int getID(byte[] queryData) throws IOException {
 		assert queryData != null : "queryData must not be null";
 
 		int id = -1;
@@ -117,8 +113,7 @@ public class DataStore implements Closeable {
 	 * @return The largest ID, or <tt>0</tt> if the store does not contain any values.
 	 * @throws IOException If an I/O error occurs.
 	 */
-	public int getMaxID()
-			throws IOException {
+	public int getMaxID() throws IOException {
 		return idFile.getMaxID();
 	}
 
@@ -130,8 +125,7 @@ public class DataStore implements Closeable {
 	 * @return The ID that has been assigned to the value.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public int storeData(byte[] data)
-			throws IOException {
+	public int storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
 		int id = getID(data);
@@ -151,8 +145,7 @@ public class DataStore implements Closeable {
 	 * 
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		hashFile.sync();
 		idFile.sync();
 		dataFile.sync();
@@ -163,8 +156,7 @@ public class DataStore implements Closeable {
 	 * 
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		try {
 			hashFile.clear();
 		} finally {
@@ -183,8 +175,7 @@ public class DataStore implements Closeable {
 	 * @exception IOException If an I/O error occurred.
 	 */
 	@Override
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		try {
 			hashFile.close();
 		} finally {
@@ -215,8 +206,7 @@ public class DataStore implements Closeable {
 	 * Test/debug methods *
 	 *--------------------*/
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		if (args.length < 2) {
 			System.err.println(
 					"Usage: java org.eclipse.rdf4j.sesame.sailimpl.nativerdf.datastore.DataStore <data-dir> <file-prefix>");

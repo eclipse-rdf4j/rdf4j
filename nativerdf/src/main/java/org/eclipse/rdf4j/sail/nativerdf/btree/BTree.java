@@ -181,8 +181,7 @@ public class BTree implements Closeable {
 	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 * @see DefaultRecordComparator
 	 */
-	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize)
-			throws IOException {
+	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize) throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, false);
 	}
 
@@ -217,8 +216,7 @@ public class BTree implements Closeable {
 	 *                       or equal to another.
 	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
-	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize,
-			RecordComparator comparator)
+	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator)
 			throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, comparator, false);
 	}
@@ -238,9 +236,8 @@ public class BTree implements Closeable {
 	 *                       {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
 	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
-	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize,
-			RecordComparator comparator, boolean forceSync)
-			throws IOException {
+	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator,
+			boolean forceSync) throws IOException {
 		if (dataDir == null) {
 			throw new IllegalArgumentException("dataDir must not be null");
 		}
@@ -254,8 +251,7 @@ public class BTree implements Closeable {
 			throw new IllegalArgumentException("value size must be larger than 0");
 		}
 		if (blockSize < 3 * valueSize + 20) {
-			throw new IllegalArgumentException(
-					"block size to small; must at least be able to store three values");
+			throw new IllegalArgumentException("block size to small; must at least be able to store three values");
 		}
 		if (comparator == null) {
 			throw new IllegalArgumentException("comparator muts not be null");
@@ -295,16 +291,15 @@ public class BTree implements Closeable {
 
 			if (Arrays.equals(MAGIC_NUMBER, magicNumber)) {
 				if (version > FILE_FORMAT_VERSION) {
-					throw new IOException(
-							"Unable to read BTree file " + file + "; it uses a newer file format");
+					throw new IOException("Unable to read BTree file " + file + "; it uses a newer file format");
 				} else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read BTree file " + file
-							+ "; invalid file format version: " + version);
+					throw new IOException(
+							"Unable to read BTree file " + file + "; invalid file format version: " + version);
 				}
 			} else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {
 				if (version != 1) {
-					throw new IOException("Unable to read BTree file " + file
-							+ "; invalid file format version: " + version);
+					throw new IOException(
+							"Unable to read BTree file " + file + "; invalid file format version: " + version);
 				}
 				// Write new magic number to file
 				logger.info("Updating file header for btree file '{}'", file.getAbsolutePath());
@@ -351,8 +346,7 @@ public class BTree implements Closeable {
 	 * 
 	 * @return <tt>true</tt> if the operation was successful.
 	 */
-	public boolean delete()
-			throws IOException {
+	public boolean delete() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			close(false);
 
@@ -368,8 +362,7 @@ public class BTree implements Closeable {
 	 * to disk before closing. Once the B-Tree has been closed, it can no longer be used.
 	 */
 	@Override
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			close(true);
 		}
@@ -381,8 +374,7 @@ public class BTree implements Closeable {
 	 * 
 	 * @param syncChanges Flag indicating whether pending changes should be synchronized to disk.
 	 */
-	private void close(boolean syncChanges)
-			throws IOException {
+	private void close(boolean syncChanges) throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			try {
@@ -410,8 +402,7 @@ public class BTree implements Closeable {
 	 * 
 	 * @throws IOException
 	 */
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		btreeLock.readLock().lock();
 		try {
 			// Write any changed nodes that still reside in the cache to disk
@@ -434,8 +425,7 @@ public class BTree implements Closeable {
 	 *            of this BTree is concerned.
 	 * @return The value matching the key, or <tt>null</tt> if no such value could be found.
 	 */
-	public byte[] get(byte[] key)
-			throws IOException {
+	public byte[] get(byte[] key) throws IOException {
 		btreeLock.readLock().lock();
 		try {
 			Node node = readRootNode();
@@ -496,16 +486,14 @@ public class BTree implements Closeable {
 	 * Returns an iterator that iterates over all values between minValue and maxValue (inclusive) and returns the
 	 * values that match the supplied searchKey after searchMask has been applied to the value.
 	 */
-	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue,
-			byte[] maxValue) {
+	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
 		return new RangeIterator(this, searchKey, searchMask, minValue, maxValue);
 	}
 
 	/**
 	 * Returns an estimate for the number of values stored in this BTree.
 	 */
-	public long getValueCountEstimate()
-			throws IOException {
+	public long getValueCountEstimate() throws IOException {
 		int allocatedNodesCount = allocatedNodesList.getNodeCount();
 
 		// Assume fill factor of 50%
@@ -519,8 +507,7 @@ public class BTree implements Closeable {
 	 * @param maxValue the upper bound of the range,
 	 * @return an estimate of the number of values in the specified range.
 	 */
-	public long getValueCountEstimate(byte[] minValue, byte[] maxValue)
-			throws IOException {
+	public long getValueCountEstimate(byte[] minValue, byte[] maxValue) throws IOException {
 		assert minValue != null : "minValue must not be null";
 		assert maxValue != null : "maxValue must not be null";
 
@@ -537,8 +524,7 @@ public class BTree implements Closeable {
 		return getValueCountEstimate(minValuePath, maxValuePath);
 	}
 
-	private List<PathSegment> getPath(byte[] key)
-			throws IOException {
+	private List<PathSegment> getPath(byte[] key) throws IOException {
 		assert key != null : "key must not be null";
 
 		List<PathSegment> path = new ArrayList<>(height());
@@ -658,8 +644,7 @@ public class BTree implements Closeable {
 	 * Estimates the number of values contained by a averagely filled node node at the specified <tt>nodeDepth</tt> (the
 	 * root is at depth 1).
 	 */
-	private long getTreeSizeEstimate(int nodeDepth)
-			throws IOException {
+	private long getTreeSizeEstimate(int nodeDepth) throws IOException {
 		// Assume fill factor of 50%
 		int fanOut = this.branchFactor / 2;
 
@@ -676,8 +661,7 @@ public class BTree implements Closeable {
 		return valueCount;
 	}
 
-	private int height()
-			throws IOException {
+	private int height() throws IOException {
 		// if the depth is cached, return that value
 		if (height >= 0) {
 			return height;
@@ -714,8 +698,7 @@ public class BTree implements Closeable {
 	 * @return The old value that was replaced, if any.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public byte[] insert(byte[] value)
-			throws IOException {
+	public byte[] insert(byte[] value) throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			Node rootNode = readRootNode();
@@ -755,8 +738,7 @@ public class BTree implements Closeable {
 		}
 	}
 
-	private InsertResult insertInTree(byte[] value, int nodeID, Node node)
-			throws IOException {
+	private InsertResult insertInTree(byte[] value, int nodeID, Node node) throws IOException {
 		InsertResult insertResult = null;
 
 		// Search value in node
@@ -789,8 +771,8 @@ public class BTree implements Closeable {
 				if (insertResult.overflowValue != null) {
 					// Child node overflowed, insert overflow in this node
 					byte[] oldValue = insertResult.oldValue;
-					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID,
-							valueIdx, node);
+					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID, valueIdx,
+							node);
 					insertResult.oldValue = oldValue;
 				}
 			}
@@ -799,8 +781,7 @@ public class BTree implements Closeable {
 		return insertResult;
 	}
 
-	private InsertResult insertInNode(byte[] value, int nodeID, int valueIdx, Node node)
-			throws IOException {
+	private InsertResult insertInNode(byte[] value, int nodeID, int valueIdx, Node node) throws IOException {
 		InsertResult insertResult = new InsertResult();
 
 		if (node.isFull()) {
@@ -845,8 +826,7 @@ public class BTree implements Closeable {
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public byte[] remove(byte[] key)
-			throws IOException {
+	public byte[] remove(byte[] key) throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			byte[] result = null;
@@ -893,8 +873,7 @@ public class BTree implements Closeable {
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	private byte[] removeFromTree(byte[] key, Node node)
-			throws IOException {
+	private byte[] removeFromTree(byte[] key, Node node) throws IOException {
 		byte[] value = null;
 
 		// Search key
@@ -940,14 +919,12 @@ public class BTree implements Closeable {
 	 * @throws IOException              If an I/O error occurred.
 	 * @throws IllegalArgumentException If the supplied node is an empty leaf node
 	 */
-	private byte[] removeLargestValueFromTree(Node node)
-			throws IOException {
+	private byte[] removeLargestValueFromTree(Node node) throws IOException {
 		int nodeValueCount = node.getValueCount();
 
 		if (node.isLeaf()) {
 			if (node.isEmpty()) {
-				throw new IllegalArgumentException(
-						"Trying to remove largest value from an empty node in " + getFile());
+				throw new IllegalArgumentException("Trying to remove largest value from an empty node in " + getFile());
 			}
 			return node.removeValueRight(nodeValueCount - 1);
 		} else {
@@ -960,14 +937,11 @@ public class BTree implements Closeable {
 		}
 	}
 
-	private void balanceChildNode(Node parentNode, Node childNode, int childIdx)
-			throws IOException {
+	private void balanceChildNode(Node parentNode, Node childNode, int childIdx) throws IOException {
 		if (childNode.getValueCount() < minValueCount) {
 			// Child node contains too few values, try to borrow one from its right
 			// sibling
-			Node rightSibling = (childIdx < parentNode.getValueCount())
-					? parentNode.getChildNode(childIdx + 1)
-					: null;
+			Node rightSibling = (childIdx < parentNode.getValueCount()) ? parentNode.getChildNode(childIdx + 1) : null;
 
 			if (rightSibling != null && rightSibling.getValueCount() > minValueCount) {
 				// Right sibling has enough values to give one up
@@ -984,8 +958,7 @@ public class BTree implements Closeable {
 					// Both siblings contain the minimum amount of values,
 					// merge the child node with its left or right sibling
 					if (leftSibling != null) {
-						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1),
-								childNode);
+						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1), childNode);
 					} else {
 						childNode.mergeWithRightSibling(parentNode.removeValueRight(childIdx), rightSibling);
 					}
@@ -1007,8 +980,7 @@ public class BTree implements Closeable {
 	 * 
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		btreeLock.writeLock().lock();
 		try {
 			nodeCache.clear();
@@ -1025,8 +997,7 @@ public class BTree implements Closeable {
 		}
 	}
 
-	private Node createNewNode()
-			throws IOException {
+	private Node createNewNode() throws IOException {
 		int newNodeID = allocatedNodesList.allocateNode();
 
 		Node node = new Node(newNodeID, this);
@@ -1037,16 +1008,14 @@ public class BTree implements Closeable {
 		return node;
 	}
 
-	Node readRootNode()
-			throws IOException {
+	Node readRootNode() throws IOException {
 		if (rootNodeID > 0) {
 			return readNode(rootNodeID);
 		}
 		return null;
 	}
 
-	Node readNode(int id)
-			throws IOException {
+	Node readNode(int id) throws IOException {
 		if (id <= 0) {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}
@@ -1054,8 +1023,7 @@ public class BTree implements Closeable {
 		return nodeCache.readAndUse(id);
 	}
 
-	void releaseNode(Node node)
-			throws IOException {
+	void releaseNode(Node node) throws IOException {
 		// Note: this method is called by Node.release()
 		// This method should not be called directly (to prevent concurrency issues)!!!
 
@@ -1074,8 +1042,7 @@ public class BTree implements Closeable {
 			nodeCache.release(node, forceSync);
 	}
 
-	private void writeFileHeader()
-			throws IOException {
+	private void writeFileHeader() throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH);
 		buf.put(MAGIC_NUMBER);
 		buf.put(FILE_FORMAT_VERSION);
@@ -1096,8 +1063,7 @@ public class BTree implements Closeable {
 		return (int) (offset / blockSize);
 	}
 
-	public void print(PrintStream out)
-			throws IOException {
+	public void print(PrintStream out) throws IOException {
 		out.println("---contents of BTree file---");
 		out.println("Stored parameters:");
 		out.println("block size   = " + blockSize);

@@ -44,21 +44,18 @@ public class TestNativeStoreUpgrade {
 	private File dataDir;
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		dataDir = FileUtil.createTempDir("nativestore");
 	}
 
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		FileUtil.deleteDir(dataDir);
 		dataDir = null;
 	}
 
 	@Test
-	public void testDevel()
-			throws IOException, SailException {
+	public void testDevel() throws IOException, SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
@@ -77,8 +74,7 @@ public class TestNativeStoreUpgrade {
 	}
 
 	@Test
-	public void test2715()
-			throws IOException, SailException {
+	public void test2715() throws IOException, SailException {
 		extractZipResource(ZIP_2_7_15, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		assertValue(dataDir);
@@ -86,8 +82,7 @@ public class TestNativeStoreUpgrade {
 	}
 
 	@Test
-	public void test2715Inconsistent()
-			throws IOException, SailException {
+	public void test2715Inconsistent() throws IOException, SailException {
 		extractZipResource(ZIP_2_7_15_INCONSISTENT, dataDir);
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		NativeStore store = new NativeStore(dataDir);
@@ -101,8 +96,7 @@ public class TestNativeStoreUpgrade {
 
 	}
 
-	public void assertValue(File dataDir)
-			throws SailException {
+	public void assertValue(File dataDir) throws SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
@@ -121,8 +115,7 @@ public class TestNativeStoreUpgrade {
 		}
 	}
 
-	public void extractZipResource(String resource, File dir)
-			throws IOException {
+	public void extractZipResource(String resource, File dir) throws IOException {
 		try (InputStream in = TestNativeStoreUpgrade.class.getResourceAsStream(resource)) {
 			ZipInputStream zip = new ZipInputStream(in);
 			ZipEntry entry;

@@ -39,8 +39,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  * 
  * @author Arjohn Kampman
  */
-public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException>
-		implements QueryOptimizer {
+public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
 
 	public QueryModelNormalizer() {
 	}
@@ -113,8 +112,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 		} else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
-						((ValueConstant) condition).getValue());
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
 			} catch (ValueExprEvaluationException e) {
 				conditionValue = false;
 			}
@@ -193,8 +191,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 		} else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
-						((ValueConstant) condition).getValue());
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
 			} catch (ValueExprEvaluationException e) {
 				conditionValue = false;
 			}

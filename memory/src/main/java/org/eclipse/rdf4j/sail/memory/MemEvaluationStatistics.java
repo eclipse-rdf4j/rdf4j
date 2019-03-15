@@ -76,8 +76,8 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			MemValue memObj = valueFactory.getMemValue(obj);
 			MemResource memContext = valueFactory.getMemResource((Resource) context);
 
-			if (subj != null && memSubj == null || pred != null && memPred == null
-					|| obj != null && memObj == null || context != null && memContext == null) {
+			if (subj != null && memSubj == null || pred != null && memPred == null || obj != null && memObj == null
+					|| context != null && memContext == null) {
 				// non-existent subject, predicate, object or context
 				return 0.0;
 			}

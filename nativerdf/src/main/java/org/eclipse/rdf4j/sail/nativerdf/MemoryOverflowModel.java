@@ -160,8 +160,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
-					Value obj, Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
 				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -177,9 +177,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
-	protected abstract SailStore createSailStore(File dataDir)
-			throws IOException,
-			SailException;
+	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
 
 	synchronized Model getDelegate() {
 		if (disk == null)
@@ -187,8 +185,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return disk;
 	}
 
-	private void writeObject(ObjectOutputStream s)
-			throws IOException {
+	private void writeObject(ObjectOutputStream s) throws IOException {
 		// Write out any hidden serialization magic
 		s.defaultWriteObject();
 		// Write in size
@@ -204,9 +201,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
-	private void readObject(ObjectInputStream s)
-			throws IOException,
-			ClassNotFoundException {
+	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
 		// Read in any hidden serialization magic
 		s.defaultReadObject();
 		// Read in size
@@ -262,8 +257,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			disk = new SailSourceModel(store) {
 
 				@Override
-				protected void finalize()
-						throws Throwable {
+				protected void finalize() throws Throwable {
 					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
@@ -289,8 +283,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
-	private File createTempDir(String name)
-			throws IOException {
+	private File createTempDir(String name) throws IOException {
 		String tmpDirStr = System.getProperty("java.io.tmpdir");
 		if (tmpDirStr != null) {
 			File tmpDir = new File(tmpDirStr);

@@ -36,8 +36,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
 	 */
 	@Override
-	public FederatedService getService(String serviceUrl)
-			throws QueryEvaluationException;
+	public FederatedService getService(String serviceUrl) throws QueryEvaluationException;
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
@@ -49,8 +48,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-			throws QueryEvaluationException;
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
@@ -60,8 +58,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return A closeable iterator over the variable binding sets that match the tuple expression.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
-			BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException;
 
 	/**

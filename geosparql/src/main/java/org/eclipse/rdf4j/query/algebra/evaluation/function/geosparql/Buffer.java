@@ -34,8 +34,7 @@ public class Buffer implements Function {
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 3) {
-			throw new ValueExprEvaluationException(
-					getURI() + " requires exactly 3 arguments, got " + args.length);
+			throw new ValueExprEvaluationException(getURI() + " requires exactly 3 arguments, got " + args.length);
 		}
 
 		SpatialContext geoContext = SpatialSupport.getSpatialContext();

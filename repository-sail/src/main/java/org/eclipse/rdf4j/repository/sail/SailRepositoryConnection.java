@@ -50,8 +50,8 @@ import org.eclipse.rdf4j.sail.SailReadOnlyException;
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
-public class SailRepositoryConnection extends AbstractRepositoryConnection implements
-		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+public class SailRepositoryConnection extends AbstractRepositoryConnection implements FederatedServiceResolverClient,
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Variables *
@@ -133,8 +133,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void begin()
-			throws RepositoryException {
+	public void begin() throws RepositoryException {
 		try {
 			sailConnection.begin(getIsolationLevel());
 		} catch (SailException e) {
@@ -143,8 +142,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-			throws RepositoryException {
+	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			sailConnection.begin(level);
 		} catch (SailException e) {
@@ -153,8 +151,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void commit()
-			throws RepositoryException {
+	public void commit() throws RepositoryException {
 		try {
 			sailConnection.flush();
 			sailConnection.prepare();
@@ -165,8 +162,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void rollback()
-			throws RepositoryException {
+	public void rollback() throws RepositoryException {
 		try {
 			sailConnection.rollback();
 		} catch (SailException e) {
@@ -175,8 +171,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void close()
-			throws RepositoryException {
+	public void close() throws RepositoryException {
 		try {
 			super.close();
 		} catch (SailException e) {
@@ -187,8 +182,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public boolean isOpen()
-			throws RepositoryException {
+	public boolean isOpen() throws RepositoryException {
 		try {
 			return sailConnection.isOpen();
 		} catch (SailException e) {
@@ -197,8 +191,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI)
-			throws MalformedQueryException {
+	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI);
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
@@ -242,15 +235,13 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts)
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {
 		return sailConnection.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
-	public RepositoryResult<Resource> getContextIDs()
-			throws RepositoryException {
+	public RepositoryResult<Resource> getContextIDs() throws RepositoryException {
 		try {
 			return createRepositoryResult(sailConnection.getContextIDs());
 		} catch (SailException e) {
@@ -259,30 +250,26 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts)
-			throws RepositoryException {
+	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
-			return createRepositoryResult(
-					sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
+			return createRepositoryResult(sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
 		} catch (SailException e) {
 			throw new RepositoryException("Unable to get statements from Sail", e);
 		}
 	}
 
 	@Override
-	public boolean isEmpty()
-			throws RepositoryException {
+	public boolean isEmpty() throws RepositoryException {
 		// The following is more efficient than "size() == 0" for Sails
 		return !hasStatement(null, null, null, false);
 	}
 
 	@Override
-	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			RDFHandler handler, Resource... contexts)
-			throws RepositoryException, RDFHandlerException {
+	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+			Resource... contexts) throws RepositoryException, RDFHandlerException {
 		handler.startRDF();
 
 		try ( // Export namespace information
@@ -309,8 +296,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public long size(Resource... contexts)
-			throws RepositoryException {
+	public long size(Resource... contexts) throws RepositoryException {
 		try {
 			return sailConnection.size(contexts);
 		} catch (SailException e) {
@@ -347,8 +333,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void clear(Resource... contexts)
-			throws RepositoryException {
+	public void clear(Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
@@ -363,8 +348,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void setNamespace(String prefix, String name)
-			throws RepositoryException {
+	public void setNamespace(String prefix, String name) throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.setNamespace(prefix, name);
@@ -377,8 +361,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void removeNamespace(String prefix)
-			throws RepositoryException {
+	public void removeNamespace(String prefix) throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.removeNamespace(prefix);
@@ -391,8 +374,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void clearNamespaces()
-			throws RepositoryException {
+	public void clearNamespaces() throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.clearNamespaces();
@@ -405,8 +387,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public RepositoryResult<Namespace> getNamespaces()
-			throws RepositoryException {
+	public RepositoryResult<Namespace> getNamespaces() throws RepositoryException {
 		try {
 			return createRepositoryResult(sailConnection.getNamespaces());
 		} catch (SailException e) {
@@ -415,8 +396,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public String getNamespace(String prefix)
-			throws RepositoryException {
+	public String getNamespace(String prefix) throws RepositoryException {
 		try {
 			return sailConnection.getNamespace(prefix);
 		} catch (SailException e) {
@@ -427,14 +407,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	/**
 	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required conversions
 	 */
-	protected <E> RepositoryResult<E> createRepositoryResult(
-			CloseableIteration<? extends E, SailException> sailIter) {
+	protected <E> RepositoryResult<E> createRepositoryResult(CloseableIteration<? extends E, SailException> sailIter) {
 		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 
 	@Override
-	public boolean isActive()
-			throws UnknownTransactionStateException {
+	public boolean isActive() throws UnknownTransactionStateException {
 		try {
 			return sailConnection.isActive();
 		} catch (SailException e) {

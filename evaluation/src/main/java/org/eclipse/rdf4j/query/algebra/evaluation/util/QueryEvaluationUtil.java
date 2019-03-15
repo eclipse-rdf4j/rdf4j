@@ -43,8 +43,7 @@ public class QueryEvaluationUtil {
 	 * @return The EBV of <tt>value</tt>.
 	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
 	 */
-	public static boolean getEffectiveBooleanValue(Value value)
-			throws ValueExprEvaluationException {
+	public static boolean getEffectiveBooleanValue(Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
@@ -142,8 +141,7 @@ public class QueryEvaluationUtil {
 	 *         otherwise.
 	 * @throws ValueExprEvaluationException if a type error occurred.
 	 */
-	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator,
-			boolean strict)
+	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict)
 			throws ValueExprEvaluationException {
 		// type precendence:
 		// - simple literal
@@ -183,8 +181,7 @@ public class QueryEvaluationUtil {
 						commonDatatype = XMLSchema.DOUBLE;
 					} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
 						commonDatatype = XMLSchema.FLOAT;
-					} else if (leftDatatype.equals(XMLSchema.DECIMAL)
-							|| rightDatatype.equals(XMLSchema.DECIMAL)) {
+					} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
 						commonDatatype = XMLSchema.DECIMAL;
 					} else {
 						commonDatatype = XMLSchema.INTEGER;
@@ -225,10 +222,8 @@ public class QueryEvaluationUtil {
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
-							if (leftDatatype.equals(XMLSchema.DATETIME)
-									&& rightDatatype.equals(XMLSchema.DATETIME)) {
-								throw new ValueExprEvaluationException(
-										"Indeterminate result for date/time comparison");
+							if (leftDatatype.equals(XMLSchema.DATETIME) && rightDatatype.equals(XMLSchema.DATETIME)) {
+								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
 							} else {
 								// We fallback to the regular RDF term compare
 								compareResult = null;
@@ -311,8 +306,7 @@ public class QueryEvaluationUtil {
 					boolean rightDate = XMLDatatypeUtil.isCalendarDatatype(rightDatatype);
 
 					if (leftString != rightString) {
-						throw new ValueExprEvaluationException(
-								"Unable to compare strings with other supported types");
+						throw new ValueExprEvaluationException("Unable to compare strings with other supported types");
 					}
 					if (leftNumeric != rightNumeric) {
 						throw new ValueExprEvaluationException(
@@ -325,8 +319,7 @@ public class QueryEvaluationUtil {
 				} else if (!leftLangLit && !rightLangLit) {
 					// For literals with unsupported datatypes we don't know if their
 					// values are equal
-					throw new ValueExprEvaluationException(
-							"Unable to compare literals with unsupported types");
+					throw new ValueExprEvaluationException("Unable to compare literals with unsupported types");
 				}
 			}
 

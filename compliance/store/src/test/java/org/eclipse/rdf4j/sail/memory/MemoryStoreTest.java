@@ -21,8 +21,7 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail()
-			throws SailException {
+	protected NotifyingSail createSail() throws SailException {
 		NotifyingSail sail = new MemoryStore();
 		sail.init();
 		return sail;

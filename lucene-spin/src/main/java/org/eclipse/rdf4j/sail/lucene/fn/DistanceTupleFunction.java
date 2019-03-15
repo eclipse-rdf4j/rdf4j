@@ -57,8 +57,7 @@ public class DistanceTupleFunction implements TupleFunction {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			ValueFactory valueFactory, Value... args)
-			throws QueryEvaluationException {
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		int i = 0;
 
 		Literal from = (Literal) args[i++];
@@ -84,15 +83,13 @@ public class DistanceTupleFunction implements TupleFunction {
 		final DistanceQuerySpec query = new DistanceQuerySpec(from, units, maxDist.doubleValue(), distanceVar,
 				geoProperty, geoVar, subjectVar, contextVar);
 
-		SearchIndex luceneIndex = SearchIndexQueryContextInitializer.getSearchIndex(
-				QueryContext.getQueryContext());
+		SearchIndex luceneIndex = SearchIndexQueryContextInitializer.getSearchIndex(QueryContext.getQueryContext());
 		Collection<BindingSet> results = luceneIndex.evaluate((SearchQueryEvaluator) query);
 		return new ConvertingIteration<BindingSet, List<Value>, QueryEvaluationException>(
 				new CloseableIteratorIteration<>(results.iterator())) {
 
 			@Override
-			protected List<Value> convert(BindingSet bindings)
-					throws QueryEvaluationException {
+			protected List<Value> convert(BindingSet bindings) throws QueryEvaluationException {
 				List<Value> results = new ArrayList<>(3);
 				if (query.getSubjectVar() != null) {
 					results.add(bindings.getValue(query.getSubjectVar()));

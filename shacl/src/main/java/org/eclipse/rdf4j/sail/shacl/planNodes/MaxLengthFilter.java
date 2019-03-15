@@ -31,8 +31,6 @@ public class MaxLengthFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MaxLengthFilter{" +
-				"maxLength=" + maxLength +
-				'}';
+		return "MaxLengthFilter{" + "maxLength=" + maxLength + '}';
 	}
 }

@@ -57,8 +57,7 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 
 		// activate sail debug mode
 		// System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
@@ -104,8 +103,7 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@After
-	public void tearDown()
-			throws RepositoryException, IOException {
+	public void tearDown() throws RepositoryException, IOException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -117,8 +115,7 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 		}
 	}
 
-	protected void populate(RepositoryConnection repoConn)
-			throws Exception {
+	protected void populate(RepositoryConnection repoConn) throws Exception {
 		// load resources
 		assert repoConn.isActive();
 		URL resourceURL = LuceneMemoryStoreTest.class.getClassLoader().getResource(DATA);

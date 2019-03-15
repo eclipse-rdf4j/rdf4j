@@ -46,8 +46,7 @@ public class FederationFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config)
-			throws SailConfigException {
+	public Sail getSail(SailImplConfig config) throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
@@ -57,8 +56,7 @@ public class FederationFactory implements SailFactory {
 		for (RepositoryImplConfig member : cfg.getMembers()) {
 			RepositoryFactory factory = RepositoryRegistry.getInstance()
 					.get(member.getType())
-					.orElseThrow(
-							() -> new SailConfigException("Unsupported repository type: " + config.getType()));
+					.orElseThrow(() -> new SailConfigException("Unsupported repository type: " + config.getType()));
 			try {
 				sail.addMember(factory.getRepository(member));
 			} catch (RepositoryConfigException e) {

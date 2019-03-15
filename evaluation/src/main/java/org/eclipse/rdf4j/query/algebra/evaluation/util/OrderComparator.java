@@ -136,8 +136,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		}
 	}
 
-	private Value evaluate(ValueExpr valueExpr, BindingSet o)
-			throws QueryEvaluationException {
+	private Value evaluate(ValueExpr valueExpr, BindingSet o) throws QueryEvaluationException {
 		try {
 			return strategy.evaluate(valueExpr, o);
 		} catch (ValueExprEvaluationException exc) {
@@ -145,14 +144,12 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		}
 	}
 
-	private void writeObject(ObjectOutputStream out)
-			throws IOException {
+	private void writeObject(ObjectOutputStream out) throws IOException {
 		this.strategyKey = EvaluationStrategies.register(strategy);
 		out.defaultWriteObject();
 	}
 
-	private void readObject(ObjectInputStream in)
-			throws IOException, ClassNotFoundException {
+	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
 		in.defaultReadObject();
 		this.strategy = EvaluationStrategies.get(this.strategyKey);
 		this.cmp = new ValueComparator();

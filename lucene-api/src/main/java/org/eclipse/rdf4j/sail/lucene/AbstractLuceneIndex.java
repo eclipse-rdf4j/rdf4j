@@ -27,8 +27,7 @@ public abstract class AbstractLuceneIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void endReading()
-			throws IOException {
+	public void endReading() throws IOException {
 		getCurrentMonitor().endReading();
 	}
 

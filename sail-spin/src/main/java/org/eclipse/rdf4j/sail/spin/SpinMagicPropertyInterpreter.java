@@ -70,8 +70,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 	private final IRI spinServiceUri;
 
-	static void registerSpinParsingTupleFunctions(SpinParser parser,
-			TupleFunctionRegistry tupleFunctionRegistry) {
+	static void registerSpinParsingTupleFunctions(SpinParser parser, TupleFunctionRegistry tupleFunctionRegistry) {
 		if (!tupleFunctionRegistry.has(SPIN.CONSTRUCT_PROPERTY.stringValue())) {
 			tupleFunctionRegistry.add(new ConstructTupleFunction(parser));
 		}
@@ -100,8 +99,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 	private class PropertyScanner extends QueryModelVisitorBase<RDF4JException> {
 
-		private void processGraphPattern(List<StatementPattern> sps)
-				throws RDF4JException {
+		private void processGraphPattern(List<StatementPattern> sps) throws RDF4JException {
 			Map<StatementPattern, TupleFunction> magicProperties = new LinkedHashMap<>();
 			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<>();
 
@@ -184,8 +182,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						String exprString;
 						try {
 							exprString = new SPARQLQueryRenderer().render(new ParsedTupleQuery(stmts));
-							exprString = exprString.substring(exprString.indexOf('{') + 1,
-									exprString.lastIndexOf('}'));
+							exprString = exprString.substring(exprString.indexOf('{') + 1, exprString.lastIndexOf('}'));
 						} catch (Exception e) {
 							throw new MalformedQueryException(e);
 						}
@@ -193,8 +190,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 						prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 						prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
-						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null,
-								false);
+						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null, false);
 					} else {
 						magicPropertyNode = funcCall;
 					}
@@ -261,16 +257,14 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Join node)
-				throws RDF4JException {
+		public void meet(Join node) throws RDF4JException {
 			BGPCollector<RDF4JException> collector = new BGPCollector<>(this);
 			node.visit(collector);
 			processGraphPattern(collector.getStatementPatterns());
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-				throws RDF4JException {
+		public void meet(StatementPattern node) throws RDF4JException {
 			processGraphPattern(Collections.singletonList(node));
 		}
 	}

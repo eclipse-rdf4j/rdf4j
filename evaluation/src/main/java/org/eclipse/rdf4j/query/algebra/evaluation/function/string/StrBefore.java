@@ -32,11 +32,9 @@ public class StrBefore implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for STRBEFORE: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for STRBEFORE: " + args.length);
 		}
 
 		Value leftArg = args[0];
@@ -76,8 +74,7 @@ public class StrBefore implements Function {
 						"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 			}
 		} else {
-			throw new ValueExprEvaluationException(
-					"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
+			throw new ValueExprEvaluationException("incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 		}
 	}
 }

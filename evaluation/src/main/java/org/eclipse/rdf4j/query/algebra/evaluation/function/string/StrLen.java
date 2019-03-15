@@ -30,8 +30,7 @@ public class StrLen implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("STRLEN requires 1 argument, got " + args.length);
 		}
@@ -49,8 +48,7 @@ public class StrLen implements Function {
 				Integer length = literal.getLabel().length();
 				return valueFactory.createLiteral(length.toString(), XMLSchema.INTEGER);
 			} else {
-				throw new ValueExprEvaluationException(
-						"unexpected input value for strlen function: " + argValue);
+				throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);
 			}
 		} else {
 			throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);

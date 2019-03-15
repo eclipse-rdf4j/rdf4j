@@ -31,8 +31,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public boolean hasNext()
-			throws QueryEvaluationException {
+	public boolean hasNext() throws QueryEvaluationException {
 		if (isClosed()) {
 			return false;
 		}
@@ -45,8 +44,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public BindingSet next()
-			throws QueryEvaluationException {
+	public BindingSet next() throws QueryEvaluationException {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -59,8 +57,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public void remove()
-			throws QueryEvaluationException {
+	public void remove() throws QueryEvaluationException {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -73,8 +70,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	}
 
 	@Override
-	public void handleClose()
-			throws QueryEvaluationException {
+	public void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

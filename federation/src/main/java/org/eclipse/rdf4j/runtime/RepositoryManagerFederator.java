@@ -81,19 +81,16 @@ public class RepositoryManagerFederator {
 	 *                               malformed location
 	 * @throws RDF4JException        if a problem otherwise occurs while creating the federation
 	 */
-	public void addFed(String fedID, String description, Collection<String> members, boolean readonly,
-			boolean distinct)
+	public void addFed(String fedID, String description, Collection<String> members, boolean readonly, boolean distinct)
 			throws MalformedURLException, RDF4JException {
 		if (members.contains(fedID)) {
-			throw new RepositoryConfigException(
-					"A federation member may not have the same ID as the federation.");
+			throw new RepositoryConfigException("A federation member may not have the same ID as the federation.");
 		}
 		Model graph = new LinkedHashModel();
 		BNode fedRepoNode = valueFactory.createBNode();
 		LOGGER.debug("Federation repository root node: {}", fedRepoNode);
 		addToGraph(graph, fedRepoNode, RDF.TYPE, RepositoryConfigSchema.REPOSITORY);
-		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYID,
-				valueFactory.createLiteral(fedID));
+		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYID, valueFactory.createLiteral(fedID));
 		addToGraph(graph, fedRepoNode, RDFS.LABEL, valueFactory.createLiteral(description));
 		addImplementation(members, graph, fedRepoNode, readonly, distinct);
 		RepositoryConfig fedConfig = RepositoryConfig.create(graph, fedRepoNode);
@@ -101,9 +98,8 @@ public class RepositoryManagerFederator {
 		manager.addRepositoryConfig(fedConfig);
 	}
 
-	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode,
-			boolean readonly, boolean distinct)
-			throws RDF4JException, MalformedURLException {
+	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode, boolean readonly,
+			boolean distinct) throws RDF4JException, MalformedURLException {
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
 		addToGraph(graph, implRoot, RepositoryConfigSchema.REPOSITORYTYPE,
@@ -111,13 +107,11 @@ public class RepositoryManagerFederator {
 		addSail(members, graph, implRoot, readonly, distinct);
 	}
 
-	private void addSail(Collection<String> members, Model graph, BNode implRoot, boolean readonly,
-			boolean distinct)
+	private void addSail(Collection<String> members, Model graph, BNode implRoot, boolean readonly, boolean distinct)
 			throws RDF4JException, MalformedURLException {
 		BNode sailRoot = valueFactory.createBNode();
 		addToGraph(graph, implRoot, SailRepositorySchema.SAILIMPL, sailRoot);
-		addToGraph(graph, sailRoot, SailConfigSchema.SAILTYPE,
-				valueFactory.createLiteral(FederationFactory.SAIL_TYPE));
+		addToGraph(graph, sailRoot, SailConfigSchema.SAILTYPE, valueFactory.createLiteral(FederationFactory.SAIL_TYPE));
 		addToGraph(graph, sailRoot, FederationConfig.READ_ONLY, valueFactory.createLiteral(readonly));
 		addToGraph(graph, sailRoot, FederationConfig.DISTINCT, valueFactory.createLiteral(distinct));
 		for (String member : members) {
@@ -158,11 +152,13 @@ public class RepositoryManagerFederator {
 			throws MalformedURLException, RepositoryConfigException, RDF4JException {
 		Value locator;
 		if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
-			locator = valueFactory.createIRI(((HTTPRepositoryConfig) manager.getRepositoryConfig(
-					identifier).getRepositoryImplConfig()).getURL());
+			locator = valueFactory.createIRI(
+					((HTTPRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
+							.getURL());
 		} else if (SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
-			locator = valueFactory.createIRI(((SPARQLRepositoryConfig) manager.getRepositoryConfig(
-					identifier).getRepositoryImplConfig()).getQueryEndpointUrl());
+			locator = valueFactory.createIRI(
+					((SPARQLRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
+							.getQueryEndpointUrl());
 		} else {
 			locator = valueFactory.createLiteral(identifier);
 		}

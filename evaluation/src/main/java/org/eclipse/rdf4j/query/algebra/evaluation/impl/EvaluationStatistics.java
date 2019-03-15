@@ -110,8 +110,8 @@ public class EvaluationStatistics {
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
 			// the length of the path is unknown but expected to be _at least_ twice that of a normal
 			// statement pattern.
-			cardinality = 2.0 * getCardinality(new StatementPattern(node.getSubjectVar(), pathVar,
-					node.getObjectVar(), node.getContextVar()));
+			cardinality = 2.0 * getCardinality(
+					new StatementPattern(node.getSubjectVar(), pathVar, node.getObjectVar(), node.getContextVar()));
 		}
 
 		@Override
@@ -277,8 +277,7 @@ public class EvaluationStatistics {
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-				throws RuntimeException {
+		public void meet(StatementPattern node) throws RuntimeException {
 			count++;
 		}
 	};

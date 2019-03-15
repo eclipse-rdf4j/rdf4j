@@ -39,11 +39,8 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-				shaclSailConnection,
-				nodeShape,
-				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0),
-				this,
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,
 				overrideTargetNode);
 
 		if (printPlans) {

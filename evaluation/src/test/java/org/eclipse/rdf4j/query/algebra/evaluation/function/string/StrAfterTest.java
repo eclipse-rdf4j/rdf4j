@@ -34,8 +34,7 @@ public class StrAfterTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		strAfterFunc = new StrAfter();
 	}
 
@@ -43,8 +42,7 @@ public class StrAfterTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 	}
 
 	@Test
@@ -156,8 +154,7 @@ public class StrAfterTest {
 
 			fail("operand with incompatible datatype, should have resulted in error");
 		} catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
+			assertEquals("incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
 					e.getMessage());
 		}
 	}
@@ -173,9 +170,7 @@ public class StrAfterTest {
 
 			fail("operand of incompatible type, should have resulted in error");
 		} catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRAFTER: http://example.org/foobar, \"b\"",
-					e.getMessage());
+			assertEquals("incompatible operands for STRAFTER: http://example.org/foobar, \"b\"", e.getMessage());
 		}
 	}
 
@@ -203,9 +198,7 @@ public class StrAfterTest {
 
 			fail("operand of incompatible type, should have resulted in error");
 		} catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRAFTER: \"foobar\", \"b\"@nl",
-					e.getMessage());
+			assertEquals("incompatible operands for STRAFTER: \"foobar\", \"b\"@nl", e.getMessage());
 		}
 	}
 

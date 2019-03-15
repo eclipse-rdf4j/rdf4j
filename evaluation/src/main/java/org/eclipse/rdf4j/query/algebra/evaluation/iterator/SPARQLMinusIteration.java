@@ -62,8 +62,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg,
-			boolean distinct) {
+	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -79,8 +78,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	// implements LookAheadIteration.getNextElement()
 	@Override
-	protected boolean accept(BindingSet object)
-			throws X {
+	protected boolean accept(BindingSet object) throws X {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
@@ -118,24 +116,20 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		return !compatible;
 	}
 
-	protected Set<BindingSet> makeSet()
-			throws X {
+	protected Set<BindingSet> makeSet() throws X {
 		return new LinkedHashSet<>();
 	}
 
-	protected Set<String> makeSet(Set<String> set)
-			throws X {
+	protected Set<String> makeSet(Set<String> set) throws X {
 		return new HashSet<>(set);
 	}
 
-	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2)
-			throws X {
+	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2) throws X {
 		return Iterations.addAll(rightArg, makeSet());
 	}
 
 	@Override
-	protected void handleClose()
-			throws X {
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

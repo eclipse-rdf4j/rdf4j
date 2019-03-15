@@ -118,20 +118,16 @@ public class ValueStore extends AbstractValueFactory {
 	 * Constructors *
 	 *--------------*/
 
-	public ValueStore(File dataDir)
-			throws IOException {
+	public ValueStore(File dataDir) throws IOException {
 		this(dataDir, false);
 	}
 
-	public ValueStore(File dataDir, boolean forceSync)
-			throws IOException {
-		this(dataDir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE,
-				NAMESPACE_ID_CACHE_SIZE);
+	public ValueStore(File dataDir, boolean forceSync) throws IOException {
+		this(dataDir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE, NAMESPACE_ID_CACHE_SIZE);
 	}
 
-	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize,
-			int namespaceCacheSize, int namespaceIDCacheSize)
-			throws IOException {
+	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
+			int namespaceIDCacheSize) throws IOException {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
 
@@ -163,8 +159,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * Gets a read lock on this value store that can be used to prevent values from being removed while the lock is
 	 * active.
 	 */
-	public Lock getReadLock()
-			throws InterruptedException {
+	public Lock getReadLock() throws InterruptedException {
 		return lockManager.getReadLock();
 	}
 
@@ -175,8 +170,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public NativeValue getValue(int id)
-			throws IOException {
+	public NativeValue getValue(int id) throws IOException {
 		// Check value cache
 		Integer cacheID = new Integer(id);
 		NativeValue resultValue = valueCache.get(cacheID);
@@ -203,8 +197,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return The ID for the specified value, or {@link NativeValue#UNKNOWN_ID} if no such ID could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public int getID(Value value)
-			throws IOException {
+	public int getID(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 
@@ -274,8 +267,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return The ID that has been assigned to the value.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public int storeValue(Value value)
-			throws IOException {
+	public int storeValue(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 
@@ -328,8 +320,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * 
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		try {
 			Lock writeLock = lockManager.getWriteLock();
 			try {
@@ -358,8 +349,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * 
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		dataStore.sync();
 	}
 
@@ -368,8 +358,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * 
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		dataStore.close();
 	}
 
@@ -378,9 +367,7 @@ public class ValueStore extends AbstractValueFactory {
 	 *
 	 * @throws IOException
 	 */
-	public void checkConsistency()
-			throws SailException,
-			IOException {
+	public void checkConsistency() throws SailException, IOException {
 		int maxID = dataStore.getMaxID();
 		for (int id = 1; id <= maxID; id++) {
 			byte[] data = dataStore.getData(id);
@@ -425,8 +412,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * Checks if the supplied Value object is a NativeValue object that has been created by this ValueStore.
 	 */
 	private boolean isOwnValue(Value value) {
-		return value instanceof NativeValue
-				&& ((NativeValue) value).getValueStoreRevision().getValueStore() == this;
+		return value instanceof NativeValue && ((NativeValue) value).getValueStoreRevision().getValueStore() == this;
 	}
 
 	/**
@@ -436,8 +422,7 @@ public class ValueStore extends AbstractValueFactory {
 		return revision.equals(value.getValueStoreRevision());
 	}
 
-	private byte[] value2data(Value value, boolean create)
-			throws IOException {
+	private byte[] value2data(Value value, boolean create) throws IOException {
 		if (value instanceof IRI) {
 			return uri2data((IRI) value, create);
 		} else if (value instanceof BNode) {
@@ -449,8 +434,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private byte[] uri2data(IRI uri, boolean create)
-			throws IOException {
+	private byte[] uri2data(IRI uri, boolean create) throws IOException {
 		int nsID = getNamespaceID(uri.getNamespace(), create);
 
 		if (nsID == -1) {
@@ -470,8 +454,7 @@ public class ValueStore extends AbstractValueFactory {
 		return uriData;
 	}
 
-	private byte[] bnode2data(BNode bNode, boolean create)
-			throws IOException {
+	private byte[] bnode2data(BNode bNode, boolean create) throws IOException {
 		byte[] idData = bNode.getID().getBytes("UTF-8");
 
 		byte[] bNodeData = new byte[1 + idData.length];
@@ -481,13 +464,11 @@ public class ValueStore extends AbstractValueFactory {
 		return bNodeData;
 	}
 
-	private byte[] literal2data(Literal literal, boolean create)
-			throws IOException {
+	private byte[] literal2data(Literal literal, boolean create) throws IOException {
 		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getDatatype(), create);
 	}
 
-	private byte[] literal2legacy(Literal literal)
-			throws IOException {
+	private byte[] literal2legacy(Literal literal) throws IOException {
 		IRI dt = literal.getDatatype();
 		if (XMLSchema.STRING.equals(dt) || RDF.LANGSTRING.equals(dt))
 			return literal2data(literal.getLabel(), literal.getLanguage(), null, false);
@@ -495,8 +476,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
-			throws IOException,
-			UnsupportedEncodingException {
+			throws IOException, UnsupportedEncodingException {
 		// Get datatype ID
 		int datatypeID = NativeValue.UNKNOWN_ID;
 
@@ -539,8 +519,7 @@ public class ValueStore extends AbstractValueFactory {
 		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
 	}
 
-	private NativeValue data2value(int id, byte[] data)
-			throws IOException {
+	private NativeValue data2value(int id, byte[] data) throws IOException {
 		switch (data[0]) {
 		case URI_VALUE:
 			return data2uri(id, data);
@@ -549,13 +528,11 @@ public class ValueStore extends AbstractValueFactory {
 		case LITERAL_VALUE:
 			return data2literal(id, data);
 		default:
-			throw new IllegalArgumentException(
-					"Namespaces cannot be converted into values: " + data2namespace(data));
+			throw new IllegalArgumentException("Namespaces cannot be converted into values: " + data2namespace(data));
 		}
 	}
 
-	private NativeIRI data2uri(int id, byte[] data)
-			throws IOException {
+	private NativeIRI data2uri(int id, byte[] data) throws IOException {
 		int nsID = ByteArrayUtil.getInt(data, 1);
 		String namespace = getNamespace(nsID);
 
@@ -564,14 +541,12 @@ public class ValueStore extends AbstractValueFactory {
 		return new NativeIRI(revision, namespace, localName, id);
 	}
 
-	private NativeBNode data2bnode(int id, byte[] data)
-			throws IOException {
+	private NativeBNode data2bnode(int id, byte[] data) throws IOException {
 		String nodeID = new String(data, 1, data.length - 1, "UTF-8");
 		return new NativeBNode(revision, nodeID, id);
 	}
 
-	private NativeLiteral data2literal(int id, byte[] data)
-			throws IOException {
+	private NativeLiteral data2literal(int id, byte[] data) throws IOException {
 		// Get datatype
 		int datatypeID = ByteArrayUtil.getInt(data, 1);
 		IRI datatype = null;
@@ -598,13 +573,11 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private String data2namespace(byte[] data)
-			throws UnsupportedEncodingException {
+	private String data2namespace(byte[] data) throws UnsupportedEncodingException {
 		return new String(data, "UTF-8");
 	}
 
-	private int getNamespaceID(String namespace, boolean create)
-			throws IOException {
+	private int getNamespaceID(String namespace, boolean create) throws IOException {
 		Integer cacheID = namespaceIDCache.get(namespace);
 		if (cacheID != null) {
 			return cacheID.intValue();
@@ -626,8 +599,7 @@ public class ValueStore extends AbstractValueFactory {
 		return id;
 	}
 
-	private String getNamespace(int id)
-			throws IOException {
+	private String getNamespace(int id) throws IOException {
 		Integer cacheID = new Integer(id);
 		String namespace = namespaceCache.get(cacheID);
 
@@ -751,8 +723,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * Test/debug methods *
 	 *--------------------*/
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		File dataDir = new File(args[0]);
 		ValueStore valueStore = new ValueStore(dataDir);
 

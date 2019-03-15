@@ -38,8 +38,7 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		cache.forEachValue(Long.MAX_VALUE, writeNode);
 	}
 
-	public void put(Node node)
-			throws IOException {
+	public void put(Node node) throws IOException {
 		cache.put(node.getID(), node);
 	}
 

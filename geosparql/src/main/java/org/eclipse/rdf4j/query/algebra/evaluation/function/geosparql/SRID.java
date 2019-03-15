@@ -29,11 +29,9 @@ public class SRID implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(
-					getURI() + " requires exactly 1 argument, got " + args.length);
+			throw new ValueExprEvaluationException(getURI() + " requires exactly 1 argument, got " + args.length);
 		}
 
 		Literal geom = FunctionArguments.getLiteral(this, args[0], GEO.WKT_LITERAL);

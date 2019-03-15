@@ -38,8 +38,7 @@ public class FederationNamespacesTest {
 	private static Namespace EXPECTED_NAMESPACE = new SimpleNamespace(PREFIX, EXPECTED_NAME);
 
 	@Test
-	public void testTwoMatchingNamespaces()
-			throws RepositoryException, RDFParseException, IOException {
+	public void testTwoMatchingNamespaces() throws RepositoryException, RDFParseException, IOException {
 		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "a")) {
 			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
@@ -48,8 +47,7 @@ public class FederationNamespacesTest {
 	}
 
 	@Test
-	public void testThreeMatchingNamespaces()
-			throws RepositoryException, RDFParseException, IOException {
+	public void testThreeMatchingNamespaces() throws RepositoryException, RDFParseException, IOException {
 		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "a", "a")) {
 			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
@@ -58,8 +56,7 @@ public class FederationNamespacesTest {
 	}
 
 	@Test
-	public void testTwoMismatchedNamespaces()
-			throws RepositoryException, RDFParseException, IOException {
+	public void testTwoMismatchedNamespaces() throws RepositoryException, RDFParseException, IOException {
 		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "b")) {
 			assertThat(con.getNamespace(PREFIX)).isNull();
 			;
@@ -69,8 +66,7 @@ public class FederationNamespacesTest {
 	}
 
 	@Test
-	public void testThreeMismatchedNamespaces()
-			throws RepositoryException, RDFParseException, IOException {
+	public void testThreeMismatchedNamespaces() throws RepositoryException, RDFParseException, IOException {
 		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "b", "c")) {
 			assertThat(con.getNamespace(PREFIX)).isNull();
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());

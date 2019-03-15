@@ -27,8 +27,7 @@ public class Concat implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length == 0) {
 			throw new ValueExprEvaluationException("CONCAT requires at least 1 argument, got " + args.length);
 		}
@@ -66,8 +65,7 @@ public class Concat implements Function {
 
 				concatBuilder.append(lit.getLabel());
 			} else {
-				throw new ValueExprEvaluationException(
-						"unexpected argument type for concat operator: " + arg);
+				throw new ValueExprEvaluationException("unexpected argument type for concat operator: " + arg);
 			}
 		}
 

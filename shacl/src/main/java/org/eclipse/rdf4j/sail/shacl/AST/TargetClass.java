@@ -75,8 +75,7 @@ public class TargetClass extends NodeShape {
 		if (rdfsSubClassOfReasoner != null) {
 			Set<Resource> resources = rdfsSubClassOfReasoner.backwardsChain(targetClass);
 			if (resources.size() > 1) {
-				return resources
-						.stream()
+				return resources.stream()
 						.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n "
 								+ subjectVariable + " ?b1 " + objectVariable + ". } \n")
 						.reduce((l, r) -> l + " UNION " + r)

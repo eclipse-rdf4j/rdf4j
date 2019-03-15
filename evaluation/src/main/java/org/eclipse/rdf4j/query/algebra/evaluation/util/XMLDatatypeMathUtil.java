@@ -33,8 +33,7 @@ public class XMLDatatypeMathUtil {
 	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
 	 * @return a datatype literal
 	 */
-	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op)
-			throws ValueExprEvaluationException {
+	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
@@ -152,10 +151,7 @@ public class XMLDatatypeMathUtil {
 	}
 
 	private static Literal buildLiteral(Duration duration) {
-		return SimpleValueFactory.getInstance()
-				.createLiteral(
-						duration.toString(),
-						getDatatypeForDuration(duration));
+		return SimpleValueFactory.getInstance().createLiteral(duration.toString(), getDatatypeForDuration(duration));
 	}
 
 	private static IRI getDatatypeForDuration(Duration duration) {

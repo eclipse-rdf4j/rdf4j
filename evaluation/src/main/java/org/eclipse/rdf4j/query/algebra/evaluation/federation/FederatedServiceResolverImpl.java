@@ -19,6 +19,5 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver}
  */
 @Deprecated
-public class FederatedServiceResolverImpl
-		extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver {
+public class FederatedServiceResolverImpl extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver {
 }

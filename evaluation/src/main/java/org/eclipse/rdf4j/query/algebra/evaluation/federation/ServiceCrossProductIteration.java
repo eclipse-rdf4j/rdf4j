@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration
 @Deprecated
 public class ServiceCrossProductIteration extends CrossProductIteration {
 
-	public ServiceCrossProductIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
+	public ServiceCrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
 			List<BindingSet> inputBindings) {
 		super(resultIteration, inputBindings);
 	}

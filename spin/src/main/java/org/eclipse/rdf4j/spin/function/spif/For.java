@@ -29,8 +29,7 @@ public class For implements InverseMagicProperty {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			final ValueFactory valueFactory, Value... args)
-			throws QueryEvaluationException {
+			final ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
 					String.format("%s requires 2 arguments, got %d", getURI(), args.length));

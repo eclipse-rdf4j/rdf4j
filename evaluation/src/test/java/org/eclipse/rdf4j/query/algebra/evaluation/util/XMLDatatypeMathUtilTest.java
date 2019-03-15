@@ -47,8 +47,7 @@ public class XMLDatatypeMathUtilTest {
 		assertComputeEquals(vf.createLiteral("2013-11", XMLSchema.GYEARMONTH), duration1, yearMonth1, MathOp.PLUS);
 	}
 
-	private void assertComputeEquals(Literal result, Literal lit1, Literal lit2, MathOp op)
-			throws Exception {
+	private void assertComputeEquals(Literal result, Literal lit1, Literal lit2, MathOp op) throws Exception {
 		assertEquals(result, XMLDatatypeMathUtil.compute(lit1, lit2, op));
 	}
 }

@@ -67,9 +67,8 @@ public class MinCountBenchmarkEmpty {
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
-								vf.createLiteral("label" + i)));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
+						vf.createLiteral("label" + i)));
 			}
 		}
 		System.gc();

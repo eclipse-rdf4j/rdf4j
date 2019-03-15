@@ -90,14 +90,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	private boolean statementCleared;
 
 	@Override
-	public void close()
-			throws SailException {
+	public void close() throws SailException {
 		// no-op
 	}
 
 	@Override
-	public void prepare()
-			throws SailException {
+	public void prepare() throws SailException {
 		if (prepend != null && observations != null) {
 			for (StatementPattern p : observations) {
 				Resource subj = (Resource) p.getSubjectVar().getValue();
@@ -193,8 +191,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
 		} else {
 			for (Resource ctx : contexts) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred),
-						new Var("o", obj), new Var("g", ctx)));
+				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
+						new Var("g", ctx)));
 			}
 		}
 	}
@@ -249,8 +247,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated = createEmptyModel();
 		}
 		deprecated.add(subj, pred, obj, ctx);
-		if (approvedContexts != null && approvedContexts.contains(ctx)
-				&& !approved.contains(null, null, null, ctx)) {
+		if (approvedContexts != null && approvedContexts.contains(ctx) && !approved.contains(null, null, null, ctx)) {
 			approvedContexts.remove(ctx);
 		}
 	}

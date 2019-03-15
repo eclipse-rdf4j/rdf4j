@@ -31,8 +31,7 @@ public abstract class CastFunction implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
@@ -67,8 +66,7 @@ public abstract class CastFunction implements Function {
 	 * @return a literal value of the function output datatype
 	 * @throws ValueExprEvaluationException if an error occurs in conversion.
 	 */
-	protected abstract Literal convert(ValueFactory vf, Value v)
-			throws ValueExprEvaluationException;
+	protected abstract Literal convert(ValueFactory vf, Value v) throws ValueExprEvaluationException;
 
 	/**
 	 * Get the specific XML Schema datatype which this function returns.
@@ -102,7 +100,6 @@ public abstract class CastFunction implements Function {
 	 * @return a {@link ValueExprEvaluationException} with a standardized message and wrapped cause.
 	 */
 	protected final ValueExprEvaluationException typeError(Value arg, Throwable cause) {
-		return new ValueExprEvaluationException("Invalid argument for " + getXsdName() + " cast: " + arg,
-				cause);
+		return new ValueExprEvaluationException("Invalid argument for " + getXsdName() + " cast: " + arg, cause);
 	}
 }

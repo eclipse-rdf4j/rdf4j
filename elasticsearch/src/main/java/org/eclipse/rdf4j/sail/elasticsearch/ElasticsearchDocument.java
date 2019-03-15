@@ -49,8 +49,7 @@ public class ElasticsearchDocument implements SearchDocument {
 		this(hit, null);
 	}
 
-	public ElasticsearchDocument(SearchHit hit,
-			Function<? super String, ? extends SpatialContext> geoContextMapper) {
+	public ElasticsearchDocument(SearchHit hit, Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getVersion(), hit.getSource(), geoContextMapper);
 	}
 
@@ -63,8 +62,7 @@ public class ElasticsearchDocument implements SearchDocument {
 		}
 	}
 
-	public ElasticsearchDocument(String id, String type, String index, long version,
-			Map<String, Object> fields,
+	public ElasticsearchDocument(String id, String type, String index, long version, Map<String, Object> fields,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this.id = id;
 		this.type = type;
@@ -143,8 +141,7 @@ public class ElasticsearchDocument implements SearchDocument {
 			Shape shape = geoContextMapper.apply(name).readShapeFromWkt(text);
 			if (shape instanceof Point) {
 				Point p = (Point) shape;
-				fields.put(ElasticsearchIndex.toGeoPointFieldName(name),
-						GeoHashUtils.stringEncode(p.getX(), p.getY()));
+				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), GeoHashUtils.stringEncode(p.getX(), p.getY()));
 			} else {
 				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),
 						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));

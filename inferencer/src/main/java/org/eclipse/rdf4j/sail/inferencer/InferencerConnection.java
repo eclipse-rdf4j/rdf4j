@@ -33,8 +33,7 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	// FIXME: remove boolean result value to enable batch-wise processing
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException;
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
 	 * Removes an inferred statement from a specific context.
@@ -60,8 +59,7 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 * @throws SailException         If the statements could not be removed.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void clearInferred(Resource... contexts)
-			throws SailException;
+	public void clearInferred(Resource... contexts) throws SailException;
 
 	/**
 	 * Flushes any pending updates to be processed and the resulting changes to be reported to registered
@@ -70,6 +68,5 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 * @throws SailException         If the updates could not be processed.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void flushUpdates()
-			throws SailException;
+	public void flushUpdates() throws SailException;
 }

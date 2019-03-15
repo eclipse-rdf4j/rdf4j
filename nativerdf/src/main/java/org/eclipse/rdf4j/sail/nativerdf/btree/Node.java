@@ -47,8 +47,7 @@ class Node {
 	 */
 	public Node(int id, BTree tree) {
 		if (id <= 0) {
-			throw new IllegalArgumentException(
-					"id must be larger than 0, is: " + id + " in " + tree.getFile());
+			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + tree.getFile());
 		}
 
 		this.id = id;
@@ -77,8 +76,7 @@ class Node {
 		return usageCount.incrementAndGet();
 	}
 
-	public void release()
-			throws IOException {
+	public void release() throws IOException {
 		int newUsage = usageCount.decrementAndGet();
 		assert newUsage >= 0 : "Releasing node while usage count is " + (newUsage + 1);
 
@@ -213,8 +211,7 @@ class Node {
 		dataChanged = true;
 	}
 
-	public Node getChildNode(int nodeIdx)
-			throws IOException {
+	public Node getChildNode(int nodeIdx) throws IOException {
 		assert nodeIdx >= 0 : "nodeIdx must be positive, is: " + nodeIdx;
 		assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
 
@@ -305,8 +302,7 @@ class Node {
 	 * 
 	 * @throws IOException
 	 */
-	public byte[] splitAndInsert(byte[] newValue, int newNodeID, int newValueIdx, Node newNode)
-			throws IOException {
+	public byte[] splitAndInsert(byte[] newValue, int newNodeID, int newValueIdx, Node newNode) throws IOException {
 		// First store the new value-node pair in data, then split it. This
 		// can be done because data got one spare slot when it was allocated.
 		insertValueNodeIDPair(newValueIdx, newValue, newNodeID);
@@ -343,8 +339,7 @@ class Node {
 		return medianValue;
 	}
 
-	public void mergeWithRightSibling(byte[] medianValue, Node rightSibling)
-			throws IOException {
+	public void mergeWithRightSibling(byte[] medianValue, Node rightSibling) throws IOException {
 		assert valueCount + rightSibling.getValueCount()
 				+ 1 < tree.branchFactor : "Nodes contain too many values to be merged; left: " + valueCount
 						+ "; right: " + rightSibling.getValueCount();
@@ -367,16 +362,14 @@ class Node {
 		rightSibling.notifyNodeMerged(this, rightIdx);
 	}
 
-	public void rotateLeft(int valueIdx, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	public void rotateLeft(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
 		leftChildNode.insertValueNodeIDPair(leftChildNode.getValueCount(), this.getValue(valueIdx),
 				rightChildNode.getChildNodeID(0));
 		setValue(valueIdx, rightChildNode.removeValueLeft(0));
 		notifyRotatedLeft(valueIdx, leftChildNode, rightChildNode);
 	}
 
-	public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
 		rightChildNode.insertNodeIDValuePair(0, leftChildNode.getChildNodeID(leftChildNode.getValueCount()),
 				this.getValue(valueIdx - 1));
 		setValue(valueIdx - 1, leftChildNode.removeValueRight(leftChildNode.getValueCount() - 1));
@@ -401,23 +394,19 @@ class Node {
 		notifySafeListeners(nl -> nl.valueRemoved(this, index));
 	}
 
-	private void notifyRotatedLeft(int index, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	private void notifyRotatedLeft(int index, Node leftChildNode, Node rightChildNode) throws IOException {
 		notifyListeners(nl -> nl.rotatedLeft(this, index, leftChildNode, rightChildNode));
 	}
 
-	private void notifyRotatedRight(int index, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	private void notifyRotatedRight(int index, Node leftChildNode, Node rightChildNode) throws IOException {
 		notifyListeners(nl -> nl.rotatedRight(this, index, leftChildNode, rightChildNode));
 	}
 
-	private void notifyNodeSplit(Node rightNode, int medianIdx)
-			throws IOException {
+	private void notifyNodeSplit(Node rightNode, int medianIdx) throws IOException {
 		notifyListeners(nl -> nl.nodeSplit(this, rightNode, medianIdx));
 	}
 
-	private void notifyNodeMerged(Node targetNode, int mergeIdx)
-			throws IOException {
+	private void notifyNodeMerged(Node targetNode, int mergeIdx) throws IOException {
 		notifyListeners(nl -> nl.nodeMergedWith(this, targetNode, mergeIdx));
 	}
 
@@ -427,12 +416,10 @@ class Node {
 		/**
 		 * @return true if the notifier should be deregistered
 		 */
-		boolean apply(NodeListener listener)
-				throws IOException;
+		boolean apply(NodeListener listener) throws IOException;
 	}
 
-	private void notifyListeners(NodeListenerNotifier notifier)
-			throws IOException {
+	private void notifyListeners(NodeListenerNotifier notifier) throws IOException {
 		Iterator<NodeListener> iter = listeners.iterator();
 
 		while (iter.hasNext()) {
@@ -456,30 +443,28 @@ class Node {
 		}
 	}
 
-	public void read()
-			throws IOException {
+	public void read() throws IOException {
 		ByteBuffer buf = ByteBuffer.wrap(data);
 
 		// Don't fill the spare slot in data:
 		buf.limit(tree.nodeSize);
 
 		int bytesRead = tree.nioFile.read(buf, tree.nodeID2offset(id));
-		assert bytesRead == tree.nodeSize : "Read operation didn't read the entire node (" + bytesRead
-				+ " of " + tree.nodeSize + " bytes)";
+		assert bytesRead == tree.nodeSize : "Read operation didn't read the entire node (" + bytesRead + " of "
+				+ tree.nodeSize + " bytes)";
 
 		valueCount = ByteArrayUtil.getInt(data, 0);
 	}
 
-	public void write()
-			throws IOException {
+	public void write() throws IOException {
 		ByteBuffer buf = ByteBuffer.wrap(data);
 
 		// Don't write the spare slot in data to the file:
 		buf.limit(tree.nodeSize);
 
 		int bytesWritten = tree.nioFile.write(buf, tree.nodeID2offset(id));
-		assert bytesWritten == tree.nodeSize : "Write operation didn't write the entire node (" + bytesWritten
-				+ " of " + tree.nodeSize + " bytes)";
+		assert bytesWritten == tree.nodeSize : "Write operation didn't write the entire node (" + bytesWritten + " of "
+				+ tree.nodeSize + " bytes)";
 
 		dataChanged = false;
 	}

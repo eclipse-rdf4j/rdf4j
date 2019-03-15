@@ -39,8 +39,7 @@ public interface LockManager {
 	 * @return a newly acquired lock.
 	 * @throws SailLockedException if the directory is already locked.
 	 */
-	Lock lockOrFail()
-			throws SailLockedException;
+	Lock lockOrFail() throws SailLockedException;
 
 	/**
 	 * Revokes a lock owned by another process.

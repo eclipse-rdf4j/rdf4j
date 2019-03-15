@@ -49,9 +49,9 @@ public class QuerySpec implements SearchQueryEvaluator {
 
 	private final String snippetVarName;
 
-	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern,
-			StatementPattern propertyPattern, StatementPattern scorePattern, StatementPattern snippetPattern,
-			StatementPattern typePattern, Resource subject, String queryString, IRI propertyURI) {
+	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
+			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesPattern = matchesPattern;
 		this.queryPattern = queryPattern;
 		this.propertyPattern = propertyPattern;
@@ -83,8 +83,8 @@ public class QuerySpec implements SearchQueryEvaluator {
 		}
 	}
 
-	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName,
-			String snippetVarName, Resource subject, String queryString, IRI propertyURI) {
+	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName, String snippetVarName,
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesVarName = matchesVarName;
 		this.propertyVarName = propertyVarName;
 		this.scoreVarName = scoreVarName;

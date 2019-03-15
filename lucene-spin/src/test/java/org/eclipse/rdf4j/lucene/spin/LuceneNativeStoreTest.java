@@ -55,8 +55,7 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		// repository folder
 		File tmpDirFolder = tempDir.newFolder();
 		log.debug("data file: {}", tmpDirFolder);
@@ -102,8 +101,7 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@After
-	public void tearDown()
-			throws RepositoryException, IOException {
+	public void tearDown() throws RepositoryException, IOException {
 		try {
 			if (connection != null) {
 				connection.close();
@@ -115,8 +113,7 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 		}
 	}
 
-	protected void populate(RepositoryConnection repoConn)
-			throws Exception {
+	protected void populate(RepositoryConnection repoConn) throws Exception {
 		// load resources
 		assert repoConn.isActive();
 		URL resourceURL = LuceneNativeStoreTest.class.getClassLoader().getResource(DATA);

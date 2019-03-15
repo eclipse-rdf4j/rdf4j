@@ -27,11 +27,9 @@ public interface SailImplConfig {
 	 * 
 	 * @throws SailConfigException If the configuration is invalid.
 	 */
-	public void validate()
-			throws SailConfigException;
+	public void validate() throws SailConfigException;
 
 	public Resource export(Model graph);
 
-	public void parse(Model graph, Resource implNode)
-			throws SailConfigException;
+	public void parse(Model graph, Resource implNode) throws SailConfigException;
 }

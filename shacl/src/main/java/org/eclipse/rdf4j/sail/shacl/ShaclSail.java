@@ -80,39 +80,29 @@ import java.util.List;
  *
  * 			connection.begin();
  *
- * 			StringReader shaclRules = new StringReader(
- * 					String.join(&quot;\n&quot;, &quot;&quot;,
- * 							&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- * 							&quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
- * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
- * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ * 			StringReader shaclRules = new StringReader(String.join(&quot;\n&quot;, &quot;&quot;,
+ * 					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;, &quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
+ * 					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ * 					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
  *
- * 							&quot;ex:PersonShape&quot;,
- * 							&quot;	a sh:NodeShape  ;&quot;,
- * 							&quot;	sh:targetClass foaf:Person ;&quot;,
- * 							&quot;	sh:property ex:PersonShapeProperty .&quot;,
+ * 					&quot;ex:PersonShape&quot;, &quot;	a sh:NodeShape  ;&quot;, &quot;	sh:targetClass foaf:Person ;&quot;,
+ * 					&quot;	sh:property ex:PersonShapeProperty .&quot;,
  *
- * 							&quot;ex:PersonShapeProperty &quot;,
- * 							&quot;	sh:path foaf:age ;&quot;,
- * 							&quot;	sh:datatype xsd:int ;&quot;,
- * 							&quot;	sh:maxCount 1 ;&quot;,
- * 							&quot;	sh:minCount 1 .&quot;));
+ * 					&quot;ex:PersonShapeProperty &quot;, &quot;	sh:path foaf:age ;&quot;, &quot;	sh:datatype xsd:int ;&quot;,
+ * 					&quot;	sh:maxCount 1 ;&quot;, &quot;	sh:minCount 1 .&quot;));
  *
  * 			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
  * 			connection.commit();
  *
  * 			connection.begin();
  *
- * 			StringReader invalidSampleData = new StringReader(
- * 					String.join(&quot;\n&quot;, &quot;&quot;,
- * 							&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
- * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ * 			StringReader invalidSampleData = new StringReader(String.join(&quot;\n&quot;, &quot;&quot;,
+ * 					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;, &quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ * 					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
  *
- * 							&quot;ex:peter a foaf:Person ;&quot;,
- * 							&quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
+ * 					&quot;ex:peter a foaf:Person ;&quot;, &quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
  *
- * 					));
+ * 			));
  *
  * 			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
  * 			try {
@@ -261,8 +251,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection)
-			throws SailException {
+	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
 		if (!initializing) {
 			try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
 				boolean empty = !beforeCommitConnection.hasStatement(null, null, null, false);
@@ -293,11 +282,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(
-				this,
-				super.getConnection(),
-				super.getConnection(),
-				shapesRepo.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
 	}
 
 	/**

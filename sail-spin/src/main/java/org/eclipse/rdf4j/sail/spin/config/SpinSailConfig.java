@@ -48,14 +48,12 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 	}
 
 	@Override
-	public void parse(Model m, Resource implNode)
-			throws SailConfigException {
+	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
 
 		try {
 			Models.objectLiteral(m.filter(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null))
-					.ifPresent(
-							lit -> setAxiomClosureNeeded(lit.booleanValue()));
+					.ifPresent(lit -> setAxiomClosureNeeded(lit.booleanValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

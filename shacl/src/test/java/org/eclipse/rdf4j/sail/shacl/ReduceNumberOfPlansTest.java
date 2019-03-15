@@ -30,8 +30,7 @@ import static junit.framework.TestCase.assertEquals;
 public class ReduceNumberOfPlansTest {
 
 	@Test
-	public void testAddingTypeStatement()
-			throws RDFParseException, UnsupportedRDFormatException, IOException {
+	public void testAddingTypeStatement() throws RDFParseException, UnsupportedRDFormatException, IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
@@ -41,8 +40,7 @@ public class ReduceNumberOfPlansTest {
 
 			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect = shaclSail
-					.getNodeShapes()
+			List<PlanNode> collect = shaclSail.getNodeShapes()
 					.stream()
 					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
 					.collect(Collectors.toList());
@@ -53,8 +51,7 @@ public class ReduceNumberOfPlansTest {
 			connection.addStatement(person1, RDF.TYPE, Utils.Ex.Person);
 			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect2 = shaclSail
-					.getNodeShapes()
+			List<PlanNode> collect2 = shaclSail.getNodeShapes()
 					.stream()
 					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
 					.collect(Collectors.toList());
@@ -96,8 +93,7 @@ public class ReduceNumberOfPlansTest {
 
 			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect1 = shaclSail
-					.getNodeShapes()
+			List<PlanNode> collect1 = shaclSail.getNodeShapes()
 					.stream()
 					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
 					.collect(Collectors.toList());
@@ -107,8 +103,7 @@ public class ReduceNumberOfPlansTest {
 
 			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect2 = shaclSail
-					.getNodeShapes()
+			List<PlanNode> collect2 = shaclSail.getNodeShapes()
 					.stream()
 					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
 					.collect(Collectors.toList());
@@ -117,8 +112,7 @@ public class ReduceNumberOfPlansTest {
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
 			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect3 = shaclSail
-					.getNodeShapes()
+			List<PlanNode> collect3 = shaclSail.getNodeShapes()
 					.stream()
 					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
 					.collect(Collectors.toList());

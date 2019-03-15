@@ -61,8 +61,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new ValueExprEvaluationException("First argument must be a resource");
@@ -115,15 +114,13 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 		return result;
 	}
 
-	private boolean isQuery(Resource r, TripleSource store)
-			throws RDF4JException {
-		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r,
-				RDF.TYPE, store);
+	private boolean isQuery(Resource r, TripleSource store) throws RDF4JException {
+		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r, RDF.TYPE,
+				store);
 		try {
 			while (typeIter.hasNext()) {
 				URI type = typeIter.next();
-				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type)
-						|| SPIN.TEMPLATES_CLASS.equals(type)) {
+				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type) || SPIN.TEMPLATES_CLASS.equals(type)) {
 					return true;
 				}
 			}
@@ -134,8 +131,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 		return false;
 	}
 
-	protected static void addArguments(Query query, Value... args)
-			throws ValueExprEvaluationException {
+	protected static void addArguments(Query query, Value... args) throws ValueExprEvaluationException {
 		for (int i = 1; i < args.length; i += 2) {
 			if (!(args[i] instanceof URI)) {
 				throw new ValueExprEvaluationException("Argument " + i + " must be a URI");

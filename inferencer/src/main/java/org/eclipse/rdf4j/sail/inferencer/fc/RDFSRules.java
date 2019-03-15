@@ -130,28 +130,9 @@ class RDFSRules {
 
 	public static final int RULECOUNT = 21;
 
-	public static final String[] RULENAMES = {
-			"   Rdf1",
-			" Rdfs2_1",
-			" Rdfs2_2",
-			" Rdfs3_1",
-			" Rdfs3_2",
-			"  Rdfs4a",
-			"  Rdfs4b",
-			"Rdfs5_1",
-			"Rdfs5_2",
-			"  Rdfs6",
-			" Rdfs7_1",
-			" Rdfs7_2",
-			"  Rdfs8",
-			" Rdfs9_1",
-			" Rdfs9_2",
-			"  Rdfs10",
-			" Rdfs11_1",
-			" Rdfs11_2",
-			"  Rdfs12",
-			"  Rdfs13",
-			"  RX1" };
+	public static final String[] RULENAMES = { "   Rdf1", " Rdfs2_1", " Rdfs2_2", " Rdfs3_1", " Rdfs3_2", "  Rdfs4a",
+			"  Rdfs4b", "Rdfs5_1", "Rdfs5_2", "  Rdfs6", " Rdfs7_1", " Rdfs7_2", "  Rdfs8", " Rdfs9_1", " Rdfs9_2",
+			"  Rdfs10", " Rdfs11_1", " Rdfs11_2", "  Rdfs12", "  Rdfs13", "  RX1" };
 
 	private static final boolean __ = false;
 

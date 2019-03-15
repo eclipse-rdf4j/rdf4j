@@ -155,22 +155,20 @@ public class SpinParser {
 
 	private static final Logger logger = LoggerFactory.getLogger(SpinParser.class);
 
-	private static final Set<IRI> QUERY_TYPES = Sets.newHashSet(SP.SELECT_CLASS, SP.CONSTRUCT_CLASS,
-			SP.ASK_CLASS, SP.DESCRIBE_CLASS);
+	private static final Set<IRI> QUERY_TYPES = Sets.newHashSet(SP.SELECT_CLASS, SP.CONSTRUCT_CLASS, SP.ASK_CLASS,
+			SP.DESCRIBE_CLASS);
 
 	private static final Set<IRI> UPDATE_TYPES = Sets.newHashSet(SP.MODIFY_CLASS, SP.DELETE_WHERE_CLASS,
-			SP.INSERT_DATA_CLASS, SP.DELETE_DATA_CLASS, SP.LOAD_CLASS, SP.CLEAR_CLASS, SP.CREATE_CLASS,
-			SP.DROP_CLASS);
+			SP.INSERT_DATA_CLASS, SP.DELETE_DATA_CLASS, SP.LOAD_CLASS, SP.CLEAR_CLASS, SP.CREATE_CLASS, SP.DROP_CLASS);
 
 	private static final Set<IRI> COMMAND_TYPES = Sets.union(QUERY_TYPES, UPDATE_TYPES);
 
-	private static final Set<IRI> NON_TEMPLATES = Sets.newHashSet(RDFS.RESOURCE, SP.SYSTEM_CLASS,
-			SP.COMMAND_CLASS, SP.QUERY_CLASS, SP.UPDATE_CLASS, SPIN.MODULES_CLASS, SPIN.TEMPLATES_CLASS,
-			SPIN.ASK_TEMPLATES_CLASS, SPIN.SELECT_TEMPLATES_CLASS, SPIN.CONSTRUCT_TEMPLATES_CLASS,
-			SPIN.UPDATE_TEMPLATES_CLASS, SPIN.RULE_CLASS);
+	private static final Set<IRI> NON_TEMPLATES = Sets.newHashSet(RDFS.RESOURCE, SP.SYSTEM_CLASS, SP.COMMAND_CLASS,
+			SP.QUERY_CLASS, SP.UPDATE_CLASS, SPIN.MODULES_CLASS, SPIN.TEMPLATES_CLASS, SPIN.ASK_TEMPLATES_CLASS,
+			SPIN.SELECT_TEMPLATES_CLASS, SPIN.CONSTRUCT_TEMPLATES_CLASS, SPIN.UPDATE_TEMPLATES_CLASS, SPIN.RULE_CLASS);
 
-	private static final Set<IRI> TEMPLATE_TYPES = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS,
-			SPIN.SELECT_TEMPLATE_CLASS, SPIN.CONSTRUCT_TEMPLATE_CLASS, SPIN.UPDATE_TEMPLATE_CLASS);
+	private static final Set<IRI> TEMPLATE_TYPES = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS, SPIN.SELECT_TEMPLATE_CLASS,
+			SPIN.CONSTRUCT_TEMPLATE_CLASS, SPIN.UPDATE_TEMPLATE_CLASS);
 
 	public enum Input {
 		TEXT_FIRST(true, true),
@@ -202,10 +200,7 @@ public class SpinParser {
 
 	private final Cache<IRI, Template> templateCache = CacheBuilder.newBuilder().maximumSize(100).build();
 
-	private final Cache<IRI, Map<IRI, Argument>> argumentCache = CacheBuilder.newBuilder()
-			.maximumSize(
-					100)
-			.build();
+	private final Cache<IRI, Map<IRI, Argument>> argumentCache = CacheBuilder.newBuilder().maximumSize(100).build();
 
 	public SpinParser() {
 		this(Input.TEXT_FIRST);
@@ -237,8 +232,7 @@ public class SpinParser {
 				new SpinTupleFunctionAsFunctionParser(this), new SpinFunctionParser(this),
 				new SpinxFunctionParser(this));
 		this.tupleFunctionParsers = Arrays.<TupleFunctionParser>asList(
-				new KnownTupleFunctionParser(TupleFunctionRegistry.getInstance()),
-				new SpinTupleFunctionParser(this));
+				new KnownTupleFunctionParser(TupleFunctionRegistry.getInstance()), new SpinTupleFunctionParser(this));
 	}
 
 	public List<FunctionParser> getFunctionParsers() {
@@ -265,11 +259,10 @@ public class SpinParser {
 		this.strictFunctionChecking = strictFunctionChecking;
 	}
 
-	public Map<IRI, RuleProperty> parseRuleProperties(TripleSource store)
-			throws RDF4JException {
+	public Map<IRI, RuleProperty> parseRuleProperties(TripleSource store) throws RDF4JException {
 		Map<IRI, RuleProperty> rules = new HashMap<>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources.getSubjectURIs(
-				RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store);
+		CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources
+				.getSubjectURIs(RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store);
 		try {
 			while (rulePropIter.hasNext()) {
 				IRI ruleProp = rulePropIter.next();
@@ -289,8 +282,7 @@ public class SpinParser {
 		return rules;
 	}
 
-	private List<IRI> getNextRules(Resource ruleProp, TripleSource store)
-			throws RDF4JException {
+	private List<IRI> getNextRules(Resource ruleProp, TripleSource store) throws RDF4JException {
 		List<IRI> nextRules = new ArrayList<>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> iter = TripleSources.getObjectURIs(ruleProp,
 				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
@@ -304,8 +296,7 @@ public class SpinParser {
 		return nextRules;
 	}
 
-	private int getMaxIterationCount(Resource ruleProp, TripleSource store)
-			throws RDF4JException {
+	private int getMaxIterationCount(Resource ruleProp, TripleSource store) throws RDF4JException {
 		Value v = TripleSources.singleValue(ruleProp, SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY, store);
 		if (v == null) {
 			return -1;
@@ -313,23 +304,20 @@ public class SpinParser {
 			try {
 				return ((Literal) v).intValue();
 			} catch (NumberFormatException e) {
-				throw new MalformedSpinException(
-						"Value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY
-								+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
+				throw new MalformedSpinException("Value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY
+						+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
 			}
 		} else {
-			throw new MalformedSpinException("Non-literal value for "
-					+ SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY + ": " + ruleProp);
+			throw new MalformedSpinException(
+					"Non-literal value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY + ": " + ruleProp);
 		}
 	}
 
-	public boolean isThisUnbound(Resource subj, TripleSource store)
-			throws RDF4JException {
+	public boolean isThisUnbound(Resource subj, TripleSource store) throws RDF4JException {
 		return TripleSources.booleanValue(subj, SPIN.THIS_UNBOUND_PROPERTY, store);
 	}
 
-	public ConstraintViolation parseConstraintViolation(Resource subj, TripleSource store)
-			throws RDF4JException {
+	public ConstraintViolation parseConstraintViolation(Resource subj, TripleSource store) throws RDF4JException {
 		Value labelValue = TripleSources.singleValue(subj, RDFS.LABEL, store);
 		Value rootValue = TripleSources.singleValue(subj, SPIN.VIOLATION_ROOT_PROPERTY, store);
 		Value pathValue = TripleSources.singleValue(subj, SPIN.VIOLATION_PATH_PROPERTY, store);
@@ -345,55 +333,47 @@ public class SpinParser {
 				level = ConstraintViolationLevel.valueOf((IRI) levelValue);
 			}
 			if (level == null) {
-				throw new MalformedSpinException("Invalid value " + levelValue + " for "
-						+ SPIN.VIOLATION_LEVEL_PROPERTY + ": " + subj);
+				throw new MalformedSpinException(
+						"Invalid value " + levelValue + " for " + SPIN.VIOLATION_LEVEL_PROPERTY + ": " + subj);
 			}
 		}
 		return new ConstraintViolation(label, root, path, value, level);
 	}
 
-	public ParsedOperation parse(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedOperation parse(Resource queryResource, TripleSource store) throws RDF4JException {
 		return parse(queryResource, SP.COMMAND_CLASS, store);
 	}
 
-	public ParsedQuery parseQuery(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedQuery parseQuery(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedQuery) parse(queryResource, SP.QUERY_CLASS, store);
 	}
 
-	public ParsedGraphQuery parseConstructQuery(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedGraphQuery parseConstructQuery(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedGraphQuery) parse(queryResource, SP.CONSTRUCT_CLASS, store);
 	}
 
-	public ParsedTupleQuery parseSelectQuery(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedTupleQuery parseSelectQuery(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedTupleQuery) parse(queryResource, SP.SELECT_CLASS, store);
 	}
 
-	public ParsedBooleanQuery parseAskQuery(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedBooleanQuery parseAskQuery(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedBooleanQuery) parse(queryResource, SP.ASK_CLASS, store);
 	}
 
-	public ParsedDescribeQuery parseDescribeQuery(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedDescribeQuery parseDescribeQuery(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedDescribeQuery) parse(queryResource, SP.DESCRIBE_CLASS, store);
 	}
 
-	public ParsedUpdate parseUpdate(Resource queryResource, TripleSource store)
-			throws RDF4JException {
+	public ParsedUpdate parseUpdate(Resource queryResource, TripleSource store) throws RDF4JException {
 		return (ParsedUpdate) parse(queryResource, SP.UPDATE_CLASS, store);
 	}
 
-	protected ParsedOperation parse(Resource queryResource, IRI queryClass, TripleSource store)
-			throws RDF4JException {
+	protected ParsedOperation parse(Resource queryResource, IRI queryClass, TripleSource store) throws RDF4JException {
 		Boolean isQueryElseTemplate = null;
 		Set<IRI> possibleQueryTypes = new HashSet<>();
 		Set<IRI> possibleTemplates = new HashSet<>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				queryResource, RDF.TYPE, store);
+		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources
+				.getObjectURIs(queryResource, RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
@@ -418,8 +398,8 @@ public class SpinParser {
 		} else if (isQueryElseTemplate == Boolean.TRUE) {
 			// command (query or update)
 			if (possibleQueryTypes.size() > 1) {
-				throw new MalformedSpinException("Incompatible RDF types for command: " + queryResource
-						+ " has types " + possibleQueryTypes);
+				throw new MalformedSpinException(
+						"Incompatible RDF types for command: " + queryResource + " has types " + possibleQueryTypes);
 			}
 
 			IRI queryType = possibleQueryTypes.iterator().next();
@@ -457,8 +437,7 @@ public class SpinParser {
 			}
 
 			if (possibleTemplates.isEmpty()) {
-				throw new MalformedSpinException(
-						String.format("Template missing RDF type: %s", queryResource));
+				throw new MalformedSpinException(String.format("Template missing RDF type: %s", queryResource));
 			}
 			if (possibleTemplates.size() > 1) {
 				throw new MalformedSpinException("Template has unexpected RDF types: " + queryResource
@@ -480,14 +459,12 @@ public class SpinParser {
 	}
 
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
-			final TripleSource store)
-			throws RDF4JException {
+			final TripleSource store) throws RDF4JException {
 		try {
 			return templateCache.get(tmplUri, new Callable<Template>() {
 
 				@Override
-				public Template call()
-						throws RDF4JException {
+				public Template call() throws RDF4JException {
 					return parseTemplateInternal(tmplUri, queryType, abstractTmpls, store);
 				}
 			});
@@ -502,12 +479,11 @@ public class SpinParser {
 		}
 	}
 
-	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls,
-			TripleSource store)
+	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls, TripleSource store)
 			throws RDF4JException {
 		Set<IRI> possibleTmplTypes = new HashSet<>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				tmplUri, RDF.TYPE, store);
+		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(tmplUri,
+				RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
@@ -579,12 +555,11 @@ public class SpinParser {
 		return args;
 	}
 
-	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri,
-			TripleSource store)
+	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri, TripleSource store)
 			throws RDF4JException {
 		for (FunctionParser functionParser : functionParsers) {
-			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(
-					funcUri, store);
+			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(funcUri,
+					store);
 			if (function != null) {
 				return function;
 			}
@@ -593,8 +568,7 @@ public class SpinParser {
 		throw new MalformedSpinException(String.format("No FunctionParser for function: %s", funcUri));
 	}
 
-	public TupleFunction parseMagicProperty(IRI propUri, TripleSource store)
-			throws RDF4JException {
+	public TupleFunction parseMagicProperty(IRI propUri, TripleSource store) throws RDF4JException {
 		for (TupleFunctionParser tupleFunctionParser : tupleFunctionParsers) {
 			TupleFunction tupleFunction = tupleFunctionParser.parse(propUri, store);
 			if (tupleFunction != null) {
@@ -602,18 +576,15 @@ public class SpinParser {
 			}
 		}
 		logger.warn("No TupleFunctionParser for magic property: {}", propUri);
-		throw new MalformedSpinException(
-				String.format("No TupleFunctionParser for magic property: %s", propUri));
+		throw new MalformedSpinException(String.format("No TupleFunctionParser for magic property: %s", propUri));
 	}
 
-	public Map<IRI, Argument> parseArguments(final IRI moduleUri, final TripleSource store)
-			throws RDF4JException {
+	public Map<IRI, Argument> parseArguments(final IRI moduleUri, final TripleSource store) throws RDF4JException {
 		try {
 			return argumentCache.get(moduleUri, new Callable<Map<IRI, Argument>>() {
 
 				@Override
-				public Map<IRI, Argument> call()
-						throws RDF4JException {
+				public Map<IRI, Argument> call() throws RDF4JException {
 					Map<IRI, Argument> args = new HashMap<>();
 					parseArguments(moduleUri, store, args);
 					return Collections.unmodifiableMap(args);
@@ -630,10 +601,9 @@ public class SpinParser {
 		}
 	}
 
-	private void parseArguments(IRI moduleUri, TripleSource store, Map<IRI, Argument> args)
-			throws RDF4JException {
-		CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources.getObjectResources(
-				moduleUri, SPIN.CONSTRAINT_PROPERTY, store);
+	private void parseArguments(IRI moduleUri, TripleSource store, Map<IRI, Argument> args) throws RDF4JException {
+		CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources
+				.getObjectResources(moduleUri, SPIN.CONSTRAINT_PROPERTY, store);
 		try {
 			while (argIter.hasNext()) {
 				Resource possibleArg = argIter.next();
@@ -642,8 +612,7 @@ public class SpinParser {
 					Value argPred = TripleSources.singleValue(possibleArg, SPL.PREDICATE_PROPERTY, store);
 					Value valueType = TripleSources.singleValue(possibleArg, SPL.VALUE_TYPE_PROPERTY, store);
 					boolean optional = TripleSources.booleanValue(possibleArg, SPL.OPTIONAL_PROPERTY, store);
-					Value defaultValue = TripleSources.singleValue(possibleArg, SPL.DEFAULT_VALUE_PROPERTY,
-							store);
+					Value defaultValue = TripleSources.singleValue(possibleArg, SPL.DEFAULT_VALUE_PROPERTY, store);
 					IRI argUri = (IRI) argPred;
 					args.put(argUri, new Argument(argUri, (IRI) valueType, optional, defaultValue));
 				}
@@ -653,8 +622,7 @@ public class SpinParser {
 		}
 	}
 
-	private ParsedOperation parseText(Resource queryResource, IRI queryType, TripleSource store)
-			throws RDF4JException {
+	private ParsedOperation parseText(Resource queryResource, IRI queryType, TripleSource store) throws RDF4JException {
 		Value text = TripleSources.singleValue(queryResource, SP.TEXT_PROPERTY, store);
 		if (text != null) {
 			if (QUERY_TYPES.contains(queryType)) {
@@ -669,8 +637,7 @@ public class SpinParser {
 		}
 	}
 
-	private ParsedOperation parseRDF(Resource queryResource, IRI queryType, TripleSource store)
-			throws RDF4JException {
+	private ParsedOperation parseRDF(Resource queryResource, IRI queryType, TripleSource store) throws RDF4JException {
 		if (SP.CONSTRUCT_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitConstruct(queryResource);
@@ -734,8 +701,7 @@ public class SpinParser {
 		}
 	}
 
-	public ValueExpr parseExpression(Value expr, TripleSource store)
-			throws RDF4JException {
+	public ValueExpr parseExpression(Value expr, TripleSource store) throws RDF4JException {
 		SpinVisitor visitor = new SpinVisitor(store);
 		return visitor.visitExpression(expr);
 	}
@@ -828,12 +794,10 @@ public class SpinParser {
 			return updateRoot;
 		}
 
-		public void visitConstruct(Resource construct)
-				throws RDF4JException {
+		public void visitConstruct(Resource construct) throws RDF4JException {
 			Value templates = TripleSources.singleValue(construct, SP.TEMPLATES_PROPERTY, store);
 			if (!(templates instanceof Resource)) {
-				throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.TEMPLATES_PROPERTY));
+				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.TEMPLATES_PROPERTY));
 			}
 
 			projElems = new LinkedHashMap<>();
@@ -843,8 +807,7 @@ public class SpinParser {
 			addSourceExpressions(projection, projElems.values());
 		}
 
-		public void visitDescribe(Resource describe)
-				throws RDF4JException {
+		public void visitDescribe(Resource describe) throws RDF4JException {
 			Value resultNodes = TripleSources.singleValue(describe, SP.RESULT_NODES_PROPERTY, store);
 			if (!(resultNodes instanceof Resource)) {
 				throw new MalformedSpinException(
@@ -858,8 +821,7 @@ public class SpinParser {
 			addSourceExpressions(projection, projElems.values());
 		}
 
-		public void visitSelect(Resource select)
-				throws RDF4JException {
+		public void visitSelect(Resource select) throws RDF4JException {
 			Value resultVars = TripleSources.singleValue(select, SP.RESULT_VARIABLES_PROPERTY, store);
 			if (!(resultVars instanceof Resource)) {
 				throw new MalformedSpinException(
@@ -924,8 +886,7 @@ public class SpinParser {
 			}
 		}
 
-		public void visitAsk(Resource ask)
-				throws RDF4JException {
+		public void visitAsk(Resource ask) throws RDF4JException {
 			TupleExpr whereExpr = visitWhere(ask);
 			tupleRoot = new Slice(whereExpr, 0, 1);
 		}
@@ -944,8 +905,7 @@ public class SpinParser {
 			}
 		}
 
-		private UnaryTupleOperator visitTemplates(Resource templates)
-				throws RDF4JException {
+		private UnaryTupleOperator visitTemplates(Resource templates) throws RDF4JException {
 			List<ProjectionElemList> projElemLists = new ArrayList<>();
 			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(templates,
 					store);
@@ -972,8 +932,7 @@ public class SpinParser {
 			return expr;
 		}
 
-		private ProjectionElemList visitTemplate(Resource r)
-				throws RDF4JException {
+		private ProjectionElemList visitTemplate(Resource r) throws RDF4JException {
 			ProjectionElemList projElems = new ProjectionElemList();
 			Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);
 			projElems.addElement(createProjectionElem(subj, "subject", null));
@@ -984,11 +943,10 @@ public class SpinParser {
 			return projElems;
 		}
 
-		private Projection visitResultNodes(Resource resultNodes)
-				throws RDF4JException {
+		private Projection visitResultNodes(Resource resultNodes) throws RDF4JException {
 			ProjectionElemList projElemList = new ProjectionElemList();
-			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(
-					resultNodes, store);
+			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(resultNodes,
+					store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ProjectionElem projElem = visitResultNode(r);
@@ -1002,17 +960,15 @@ public class SpinParser {
 			return proj;
 		}
 
-		private ProjectionElem visitResultNode(Resource r)
-				throws RDF4JException {
+		private ProjectionElem visitResultNode(Resource r) throws RDF4JException {
 			return createProjectionElem(r, null, null);
 		}
 
-		private Projection visitResultVariables(Resource resultVars,
-				Map<String, ProjectionElem> previousProjElems)
+		private Projection visitResultVariables(Resource resultVars, Map<String, ProjectionElem> previousProjElems)
 				throws RDF4JException {
 			ProjectionElemList projElemList = new ProjectionElemList();
-			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(
-					resultVars, store);
+			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(resultVars,
+					store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ProjectionElem projElem = visitResultVariable(r, previousProjElems);
@@ -1031,13 +987,11 @@ public class SpinParser {
 			return createProjectionElem(r, null, previousProjElems);
 		}
 
-		private void visitGroupBy(Resource groupby)
-				throws RDF4JException {
+		private void visitGroupBy(Resource groupby) throws RDF4JException {
 			if (group == null) {
 				group = new Group();
 			}
-			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(groupby,
-					store);
+			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(groupby, store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ValueExpr groupByExpr = visitExpression(r);
@@ -1051,12 +1005,10 @@ public class SpinParser {
 			}
 		}
 
-		private TupleExpr visitHaving(Resource having)
-				throws RDF4JException {
+		private TupleExpr visitHaving(Resource having) throws RDF4JException {
 			UnaryTupleOperator op = (UnaryTupleOperator) group.getParentNode();
 			op.setArg(new Extension(group));
-			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(having,
-					store);
+			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(having, store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ValueExpr havingExpr = visitExpression(r);
@@ -1067,11 +1019,9 @@ public class SpinParser {
 			return op;
 		}
 
-		private Order visitOrderBy(Resource orderby)
-				throws RDF4JException {
+		private Order visitOrderBy(Resource orderby) throws RDF4JException {
 			Order order = new Order();
-			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(orderby,
-					store);
+			Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(orderby, store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				OrderElem orderElem = visitOrderByCondition(r);
@@ -1080,8 +1030,7 @@ public class SpinParser {
 			return order;
 		}
 
-		private OrderElem visitOrderByCondition(Resource r)
-				throws RDF4JException {
+		private OrderElem visitOrderByCondition(Resource r) throws RDF4JException {
 			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);
 			ValueExpr valueExpr = visitExpression(expr);
 			Statement descStmt = TripleSources.single(r, RDF.TYPE, SP.DESC_CLASS, store);
@@ -1090,8 +1039,7 @@ public class SpinParser {
 		}
 
 		private ProjectionElem createProjectionElem(Value v, String projName,
-				Map<String, ProjectionElem> previousProjElems)
-				throws RDF4JException {
+				Map<String, ProjectionElem> previousProjElems) throws RDF4JException {
 			String varName;
 			ValueExpr valueExpr;
 			Collection<AggregateOperator> oldAggregates = aggregates;
@@ -1149,8 +1097,7 @@ public class SpinParser {
 			return projElem;
 		}
 
-		public void visitModify(Resource query)
-				throws RDF4JException {
+		public void visitModify(Resource query) throws RDF4JException {
 			Value with = TripleSources.singleValue(query, SP.WITH_PROPERTY, store);
 			if (with != null) {
 				namedGraph = TupleExprs.createConstVar(with);
@@ -1192,22 +1139,19 @@ public class SpinParser {
 			updateRoot = new Modify(deleteExpr, insertExpr, whereExpr);
 		}
 
-		public void visitDeleteWhere(Resource query)
-				throws RDF4JException {
+		public void visitDeleteWhere(Resource query) throws RDF4JException {
 			TupleExpr whereExpr = visitWhere(query);
 			updateRoot = new Modify(whereExpr, null, whereExpr.clone());
 		}
 
-		public void visitInsertData(Resource query)
-				throws RDF4JException {
+		public void visitInsertData(Resource query) throws RDF4JException {
 			SingletonSet stub = new SingletonSet();
 			tupleRoot = new QueryRoot(stub);
 			tupleNode = stub;
 			TupleExpr insertExpr;
 			Value insert = TripleSources.singleValue(query, SP.DATA_PROPERTY, store);
 			if (!(insert instanceof Resource)) {
-				throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
+				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
 			}
 			visitInsert((Resource) insert);
 			insertExpr = tupleNode;
@@ -1218,16 +1162,14 @@ public class SpinParser {
 			updateRoot = new InsertData(visitor.getData());
 		}
 
-		public void visitDeleteData(Resource query)
-				throws RDF4JException {
+		public void visitDeleteData(Resource query) throws RDF4JException {
 			SingletonSet stub = new SingletonSet();
 			tupleRoot = new QueryRoot(stub);
 			tupleNode = stub;
 			TupleExpr deleteExpr;
 			Value delete = TripleSources.singleValue(query, SP.DATA_PROPERTY, store);
 			if (!(delete instanceof Resource)) {
-				throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
+				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
 			}
 			visitDelete((Resource) delete);
 			deleteExpr = tupleNode;
@@ -1238,8 +1180,7 @@ public class SpinParser {
 			updateRoot = new DeleteData(visitor.getData());
 		}
 
-		public void visitLoad(Resource query)
-				throws RDF4JException {
+		public void visitLoad(Resource query) throws RDF4JException {
 			Value document = TripleSources.singleValue(query, SP.DOCUMENT_PROPERTY, store);
 			Value into = TripleSources.singleValue(query, SP.INTO_PROPERTY, store);
 			Load load = new Load(new ValueConstant(document));
@@ -1249,8 +1190,7 @@ public class SpinParser {
 			updateRoot = load;
 		}
 
-		public void visitClear(Resource query)
-				throws RDF4JException {
+		public void visitClear(Resource query) throws RDF4JException {
 			Value graph = TripleSources.singleValue(query, SP.GRAPH_IRI_PROPERTY, store);
 			Clear clear = new Clear(new ValueConstant(graph));
 			boolean isSilent = TripleSources.booleanValue(query, SP.SILENT_PROPERTY, store);
@@ -1258,8 +1198,7 @@ public class SpinParser {
 			updateRoot = clear;
 		}
 
-		public void visitCreate(Resource query)
-				throws RDF4JException {
+		public void visitCreate(Resource query) throws RDF4JException {
 			Value graph = TripleSources.singleValue(query, SP.GRAPH_IRI_PROPERTY, store);
 			Create create = new Create(new ValueConstant(graph));
 			boolean isSilent = TripleSources.booleanValue(query, SP.SILENT_PROPERTY, store);
@@ -1267,24 +1206,21 @@ public class SpinParser {
 			updateRoot = create;
 		}
 
-		public TupleExpr visitWhere(Resource query)
-				throws RDF4JException {
+		public TupleExpr visitWhere(Resource query) throws RDF4JException {
 			Value where = TripleSources.singleValue(query, SP.WHERE_PROPERTY, store);
 			if (!(where instanceof Resource)) {
-				throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.WHERE_PROPERTY));
+				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.WHERE_PROPERTY));
 			}
 			return visitGroupGraphPattern((Resource) where);
 		}
 
-		public TupleExpr visitGroupGraphPattern(Resource group)
-				throws RDF4JException {
+		public TupleExpr visitGroupGraphPattern(Resource group) throws RDF4JException {
 			tupleNode = new SingletonSet();
 			QueryRoot groupRoot = new QueryRoot(tupleNode);
 
 			Map<Resource, Set<IRI>> patternTypes = new LinkedHashMap<>();
-			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(
-					group, store);
+			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(group,
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				patternTypes.put(r, Iterations.asSet(TripleSources.getObjectURIs(r, RDF.TYPE, store)));
@@ -1329,34 +1265,27 @@ public class SpinParser {
 			return groupExpr;
 		}
 
-		private void visitInsert(Resource insert)
-				throws RDF4JException {
-			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(
-					insert, store);
+		private void visitInsert(Resource insert) throws RDF4JException {
+			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(insert,
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
-				visitPattern(r,
-						(type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(),
-						null);
+				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(), null);
 			}
 		}
 
-		private void visitDelete(Resource delete)
-				throws RDF4JException {
-			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(
-					delete, store);
+		private void visitDelete(Resource delete) throws RDF4JException {
+			Iteration<? extends Resource, QueryEvaluationException> groupIter = TripleSources.listResources(delete,
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
-				visitPattern(r,
-						(type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(),
-						null);
+				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(), null);
 			}
 		}
 
-		private void visitPattern(Resource r, Set<IRI> types, TupleExpr currentGroupExpr)
-				throws RDF4JException {
+		private void visitPattern(Resource r, Set<IRI> types, TupleExpr currentGroupExpr) throws RDF4JException {
 			TupleExpr currentNode = tupleNode;
 			Value pred = TripleSources.singleValue(r, SP.PREDICATE_PROPERTY, store);
 			if (pred != null) {
@@ -1364,8 +1293,7 @@ public class SpinParser {
 				Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);
 				Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);
 				Scope stmtScope = (namedGraph != null) ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS;
-				tupleNode = new StatementPattern(stmtScope, getVar(subj), getVar(pred), getVar(obj),
-						namedGraph);
+				tupleNode = new StatementPattern(stmtScope, getVar(subj), getVar(pred), getVar(obj), namedGraph);
 			} else {
 				if (types.contains(SP.NAMED_GRAPH_CLASS)) {
 					Var oldGraph = namedGraph;
@@ -1385,8 +1313,8 @@ public class SpinParser {
 								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 
-					Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources.listResources(
-							(Resource) elements, store);
+					Iteration<? extends Resource, QueryEvaluationException> iter = TripleSources
+							.listResources((Resource) elements, store);
 					TupleExpr prev = null;
 					while (iter.hasNext()) {
 						Resource entry = iter.next();
@@ -1433,8 +1361,8 @@ public class SpinParser {
 					BindingSetAssignment bsa = new BindingSetAssignment();
 					Set<String> varNames = new LinkedHashSet<>();
 					Value varNameList = TripleSources.singleValue(r, SP.VAR_NAMES_PROPERTY, store);
-					Iteration<? extends Value, QueryEvaluationException> varNameIter = TripleSources.list(
-							(Resource) varNameList, store);
+					Iteration<? extends Value, QueryEvaluationException> varNameIter = TripleSources
+							.list((Resource) varNameList, store);
 					while (varNameIter.hasNext()) {
 						Value v = varNameIter.next();
 						if (v instanceof Literal) {
@@ -1444,14 +1372,14 @@ public class SpinParser {
 					bsa.setBindingNames(varNames);
 					List<BindingSet> bindingSets = new ArrayList<>();
 					Value bindingsList = TripleSources.singleValue(r, SP.BINDINGS_PROPERTY, store);
-					Iteration<? extends Value, QueryEvaluationException> bindingsIter = TripleSources.list(
-							(Resource) bindingsList, store);
+					Iteration<? extends Value, QueryEvaluationException> bindingsIter = TripleSources
+							.list((Resource) bindingsList, store);
 					while (bindingsIter.hasNext()) {
 						Value valueList = bindingsIter.next();
 						QueryBindingSet bs = new QueryBindingSet();
 						Iterator<String> nameIter = varNames.iterator();
-						Iteration<? extends Value, QueryEvaluationException> valueIter = TripleSources.list(
-								(Resource) valueList, store);
+						Iteration<? extends Value, QueryEvaluationException> valueIter = TripleSources
+								.list((Resource) valueList, store);
 						while (nameIter.hasNext() && valueIter.hasNext()) {
 							String name = nameIter.next();
 							Value value = valueIter.next();
@@ -1469,8 +1397,7 @@ public class SpinParser {
 					Resource path = (Resource) TripleSources.singleValue(r, SP.PATH_PROPERTY, store);
 					Set<IRI> pathTypes = Iterations.asSet(TripleSources.getObjectURIs(path, RDF.TYPE, store));
 					if (pathTypes.contains(SP.MOD_PATH_CLASS)) {
-						Resource subPath = (Resource) TripleSources.singleValue(path, SP.SUB_PATH_PROPERTY,
-								store);
+						Resource subPath = (Resource) TripleSources.singleValue(path, SP.SUB_PATH_PROPERTY, store);
 						Literal minPath = (Literal) TripleSources.singleValue(path, SP.MOD_MIN_PROPERTY, store);
 						Literal maxPath = (Literal) TripleSources.singleValue(path, SP.MOD_MAX_PROPERTY, store);
 						if (maxPath == null || maxPath.intValue() != -2) {
@@ -1479,8 +1406,7 @@ public class SpinParser {
 						Var subjVar = getVar(subj);
 						Var objVar = getVar(obj);
 						tupleNode = new ArbitraryLengthPath(subjVar,
-								new StatementPattern(subjVar, getVar(subPath), objVar), objVar,
-								minPath.longValue());
+								new StatementPattern(subjVar, getVar(subPath), objVar), objVar, minPath.longValue());
 					} else {
 						throw new UnsupportedOperationException(types.toString());
 					}
@@ -1497,10 +1423,8 @@ public class SpinParser {
 					boolean isSilent = TripleSources.booleanValue(r, SP.SILENT_PROPERTY, store);
 					String exprString;
 					try {
-						exprString = new SPARQLQueryRenderer().render(
-								new ParsedTupleQuery(groupExpr));
-						exprString = exprString.substring(exprString.indexOf('{') + 1,
-								exprString.lastIndexOf('}'));
+						exprString = new SPARQLQueryRenderer().render(new ParsedTupleQuery(groupExpr));
+						exprString = exprString.substring(exprString.indexOf('{') + 1, exprString.lastIndexOf('}'));
 					} catch (Exception e) {
 						throw new QueryEvaluationException(e);
 					}
@@ -1508,8 +1432,8 @@ public class SpinParser {
 					prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 					prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 					prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
-					Service service = new Service(getVar(serviceUri), tupleNode, exprString, prefixDecls,
-							null, isSilent);
+					Service service = new Service(getVar(serviceUri), tupleNode, exprString, prefixDecls, null,
+							isSilent);
 					tupleNode = service;
 				} else {
 					throw new UnsupportedOperationException(types.toString());
@@ -1527,28 +1451,24 @@ public class SpinParser {
 			}
 		}
 
-		private void visitFilter(Resource r)
-				throws RDF4JException {
+		private void visitFilter(Resource r) throws RDF4JException {
 			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);
 			ValueExpr valueExpr = visitExpression(expr);
 			tupleNode = new Filter(tupleNode, valueExpr);
 		}
 
-		private void visitBind(Resource r)
-				throws RDF4JException {
+		private void visitBind(Resource r) throws RDF4JException {
 			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);
 			ValueExpr valueExpr = visitExpression(expr);
 			Value varValue = TripleSources.singleValue(r, SP.VARIABLE_PROPERTY, store);
 			if (!(varValue instanceof Resource)) {
-				throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.VARIABLE_PROPERTY));
+				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.VARIABLE_PROPERTY));
 			}
 			String varName = getVarName((Resource) varValue);
 			tupleNode = new Extension(tupleNode, new ExtensionElem(valueExpr, varName));
 		}
 
-		private ValueExpr visitExpression(Value v)
-				throws RDF4JException {
+		private ValueExpr visitExpression(Value v) throws RDF4JException {
 			ValueExpr expr;
 			if (v instanceof Literal) {
 				expr = new ValueConstant(v);
@@ -1568,22 +1488,19 @@ public class SpinParser {
 							if (exprTypes.size() > 1) {
 								for (Iterator<IRI> iter = exprTypes.iterator(); iter.hasNext();) {
 									IRI f = iter.next();
-									Value abstractValue = TripleSources.singleValue(f, SPIN.ABSTRACT_PROPERTY,
-											store);
+									Value abstractValue = TripleSources.singleValue(f, SPIN.ABSTRACT_PROPERTY, store);
 									if (BooleanLiteral.TRUE.equals(abstractValue)) {
 										iter.remove();
 									}
 								}
 							}
 							if (exprTypes.isEmpty()) {
-								throw new MalformedSpinException(
-										String.format("Function missing RDF type: %s", r));
+								throw new MalformedSpinException(String.format("Function missing RDF type: %s", r));
 							}
 						} else if (exprTypes.remove(SP.AGGREGATION_CLASS)) {
 							exprTypes.remove(SP.SYSTEM_CLASS);
 							if (exprTypes.isEmpty()) {
-								throw new MalformedSpinException(
-										String.format("Aggregation missing RDF type: %s", r));
+								throw new MalformedSpinException(String.format("Aggregation missing RDF type: %s", r));
 							}
 						} else {
 							exprTypes = Collections.emptySet();
@@ -1603,8 +1520,7 @@ public class SpinParser {
 			return expr;
 		}
 
-		private ValueExpr toValueExpr(Resource r, IRI func)
-				throws RDF4JException {
+		private ValueExpr toValueExpr(Resource r, IRI func) throws RDF4JException {
 			ValueExpr expr;
 			CompareOp compareOp;
 			MathOp mathOp;
@@ -1857,8 +1773,7 @@ public class SpinParser {
 		/**
 		 * @param knownArgs empty for vararg, null for unknown.
 		 */
-		private List<ValueExpr> getArgs(Resource r, IRI func, IRI... knownArgs)
-				throws RDF4JException {
+		private List<ValueExpr> getArgs(Resource r, IRI func, IRI... knownArgs) throws RDF4JException {
 			Collection<IRI> args;
 			if (knownArgs != null) {
 				args = Arrays.asList(knownArgs);
@@ -1896,8 +1811,7 @@ public class SpinParser {
 			return argValues;
 		}
 
-		private String getVarName(Resource r)
-				throws RDF4JException {
+		private String getVarName(Resource r) throws RDF4JException {
 			// have we already seen it
 			String varName = vars.get(r);
 			// is it well-known
@@ -1923,8 +1837,7 @@ public class SpinParser {
 			return varName;
 		}
 
-		private Var getVar(Value v)
-				throws RDF4JException {
+		private Var getVar(Value v) throws RDF4JException {
 			Var var = null;
 			if (v instanceof Resource) {
 				String varName = getVarName((Resource) v);
@@ -1978,19 +1891,16 @@ public class SpinParser {
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-				throws RuntimeException {
+		public void meet(StatementPattern node) throws RuntimeException {
 			if (node.getContextVar() != null) {
 				buf.append("GRAPH <").append(node.getContextVar().getValue()).append("> { ");
 			}
 			buf.append("<")
 					.append(node.getSubjectVar().getValue())
 					.append("> <")
-					.append(
-							node.getPredicateVar().getValue())
+					.append(node.getPredicateVar().getValue())
 					.append("> <")
-					.append(
-							node.getObjectVar().getValue())
+					.append(node.getObjectVar().getValue())
 					.append("> .");
 			if (node.getContextVar() != null) {
 				buf.append(" } ");

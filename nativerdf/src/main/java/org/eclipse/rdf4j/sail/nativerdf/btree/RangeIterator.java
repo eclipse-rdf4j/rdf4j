@@ -56,8 +56,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public byte[] next()
-			throws IOException {
+	public byte[] next() throws IOException {
 		tree.btreeLock.readLock().lock();
 		try {
 			if (!started) {
@@ -67,8 +66,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 			byte[] value = findNext(revisitValue.getAndSet(false));
 			while (value != null) {
-				if (maxValue != null
-						&& tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
+				if (maxValue != null && tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
 					// Reached maximum value, stop iterating
 					close();
 					value = null;
@@ -89,8 +87,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 		}
 	}
 
-	private void findMinimum()
-			throws IOException {
+	private void findMinimum() throws IOException {
 		Node nextCurrentNode = currentNode = tree.readRootNode();
 
 		if (nextCurrentNode == null) {
@@ -129,8 +126,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 		}
 	}
 
-	private byte[] findNext(boolean returnedFromRecursion)
-			throws IOException {
+	private byte[] findNext(boolean returnedFromRecursion) throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == null) {
 			return null;
@@ -168,8 +164,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public synchronized void close()
-			throws IOException {
+	public synchronized void close() throws IOException {
 		tree.btreeLock.readLock().lock();
 		try {
 			while (popStacks()) {
@@ -191,8 +186,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 		currentIdx = 0;
 	}
 
-	private boolean popStacks()
-			throws IOException {
+	private boolean popStacks() throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == null) {
 			// There's nothing to pop
@@ -262,8 +256,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == node) {
 			if (valueIndex == currentIdx - 1) {
@@ -313,8 +306,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-			throws IOException {
+	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
 		for (int i = 0; i < parentNodeStack.size(); i++) {
 			Node stackNode = parentNodeStack.get(i);
 
@@ -342,8 +334,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-			throws IOException {
+	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
 		boolean deregister = false;
@@ -387,8 +378,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-			throws IOException {
+	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
 		boolean deregister = false;

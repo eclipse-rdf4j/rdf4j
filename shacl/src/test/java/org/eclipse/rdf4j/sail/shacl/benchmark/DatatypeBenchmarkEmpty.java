@@ -73,9 +73,8 @@ public class DatatypeBenchmarkEmpty {
 			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
-								vf.createLiteral(i)));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+						vf.createLiteral(i)));
 			}
 		}
 		System.gc();

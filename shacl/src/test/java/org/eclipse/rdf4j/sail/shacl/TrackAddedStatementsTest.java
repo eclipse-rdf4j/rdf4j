@@ -379,8 +379,7 @@ public class TrackAddedStatementsTest {
 	private static long size(SailConnection connection) {
 		try {
 			return Iterations.stream(connection.getStatements(null, null, null, true))
-					.peek(
-							System.out::println)
+					.peek(System.out::println)
 					.count();
 		} finally {
 			connection.close();
@@ -388,18 +387,12 @@ public class TrackAddedStatementsTest {
 	}
 
 	private static long size(RepositoryConnection connection) {
-		return Iterations.stream(connection.getStatements(null, null, null))
-				.peek(
-						System.out::println)
-				.count();
+		return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
 	}
 
 	private static long size(Repository repo) {
 		try (RepositoryConnection connection = repo.getConnection()) {
-			return Iterations.stream(connection.getStatements(null, null, null))
-					.peek(
-							System.out::println)
-					.count();
+			return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
 		}
 	}
 

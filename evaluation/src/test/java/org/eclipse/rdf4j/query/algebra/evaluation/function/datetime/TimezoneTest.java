@@ -33,8 +33,7 @@ public class TimezoneTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		timezone = new Timezone();
 	}
 
@@ -42,16 +41,14 @@ public class TimezoneTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 	}
 
 	@Test
 	public void testEvaluate1() {
 		try {
 
-			Literal result = timezone.evaluate(f,
-					f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
+			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
 
 			assertNotNull(result);
 			assertEquals(XMLSchema.DAYTIMEDURATION, result.getDatatype());
@@ -68,8 +65,7 @@ public class TimezoneTest {
 	public void testEvaluate2() {
 		try {
 
-			Literal result = timezone.evaluate(f,
-					f.createLiteral("2011-01-10T14:45:13.815Z", XMLSchema.DATETIME));
+			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815Z", XMLSchema.DATETIME));
 
 			assertNotNull(result);
 			assertEquals(XMLSchema.DAYTIMEDURATION, result.getDatatype());

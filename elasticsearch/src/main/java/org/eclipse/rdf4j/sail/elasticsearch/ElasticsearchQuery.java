@@ -42,8 +42,7 @@ public class ElasticsearchQuery implements SearchQuery {
 	}
 
 	@Override
-	public Iterable<? extends DocumentScore> query(Resource resource)
-			throws IOException {
+	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		SearchHits hits;
 		if (resource != null) {
 			hits = index.search(resource, request, qb);

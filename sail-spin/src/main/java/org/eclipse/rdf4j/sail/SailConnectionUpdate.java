@@ -46,8 +46,7 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 	}
 
 	@Override
-	public void execute()
-			throws UpdateExecutionException {
+	public void execute() throws UpdateExecutionException {
 		ParsedUpdate parsedUpdate = getParsedUpdate();
 		List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
 		Map<UpdateExpr, Dataset> datasetMapping = parsedUpdate.getDatasetMapping();
@@ -84,18 +83,15 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 		}
 	}
 
-	private boolean isLocalTransaction()
-			throws SailException {
+	private boolean isLocalTransaction() throws SailException {
 		return !getSailConnection().isActive();
 	}
 
-	private void beginLocalTransaction()
-			throws SailException {
+	private void beginLocalTransaction() throws SailException {
 		getSailConnection().begin();
 	}
 
-	private void commitLocalTransaction()
-			throws SailException {
+	private void commitLocalTransaction() throws SailException {
 		getSailConnection().commit();
 	}
 }

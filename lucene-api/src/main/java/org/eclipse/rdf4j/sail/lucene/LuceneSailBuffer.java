@@ -66,9 +66,8 @@ public class LuceneSailBuffer {
 				Statement other = (Statement) obj;
 
 				return this.delegate.equals(other)
-						&& ((this.getContext() == null && other.getContext() == null)
-								|| (this.getContext() != null && other.getContext() != null
-										&& this.getContext().equals(other.getContext())));
+						&& ((this.getContext() == null && other.getContext() == null) || (this.getContext() != null
+								&& other.getContext() != null && this.getContext().equals(other.getContext())));
 			}
 			return false;
 		}

@@ -53,13 +53,11 @@ public class DataFile implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public DataFile(File file)
-			throws IOException {
+	public DataFile(File file) throws IOException {
 		this(file, false);
 	}
 
-	public DataFile(File file, boolean forceSync)
-			throws IOException {
+	public DataFile(File file, boolean forceSync) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
 
@@ -84,8 +82,7 @@ public class DataFile implements Closeable {
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read data file; it uses a newer file format");
 				} else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException(
-							"Unable to read data file; invalid file format version: " + version);
+					throw new IOException("Unable to read data file; invalid file format version: " + version);
 				}
 			}
 		} catch (IOException e) {
@@ -108,8 +105,7 @@ public class DataFile implements Closeable {
 	 * @param data The data to store, must not be <tt>null</tt>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
-	public long storeData(byte[] data)
-			throws IOException {
+	public long storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
 		long offset = nioFile.size();
@@ -132,8 +128,7 @@ public class DataFile implements Closeable {
 	 * @return The data that was found on the specified offset.
 	 * @exception IOException If an I/O error occurred.
 	 */
-	public byte[] getData(long offset)
-			throws IOException {
+	public byte[] getData(long offset) throws IOException {
 		assert offset > 0 : "offset must be larger than 0, is: " + offset;
 
 		// TODO: maybe get more data in one go is more efficient?
@@ -151,16 +146,14 @@ public class DataFile implements Closeable {
 	 * 
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear()
-			throws IOException {
+	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 	}
 
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		if (forceSync) {
 			nioFile.force(false);
 		}
@@ -172,8 +165,7 @@ public class DataFile implements Closeable {
 	 * @throws IOException
 	 */
 	@Override
-	public void close()
-			throws IOException {
+	public void close() throws IOException {
 		nioFile.close();
 	}
 
@@ -193,13 +185,11 @@ public class DataFile implements Closeable {
 
 		private long position = HEADER_LENGTH;
 
-		public boolean hasNext()
-				throws IOException {
+		public boolean hasNext() throws IOException {
 			return position < nioFile.size();
 		}
 
-		public byte[] next()
-				throws IOException {
+		public byte[] next() throws IOException {
 			if (!hasNext()) {
 				throw new NoSuchElementException();
 			}

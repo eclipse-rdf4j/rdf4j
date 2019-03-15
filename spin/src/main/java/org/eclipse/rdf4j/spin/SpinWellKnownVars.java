@@ -49,8 +49,7 @@ final class SpinWellKnownVars {
 
 	public String getName(IRI IRI) {
 		String name = uriToString.get(IRI);
-		if (name == null && SPIN.NAMESPACE.equals(IRI.getNamespace())
-				&& IRI.getLocalName().startsWith("_arg")) {
+		if (name == null && SPIN.NAMESPACE.equals(IRI.getNamespace()) && IRI.getLocalName().startsWith("_arg")) {
 			String lname = IRI.getLocalName();
 			try {
 				Integer.parseInt(lname.substring("_arg".length()));

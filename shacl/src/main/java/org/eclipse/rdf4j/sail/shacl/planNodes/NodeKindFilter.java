@@ -56,8 +56,6 @@ public class NodeKindFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "NodeKindFilter{" +
-				"nodeKind=" + nodeKind +
-				'}';
+		return "NodeKindFilter{" + "nodeKind=" + nodeKind + '}';
 	}
 }

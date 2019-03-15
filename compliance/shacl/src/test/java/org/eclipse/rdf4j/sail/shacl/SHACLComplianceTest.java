@@ -27,8 +27,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 	// set this to true to run all tests!
 	final static boolean RUN_ALL = false;
 
-	public static TestSuite suite()
-			throws Exception {
+	public static TestSuite suite() throws Exception {
 		String[] ignoredDirectories = { "targets", "sparql", "complex", "misc", "node", "path", "validation-reports",
 				"property" };
 		if (RUN_ALL)
@@ -37,8 +36,8 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 		return new SHACLManifestTestSuiteFactory().createTestSuite(new TestFactory() {
 
 			@Override
-			public AbstractSHACLTest createSHACLTest(String testURI, String label, Model shapesGraph,
-					Model dataGraph, boolean failure, boolean conforms) {
+			public AbstractSHACLTest createSHACLTest(String testURI, String label, Model shapesGraph, Model dataGraph,
+					boolean failure, boolean conforms) {
 				return new SHACLComplianceTest(testURI, label, shapesGraph, dataGraph, failure, conforms);
 			}
 
@@ -50,8 +49,8 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 		}, true, true, false, ignoredDirectories);
 	}
 
-	public SHACLComplianceTest(String testURI, String label, Model shapesGraph, Model dataGraph,
-			boolean failure, boolean conforms) {
+	public SHACLComplianceTest(String testURI, String label, Model shapesGraph, Model dataGraph, boolean failure,
+			boolean conforms) {
 		super(testURI, label, shapesGraph, dataGraph, failure, conforms);
 	}
 

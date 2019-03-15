@@ -30,8 +30,8 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 	private final DistanceUnit unit;
 
 	public ElasticsearchDocumentDistance(SearchHit hit,
-			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField,
-			IRI units, GeoPoint srcPoint, DistanceUnit unit) {
+			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField, IRI units,
+			GeoPoint srcPoint, DistanceUnit unit) {
 		super(hit, geoContextMapper);
 		this.geoPointField = geoPointField;
 		this.units = units;
@@ -55,8 +55,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 			distance = DistanceUtils.dist2Radians(unit.convert(unitDist, DistanceUnit.KILOMETERS),
 					DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else if (GEOF.UOM_UNITY.equals(units)) {
-			distance = unit.convert(unitDist, DistanceUnit.KILOMETERS)
-					/ (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);
+			distance = unit.convert(unitDist, DistanceUnit.KILOMETERS) / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else {
 			throw new UnsupportedOperationException("Unsupported units: " + units);
 		}

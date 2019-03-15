@@ -38,8 +38,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 		return new SailClosingIteration<E, SailException>(iter, closes) {
 
 			@Override
-			protected void handleSailException(SailException e)
-					throws SailException {
+			protected void handleSailException(SailException e) throws SailException {
 				throw e;
 			}
 		};
@@ -74,8 +73,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 *---------*/
 
 	@Override
-	public boolean hasNext()
-			throws X {
+	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -88,8 +86,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	public T next()
-			throws X {
+	public T next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -102,8 +99,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	public void remove()
-			throws X {
+	public void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException();
 		}
@@ -116,8 +112,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	}
 
 	@Override
-	protected void handleClose()
-			throws X {
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {
@@ -152,6 +147,5 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 * @throws X Instances of this generic-typed exception in response to the given {@link SailException} if the handler
 	 *           decides to propagate the exception.
 	 */
-	protected abstract void handleSailException(SailException e)
-			throws X;
+	protected abstract void handleSailException(SailException e) throws X;
 }

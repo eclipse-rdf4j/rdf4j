@@ -102,8 +102,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	@Before
 	@Override
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		super.setUp();
 		client = (TransportClient) internalCluster().transportClient();
 
@@ -130,8 +129,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	@After
 	@Override
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		try {
 			index.shutDown();
 		} finally {
@@ -140,12 +138,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	}
 
 	@Test
-	public void testAddStatement()
-			throws IOException {
-		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(
-				SearchFields.getPropertyField(predicate1));
-		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(
-				SearchFields.getPropertyField(predicate2));
+	public void testAddStatement() throws IOException {
+		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate1));
+		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate2));
 
 		// add a statement to an index
 		index.begin();
@@ -154,8 +149,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// check that it arrived properly
 		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(
-						index.getTypes())
+				.setTypes(index.getTypes())
 				.get()
 				.getHits()
 				.getTotalHits();
@@ -163,9 +157,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		SearchHits hits = client.prepareSearch(index.getIndexName())
 				.setTypes(index.getTypes())
-				.setQuery(
-						QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-								subject.toString()))
+				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
 				.execute()
 				.actionGet()
 				.getHits();
@@ -173,8 +165,10 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertTrue(docs.hasNext());
 
 		SearchHit doc = docs.next();
-		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(),
-				doc.getId()).execute().actionGet().getSource();
+		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId())
+				.execute()
+				.actionGet()
+				.getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 
@@ -188,19 +182,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// See if everything remains consistent. We must create a new
 		// IndexReader
 		// in order to be able to see the updates
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(
-						index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits();
+		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(1, count); // #docs should *not* have increased
 
 		hits = client.prepareSearch(index.getIndexName())
 				.setTypes(index.getTypes())
-				.setQuery(
-						QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-								subject.toString()))
+				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
 				.execute()
 				.actionGet()
 				.getHits();
@@ -208,8 +195,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(),
-				doc.getId()).execute().actionGet().getSource();
+		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 		assertEquals(object2.getLabel(), fields.get(predicate2Field));
@@ -219,10 +205,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// see if we can query for these literals
 		count = client.prepareSearch(index.getIndexName())
 				.setTypes(index.getTypes())
-				.setSource(
-						new SearchSourceBuilder().size(0)
-								.query(
-										QueryBuilders.queryStringQuery(object1.getLabel())))
+				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object1.getLabel())))
 				.get()
 				.getHits()
 				.getTotalHits();
@@ -230,10 +213,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		count = client.prepareSearch(index.getIndexName())
 				.setTypes(index.getTypes())
-				.setSource(
-						new SearchSourceBuilder().size(0)
-								.query(
-										QueryBuilders.queryStringQuery(object2.getLabel())))
+				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object2.getLabel())))
 				.get()
 				.getHits()
 				.getTotalHits();
@@ -248,19 +228,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// still
 		// exists
 
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(
-						index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits();
+		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(1, count);
 
 		hits = client.prepareSearch(index.getIndexName())
 				.setTypes(index.getTypes())
-				.setQuery(
-						QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-								subject.toString()))
+				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
 				.execute()
 				.actionGet()
 				.getHits();
@@ -268,8 +241,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(),
-				doc.getId()).execute().actionGet().getSource();
+		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertNull(fields.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), fields.get(predicate2Field));
@@ -284,18 +256,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// check that there are no documents left (i.e. the last Document was
 		// removed completely, rather than its remaining triple removed)
 
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(
-						index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits();
+		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(0, count);
 	}
 
 	@Test
-	public void testAddMultiple()
-			throws Exception {
+	public void testAddMultiple() throws Exception {
 		// add a statement to an index
 		HashSet<Statement> added = new HashSet<>();
 		HashSet<Statement> removed = new HashSet<>();
@@ -310,8 +276,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// check that it arrived properly
 
 		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(
-						index.getTypes())
+				.setTypes(index.getTypes())
 				.get()
 				.getHits()
 				.getTotalHits();
@@ -367,8 +332,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContexts()
-			throws Exception {
+	public void testContexts() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -420,8 +384,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2()
-			throws Exception {
+	public void testContextsRemoveContext2() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -481,16 +444,14 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
 	}
 
-	private void assertStatement(Statement statement)
-			throws Exception {
+	private void assertStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			fail("Missing document " + statement.getSubject());
 		assertStatement(statement, document);
 	}
 
-	private void assertNoStatement(Statement statement)
-			throws Exception {
+	private void assertNoStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			return;

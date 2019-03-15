@@ -34,8 +34,7 @@ public class Year implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("YEAR requires 1 argument, got " + args.length);
 		}
@@ -53,8 +52,7 @@ public class Year implements Function {
 					if (DatatypeConstants.FIELD_UNDEFINED != year) {
 						return valueFactory.createLiteral(String.valueOf(year), XMLSchema.INTEGER);
 					} else {
-						throw new ValueExprEvaluationException(
-								"can not determine year from value: " + argValue);
+						throw new ValueExprEvaluationException("can not determine year from value: " + argValue);
 					}
 				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);

@@ -66,13 +66,12 @@ public class ShaclSailFactoryTest {
 	private void assertMatchesConfig(ShaclSail sail, ShaclSailConfig config) {
 		assertThat(sail.isCacheSelectNodes()).isEqualTo(config.isCacheSelectNodes());
 		assertThat(sail.isGlobalLogValidationExecution()).isEqualTo(config.isGlobalLogValidationExecution());
-		assertThat(sail.isIgnoreNoShapesLoadedException()).isEqualTo(
-				config.isIgnoreNoShapesLoadedException());
+		assertThat(sail.isIgnoreNoShapesLoadedException()).isEqualTo(config.isIgnoreNoShapesLoadedException());
 		assertThat(sail.isLogValidationPlans()).isEqualTo(config.isLogValidationPlans());
 		assertThat(sail.isLogValidationViolations()).isEqualTo(config.isLogValidationViolations());
 		assertThat(sail.isParallelValidation()).isEqualTo(config.isParallelValidation());
-		assertThat(sail.isUndefinedTargetValidatesAllSubjects()).isEqualTo(
-				config.isUndefinedTargetValidatesAllSubjects());
+		assertThat(sail.isUndefinedTargetValidatesAllSubjects())
+				.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
 		assertThat(sail.isValidationEnabled()).isEqualTo(config.isValidationEnabled());
 	}
 

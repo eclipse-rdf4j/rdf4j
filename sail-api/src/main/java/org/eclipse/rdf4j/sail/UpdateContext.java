@@ -28,8 +28,7 @@ public class UpdateContext {
 
 	private final boolean includeInferred;
 
-	public UpdateContext(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
-			boolean includeInferred) {
+	public UpdateContext(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) {
 		assert updateExpr != null;
 		this.updateExpr = updateExpr;
 		if (dataset == null) {

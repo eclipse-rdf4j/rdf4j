@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * 
  * @author James Leigh
  */
-public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeException>
-		implements QueryOptimizer {
+public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
 
 	private OwnedTupleExpr owned;
 

@@ -58,8 +58,7 @@ public class EarlReport {
 
 	private static Logger logger = LoggerFactory.getLogger(EarlReport.class);
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		earlRepository = new SailRepository(new MemoryStore());
 		earlRepository.initialize();
 		vf = earlRepository.getValueFactory();
@@ -106,8 +105,7 @@ public class EarlReport {
 
 		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
 				.get(RDFFormat.TURTLE)
-				.orElseThrow(
-						Rio.unsupportedFormat(RDFFormat.TURTLE));
+				.orElseThrow(Rio.unsupportedFormat(RDFFormat.TURTLE));
 		File outFile = File.createTempFile("sesame-sparql-compliance",
 				"." + RDFFormat.TURTLE.getDefaultFileExtension());
 		FileOutputStream out = new FileOutputStream(outFile);

@@ -91,8 +91,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	}
 
 	@Override
-	public void parse(Model m, Resource implNode)
-			throws SailConfigException {
+	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
 
 		try {
@@ -102,8 +101,8 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
 				if (null == getQueryLanguage()) {
-					throw new SailConfigException("Valid value required for " + QUERY_LANGUAGE
-							+ " property, found " + language.get());
+					throw new SailConfigException(
+							"Valid value required for " + QUERY_LANGUAGE + " property, found " + language.get());
 				}
 			} else {
 				setQueryLanguage(QueryLanguage.SPARQL);
@@ -112,15 +111,13 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			Optional<Resource> object = Models.objectResource(m.filter(implNode, RULE_QUERY, null));
 			if (object.isPresent()) {
 				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
-						.ifPresent(
-								lit -> setRuleQuery(lit.stringValue()));
+						.ifPresent(lit -> setRuleQuery(lit.stringValue()));
 			}
 
 			object = Models.objectResource(m.filter(implNode, MATCHER_QUERY, null));
 			if (object.isPresent()) {
 				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
-						.ifPresent(
-								lit -> setMatcherQuery(lit.stringValue()));
+						.ifPresent(lit -> setMatcherQuery(lit.stringValue()));
 			}
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
@@ -128,8 +125,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	}
 
 	@Override
-	public void validate()
-			throws SailConfigException {
+	public void validate() throws SailConfigException {
 		super.validate();
 		if (null == language) {
 			throw new SailConfigException("No query language specified for " + getType() + " Sail.");
@@ -158,8 +154,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 		Resource implNode = super.export(m);
 		m.setNamespace("cgqi", CustomGraphQueryInferencerSchema.NAMESPACE);
 		if (null != language) {
-			m.add(implNode, QUERY_LANGUAGE,
-					SimpleValueFactory.getInstance().createLiteral(language.getName()));
+			m.add(implNode, QUERY_LANGUAGE, SimpleValueFactory.getInstance().createLiteral(language.getName()));
 		}
 		addQueryNode(m, implNode, RULE_QUERY, ruleQuery);
 		addQueryNode(m, implNode, MATCHER_QUERY, matcherQuery);

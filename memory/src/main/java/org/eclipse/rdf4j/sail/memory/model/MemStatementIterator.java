@@ -77,8 +77,8 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 * @param object        object of pattern.
 	 * @param contexts      context(s) of pattern.
 	 */
-	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate,
-			MemValue object, Boolean explicit, int snapshot, MemResource... contexts) {
+	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
+			Boolean explicit, int snapshot, MemResource... contexts) {
 		this.statementList = statementList;
 		this.subject = subject;
 		this.predicate = predicate;

@@ -28,8 +28,7 @@ public interface SailSink extends SailClosable {
 	 * 
 	 * @return <code>false</code> if this sink has a conflict
 	 */
-	void prepare()
-			throws SailException;
+	void prepare() throws SailException;
 
 	/**
 	 * Once this method returns successfully, changes that were made to this {@link SailSink} will be visible to
@@ -37,8 +36,7 @@ public interface SailSink extends SailClosable {
 	 * 
 	 * @throws SailException
 	 */
-	void flush()
-			throws SailException;
+	void flush() throws SailException;
 
 	/**
 	 * Sets the prefix for a namespace.
@@ -48,8 +46,7 @@ public interface SailSink extends SailClosable {
 	 * @throws SailException        If the Sail object encountered an error or unexpected situation internally.
 	 * @throws NullPointerException In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
 	 */
-	void setNamespace(String prefix, String name)
-			throws SailException;
+	void setNamespace(String prefix, String name) throws SailException;
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
@@ -58,16 +55,14 @@ public interface SailSink extends SailClosable {
 	 * @throws SailException
 	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
 	 */
-	void removeNamespace(String prefix)
-			throws SailException;
+	void removeNamespace(String prefix) throws SailException;
 
 	/**
 	 * Removes all namespace declarations from this {@link SailSource}.
 	 * 
 	 * @throws SailException
 	 */
-	void clearNamespaces()
-			throws SailException;
+	void clearNamespaces() throws SailException;
 
 	/**
 	 * Removes all statements from the specified/all contexts. If no contexts are specified the method operates on the
@@ -78,8 +73,7 @@ public interface SailSink extends SailClosable {
 	 *                 <tt>null</tt> value can be used to match context-less statements.
 	 * @throws SailException If the statements could not be removed.
 	 */
-	public void clear(Resource... contexts)
-			throws SailException;
+	public void clear(Resource... contexts) throws SailException;
 
 	/**
 	 * Called to indicate matching statements have been observed and must not change their state until after this
@@ -93,8 +87,7 @@ public interface SailSink extends SailClosable {
 	 *                 optional. If no contexts are supplied the method operates on all contexts.
 	 * @throws SailException If the triple source failed to observe these statements.
 	 */
-	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException;
+	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
 	 * Adds a statement to the store.
@@ -105,8 +98,7 @@ public interface SailSink extends SailClosable {
 	 * @param ctx  The context to add the statement to.
 	 * @throws SailException If the statement could not be added, for example because no transaction is active.
 	 */
-	void approve(Resource subj, IRI pred, Value obj, Resource ctx)
-			throws SailException;
+	void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
 	/**
 	 * Removes a statement with the specified subject, predicate, object, and context. All four parameters may be
@@ -118,7 +110,6 @@ public interface SailSink extends SailClosable {
 	 * @param ctx  The context from which to remove the statement
 	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
 	 */
-	void deprecate(Resource subj, IRI pred, Value obj, Resource ctx)
-			throws SailException;
+	void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
 }

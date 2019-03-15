@@ -34,6 +34,5 @@ public interface SailFactory {
 	 * @return The created (but un-initialized) Sail.
 	 * @throws SailConfigException If no Sail could be created due to invalid or incomplete configuration data.
 	 */
-	public Sail getSail(SailImplConfig config)
-			throws SailConfigException;
+	public Sail getSail(SailImplConfig config) throws SailConfigException;
 }

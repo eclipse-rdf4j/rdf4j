@@ -45,8 +45,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * 
  * @author James Leigh
  */
-public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException>
-		implements QueryOptimizer {
+public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {
 
 	private static final String END_BLOCK = "}\n";
 
@@ -75,8 +74,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meetOther(QueryModelNode node)
-			throws RepositoryException {
+	public void meetOther(QueryModelNode node) throws RepositoryException {
 		if (node instanceof OwnedTupleExpr) {
 			meetOwnedTupleExpr((OwnedTupleExpr) node);
 		} else if (node instanceof NaryJoin) {
@@ -86,8 +84,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		}
 	}
 
-	private void meetOwnedTupleExpr(OwnedTupleExpr node)
-			throws RepositoryException {
+	private void meetOwnedTupleExpr(OwnedTupleExpr node) throws RepositoryException {
 		OwnedTupleExpr before = this.owner;
 		try {
 			this.owner = node;
@@ -99,8 +96,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	protected void meetNode(QueryModelNode node)
-			throws RepositoryException {
+	protected void meetNode(QueryModelNode node) throws RepositoryException {
 		super.meetNode(node);
 		if (owner != null && patternNode != null && !(patternNode instanceof StatementPattern)) {
 			StringBuilder builder = new StringBuilder();
@@ -126,8 +122,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private void meetNodeLocal(StringBuilder builder, boolean mapping, Map<String, String> bindings,
-			ProjectionElemList list)
-			throws RepositoryException, AssertionError {
+			ProjectionElemList list) throws RepositoryException, AssertionError {
 		try {
 			QueryModelNode parent = patternNode.getParentNode();
 			if (parent instanceof OwnedTupleExpr) {
@@ -141,9 +136,8 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		}
 	}
 
-	private void meetNodeLocalParentOwned(StringBuilder builder, boolean mapping,
-			Map<String, String> bindings, ProjectionElemList list, OwnedTupleExpr owned)
-			throws RepositoryException, MalformedQueryException {
+	private void meetNodeLocalParentOwned(StringBuilder builder, boolean mapping, Map<String, String> bindings,
+			ProjectionElemList list, OwnedTupleExpr owned) throws RepositoryException, MalformedQueryException {
 		owned.prepare(QueryLanguage.SPARQL, builder.toString(), bindings);
 		if (mapping) {
 			Projection proj = new Projection(owned.clone(), list);
@@ -151,9 +145,8 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		}
 	}
 
-	private void meetNodeLocalParentNotOwned(StringBuilder builder, boolean mapping,
-			Map<String, String> bindings, ProjectionElemList list)
-			throws RepositoryException, MalformedQueryException {
+	private void meetNodeLocalParentNotOwned(StringBuilder builder, boolean mapping, Map<String, String> bindings,
+			ProjectionElemList list) throws RepositoryException, MalformedQueryException {
 		OwnedTupleExpr owned = new OwnedTupleExpr(owner.getOwner(), patternNode.clone());
 		owned.prepare(QueryLanguage.SPARQL, builder.toString(), bindings);
 		if (mapping) {
@@ -164,8 +157,8 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		}
 	}
 
-	private boolean addBindingNames(StringBuilder builder, boolean alreadyMapping,
-			Map<String, String> bindings, ProjectionElemList list, String name) {
+	private boolean addBindingNames(StringBuilder builder, boolean alreadyMapping, Map<String, String> bindings,
+			ProjectionElemList list, String name) {
 		boolean mapping = alreadyMapping;
 		if (variables.containsKey(name)) {
 			String var = variables.get(name);
@@ -180,8 +173,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(Distinct node)
-			throws RepositoryException {
+	public void meet(Distinct node) throws RepositoryException {
 		boolean before = reduce;
 		try {
 			reduce = true;
@@ -197,8 +189,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(Reduced node)
-			throws RepositoryException {
+	public void meet(Reduced node) throws RepositoryException {
 		boolean before = reduce;
 		try {
 			reduce = true;
@@ -214,8 +205,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(Projection node)
-			throws RepositoryException {
+	public void meet(Projection node) throws RepositoryException {
 		TupleExpr arg = node.getArg();
 		if (arg instanceof StatementPattern && arg.getBindingNames().equals(node.getBindingNames())) {
 			meetNode(node);
@@ -238,8 +228,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(LeftJoin node)
-			throws RepositoryException {
+	public void meet(LeftJoin node) throws RepositoryException {
 		if (node.getCondition() == null) {
 			Map<String, String> vars = new HashMap<>();
 			StringBuilder builder = new StringBuilder();
@@ -261,8 +250,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		}
 	}
 
-	public void meetMultiJoin(NaryJoin node)
-			throws RepositoryException {
+	public void meetMultiJoin(NaryJoin node) throws RepositoryException {
 		Map<String, String> vars = new HashMap<>();
 		StringBuilder builder = new StringBuilder();
 		for (TupleExpr arg : node.getArgs()) {
@@ -285,8 +273,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(Join node)
-			throws RepositoryException {
+	public void meet(Join node) throws RepositoryException {
 		Map<String, String> vars = new HashMap<>();
 		StringBuilder builder = new StringBuilder();
 		node.getLeftArg().visit(this);
@@ -305,8 +292,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	@Override
-	public void meet(StatementPattern node)
-			throws RepositoryException {
+	public void meet(StatementPattern node) throws RepositoryException {
 		StringBuilder builder = new StringBuilder();
 		Scope scope = node.getScope();
 		Var subj = node.getSubjectVar();

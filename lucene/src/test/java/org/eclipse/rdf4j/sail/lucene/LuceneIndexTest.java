@@ -102,22 +102,19 @@ public class LuceneIndexTest {
 	LuceneIndex index;
 
 	@Before
-	public void setUp()
-			throws Exception {
+	public void setUp() throws Exception {
 		directory = new RAMDirectory();
 		analyzer = new StandardAnalyzer();
 		index = new LuceneIndex(directory, analyzer);
 	}
 
 	@After
-	public void tearDown()
-			throws Exception {
+	public void tearDown() throws Exception {
 		index.shutDown();
 	}
 
 	@Test
-	public void testAddStatement()
-			throws IOException, ParseException {
+	public void testAddStatement() throws IOException, ParseException {
 		// add a statement to an index
 		index.begin();
 		index.addStatement(statement11);
@@ -217,19 +214,16 @@ public class LuceneIndexTest {
 	 * 
 	 * @throws IOException
 	 */
-	private static PostingsEnum termDocs(IndexReader reader, Term term)
-			throws IOException {
+	private static PostingsEnum termDocs(IndexReader reader, Term term) throws IOException {
 		return MultiFields.getTermDocsEnum(reader, term.field(), term.bytes());
 	}
 
-	private static boolean next(PostingsEnum docs)
-			throws IOException {
+	private static boolean next(PostingsEnum docs) throws IOException {
 		return (docs.nextDoc() != PostingsEnum.NO_MORE_DOCS);
 	}
 
 	@Test
-	public void testAddMultiple()
-			throws Exception {
+	public void testAddMultiple() throws Exception {
 		// add a statement to an index
 		HashSet<Statement> added = new HashSet<>();
 		HashSet<Statement> removed = new HashSet<>();
@@ -296,8 +290,7 @@ public class LuceneIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContexts()
-			throws Exception {
+	public void testContexts() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -349,8 +342,7 @@ public class LuceneIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2()
-			throws Exception {
+	public void testContextsRemoveContext2() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -410,16 +402,14 @@ public class LuceneIndexTest {
 		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
 	}
 
-	private void assertStatement(Statement statement)
-			throws Exception {
+	private void assertStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			fail("Missing document " + statement.getSubject());
 		assertStatement(statement, document);
 	}
 
-	private void assertNoStatement(Statement statement)
-			throws Exception {
+	private void assertNoStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			return;

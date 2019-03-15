@@ -100,19 +100,17 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 
 	private void addToRightQueue(ValueExpr condition, BindingSet leftBindings)
 			throws QueryEvaluationException, InterruptedException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(
-				join.getRightArg(), leftBindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(join.getRightArg(),
+				leftBindings);
 		if (condition != null) {
 			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(
-				leftBindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(leftBindings);
 		rightQueue.put(new AlternativeCursor<>(result, alt));
 	}
 
 	@Override
-	public BindingSet getNextElement()
-			throws QueryEvaluationException {
+	public BindingSet getNextElement() throws QueryEvaluationException {
 		BindingSet result = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 		while (!isClosed() && (nextRightIter != null || rightQueue.hasNext())) {
@@ -134,8 +132,7 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	}
 
 	@Override
-	public void handleClose()
-			throws QueryEvaluationException {
+	public void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();

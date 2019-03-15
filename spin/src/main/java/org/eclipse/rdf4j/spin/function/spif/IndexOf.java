@@ -22,8 +22,7 @@ public class IndexOf implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-			throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 2 || args.length > 3) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}

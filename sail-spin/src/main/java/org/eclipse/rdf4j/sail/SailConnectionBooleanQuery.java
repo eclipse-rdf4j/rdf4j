@@ -30,8 +30,7 @@ public class SailConnectionBooleanQuery extends SailConnectionQuery implements B
 	}
 
 	@Override
-	public boolean evaluate()
-			throws QueryEvaluationException {
+	public boolean evaluate() throws QueryEvaluationException {
 		ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
 		TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
 		Dataset dataset = getDataset();

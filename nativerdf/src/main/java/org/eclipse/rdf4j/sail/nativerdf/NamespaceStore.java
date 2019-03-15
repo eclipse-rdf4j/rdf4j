@@ -78,8 +78,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * Constructors *
 	 *--------------*/
 
-	public NamespaceStore(File dataDir)
-			throws IOException {
+	public NamespaceStore(File dataDir) throws IOException {
 		file = new File(dataDir, FILE_NAME);
 
 		namespacesMap = new LinkedHashMap<>(16);
@@ -141,8 +140,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
-	public void sync()
-			throws IOException {
+	public void sync() throws IOException {
 		if (contentsChanged) {
 			// Flush the changes to disk
 			writeNamespacesToFile();
@@ -157,8 +155,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * File I/O *
 	 *----------*/
 
-	private void writeNamespacesToFile()
-			throws IOException {
+	private void writeNamespacesToFile() throws IOException {
 		synchronized (file) {
 			try (DataOutputStream out = new DataOutputStream(new FileOutputStream(file))) {
 				out.write(MAGIC_NUMBER);
@@ -172,8 +169,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
-	private void readNamespacesFromFile()
-			throws IOException {
+	private void readNamespacesFromFile() throws IOException {
 		synchronized (file) {
 			try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
 				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
@@ -185,8 +181,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read namespace file; it uses a newer file format");
 				} else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException(
-							"Unable to read namespace file; invalid file format version: " + version);
+					throw new IOException("Unable to read namespace file; invalid file format version: " + version);
 				}
 
 				while (true) {
@@ -208,8 +203,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	 * Debugging methods *
 	 *-------------------*/
 
-	public static void main(String[] args)
-			throws Exception {
+	public static void main(String[] args) throws Exception {
 		NamespaceStore nsStore = new NamespaceStore(new File(args[0]));
 
 		for (Namespace ns : nsStore) {

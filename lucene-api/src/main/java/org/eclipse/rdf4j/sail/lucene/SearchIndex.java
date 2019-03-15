@@ -26,29 +26,23 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public interface SearchIndex {
 
-	void initialize(Properties parameters)
-			throws Exception;
+	void initialize(Properties parameters) throws Exception;
 
 	/**
 	 * To be removed from interface, prefer {@link evaluate(SearchQueryEvaluator query)}.
 	 */
 	@Deprecated
-	Collection<BindingSet> evaluate(QuerySpec query)
-			throws SailException;
+	Collection<BindingSet> evaluate(QuerySpec query) throws SailException;
 
-	Collection<BindingSet> evaluate(SearchQueryEvaluator query)
-			throws SailException;
+	Collection<BindingSet> evaluate(SearchQueryEvaluator query) throws SailException;
 
 	@Deprecated
-	void beginReading()
-			throws IOException;
+	void beginReading() throws IOException;
 
 	@Deprecated
-	void endReading()
-			throws IOException;
+	void endReading() throws IOException;
 
-	void shutDown()
-			throws IOException;
+	void shutDown() throws IOException;
 
 	/**
 	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
@@ -67,32 +61,27 @@ public interface SearchIndex {
 	/**
 	 * Begins a transaction.
 	 */
-	void begin()
-			throws IOException;
+	void begin() throws IOException;
 
 	/**
 	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
 	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the LuceneSailConnection is
 	 * committed/rollbacked.
 	 */
-	void commit()
-			throws IOException;
+	void commit() throws IOException;
 
-	void rollback()
-			throws IOException;
+	void rollback() throws IOException;
 
 	/**
 	 * Indexes the specified Statement. This should be called from within a begin-commit-rollback block.
 	 */
-	void addStatement(Statement statement)
-			throws IOException;
+	void addStatement(Statement statement) throws IOException;
 
 	/**
 	 * Removes the specified Statement from the indexes. This should be called from within a begin-commit-rollback
 	 * block.
 	 */
-	void removeStatement(Statement statement)
-			throws IOException;
+	void removeStatement(Statement statement) throws IOException;
 
 	/**
 	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
@@ -102,8 +91,7 @@ public interface SearchIndex {
 	 * @param added   all added statements, can have multiple subjects
 	 * @param removed all removed statements, can have multiple subjects
 	 */
-	void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed)
-			throws IOException;
+	void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed) throws IOException;
 
 	/**
 	 * This should be called from within a begin-commit-rollback block.
@@ -112,8 +100,7 @@ public interface SearchIndex {
 	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
-	void clearContexts(Resource... contexts)
-			throws IOException;
+	void clearContexts(Resource... contexts) throws IOException;
 
 	/**
 	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
@@ -123,12 +110,10 @@ public interface SearchIndex {
 	 * @param statements the statements that make up the resource
 	 * @throws IOException
 	 */
-	void addDocuments(Resource subject, List<Statement> statements)
-			throws IOException;
+	void addDocuments(Resource subject, List<Statement> statements) throws IOException;
 
 	/**
 	 * Clears the indexes.
 	 */
-	void clear()
-			throws IOException;
+	void clear() throws IOException;
 }
