@@ -38,53 +38,30 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
 
-	private static final List<String> testCasePaths = Arrays.asList(
-		"test-cases/complex/dcat",
-		"test-cases/complex/foaf",
-		"test-cases/datatype/simple",
-		"test-cases/minLength/simple",
-		"test-cases/maxLength/simple",
-		"test-cases/pattern/simple",
-		"test-cases/languageIn/simple",
-		"test-cases/nodeKind/simple",
-		"test-cases/minCount/simple",
-		"test-cases/minCount/targetNode",
-		"test-cases/maxCount/simple",
-		"test-cases/maxCount/targetNode",
-		"test-cases/or/inheritance",
-		"test-cases/or/inheritance-deep",
-		"test-cases/or/inheritance-deep-minCountMaxCount",
-		"test-cases/or/inheritanceNodeShape",
-		"test-cases/or/datatype",
-		"test-cases/or/datatypeTargetNode",
-		"test-cases/or/minCountMaxCount",
-		"test-cases/or/maxCount",
-		"test-cases/or/minCount",
-		"test-cases/or/nodeKindMinLength",
-		"test-cases/or/implicitAnd",
-		"test-cases/or/datatypeDifferentPaths",
-		"test-cases/minExclusive/simple",
-		"test-cases/minExclusive/dateVsTime",
-		"test-cases/maxExclusive/simple",
-		"test-cases/minInclusive/simple",
-		"test-cases/maxInclusive/simple",
-		"test-cases/implicitTargetClass/simple",
-		"test-cases/class/simple",
-		"test-cases/class/subclass",
-		"test-cases/class/targetNode",
-		"test-cases/or/class",
-		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath",
-		"test-cases/datatype/targetNode"
+	private static final List<String> testCasePaths = Arrays.asList("test-cases/complex/dcat",
+			"test-cases/complex/foaf", "test-cases/datatype/simple", "test-cases/minLength/simple",
+			"test-cases/maxLength/simple", "test-cases/pattern/simple", "test-cases/languageIn/simple",
+			"test-cases/nodeKind/simple", "test-cases/minCount/simple", "test-cases/minCount/targetNode",
+			"test-cases/maxCount/simple", "test-cases/maxCount/targetNode", "test-cases/or/inheritance",
+			"test-cases/or/inheritance-deep", "test-cases/or/inheritance-deep-minCountMaxCount",
+			"test-cases/or/inheritanceNodeShape", "test-cases/or/datatype", "test-cases/or/datatypeTargetNode",
+			"test-cases/or/minCountMaxCount", "test-cases/or/maxCount", "test-cases/or/minCount",
+			"test-cases/or/nodeKindMinLength", "test-cases/or/implicitAnd", "test-cases/or/datatypeDifferentPaths",
+			"test-cases/minExclusive/simple", "test-cases/minExclusive/dateVsTime", "test-cases/maxExclusive/simple",
+			"test-cases/minInclusive/simple", "test-cases/maxInclusive/simple", "test-cases/implicitTargetClass/simple",
+			"test-cases/class/simple", "test-cases/class/subclass", "test-cases/class/targetNode",
+			"test-cases/or/class", "test-cases/or/datatype2", "test-cases/or/minCountDifferentPath",
+			"test-cases/datatype/targetNode"
 
-		);
+	);
 
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
 	final IsolationLevel isolationLevel;
 
-	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -98,7 +75,6 @@ abstract public class AbstractShaclTest {
 		return getTestsToRun();
 	}
 
-
 	private static List<String> findTestCases(String testCase, String baseCase) {
 
 		List<String> ret = new ArrayList<>();
@@ -110,8 +86,7 @@ abstract public class AbstractShaclTest {
 				ret.add(path);
 				try {
 					resourceAsStream.close();
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					throw new RuntimeException(e);
 				}
 			}
@@ -127,7 +102,8 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					for(IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)){
+					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
+							IsolationLevels.SERIALIZABLE)) {
 						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
 						ret.add(temp);
 					}
@@ -139,7 +115,8 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel) throws Exception {
+	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -178,7 +155,7 @@ abstract public class AbstractShaclTest {
 					connection.prepareUpdate(query).execute();
 					connection.commit();
 				} catch (RepositoryException sailException) {
-					if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 						throw sailException;
 					}
 					exception = true;
@@ -213,9 +190,8 @@ abstract public class AbstractShaclTest {
 		System.out.println("\n############################################");
 	}
 
-	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
-		throws Exception
-	{
+	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -261,7 +237,7 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 			} catch (RepositoryException sailException) {
-				if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+				if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 					throw sailException;
 				}
 				exception = true;
@@ -273,8 +249,7 @@ abstract public class AbstractShaclTest {
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
-			}
-			else {
+			} else {
 				assertTrue(exception);
 			}
 		}

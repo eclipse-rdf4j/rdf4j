@@ -35,8 +35,7 @@ public class ParseDate extends BinaryFunction {
 	static {
 		try {
 			datatypeFactory = DatatypeFactory.newInstance();
-		}
-		catch (DatatypeConfigurationException e) {
+		} catch (DatatypeConfigurationException e) {
 			throw new Error("Could not instantiate javax.xml.datatype.DatatypeFactory", e);
 		}
 	}
@@ -47,14 +46,12 @@ public class ParseDate extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
-		Literal value = (Literal)arg1;
-		Literal format = (Literal)arg2;
+		Literal value = (Literal) arg1;
+		Literal format = (Literal) arg2;
 
 		FieldAwareGregorianCalendar cal = new FieldAwareGregorianCalendar();
 
@@ -62,8 +59,7 @@ public class ParseDate extends BinaryFunction {
 		formatter.setCalendar(cal);
 		try {
 			formatter.parse(value.getLabel());
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 
@@ -88,8 +84,7 @@ public class ParseDate extends BinaryFunction {
 			int len = dateValue.length();
 			if (dateValue.endsWith("Z")) {
 				dateValue = dateValue.substring(0, len - 1);
-			}
-			else if (dateValue.charAt(len - 6) == '+' || dateValue.charAt(len - 6) == '-') {
+			} else if (dateValue.charAt(len - 6) == '+' || dateValue.charAt(len - 6) == '-') {
 				dateValue = dateValue.substring(0, len - 6);
 			}
 		}
@@ -110,8 +105,7 @@ public class ParseDate extends BinaryFunction {
 		boolean isDateSet() {
 			return fieldsSet.contains(Calendar.YEAR) || fieldsSet.contains(Calendar.MONTH)
 					|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)
-					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH)
-					|| fieldsSet.contains(Calendar.DAY_OF_YEAR);
+					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH) || fieldsSet.contains(Calendar.DAY_OF_YEAR);
 		}
 
 		boolean isTimeSet() {

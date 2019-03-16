@@ -60,24 +60,20 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		Value result;
 		if (parsedQuery instanceof ParsedBooleanQuery) {
-			ParsedBooleanQuery askQuery = (ParsedBooleanQuery)parsedQuery;
+			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, arguments, args);
 			try {
 				result = BooleanLiteral.valueOf(queryOp.evaluate());
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				throw new ValueExprEvaluationException(e);
 			}
-		}
-		else if (parsedQuery instanceof ParsedTupleQuery) {
-			ParsedTupleQuery selectQuery = (ParsedTupleQuery)parsedQuery;
+		} else if (parsedQuery instanceof ParsedTupleQuery) {
+			ParsedTupleQuery selectQuery = (ParsedTupleQuery) parsedQuery;
 			TupleQuery queryOp = qp.prepare(selectQuery);
 			addBindings(queryOp, arguments, args);
 			try {
@@ -85,20 +81,16 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 				if (queryResult.hasNext()) {
 					BindingSet bs = queryResult.next();
 					if (bs.size() != 1) {
-						throw new ValueExprEvaluationException(
-								"Only a single result variables is supported: " + bs);
+						throw new ValueExprEvaluationException("Only a single result variables is supported: " + bs);
 					}
 					result = bs.iterator().next().getValue();
-				}
-				else {
+				} else {
 					throw new ValueExprEvaluationException("No value");
 				}
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				throw new ValueExprEvaluationException(e);
 			}
-		}
-		else {
+		} else {
 			throw new IllegalStateException("Unexpected query: " + parsedQuery);
 		}
 		return result;

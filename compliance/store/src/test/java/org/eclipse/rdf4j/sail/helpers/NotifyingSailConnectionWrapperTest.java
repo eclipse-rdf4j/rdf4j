@@ -27,9 +27,7 @@ import org.junit.Test;
 public class NotifyingSailConnectionWrapperTest {
 
 	@BeforeClass
-	public static void setUpClass()
-		throws Exception
-	{
+	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -64,22 +62,17 @@ public class NotifyingSailConnectionWrapperTest {
 	MemoryStore memoryStore = new MemoryStore();
 
 	@Before
-	public void setUp()
-		throws SailException
-	{
+	public void setUp() throws SailException {
 		memoryStore.initialize();
 		wrapper = new NotifyingSailConnectionWrapper(memoryStore.getConnection());
 		factory = memoryStore.getValueFactory();
 	}
 
 	@After
-	public void tearDown()
-		throws SailException
-	{
+	public void tearDown() throws SailException {
 		try {
 			wrapper.close();
-		}
-		finally {
+		} finally {
 			memoryStore.shutDown();
 		}
 	}
@@ -90,9 +83,7 @@ public class NotifyingSailConnectionWrapperTest {
 	 * @throws SailException
 	 */
 	@Test
-	public void testAddThenRemoveListener()
-		throws SailException
-	{
+	public void testAddThenRemoveListener() throws SailException {
 		wrapper.addConnectionListener(listener);
 		addStatement("a");
 		assertThat(listener.getCount()).isEqualTo(1);
@@ -103,20 +94,15 @@ public class NotifyingSailConnectionWrapperTest {
 		assertThat(listener.getCount()).isEqualTo(0);
 	}
 
-	private void removeStatement(String objectValue)
-		throws SailException
-	{
+	private void removeStatement(String objectValue) throws SailException {
 		wrapper.begin();
 		wrapper.removeStatements(null, factory.createIRI("urn:pred"), factory.createLiteral(objectValue));
 		wrapper.commit();
 	}
 
-	private void addStatement(String objectValue)
-		throws SailException
-	{
+	private void addStatement(String objectValue) throws SailException {
 		wrapper.begin();
-		wrapper.addStatement(factory.createBNode(), factory.createIRI("urn:pred"),
-				factory.createLiteral(objectValue));
+		wrapper.addStatement(factory.createBNode(), factory.createIRI("urn:pred"), factory.createLiteral(objectValue));
 		wrapper.commit();
 	}
 }

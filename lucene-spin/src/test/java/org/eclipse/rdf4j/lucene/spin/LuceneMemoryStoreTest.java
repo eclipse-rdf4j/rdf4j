@@ -57,11 +57,9 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 
-		//activate sail debug mode
+		// activate sail debug mode
 		// System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
@@ -90,11 +88,11 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 		// local connection for verification only
 		try (RepositoryConnection localConn = repository.getConnection()) {
 			// validate population. Transaction is not required
-			//localConn.begin();
+			// localConn.begin();
 			int count = countStatements(localConn);
 			log.trace("storage contains {} triples", count);
 			Assert.assertTrue(count > 0);
-			//localConn.commit();
+			// localConn.commit();
 			localConn.close();
 		}
 
@@ -105,24 +103,19 @@ public class LuceneMemoryStoreTest extends AbstractLuceneSailSpinTest {
 	}
 
 	@After
-	public void tearDown()
-		throws RepositoryException, IOException
-	{
+	public void tearDown() throws RepositoryException, IOException {
 		try {
 			if (connection != null) {
 				connection.close();
 			}
-		}
-		finally {
+		} finally {
 			if (repository != null) {
 				repository.shutDown();
 			}
 		}
 	}
 
-	protected void populate(RepositoryConnection repoConn)
-		throws Exception
-	{
+	protected void populate(RepositoryConnection repoConn) throws Exception {
 		// load resources
 		assert repoConn.isActive();
 		URL resourceURL = LuceneMemoryStoreTest.class.getClassLoader().getResource(DATA);

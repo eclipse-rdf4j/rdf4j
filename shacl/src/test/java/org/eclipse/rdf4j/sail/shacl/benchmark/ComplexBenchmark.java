@@ -46,8 +46,8 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=ProfilingAggressive.jfc", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -58,8 +58,12 @@ public class ComplexBenchmark {
 
 	static {
 		try {
-			transaction1 = IOUtils.toString(ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"), "utf-8");
-			transaction2 = IOUtils.toString(ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"), "utf-8");
+			transaction1 = IOUtils.toString(
+					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"),
+					"utf-8");
+			transaction2 = IOUtils.toString(
+					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"),
+					"utf-8");
 
 		} catch (IOException e) {
 			throw new RuntimeException();
@@ -72,7 +76,6 @@ public class ComplexBenchmark {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 	}
-
 
 	@Benchmark
 	public void shaclParallelCache() throws Exception {
@@ -95,7 +98,6 @@ public class ComplexBenchmark {
 
 	}
 
-
 	@Benchmark
 	public void shaclNoTransactions() throws Exception {
 
@@ -113,7 +115,9 @@ public class ComplexBenchmark {
 		try (SailRepositoryConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			try {
-				connection.add(ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.ttl"), "", RDFFormat.TURTLE);
+				connection.add(
+						ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.ttl"), "",
+						RDFFormat.TURTLE);
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -136,13 +140,11 @@ public class ComplexBenchmark {
 
 	}
 
-
 	@Benchmark
 	public void shaclEmptyTransactions() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
-
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
@@ -161,11 +163,11 @@ public class ComplexBenchmark {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
 
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL, connection.getValueFactory().createLiteral(""));
+			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
+					connection.getValueFactory().createLiteral(""));
 			connection.commit();
 
 		}
@@ -216,7 +218,6 @@ public class ComplexBenchmark {
 
 	}
 
-
 	@Benchmark
 	public void shaclCache() throws Exception {
 
@@ -239,7 +240,6 @@ public class ComplexBenchmark {
 		repository.shutDown();
 
 	}
-
 
 	@Benchmark
 	public void shacl() throws Exception {

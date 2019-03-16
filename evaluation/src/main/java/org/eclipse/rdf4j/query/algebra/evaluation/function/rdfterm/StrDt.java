@@ -29,9 +29,7 @@ public class StrDt implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException("STRDT requires 2 arguments, got " + args.length);
 		}
@@ -40,15 +38,13 @@ public class StrDt implements Function {
 		Value datatypeValue = args[1];
 
 		if (QueryEvaluationUtil.isSimpleLiteral(lexicalValue)) {
-			Literal lit = (Literal)lexicalValue;
+			Literal lit = (Literal) lexicalValue;
 			if (datatypeValue instanceof IRI) {
-				return valueFactory.createLiteral(lit.getLabel(), (IRI)datatypeValue);
-			}
-			else {
+				return valueFactory.createLiteral(lit.getLabel(), (IRI) datatypeValue);
+			} else {
 				throw new ValueExprEvaluationException("illegal value for operand: " + datatypeValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("illegal value for operand: " + lexicalValue);
 		}
 	}

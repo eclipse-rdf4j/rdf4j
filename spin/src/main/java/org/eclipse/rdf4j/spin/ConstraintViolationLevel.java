@@ -23,20 +23,15 @@ public enum ConstraintViolationLevel {
 		ConstraintViolationLevel level;
 		if (levelValue == null) {
 			level = ConstraintViolationLevel.ERROR;
-		}
-		else if (SPIN.INFO_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.INFO_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.INFO;
-		}
-		else if (SPIN.WARNING_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.WARNING_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.WARNING;
-		}
-		else if (SPIN.ERROR_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.ERROR_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.ERROR;
-		}
-		else if (SPIN.FATAL_VIOLATION_LEVEL.equals(levelValue)) {
+		} else if (SPIN.FATAL_VIOLATION_LEVEL.equals(levelValue)) {
 			level = ConstraintViolationLevel.FATAL;
-		}
-		else {
+		} else {
 			level = null;
 		}
 		return level;

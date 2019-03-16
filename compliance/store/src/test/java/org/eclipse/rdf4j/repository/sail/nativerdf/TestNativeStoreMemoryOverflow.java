@@ -57,9 +57,7 @@ public class TestNativeStoreMemoryOverflow {
 	}
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		testRepository = createRepository();
 		testRepository.initialize();
 
@@ -72,31 +70,24 @@ public class TestNativeStoreMemoryOverflow {
 		testCon2.setIsolationLevel(level);
 	}
 
-	private Repository createRepository()
-		throws IOException
-	{
+	private Repository createRepository() throws IOException {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		try {
 			testCon2.close();
 			testCon.close();
 			testRepository.shutDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}
 
 	@Test
-	public void test()
-		throws Exception
-	{
+	public void test() throws Exception {
 		int size = 10000; // this should really be bigger
 		// load a lot of triples in two different contexts
 		testCon.begin();
@@ -109,16 +100,12 @@ public class TestNativeStoreMemoryOverflow {
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context1);
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context2);
 
-		assertEquals(size,
-				Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
-		assertEquals(size,
-				Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
+		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
+		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
 		testCon.commit();
 
-		assertEquals(size,
-				Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
-		assertEquals(size,
-				Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
+		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
+		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
 
 		testCon.close();
 	}
@@ -143,23 +130,17 @@ public class TestNativeStoreMemoryOverflow {
 		}
 
 		@Override
-		public boolean hasNext()
-			throws RuntimeException
-		{
+		public boolean hasNext() throws RuntimeException {
 			return i < size;
 		}
 
 		@Override
-		public Statement next()
-			throws RuntimeException
-		{
+		public Statement next() throws RuntimeException {
 			return vf.createStatement(vf.createURI("http://my.subject" + i++), predicate, object);
 		}
 
 		@Override
-		public void remove()
-			throws RuntimeException
-		{
+		public void remove() throws RuntimeException {
 			throw new UnsupportedOperationException();
 		}
 	}

@@ -14,10 +14,8 @@ interface NodeListener {
 	/**
 	 * Signals to registered node listeners that a value has been added to a node.
 	 * 
-	 * @param node
-	 *        The node which the value has been added to.
-	 * @param index
-	 *        The index where the value was inserted.
+	 * @param node  The node which the value has been added to.
+	 * @param index The index where the value was inserted.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
 	public boolean valueAdded(Node node, int index);
@@ -25,48 +23,36 @@ interface NodeListener {
 	/**
 	 * Signals to registered node listeners that a value has been removed from a node.
 	 * 
-	 * @param node
-	 *        The node which the value has been removed from.
-	 * @param index
-	 *        The index where the value was removed.
+	 * @param node  The node which the value has been removed from.
+	 * @param index The index where the value was removed.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
 	public boolean valueRemoved(Node node, int index);
 
-	public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode)
-		throws IOException;
+	public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
-	public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode)
-		throws IOException;
+	public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
 	/**
 	 * Signals to registered node listeners that a node has been split.
 	 * 
-	 * @param node
-	 *        The node which has been split.
-	 * @param newNode
-	 *        The newly allocated node containing the "right" half of the values.
-	 * @param medianIdx
-	 *        The index where the node has been split. The value at this index has been moved to the node's
-	 *        parent.
+	 * @param node      The node which has been split.
+	 * @param newNode   The newly allocated node containing the "right" half of the values.
+	 * @param medianIdx The index where the node has been split. The value at this index has been moved to the node's
+	 *                  parent.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
-	public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-		throws IOException;
+	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException;
 
 	/**
-	 * Signals to registered node listeners that two nodes have been merged. All values from the source node
-	 * have been appended to the value of the target node.
+	 * Signals to registered node listeners that two nodes have been merged. All values from the source node have been
+	 * appended to the value of the target node.
 	 * 
-	 * @param sourceNode
-	 *        The node that donated its values to the target node.
-	 * @param targetNode
-	 *        The node in which the values have been merged.
-	 * @param mergeIdx
-	 *        The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt> .
-	 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as a
-	 *         result of this event.
+	 * @param sourceNode The node that donated its values to the target node.
+	 * @param targetNode The node in which the values have been merged.
+	 * @param mergeIdx   The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt> .
+	 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as a result of
+	 *         this event.
 	 */
-	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-		throws IOException;
+	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException;
 }

@@ -30,24 +30,13 @@ public class SPARQLBuilderTest {
 
 	@Parameters(name = "{index}({0})-{2}:{3}")
 	public static Iterable<Object[]> data() {
-		return Arrays.asList(new Object[][] {
-				{ "StatementPattern", "SELECT * WHERE {?s ?p ?o}", "", "" },
+		return Arrays.asList(new Object[][] { { "StatementPattern", "SELECT * WHERE {?s ?p ?o}", "", "" },
 				{ "Join", "SELECT * WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
 				{ "Distinct", "SELECT DISTINCT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
-				{
-						"Optional",
-						"SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}",
-						"",
-						"" },
-				{
-						"Filter",
-						"SELECT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj FILTER (str(?obj) = \"urn:test:obj\")}",
-						"",
-						"" },
-				{
-						"Bindings",
-						"SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}",
-						"s",
+				{ "Optional", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "", "" },
+				{ "Filter", "SELECT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj FILTER (str(?obj) = \"urn:test:obj\")}",
+						"", "" },
+				{ "Bindings", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "s",
 						"urn:test:subj" } });
 	}
 
@@ -66,9 +55,7 @@ public class SPARQLBuilderTest {
 	}
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		Federation federation = new Federation();
 		federation.addMember(new SailRepository(new MemoryStore()));
 		Repository repository = new SailRepository(federation);
@@ -82,10 +69,8 @@ public class SPARQLBuilderTest {
 	}
 
 	@Test
-	public void test()
-		throws RDF4JException
-	{ // NOPMD
-													// Thrown exceptions are the only failure path.
+	public void test() throws RDF4JException { // NOPMD
+												// Thrown exceptions are the only failure path.
 		TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);
 		if (!(prefix.isEmpty() || namespace.isEmpty())) {
 			tupleQuery.setBinding(prefix, valueFactory.createIRI(namespace));

@@ -33,14 +33,12 @@ public class SpinFunctionParser implements FunctionParser {
 	}
 
 	@Override
-	public Function parse(IRI funcUri, TripleSource store)
-		throws RDF4JException
-	{
+	public Function parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		Value body = TripleSources.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
 		if (!(body instanceof Resource)) {
 			return null;
 		}
-		ParsedQuery query = parser.parseQuery((Resource)body, store);
+		ParsedQuery query = parser.parseQuery((Resource) body, store);
 		if (query instanceof ParsedGraphQuery) {
 			throw new MalformedSpinException("Function body must be an ASK or SELECT query");
 		}

@@ -44,14 +44,14 @@ import java.util.concurrent.TimeUnit;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
+@BenchmarkMode({ Mode.AverageTime })
 //@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatatypeBenchmarkLinear {
 
-	@Param({"1", "10", "100"})
+	@Param({ "1", "10", "100" })
 	public int NUMBER_OF_TRANSACTIONS = 10;
 
 	private static final int STATEMENTS_PER_TRANSACTION = 100;
@@ -65,7 +65,6 @@ public class DatatypeBenchmarkLinear {
 
 		allStatements = new ArrayList<>(NUMBER_OF_TRANSACTIONS);
 
-
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (int j = 0; j < NUMBER_OF_TRANSACTIONS; j++) {
@@ -73,11 +72,9 @@ public class DatatypeBenchmarkLinear {
 			allStatements.add(statements);
 			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
-				);
-				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE, vf.createLiteral(i))
-				);
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+						vf.createLiteral(i)));
 			}
 		}
 		System.gc();
@@ -88,7 +85,6 @@ public class DatatypeBenchmarkLinear {
 	public void tearDown() {
 		allStatements.clear();
 	}
-
 
 	@Benchmark
 	public void shacl() throws Exception {
@@ -110,7 +106,6 @@ public class DatatypeBenchmarkLinear {
 
 	}
 
-
 	@Benchmark
 	public void noShacl() {
 
@@ -131,9 +126,5 @@ public class DatatypeBenchmarkLinear {
 		}
 
 	}
-
-
-
-
 
 }

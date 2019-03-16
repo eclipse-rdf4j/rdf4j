@@ -34,13 +34,11 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public ParsedTupleQuery getParsedQuery() {
-		return (ParsedTupleQuery)super.getParsedQuery();
+		return (ParsedTupleQuery) super.getParsedQuery();
 	}
 
 	@Override
-	public TupleQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
@@ -51,32 +49,26 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
 
-			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred());
+			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 			bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 
-			result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()),
-					bindingsIter2);
+			result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter2);
 			allGood = true;
 			return result;
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		finally {
+		} finally {
 			if (!allGood) {
 				try {
 					if (result != null) {
 						result.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (bindingsIter2 != null) {
 							bindingsIter2.close();
 						}
-					}
-					finally {
+					} finally {
 						if (bindingsIter1 != null) {
 							bindingsIter1.close();
 						}
@@ -88,8 +80,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException
-	{
+			throws QueryEvaluationException, TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

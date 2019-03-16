@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -33,16 +32,12 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 
 	}
 
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new MinLengthFilter(parent, minLength),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

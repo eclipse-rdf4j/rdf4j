@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
 /**
- * A StatementIterator that can iterate over a list of Statement objects. This iterator compares Resource and
- * Literal objects using the '==' operator, which is possible thanks to the extensive sharing of these objects
- * in the MemoryStore.
+ * A StatementIterator that can iterate over a list of Statement objects. This iterator compares Resource and Literal
+ * objects using the '==' operator, which is possible thanks to the extensive sharing of these objects in the
+ * MemoryStore.
  */
 public class MemStatementIterator<X extends Exception> extends LookAheadIteration<MemStatement, X> {
 
@@ -47,8 +47,8 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	private final MemResource[] contexts;
 
 	/**
-	 * Flag indicating whether this iterator should only return explicitly added statements or only return
-	 * inferred statements.
+	 * Flag indicating whether this iterator should only return explicitly added statements or only return inferred
+	 * statements.
 	 */
 	private final Boolean explicit;
 
@@ -68,23 +68,17 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 	/**
 	 * Creates a new MemStatementIterator that will iterate over the statements contained in the supplied
-	 * MemStatementList searching for statements that match the specified pattern of subject, predicate,
-	 * object and context(s).
+	 * MemStatementList searching for statements that match the specified pattern of subject, predicate, object and
+	 * context(s).
 	 * 
-	 * @param statementList
-	 *        the statements over which to iterate.
-	 * @param subject
-	 *        subject of pattern.
-	 * @param predicate
-	 *        predicate of pattern.
-	 * @param object
-	 *        object of pattern.
-	 * @param contexts
-	 *        context(s) of pattern.
+	 * @param statementList the statements over which to iterate.
+	 * @param subject       subject of pattern.
+	 * @param predicate     predicate of pattern.
+	 * @param object        object of pattern.
+	 * @param contexts      context(s) of pattern.
 	 */
-	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate,
-			MemValue object, Boolean explicit, int snapshot, MemResource... contexts)
-	{
+	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
+			Boolean explicit, int snapshot, MemResource... contexts) {
 		this.statementList = statementList;
 		this.subject = subject;
 		this.predicate = predicate;
@@ -101,10 +95,10 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 *---------*/
 
 	/**
-	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for statements that
-	 * match the constraints that have been set for this iterator. If a matching statement has been found it
-	 * will be stored in <tt>_nextStatement</tt> and <tt>_nextStatementIdx</tt> points to the index of this
-	 * statement in <tt>_statementList</tt>. Otherwise, <tt>_nextStatement</tt> will set to <tt>null</tt>.
+	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for statements that match the
+	 * constraints that have been set for this iterator. If a matching statement has been found it will be stored in
+	 * <tt>_nextStatement</tt> and <tt>_nextStatementIdx</tt> points to the index of this statement in
+	 * <tt>_statementList</tt>. Otherwise, <tt>_nextStatement</tt> will set to <tt>null</tt>.
 	 */
 	@Override
 	protected MemStatement getNextElement() {
@@ -115,8 +109,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 			if (isInSnapshot(st) && (subject == null || subject == st.getSubject())
 					&& (predicate == null || predicate == st.getPredicate())
-					&& (object == null || object == st.getObject()))
-			{
+					&& (object == null || object == st.getObject())) {
 				// A matching statement has been found, check if it should be
 				// skipped due to explicitOnly, contexts and readMode requirements
 

@@ -49,9 +49,9 @@ import org.junit.Test;
 public class SolrIndexTest {
 
 	private static final String DATA_DIR = "target/test-data";
-	
+
 	private static final SimpleValueFactory fac = SimpleValueFactory.getInstance();
-	
+
 	public static final IRI CONTEXT_1 = fac.createIRI("urn:context1");
 	public static final IRI CONTEXT_2 = fac.createIRI("urn:context2");
 	public static final IRI CONTEXT_3 = fac.createIRI("urn:context3");
@@ -74,8 +74,7 @@ public class SolrIndexTest {
 	Statement statement21 = fac.createStatement(subject2, predicate1, object3);
 	Statement statement22 = fac.createStatement(subject2, predicate2, object4);
 	Statement statement23 = fac.createStatement(subject2, predicate2, object5);
-	
-	
+
 	Statement statementContext111 = fac.createStatement(subject, predicate1, object1, CONTEXT_1);
 	Statement statementContext121 = fac.createStatement(subject, predicate2, object2, CONTEXT_1);
 	Statement statementContext211 = fac.createStatement(subject2, predicate1, object3, CONTEXT_1);
@@ -111,8 +110,8 @@ public class SolrIndexTest {
 		long count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count);
 
-		QueryResponse response = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
+		QueryResponse response = client
+				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		Iterator<SolrDocument> docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -133,8 +132,7 @@ public class SolrIndexTest {
 		count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count); // #docs should *not* have increased
 
-		response = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
+		response = client.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -148,14 +146,16 @@ public class SolrIndexTest {
 		assertFalse(docs.hasNext());
 
 		// see if we can query for these literals
-		count = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(
-						0)).getResults().getNumFound();
+		count = client
+				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(0))
+				.getResults()
+				.getNumFound();
 		assertEquals(1, count);
 
-		count = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(
-						0)).getResults().getNumFound();
+		count = client
+				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(0))
+				.getResults()
+				.getNumFound();
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -168,8 +168,7 @@ public class SolrIndexTest {
 		count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count);
 
-		response = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
+		response = client.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -254,8 +253,7 @@ public class SolrIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
-	 * sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
 	 * @throws Exception
 	 */
@@ -274,8 +272,8 @@ public class SolrIndexTest {
 		repository.initialize();
 
 		try ( // now add the statements through the repo
-			// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				// add statements with context
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -301,14 +299,13 @@ public class SolrIndexTest {
 			assertStatement(statementContext222);
 			assertStatement(statementContext232);
 		} finally {
-		// close repo
+			// close repo
 			repository.shutDown();
 		}
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
-	 * sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
 	 * @throws Exception
 	 */
@@ -327,8 +324,8 @@ public class SolrIndexTest {
 		repository.initialize();
 
 		try ( // now add the statements through the repo
-		// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				// add statements with context
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -396,7 +393,7 @@ public class SolrIndexTest {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (String f : fields) {
-			if (((Literal)statement.getObject()).getLabel().equals(f))
+			if (((Literal) statement.getObject()).getLabel().equals(f))
 				return;
 		}
 		fail("Statement not found in document " + statement);
@@ -412,7 +409,7 @@ public class SolrIndexTest {
 			return;
 		}
 		for (String f : fields) {
-			if (((Literal)statement.getObject()).getLabel().equals(f)) {
+			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				fail("Statement should not be found in document " + statement);
 			}
 		}

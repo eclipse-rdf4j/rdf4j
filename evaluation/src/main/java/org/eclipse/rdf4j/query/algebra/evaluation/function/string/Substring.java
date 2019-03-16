@@ -32,12 +32,9 @@ public class Substring implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 2 || args.length > 3) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for SUBSTR: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for SUBSTR: " + args.length);
 		}
 
 		Value argValue = args[0];
@@ -48,7 +45,7 @@ public class Substring implements Function {
 		}
 
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
 			// substr function accepts string literals only.
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
@@ -59,19 +56,17 @@ public class Substring implements Function {
 				if (startIndexValue instanceof Literal) {
 					try {
 						// xpath:substring startIndex is 1-based.
-						startIndex = ((Literal)startIndexValue).intValue() - 1;
+						startIndex = ((Literal) startIndexValue).intValue() - 1;
 
 						if (startIndex < 0) {
 							throw new ValueExprEvaluationException(
 									"illegal start index value (expected 1 or larger): " + startIndexValue);
 						}
-					}
-					catch (NumberFormatException e) {
+					} catch (NumberFormatException e) {
 						throw new ValueExprEvaluationException(
 								"illegal start index value (expected int value): " + startIndexValue);
 					}
-				}
-				else if (startIndexValue != null) {
+				} else if (startIndexValue != null) {
 					throw new ValueExprEvaluationException(
 							"illegal start index value (expected literal value): " + startIndexValue);
 				}
@@ -81,15 +76,13 @@ public class Substring implements Function {
 				int endIndex = lexicalValue.length();
 				if (lengthValue instanceof Literal) {
 					try {
-						int length = ((Literal)lengthValue).intValue();
+						int length = ((Literal) lengthValue).intValue();
 						endIndex = startIndex + length;
-					}
-					catch (NumberFormatException e) {
+					} catch (NumberFormatException e) {
 						throw new ValueExprEvaluationException(
 								"illegal length value (expected int value): " + lengthValue);
 					}
-				}
-				else if (lengthValue != null) {
+				} else if (lengthValue != null) {
 					throw new ValueExprEvaluationException(
 							"illegal length value (expected literal value): " + lengthValue);
 				}
@@ -100,26 +93,19 @@ public class Substring implements Function {
 
 					if (language.isPresent()) {
 						return valueFactory.createLiteral(lexicalValue, language.get());
-					}
-					else if (XMLSchema.STRING.equals(literal.getDatatype())) {
+					} else if (XMLSchema.STRING.equals(literal.getDatatype())) {
 						return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);
-					}
-					else {
+					} else {
 						return valueFactory.createLiteral(lexicalValue);
 					}
-				}
-				catch (IndexOutOfBoundsException e) {
+				} catch (IndexOutOfBoundsException e) {
 					throw new ValueExprEvaluationException("could not determine substring", e);
 				}
+			} else {
+				throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);
 			}
-			else {
-				throw new ValueExprEvaluationException(
-						"unexpected input value for function substring: " + argValue);
-			}
-		}
-		else {
-			throw new ValueExprEvaluationException(
-					"unexpected input value for function substring: " + argValue);
+		} else {
+			throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);
 		}
 	}
 

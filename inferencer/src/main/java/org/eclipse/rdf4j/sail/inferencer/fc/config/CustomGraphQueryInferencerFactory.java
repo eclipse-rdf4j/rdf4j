@@ -42,20 +42,17 @@ public class CustomGraphQueryInferencerFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config)
-		throws SailConfigException
-	{
+	public Sail getSail(SailImplConfig config) throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
 		CustomGraphQueryInferencer sail = new CustomGraphQueryInferencer();
 		if (config instanceof CustomGraphQueryInferencerConfig) {
-			CustomGraphQueryInferencerConfig customConfig = (CustomGraphQueryInferencerConfig)config;
+			CustomGraphQueryInferencerConfig customConfig = (CustomGraphQueryInferencerConfig) config;
 			try {
 				sail.setFields(customConfig.getQueryLanguage(), customConfig.getRuleQuery(),
 						customConfig.getMatcherQuery());
-			}
-			catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				throw new SailConfigException("Problem occured parsing rule or matcher query text.", e);
 			}
 		}

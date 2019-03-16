@@ -11,18 +11,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 
 public enum TupleFunctionEvaluationMode {
 	/**
-	 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used
-	 * to evaluate extended query algebra nodes such as {@link TupleFunction}s. (Default).
+	 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used to evaluate
+	 * extended query algebra nodes such as {@link TupleFunction}s. (Default).
 	 */
 	SERVICE,
 	/**
-	 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it
-	 * to perform all query evaluation.
+	 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it to perform all
+	 * query evaluation.
 	 */
 	NATIVE,
 	/**
-	 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this
-	 * SAIL.
+	 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this SAIL.
 	 */
 	TRIPLE_SOURCE
 }

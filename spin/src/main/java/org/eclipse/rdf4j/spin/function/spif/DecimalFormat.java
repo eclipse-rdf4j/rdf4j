@@ -23,30 +23,23 @@ public class DecimalFormat extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
-		Literal number = (Literal)arg1;
-		Literal format = (Literal)arg2;
+		Literal number = (Literal) arg1;
+		Literal format = (Literal) arg2;
 
 		java.text.DecimalFormat formatter = new java.text.DecimalFormat(format.getLabel());
 		String value;
 		if (XMLSchema.INT.equals(number.getDatatype()) || XMLSchema.LONG.equals(number.getDatatype())
-				|| XMLSchema.SHORT.equals(number.getDatatype())
-				|| XMLSchema.BYTE.equals(number.getDatatype()))
-		{
+				|| XMLSchema.SHORT.equals(number.getDatatype()) || XMLSchema.BYTE.equals(number.getDatatype())) {
 			value = formatter.format(number.longValue());
-		}
-		else if (XMLSchema.DECIMAL.equals(number.getDatatype())) {
+		} else if (XMLSchema.DECIMAL.equals(number.getDatatype())) {
 			value = formatter.format(number.decimalValue());
-		}
-		else if (XMLSchema.INTEGER.equals(number.getDatatype())) {
+		} else if (XMLSchema.INTEGER.equals(number.getDatatype())) {
 			value = formatter.format(number.integerValue());
-		}
-		else {
+		} else {
 			value = formatter.format(number.doubleValue());
 		}
 		return valueFactory.createLiteral(value);

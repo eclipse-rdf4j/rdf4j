@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.util.Arrays;
 
 /**
- * A dedicated data structure for storing MemStatement objects, offering operations optimized for their use in
- * the memory Sail.
+ * A dedicated data structure for storing MemStatement objects, offering operations optimized for their use in the
+ * memory Sail.
  */
 public class MemStatementList {
 
@@ -91,8 +91,7 @@ public class MemStatementList {
 			// Last statement in array
 			statements[index] = null;
 			--size;
-		}
-		else {
+		} else {
 			// Not last statement in array, move last
 			// statement over the one at [index]
 			--size;
@@ -123,8 +122,7 @@ public class MemStatementList {
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				--size;
 				statements[i] = null;
-			}
-			else {
+			} else {
 				i--;
 				break;
 			}

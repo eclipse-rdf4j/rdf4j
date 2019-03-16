@@ -29,14 +29,12 @@ public class LimitedSizeOrderIteration extends OrderIterator {
 	 * @param comparator
 	 */
 	public LimitedSizeOrderIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Comparator<BindingSet> comparator, AtomicLong used, long maxSize)
-	{
+			Comparator<BindingSet> comparator, AtomicLong used, long maxSize) {
 		this(iter, comparator, Integer.MAX_VALUE, false, used, maxSize);
 	}
 
 	public LimitedSizeOrderIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Comparator<BindingSet> comparator, long limit, boolean distinct, AtomicLong used, long maxSize)
-	{
+			Comparator<BindingSet> comparator, long limit, boolean distinct, AtomicLong used, long maxSize) {
 		super(iter, comparator, limit, distinct);
 		this.used = used;
 		this.maxSize = maxSize;

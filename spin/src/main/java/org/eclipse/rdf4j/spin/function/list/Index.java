@@ -28,12 +28,9 @@ public class Index implements TupleFunction {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			final ValueFactory valueFactory, final Value... args)
-		throws QueryEvaluationException
-	{
+			final ValueFactory valueFactory, final Value... args) throws QueryEvaluationException {
 		return new CloseableIteratorIteration<List<? extends Value>, QueryEvaluationException>(
-				new Iterator<List<Value>>()
-		{
+				new Iterator<List<Value>>() {
 
 					int pos = 0;
 

@@ -42,14 +42,11 @@ public class ElasticsearchQuery implements SearchQuery {
 	}
 
 	@Override
-	public Iterable<? extends DocumentScore> query(Resource resource)
-		throws IOException
-	{
+	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		SearchHits hits;
 		if (resource != null) {
 			hits = index.search(resource, request, qb);
-		}
-		else {
+		} else {
 			hits = index.search(request, qb);
 		}
 		return Iterables.transform(hits, new Function<SearchHit, DocumentScore>() {
@@ -67,7 +64,8 @@ public class ElasticsearchQuery implements SearchQuery {
 	@Override
 	public void highlight(IRI property) {
 		String field = (property != null)
-				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property)) : ElasticsearchIndex.ALL_PROPERTY_FIELDS;
+				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property))
+				: ElasticsearchIndex.ALL_PROPERTY_FIELDS;
 		HighlightBuilder hb = new HighlightBuilder();
 		hb.field(field);
 		hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);

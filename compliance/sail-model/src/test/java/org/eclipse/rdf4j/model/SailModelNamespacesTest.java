@@ -31,16 +31,13 @@ public class SailModelNamespacesTest extends ModelNamespacesTest {
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
 
 	@Override
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		if (conn != null) {
 			conn.commit();
 			conn.close();

@@ -23,23 +23,22 @@ import org.eclipse.rdf4j.model.vocabulary.GEO;
 public final class SearchFields {
 
 	/**
-	 * The name of the Document field holding the document identifier. This consists of the Resource
-	 * identifier (URI or BNodeID) and the Context ID (the format is "resourceId|contextId")
+	 * The name of the Document field holding the document identifier. This consists of the Resource identifier (URI or
+	 * BNodeID) and the Context ID (the format is "resourceId|contextId")
 	 */
 	public static final String ID_FIELD_NAME = "id";
 
 	/**
-	 * The name of the Document field holding the Resource identifier. The value stored in this field is
-	 * either a URI or a BNode ID.
+	 * The name of the Document field holding the Resource identifier. The value stored in this field is either a URI or
+	 * a BNode ID.
 	 */
 	public static final String URI_FIELD_NAME = "uri";
 
 	/**
-	 * The name of the Document field that holds multiple text values of a Resource. The field is called
-	 * "text", as it contains all text, but was called "ALL" during the discussion. For each statement-literal
-	 * of the resource, the object literal is stored in a field using the predicate-literal and additionally
-	 * in a TEXT_FIELD_NAME-literal field. The reasons are given in the documentation of
-	 * {@link #addPropertyFields(String, String, Document)}
+	 * The name of the Document field that holds multiple text values of a Resource. The field is called "text", as it
+	 * contains all text, but was called "ALL" during the discussion. For each statement-literal of the resource, the
+	 * object literal is stored in a field using the predicate-literal and additionally in a TEXT_FIELD_NAME-literal
+	 * field. The reasons are given in the documentation of {@link #addPropertyFields(String, String, Document)}
 	 */
 	public static final String TEXT_FIELD_NAME = "text";
 
@@ -54,8 +53,8 @@ public final class SearchFields {
 	public static final String CONTEXT_NULL = "null";
 
 	/**
-	 * String used to prefix BNode IDs with so that we can distinguish BNode fields from URI fields in
-	 * Documents. The prefix is chosen so that it is invalid as a (part of a) URI scheme.
+	 * String used to prefix BNode IDs with so that we can distinguish BNode fields from URI fields in Documents. The
+	 * prefix is chosen so that it is invalid as a (part of a) URI scheme.
 	 */
 	public static final String BNODE_ID_PREFIX = "!";
 
@@ -63,8 +62,8 @@ public final class SearchFields {
 
 	public static final String HIGHLIGHTER_POST_TAG = "</B>";
 
-	public static final Pattern HIGHLIGHTER_PATTERN = Pattern.compile(
-			"(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
+	public static final Pattern HIGHLIGHTER_PATTERN = Pattern
+			.compile("(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
 
 	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 
@@ -72,17 +71,15 @@ public final class SearchFields {
 	}
 
 	/**
-	 * Returns the String ID corresponding with the specified Resource. The id string is either the URI or a
-	 * bnode prefixed with a "!".
+	 * Returns the String ID corresponding with the specified Resource. The id string is either the URI or a bnode
+	 * prefixed with a "!".
 	 */
 	public static String getResourceID(Resource resource) {
 		if (resource instanceof IRI) {
 			return resource.toString();
-		}
-		else if (resource instanceof BNode) {
-			return BNODE_ID_PREFIX + ((BNode)resource).getID();
-		}
-		else {
+		} else if (resource instanceof BNode) {
+			return BNODE_ID_PREFIX + ((BNode) resource).getID();
+		} else {
 			throw new IllegalArgumentException("Unknown Resource type: " + resource);
 		}
 	}
@@ -90,8 +87,7 @@ public final class SearchFields {
 	/**
 	 * Get the ID for a context. Context can be null, then the "null" string is returned
 	 * 
-	 * @param resource
-	 *        the context
+	 * @param resource the context
 	 * @return a string
 	 */
 	public static String getContextID(Resource resource) {
@@ -109,8 +105,7 @@ public final class SearchFields {
 	public static Resource createResource(String idString) {
 		if (idString.startsWith(BNODE_ID_PREFIX)) {
 			return valueFactory.createBNode(idString.substring(BNODE_ID_PREFIX.length()));
-		}
-		else {
+		} else {
 			return valueFactory.createIRI(idString);
 		}
 	}
@@ -118,8 +113,7 @@ public final class SearchFields {
 	public static Resource createContext(String idString) {
 		if (CONTEXT_NULL.equals(idString)) {
 			return null;
-		}
-		else {
+		} else {
 			return createResource(idString);
 		}
 	}
@@ -127,9 +121,8 @@ public final class SearchFields {
 	public static String getLiteralPropertyValueAsString(Statement statement) {
 		Value object = statement.getObject();
 		if (object instanceof Literal) {
-			return ((Literal)object).getLabel();
-		}
-		else {
+			return ((Literal) object).getLabel();
+		} else {
 			return null;
 		}
 	}
@@ -158,8 +151,7 @@ public final class SearchFields {
 	/**
 	 * Returns a score value encoded as a Literal.
 	 * 
-	 * @param score
-	 *        the float score to convert
+	 * @param score the float score to convert
 	 * @return the score as a literal
 	 */
 	public static Literal scoreToLiteral(float score) {

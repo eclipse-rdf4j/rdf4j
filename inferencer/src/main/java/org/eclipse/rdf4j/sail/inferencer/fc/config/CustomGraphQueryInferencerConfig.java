@@ -80,8 +80,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	/**
 	 * Set the optional matcher query.
 	 * 
-	 * @param matcherQuery
-	 *        if null, internal value will be set to the empty string
+	 * @param matcherQuery if null, internal value will be set to the empty string
 	 */
 	public void setMatcherQuery(String matcherQuery) {
 		this.matcherQuery = null == matcherQuery ? "" : matcherQuery;
@@ -92,9 +91,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	}
 
 	@Override
-	public void parse(Model m, Resource implNode)
-		throws SailConfigException
-	{
+	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
 
 		try {
@@ -104,47 +101,41 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
 				if (null == getQueryLanguage()) {
-					throw new SailConfigException("Valid value required for " + QUERY_LANGUAGE
-							+ " property, found " + language.get());
+					throw new SailConfigException(
+							"Valid value required for " + QUERY_LANGUAGE + " property, found " + language.get());
 				}
-			}
-			else {
+			} else {
 				setQueryLanguage(QueryLanguage.SPARQL);
 			}
 
 			Optional<Resource> object = Models.objectResource(m.filter(implNode, RULE_QUERY, null));
 			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null)).ifPresent(
-						lit -> setRuleQuery(lit.stringValue()));
+				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
+						.ifPresent(lit -> setRuleQuery(lit.stringValue()));
 			}
 
 			object = Models.objectResource(m.filter(implNode, MATCHER_QUERY, null));
 			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null)).ifPresent(
-						lit -> setMatcherQuery(lit.stringValue()));
+				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
+						.ifPresent(lit -> setMatcherQuery(lit.stringValue()));
 			}
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
 
 	@Override
-	public void validate()
-		throws SailConfigException
-	{
+	public void validate() throws SailConfigException {
 		super.validate();
 		if (null == language) {
 			throw new SailConfigException("No query language specified for " + getType() + " Sail.");
 		}
 		if (null == ruleQuery) {
 			throw new SailConfigException("No rule query specified for " + getType() + " Sail.");
-		}
-		else {
+		} else {
 			try {
 				QueryParserUtil.parseGraphQuery(language, ruleQuery, null);
-			}
-			catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				throw new SailConfigException("Problem occured parsing supplied rule query.", e);
 			}
 		}
@@ -153,8 +144,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 				matcherQuery = buildMatcherQueryFromRuleQuery(language, ruleQuery);
 			}
 			QueryParserUtil.parseGraphQuery(language, matcherQuery, null);
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new SailConfigException("Problem occured parsing matcher query: " + matcherQuery, e);
 		}
 	}
@@ -164,8 +154,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 		Resource implNode = super.export(m);
 		m.setNamespace("cgqi", CustomGraphQueryInferencerSchema.NAMESPACE);
 		if (null != language) {
-			m.add(implNode, QUERY_LANGUAGE,
-					SimpleValueFactory.getInstance().createLiteral(language.getName()));
+			m.add(implNode, QUERY_LANGUAGE, SimpleValueFactory.getInstance().createLiteral(language.getName()));
 		}
 		addQueryNode(m, implNode, RULE_QUERY, ruleQuery);
 		addQueryNode(m, implNode, MATCHER_QUERY, matcherQuery);
@@ -173,22 +162,19 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	}
 
 	public static String buildMatcherQueryFromRuleQuery(QueryLanguage language, String ruleQuery)
-		throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		String result = "";
 		if (QueryLanguage.SPARQL == language) {
 			Matcher matcher = SPARQL_PATTERN.matcher(ruleQuery);
 			if (matcher.matches()) {
 				result = matcher.group(1) + "WHERE" + matcher.group(2);
 			}
-		}
-		else if (QueryLanguage.SERQL == language) {
+		} else if (QueryLanguage.SERQL == language) {
 			Matcher matcher = SERQL_PATTERN.matcher(ruleQuery);
 			if (matcher.matches()) {
 				result = "CONSTRUCT * FROM" + matcher.group(1) + matcher.group(2);
 			}
-		}
-		else {
+		} else {
 			throw new IllegalStateException("language");
 		}
 		return result;

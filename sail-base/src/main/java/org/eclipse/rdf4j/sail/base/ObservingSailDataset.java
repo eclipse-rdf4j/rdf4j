@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks the observed statement patterns to
- * an {@link SailSink#observe(Resource, IRI, Value, Resource...)} to check consistency.
+ * A {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks the observed statement patterns to an
+ * {@link SailSink#observe(Resource, IRI, Value, Resource...)} to check consistency.
  * 
  * @author James Leigh
  */
@@ -31,11 +31,9 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	/**
 	 * Creates a {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks consistency.
 	 * 
-	 * @param delegate
-	 *        to be {@link SailDataset#close()} when this {@link SailDataset} is closed.
-	 * @param observer
-	 *        to be {@link SailSink#flush()} and {@link SailSink#close()} when this {@link SailDataset} is
-	 *        closed.
+	 * @param delegate to be {@link SailDataset#close()} when this {@link SailDataset} is closed.
+	 * @param observer to be {@link SailSink#flush()} and {@link SailSink#close()} when this {@link SailDataset} is
+	 *                 closed.
 	 */
 	public ObservingSailDataset(SailDataset delegate, SailSink observer) {
 		super(delegate);
@@ -43,36 +41,28 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		try {
 			super.close();
-		}
-		finally {
+		} finally {
 			try {
 				// flush observer regardless of consistency
 				observer.flush();
-			}
-			finally {
+			} finally {
 				observer.close();
 			}
 		}
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDs()
-		throws SailException
-	{
+	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
 		observer.observe(null, null, null);
 		return super.getContextIDs();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-			Value obj, Resource... contexts)
-		throws SailException
-	{
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
 		observer.observe(subj, pred, obj, contexts);
 		return super.getStatements(subj, pred, obj, contexts);
 	}

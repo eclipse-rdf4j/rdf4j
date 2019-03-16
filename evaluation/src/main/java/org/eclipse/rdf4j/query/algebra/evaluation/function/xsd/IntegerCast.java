@@ -31,8 +31,7 @@ public class IntegerCast extends IntegerCastFunction {
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-		throws ArithmeticException
-	{
+			throws ArithmeticException {
 		return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
 	}
 

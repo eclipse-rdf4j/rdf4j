@@ -82,7 +82,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 				for (ProjectionElem projElem : projElems.getElements()) {
 					String name = projElem.getSourceName();
 					if (varsBefore.contains(name)) {
-						UnaryTupleOperator proj = (UnaryTupleOperator)projElems.getParentNode();
+						UnaryTupleOperator proj = (UnaryTupleOperator) projElems.getParentNode();
 						Extension ext = new Extension(proj.getArg());
 						proj.setArg(ext);
 						Var lostVar = new Var(name);
@@ -115,32 +115,26 @@ public class ConstantOptimizer implements QueryOptimizer {
 				if (isConstant(or.getLeftArg()) && isConstant(or.getRightArg())) {
 					boolean value = strategy.isTrue(or, EmptyBindingSet.getInstance());
 					or.replaceWith(new ValueConstant(BooleanLiteral.valueOf(value)));
-				}
-				else if (isConstant(or.getLeftArg())) {
+				} else if (isConstant(or.getLeftArg())) {
 					boolean leftIsTrue = strategy.isTrue(or.getLeftArg(), EmptyBindingSet.getInstance());
 					if (leftIsTrue) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
-					}
-					else {
+					} else {
 						or.replaceWith(or.getRightArg());
 					}
-				}
-				else if (isConstant(or.getRightArg())) {
+				} else if (isConstant(or.getRightArg())) {
 					boolean rightIsTrue = strategy.isTrue(or.getRightArg(), EmptyBindingSet.getInstance());
 					if (rightIsTrue) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
-					}
-					else {
+					} else {
 						or.replaceWith(or.getLeftArg());
 					}
 				}
-			}
-			catch (ValueExprEvaluationException e) {
+			} catch (ValueExprEvaluationException e) {
 				// TODO: incompatible values types(?), remove the affected part of
 				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
 		}
@@ -153,32 +147,26 @@ public class ConstantOptimizer implements QueryOptimizer {
 				if (isConstant(and.getLeftArg()) && isConstant(and.getRightArg())) {
 					boolean value = strategy.isTrue(and, EmptyBindingSet.getInstance());
 					and.replaceWith(new ValueConstant(BooleanLiteral.valueOf(value)));
-				}
-				else if (isConstant(and.getLeftArg())) {
+				} else if (isConstant(and.getLeftArg())) {
 					boolean leftIsTrue = strategy.isTrue(and.getLeftArg(), EmptyBindingSet.getInstance());
 					if (leftIsTrue) {
 						and.replaceWith(and.getRightArg());
-					}
-					else {
+					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 					}
-				}
-				else if (isConstant(and.getRightArg())) {
+				} else if (isConstant(and.getRightArg())) {
 					boolean rightIsTrue = strategy.isTrue(and.getRightArg(), EmptyBindingSet.getInstance());
 					if (rightIsTrue) {
 						and.replaceWith(and.getLeftArg());
-					}
-					else {
+					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 					}
 				}
-			}
-			catch (ValueExprEvaluationException e) {
+			} catch (ValueExprEvaluationException e) {
 				// TODO: incompatible values types(?), remove the affected part of
 				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
 		}
@@ -191,13 +179,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 				try {
 					Value value = strategy.evaluate(binaryValueOp, EmptyBindingSet.getInstance());
 					binaryValueOp.replaceWith(new ValueConstant(value));
-				}
-				catch (ValueExprEvaluationException e) {
+				} catch (ValueExprEvaluationException e) {
 					// TODO: incompatible values types(?), remove the affected part
 					// of the query tree
 					logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
 				}
 			}
@@ -211,13 +197,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 				try {
 					Value value = strategy.evaluate(unaryValueOp, EmptyBindingSet.getInstance());
 					unaryValueOp.replaceWith(new ValueConstant(value));
-				}
-				catch (ValueExprEvaluationException e) {
+				} catch (ValueExprEvaluationException e) {
 					// TODO: incompatible values types(?), remove the affected part
 					// of the query tree
 					logger.debug("Failed to evaluate UnaryValueOperator with a constant argument", e);
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
 				}
 			}
@@ -231,17 +215,15 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			if (args.size() == 0) {
 				/*
-				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW()
-				 * which generate a single value for the entire query and which can be safely optimized to a
-				 * constant. Other functions, like RAND(), UUID() and STRUUID(), are a special case: they are
-				 * expected to yield a new value on every call, and can therefore not be replaced by a
-				 * constant.
+				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW() which
+				 * generate a single value for the entire query and which can be safely optimized to a constant. Other
+				 * functions, like RAND(), UUID() and STRUUID(), are a special case: they are expected to yield a new
+				 * value on every call, and can therefore not be replaced by a constant.
 				 */
 				if (!isConstantZeroArgFunction(functionCall)) {
 					return;
 				}
-			}
-			else {
+			} else {
 				for (ValueExpr arg : args) {
 					if (!isConstant(arg)) {
 						return;
@@ -254,30 +236,27 @@ public class ConstantOptimizer implements QueryOptimizer {
 			try {
 				Value value = strategy.evaluate(functionCall, EmptyBindingSet.getInstance());
 				functionCall.replaceWith(new ValueConstant(value));
-			}
-			catch (ValueExprEvaluationException e) {
+			} catch (ValueExprEvaluationException e) {
 				// TODO: incompatible values types(?), remove the affected part of
 				// the query tree
 				logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
 		}
 
 		/**
-		 * Determines if the provided zero-arg function is a function that should return a constant value for
-		 * the entire query execution (e.g NOW()), or if it should generate a new value for every call (e.g.
-		 * RAND()).
+		 * Determines if the provided zero-arg function is a function that should return a constant value for the entire
+		 * query execution (e.g NOW()), or if it should generate a new value for every call (e.g. RAND()).
 		 * 
-		 * @param functionCall
-		 *        a zero-arg function call.
+		 * @param functionCall a zero-arg function call.
 		 * @return <code>true<code> iff the provided function returns a constant value for the query execution, <code>false</code>
 		 *         otherwise.
 		 */
 		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
-			Function function = FunctionRegistry.getInstance().get(functionCall.getURI()).orElseThrow(
-					() -> new QueryEvaluationException(
+			Function function = FunctionRegistry.getInstance()
+					.get(functionCall.getURI())
+					.orElseThrow(() -> new QueryEvaluationException(
 							"Unable to find function with the URI: " + functionCall.getURI()));
 
 			// we treat constant functions as the 'regular case' and make
@@ -308,15 +287,12 @@ public class ConstantOptimizer implements QueryOptimizer {
 				try {
 					if (strategy.isTrue(node.getCondition(), EmptyBindingSet.getInstance())) {
 						node.replaceWith(node.getResult());
-					}
-					else {
+					} else {
 						node.replaceWith(node.getAlternative());
 					}
-				}
-				catch (ValueExprEvaluationException e) {
+				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate UnaryValueOperator with a constant argument", e);
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
 				}
 			}
@@ -329,24 +305,20 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(Regex node) {
 			super.meetNode(node);
 
-			if (isConstant(node.getArg()) && isConstant(node.getPatternArg())
-					&& isConstant(node.getFlagsArg()))
-			{
+			if (isConstant(node.getArg()) && isConstant(node.getPatternArg()) && isConstant(node.getFlagsArg())) {
 				try {
 					Value value = strategy.evaluate(node, EmptyBindingSet.getInstance());
 					node.replaceWith(new ValueConstant(value));
-				}
-				catch (ValueExprEvaluationException e) {
+				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate BinaryValueOperator with two constant arguments", e);
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					logger.error("Query evaluation exception caught", e);
 				}
 			}
 		}
 
 		private boolean isConstant(ValueExpr expr) {
-			return expr instanceof ValueConstant || expr instanceof Var && ((Var)expr).hasValue();
+			return expr instanceof ValueConstant || expr instanceof Var && ((Var) expr).hasValue();
 		}
 	}
 

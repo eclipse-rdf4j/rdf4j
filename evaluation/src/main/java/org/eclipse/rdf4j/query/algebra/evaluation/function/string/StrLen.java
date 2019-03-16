@@ -30,18 +30,16 @@ public class StrLen implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("STRLEN requires 1 argument, got " + args.length);
 		}
 
 		Value argValue = args[0];
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
-			// strlen function accepts only string literals 
+			// strlen function accepts only string literals
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
 
 				// TODO we jump through some hoops here to get an xsd:integer
@@ -49,13 +47,10 @@ public class StrLen implements Function {
 				// rather than an xsd:int?
 				Integer length = literal.getLabel().length();
 				return valueFactory.createLiteral(length.toString(), XMLSchema.INTEGER);
+			} else {
+				throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);
 			}
-			else {
-				throw new ValueExprEvaluationException(
-						"unexpected input value for strlen function: " + argValue);
-			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);
 		}
 	}

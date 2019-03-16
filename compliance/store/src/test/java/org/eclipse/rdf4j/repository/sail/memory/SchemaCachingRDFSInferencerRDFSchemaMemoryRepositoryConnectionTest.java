@@ -32,10 +32,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 
 public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
-	extends RDFSchemaRepositoryConnectionTest {
+		extends RDFSchemaRepositoryConnectionTest {
 
-	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(
-		IsolationLevel level) {
+	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
 	}
 
@@ -47,40 +46,33 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		return new SailRepository(sail);
 	}
 
-
 	@Override
 	@Test
 	@Ignore
-	public void testQueryDefaultGraph()
-		throws Exception {
-		// ignore
-	}
-
-
-	@Override
-	@Test
-	@Ignore
-	public void testDeleteDefaultGraph()
-		throws Exception {
+	public void testQueryDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated()
-		throws Exception {
+	public void testDeleteDefaultGraph() throws Exception {
 		// ignore
 	}
 
 	@Override
 	@Test
 	@Ignore
-	public void testContextStatementsNotDuplicated2()
-		throws Exception {
+	public void testContextStatementsNotDuplicated() throws Exception {
 		// ignore
 	}
 
+	@Override
+	@Test
+	@Ignore
+	public void testContextStatementsNotDuplicated2() throws Exception {
+		// ignore
+	}
 
 	@Test
 	public void testContextTbox() {
@@ -98,17 +90,14 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		IRI graph2 = vf.createIRI("http://example.org/graph2");
 		IRI graph3 = vf.createIRI("http://example.org/graph3");
 
-
 		testCon.add(man, RDFS.SUBCLASSOF, human, graph1);
 		testCon.add(human, RDFS.SUBCLASSOF, animal, graph2);
 		testCon.add(bob, RDF.TYPE, man, graph3);
 
-
 		/*
-		The SchemaCachingRDFSInferencer correctly adds inferred A-box statements to the correct graph,
-		but does not add inferred T-box statements to the correct graph.
+		 * The SchemaCachingRDFSInferencer correctly adds inferred A-box statements to the correct graph, but does not
+		 * add inferred T-box statements to the correct graph.
 		 */
-
 
 		System.out.println("-----------");
 		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null, true))) {
@@ -116,16 +105,12 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		}
 		System.out.println("-----------");
 		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
-			stream
-				.peek(statement -> assertEquals(graph3, statement.getContext()))
-				.forEach(System.out::println);
+			stream.peek(statement -> assertEquals(graph3, statement.getContext())).forEach(System.out::println);
 		}
 
 		System.out.println("-----------");
 
-
 	}
-
 
 	@Test
 	public void testUpdateInsertData() {
@@ -133,19 +118,17 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 		sail.initialize();
 
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
 			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
 
-
 			connection.begin();
-			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
-
 
 		}
 
@@ -157,14 +140,15 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 		sail.initialize();
 
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
 			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
 
 			connection.begin();
-			connection.prepareUpdate("insert {<foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2>} where {?a ?b ?c}").execute();
+			connection
+					.prepareUpdate("insert {<foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2>} where {?a ?b ?c}")
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
@@ -179,13 +163,11 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 		sail.initialize();
 
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
 			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
 			IRI foo_C1 = connection.getValueFactory().createIRI("foo:C1");
-
 
 			connection.begin();
 			connection.add(foo_s1, RDF.TYPE, foo_C1);
@@ -193,7 +175,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
-
 
 		}
 
@@ -205,29 +186,27 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 		sail.initialize();
 
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
 			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
 
-
 			connection.begin();
-			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
 
 			connection.begin();
-			connection.prepareUpdate("delete data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.prepareUpdate("delete data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
+					.execute();
 			connection.commit();
 
 			assertFalse(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
 
-
 		}
 
 	}
-
 
 }

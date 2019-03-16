@@ -28,7 +28,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should be extended by other nodes.
+ * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should
+ * be extended by other nodes.
  *
  * @author Heshan Jayasinghe
  */
@@ -38,14 +39,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	NodeShape nodeShape;
 
-
 	PropertyShape(Resource id, NodeShape nodeShape) {
 		this.id = id;
 		this.nodeShape = nodeShape;
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -69,29 +70,36 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
-
 	public String getPlanAsGraphvizDot(PlanNode planNode, ShaclSailConnection shaclSailConnection) {
 
 		StringBuilder stringBuilder = new StringBuilder("Graphviz DOT output:\n\n");
 
 		stringBuilder.append("digraph  {").append("\n");
-		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";").append("\n");
+		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
+				.append("\n");
 
-		stringBuilder.append(System.identityHashCode(shaclSailConnection) + " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-
+		stringBuilder.append(System.identityHashCode(shaclSailConnection)
+				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder
+				.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection())
+						+ " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		MemoryStore addedStatements = ((MemoryStoreConnection) shaclSailConnection.getAddedStatements()).getSail();
 		MemoryStore removedStatements = ((MemoryStoreConnection) shaclSailConnection.getRemovedStatements()).getSail();
 
-		stringBuilder.append(System.identityHashCode(addedStatements) + " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(removedStatements) + " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-
+		stringBuilder
+				.append(System.identityHashCode(addedStatements)
+						+ " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
+		stringBuilder
+				.append(System.identityHashCode(removedStatements)
+						+ " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		planNode.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append("}").append("\n");
-
 
 		return stringBuilder.append("\n\n").toString();
 
@@ -111,9 +119,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 		}
 
-
 		return ret;
-
 
 	}
 
@@ -131,68 +137,81 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	static class Factory {
 
-		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {
+		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
+				NodeShape nodeShape) {
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
+			try (Stream<Statement> stream = Iterations
+					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream
-					.map(Statement::getObject)
-					.map(v -> (Resource) v)
-					.flatMap(propertyShapeId -> {
-						List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);
-
-						return propertyShapes.stream();
-
-					})
-					.collect(Collectors.toList());
+						.map(Statement::getObject)
+						.map(v -> (Resource) v)
+						.flatMap(propertyShapeId -> {
+							List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
+									propertyShapeId);
+							return propertyShapes.stream();
+						})
+						.collect(Collectors.toList());
 			}
 
 		}
 
-		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape, Resource propertyShapeId) {
+		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
+				Resource propertyShapeId) {
 			List<PropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
 			if (shaclProperties.minCount != null) {
-				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minCount));
+				propertyShapes.add(
+						new MinCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minCount));
 			}
 			if (shaclProperties.maxCount != null) {
-				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxCount));
+				propertyShapes.add(
+						new MaxCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxCount));
 			}
 			if (shaclProperties.datatype != null) {
-				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.datatype));
+				propertyShapes.add(
+						new DatatypePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.datatype));
 			}
-			if(shaclProperties.or != null){
+			if (shaclProperties.or != null) {
 				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.or));
 			}
-			if(shaclProperties.minLength != null){
-				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minLength));
+			if (shaclProperties.minLength != null) {
+				propertyShapes.add(
+						new MinLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minLength));
 			}
-			if(shaclProperties.maxLength != null){
-				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxLength));
+			if (shaclProperties.maxLength != null) {
+				propertyShapes.add(
+						new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxLength));
 			}
-			if(shaclProperties.pattern != null){
-				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.pattern));
+			if (shaclProperties.pattern != null) {
+				propertyShapes
+						.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.pattern));
 			}
-			if(shaclProperties.languageIn != null){
-				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.languageIn));
+			if (shaclProperties.languageIn != null) {
+				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.languageIn));
 			}
-			if(shaclProperties.nodeKind != null){
-				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.nodeKind));
+			if (shaclProperties.nodeKind != null) {
+				propertyShapes.add(
+						new NodeKindPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.nodeKind));
 			}
-			if(shaclProperties.minExclusive != null){
-				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minExclusive));
+			if (shaclProperties.minExclusive != null) {
+				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.minExclusive));
 			}
-			if(shaclProperties.maxExclusive != null){
-				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxExclusive));
+			if (shaclProperties.maxExclusive != null) {
+				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.maxExclusive));
 			}
-			if(shaclProperties.maxInclusive != null){
-				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxInclusive));
+			if (shaclProperties.maxInclusive != null) {
+				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.maxInclusive));
 			}
-			if(shaclProperties.minInclusive != null){
-				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minInclusive));
+			if (shaclProperties.minInclusive != null) {
+				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.minInclusive));
 			}
-
 
 			if (shaclProperties.clazz != null) {
 				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape));
@@ -201,6 +220,3 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		}
 	}
 }
-
-
-

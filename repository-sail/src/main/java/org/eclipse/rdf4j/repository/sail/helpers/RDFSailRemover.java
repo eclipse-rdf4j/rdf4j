@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 
 /**
- * An Sail-specific RDFHandler that removes RDF data from a repository. To be used in combination with SPARQL
- * DELETE DATA only.
+ * An Sail-specific RDFHandler that removes RDF data from a repository. To be used in combination with SPARQL DELETE
+ * DATA only.
  * 
  * @author jeen
  */
@@ -43,8 +43,8 @@ class RDFSailRemover extends AbstractRDFHandler {
 	private final UpdateContext uc;
 
 	/**
-	 * The contexts to remove the statements from. If this variable is a non-empty array, statements will be
-	 * removed from the corresponding contexts.
+	 * The contexts to remove the statements from. If this variable is a non-empty array, statements will be removed
+	 * from the corresponding contexts.
 	 */
 	private Resource[] contexts = new Resource[0];
 
@@ -55,8 +55,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 	/**
 	 * Creates a new RDFSailRemover object.
 	 * 
-	 * @param con
-	 *        The connection to use for the remove operations.
+	 * @param con The connection to use for the remove operations.
 	 */
 	public RDFSailRemover(SailConnection con, ValueFactory vf, UpdateContext uc) {
 		this.con = con;
@@ -72,9 +71,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 	/**
 	 * Enforces the supplied contexts upon all statements that are reported to this RDFSailRemover.
 	 * 
-	 * @param contexts
-	 *        the contexts to use. Use an empty array (not null!) to indicate no context(s) should be
-	 *        enforced.
+	 * @param contexts the contexts to use. Use an empty array (not null!) to indicate no context(s) should be enforced.
 	 */
 	public void enforceContext(Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -101,9 +98,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -112,23 +107,19 @@ class RDFSailRemover extends AbstractRDFHandler {
 		try {
 			if (enforcesContext()) {
 				con.removeStatement(uc, subj, pred, obj, contexts);
-			}
-			else {
+			} else {
 				if (ctxt == null) {
 					final Set<IRI> removeGraphs = uc.getDataset().getDefaultRemoveGraphs();
 					if (!removeGraphs.isEmpty()) {
 						con.removeStatement(uc, subj, pred, obj, new IRI[removeGraphs.size()]);
-					}
-					else {
+					} else {
 						con.removeStatement(uc, subj, pred, obj);
 					}
-				}
-				else {
+				} else {
 					con.removeStatement(uc, subj, pred, obj, ctxt);
 				}
 			}
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RDFHandlerException(e);
 		}
 	}

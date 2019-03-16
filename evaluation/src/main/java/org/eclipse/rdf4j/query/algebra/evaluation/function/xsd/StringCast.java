@@ -26,55 +26,47 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 public class StringCast extends CastFunction {
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
+			Literal literal = (Literal) args[0];
 			IRI datatype = literal.getDatatype();
 
-			// we override because unlike most other cast functions, xsd:string should not accept a language-tagged string literal.
-			if (QueryEvaluationUtil.isSimpleLiteral(literal)) { 
+			// we override because unlike most other cast functions, xsd:string should not accept a language-tagged
+			// string literal.
+			if (QueryEvaluationUtil.isSimpleLiteral(literal)) {
 				String lexicalValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
 				if (isValidForDatatype(lexicalValue)) {
 					return valueFactory.createLiteral(lexicalValue, getXsdDatatype());
 				}
-			}
-			else if (datatype != null) {
+			} else if (datatype != null) {
 				if (datatype.equals(getXsdDatatype())) {
 					return literal;
 				}
 			}
 			return convert(valueFactory, literal);
-		}
-		else {
+		} else {
 			return convert(valueFactory, args[0]);
 		}
 	}
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-		throws ValueExprEvaluationException
-	{
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof IRI) {
 			return valueFactory.createLiteral(value.toString(), XMLSchema.STRING);
-		}
-		else if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+		} else if (value instanceof Literal) {
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (QueryEvaluationUtil.isSimpleLiteral(literal)) {
 				return valueFactory.createLiteral(literal.getLabel(), XMLSchema.STRING);
-			}
-			else if (!Literals.isLanguageLiteral(literal)) {
+			} else if (!Literals.isLanguageLiteral(literal)) {
 				if (XMLDatatypeUtil.isNumericDatatype(datatype) || datatype.equals(XMLSchema.BOOLEAN)
-						|| datatype.equals(XMLSchema.DATETIME))
-				{
+						|| datatype.equals(XMLSchema.DATETIME)) {
 					// FIXME Slightly simplified wrt the spec, we just always use the
 					// canonical value of the
 					// source literal as the target lexical value. This is not 100%
@@ -86,12 +78,10 @@ public class StringCast extends CastFunction {
 					if (XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
 						String normalizedValue = XMLDatatypeUtil.normalize(literal.getLabel(), datatype);
 						return valueFactory.createLiteral(normalizedValue, XMLSchema.STRING);
-					}
-					else {
+					} else {
 						return valueFactory.createLiteral(literal.getLabel(), XMLSchema.STRING);
 					}
-				}
-				else {
+				} else {
 					// for unknown datatypes, just use the lexical value.
 					return valueFactory.createLiteral(literal.getLabel(), XMLSchema.STRING);
 				}

@@ -41,19 +41,15 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	@Override
-	public void process(TupleExpr tupleExpr, BindingSet bindings,
-			final Collection<SearchQueryEvaluator> results)
-		throws SailException
-	{
+	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
+			throws SailException {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, DistanceQuerySpec> specs = new HashMap<>();
 
 			@Override
-			public void meet(FunctionCall f)
-				throws SailException
-			{
+			public void meet(FunctionCall f) throws SailException {
 				if (GEOF.DISTANCE.stringValue().equals(f.getURI())) {
 					List<ValueExpr> args = f.getArgs();
 					if (args.size() != 3) {
@@ -65,23 +61,21 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
 					if (parent instanceof ExtensionElem) {
-						distanceVar = ((ExtensionElem)parent).getName();
+						distanceVar = ((ExtensionElem) parent).getName();
 						QueryModelNode extension = parent.getParentNode();
 						Object[] rv = getFilterAndDistance(extension.getParentNode(), distanceVar);
 						if (rv == null) {
 							return;
 						}
-						filter = (Filter)rv[0];
-						dist = (ValueExpr)rv[1];
-					}
-					else if (parent instanceof Compare) {
-						filter = (Filter)parent.getParentNode();
-						Compare compare = (Compare)parent;
+						filter = (Filter) rv[0];
+						dist = (ValueExpr) rv[1];
+					} else if (parent instanceof Compare) {
+						filter = (Filter) parent.getParentNode();
+						Compare compare = (Compare) parent;
 						CompareOp op = compare.getOperator();
 						if (op == CompareOp.LT && compare.getLeftArg() == f) {
 							dist = compare.getRightArg();
-						}
-						else if (op == CompareOp.GT && compare.getRightArg() == f) {
+						} else if (op == CompareOp.GT && compare.getRightArg() == f) {
 							dist = compare.getLeftArg();
 						}
 					}
@@ -93,10 +87,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				IRI propertyName = (IRI)sp.getPredicateVar().getValue();
+				IRI propertyName = (IRI) sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-						&& !sp.getObjectVar().hasValue())
-				{
+						&& !sp.getObjectVar().hasValue()) {
 					String objectVarName = sp.getObjectVar().getName();
 					DistanceQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
@@ -104,10 +97,8 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						if (spec.isEvaluable()) {
 							// constant optimizer
 							results.add(spec);
-						}
-						else if (spec.getDistanceFunctionCall() != null && spec.getDistanceExpr() != null
-								&& spec.getGeoProperty() != null)
-						{
+						} else if (spec.getDistanceFunctionCall() != null && spec.getDistanceExpr() != null
+								&& spec.getGeoProperty() != null) {
 							// evaluate later
 							TupleFunctionCall funcCall = new TupleFunctionCall();
 							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());
@@ -124,11 +115,10 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 								funcCall.addResultVar(new Var(spec.getDistanceVar()));
 							}
 							if (spec.getContextVar() != null) {
-								Resource context = (Resource)spec.getContextVar().getValue();
+								Resource context = (Resource) spec.getContextVar().getValue();
 								if (context != null) {
 									funcCall.addArg(new ValueConstant(context));
-								}
-								else {
+								} else {
 									funcCall.addArg(new ValueConstant(LuceneSailSchema.CONTEXT));
 									funcCall.addResultVar(spec.getContextVar());
 								}
@@ -156,26 +146,22 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 	private static Object[] getFilterAndDistance(QueryModelNode node, String compareArgVarName) {
 		Object[] rv = null;
 		if (node instanceof Filter) {
-			Filter f = (Filter)node;
+			Filter f = (Filter) node;
 			ValueExpr condition = f.getCondition();
 			if (condition instanceof Compare) {
-				Compare compare = (Compare)condition;
+				Compare compare = (Compare) condition;
 				CompareOp op = compare.getOperator();
 				ValueExpr dist = null;
 				if (op == CompareOp.LT
-						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg())))
-				{
+						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg()))) {
 					dist = compare.getRightArg();
-				}
-				else if (op == CompareOp.GT
-						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg())))
-				{
+				} else if (op == CompareOp.GT
+						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg()))) {
 					dist = compare.getLeftArg();
 				}
 				rv = new Object[] { f, dist };
 			}
-		}
-		else if (node != null) {
+		} else if (node != null) {
 			rv = getFilterAndDistance(node.getParentNode(), compareArgVarName);
 		}
 		return rv;

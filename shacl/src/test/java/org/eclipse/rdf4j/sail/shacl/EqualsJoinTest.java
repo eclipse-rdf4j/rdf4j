@@ -39,7 +39,6 @@ public class EqualsJoinTest {
 	@Test
 	public void testSimple01() {
 
-
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b"));
 
@@ -51,10 +50,8 @@ public class EqualsJoinTest {
 
 	}
 
-
 	@Test
 	public void testSimple02() {
-
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("c"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b"), Arrays.asList("c"));
@@ -67,10 +64,8 @@ public class EqualsJoinTest {
 
 	}
 
-
 	@Test
 	public void testSimple03() {
-
 
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("c"));
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b"), Arrays.asList("c"));
@@ -83,10 +78,8 @@ public class EqualsJoinTest {
 
 	}
 
-
 	@Test
 	public void testSimple04() {
-
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("b"), Arrays.asList("c"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("d"), Arrays.asList("e"));
@@ -102,7 +95,6 @@ public class EqualsJoinTest {
 	@Test
 	public void testSimple05() {
 
-
 		PlanNode left = new MockInputPlanNode(Arrays.asList("b"), Arrays.asList("c"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("d"), Arrays.asList("c"));
 
@@ -114,13 +106,13 @@ public class EqualsJoinTest {
 
 	}
 
-
 	@Test
 	public void testSimple06() {
 
-
-		PlanNode left = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"), Arrays.asList("b", "1"), Arrays.asList("c", "1"));
-		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"), Arrays.asList("b", "1"), Arrays.asList("c", "1"));
+		PlanNode left = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"), Arrays.asList("b", "1"),
+				Arrays.asList("c", "1"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"),
+				Arrays.asList("b", "1"), Arrays.asList("c", "1"));
 
 		EqualsJoin equalsJoin = new EqualsJoin(left, right, true);
 
@@ -130,16 +122,17 @@ public class EqualsJoinTest {
 
 	}
 
-
 	public void verify(List<Tuple> actual, List<String>... expect) {
 
 		System.out.println(actual);
 
-		Set<Tuple> collect = Arrays
-			.stream(expect)
-			.map(strings -> strings.stream().map(SimpleValueFactory.getInstance()::createLiteral).map(l -> (Value) l).collect(Collectors.toList()))
-			.map(Tuple::new)
-			.collect(Collectors.toSet());
+		Set<Tuple> collect = Arrays.stream(expect)
+				.map(strings -> strings.stream()
+						.map(SimpleValueFactory.getInstance()::createLiteral)
+						.map(l -> (Value) l)
+						.collect(Collectors.toList()))
+				.map(Tuple::new)
+				.collect(Collectors.toSet());
 
 		Set<Tuple> actualSet = new HashSet<>(actual);
 
@@ -149,6 +142,5 @@ public class EqualsJoinTest {
 		assertTrue(actualSet.containsAll(collect));
 
 	}
-
 
 }

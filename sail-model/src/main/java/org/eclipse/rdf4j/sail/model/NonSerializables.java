@@ -16,8 +16,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 /**
- * A registry to support (de)serialization of objects (over the lifetime of the VM). It uses weak references
- * to allow entries to be garbage-collected when no longer used.
+ * A registry to support (de)serialization of objects (over the lifetime of the VM). It uses weak references to allow
+ * entries to be garbage-collected when no longer used.
  * 
  * @author Mark
  */
@@ -28,8 +28,7 @@ public class NonSerializables {
 	/**
 	 * Retrieve the object registered with the supplied key.
 	 * 
-	 * @param key
-	 *        the key.
+	 * @param key the key.
 	 * @return the registered object, or <code>null</code> if no matching EvaluationStrategy can be found.
 	 */
 	public static final Object get(UUID key) {
@@ -39,10 +38,9 @@ public class NonSerializables {
 	/**
 	 * Retrieves the registry key for the given object.
 	 * 
-	 * @param obj
-	 *        the object for which to retrieve the registry key.
-	 * @return the registry key with which the supplied object can be retrieved, or <code>null</code> if the
-	 *         supplied object is not in the registry.
+	 * @param obj the object for which to retrieve the registry key.
+	 * @return the registry key with which the supplied object can be retrieved, or <code>null</code> if the supplied
+	 *         object is not in the registry.
 	 */
 	public static final UUID getKey(Object obj) {
 		final Map<UUID, Object> map = registry.asMap();
@@ -62,22 +60,20 @@ public class NonSerializables {
 	}
 
 	/**
-	 * Add an object to the registry and returns the registry key. If the object is already present, the
-	 * operation simply returns the key with which it is currently registered.
+	 * Add an object to the registry and returns the registry key. If the object is already present, the operation
+	 * simply returns the key with which it is currently registered.
 	 * 
-	 * @param obj
-	 *        the object to register
+	 * @param obj the object to register
 	 * @return the key with which the object is registered.
 	 */
 	public static final UUID register(Object obj) {
 		UUID key;
 		if (obj instanceof UUIDable) {
-			key = ((UUIDable)obj).getUUID();
+			key = ((UUIDable) obj).getUUID();
 			if (get(key) == null) {
 				registry.put(key, obj);
 			}
-		}
-		else {
+		} else {
 			key = getKey(obj);
 			if (key == null) {
 				key = UUID.randomUUID();

@@ -31,9 +31,7 @@ public class SfEqualsTest extends GeometricRelationFunctionTest {
 	}
 
 	@Test
-	public void matchesMultiPolygonWKT()
-		throws IOException
-	{
+	public void matchesMultiPolygonWKT() throws IOException {
 
 		String polygon = IOUtils.toString(
 				getClass().getResourceAsStream(
@@ -47,7 +45,7 @@ public class SfEqualsTest extends GeometricRelationFunctionTest {
 		Literal polygonLit = f.createLiteral(polygon, GEO.WKT_LITERAL);
 		Literal multiPolygonLit = f.createLiteral(multiPolygon, GEO.WKT_LITERAL);
 
-		Literal result = (Literal)testedFunction().evaluate(f, multiPolygonLit, polygonLit);
+		Literal result = (Literal) testedFunction().evaluate(f, multiPolygonLit, polygonLit);
 
 		assertNotNull(result);
 		assertThat(result).isEqualTo(BooleanLiteral.TRUE);

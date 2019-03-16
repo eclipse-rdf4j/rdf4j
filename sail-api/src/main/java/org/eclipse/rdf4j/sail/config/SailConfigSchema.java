@@ -34,7 +34,6 @@ public class SailConfigSchema {
 
 	/** <tt>http://www.openrdf.org/config/sail#connectionTimeOut</tt> */
 	public final static IRI CONNECTION_TIME_OUT;
-	
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();

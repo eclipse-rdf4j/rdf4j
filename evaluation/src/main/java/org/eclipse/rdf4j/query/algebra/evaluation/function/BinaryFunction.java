@@ -14,9 +14,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public abstract class BinaryFunction implements Function {
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
 					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
@@ -26,5 +24,5 @@ public abstract class BinaryFunction implements Function {
 	}
 
 	protected abstract Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException;
+			throws ValueExprEvaluationException;
 }

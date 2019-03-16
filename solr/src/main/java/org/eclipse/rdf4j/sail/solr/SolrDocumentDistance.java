@@ -22,7 +22,7 @@ public class SolrDocumentDistance extends SolrDocumentResult implements Document
 
 	@Override
 	public double getDistance() {
-		Number s = ((Number)doc.getDocument().get(SolrIndex.DISTANCE_FIELD));
+		Number s = ((Number) doc.getDocument().get(SolrIndex.DISTANCE_FIELD));
 		return (s != null) ? GeoUnits.fromKilometres(s.doubleValue(), units) : Double.NaN;
 	}
 }

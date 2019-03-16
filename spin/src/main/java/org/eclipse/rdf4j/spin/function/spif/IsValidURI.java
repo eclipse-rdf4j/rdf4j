@@ -23,9 +23,7 @@ public class IsValidURI extends UnaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException {
 		if (!(arg instanceof Literal)) {
 			throw new ValueExprEvaluationException("Argument must be a string");
 		}

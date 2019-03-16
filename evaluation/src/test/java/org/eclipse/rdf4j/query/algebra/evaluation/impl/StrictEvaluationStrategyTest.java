@@ -29,20 +29,15 @@ public class StrictEvaluationStrategyTest {
 	private EvaluationStrategy strategy;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 	}
 
 	/**
-	 * Verifies if only those input bindings that actually occur in the query are returned in the result. See
-	 * SES-2373.
+	 * Verifies if only those input bindings that actually occur in the query are returned in the result. See SES-2373.
 	 */
 	@Test
-	public void testBindings()
-		throws Exception
-	{
+	public void testBindings() throws Exception {
 		String query = "SELECT ?a ?b WHERE {}";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 

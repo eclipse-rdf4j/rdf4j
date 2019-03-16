@@ -39,14 +39,11 @@ class SailDatasetTripleSource implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-			IRI pred, Value obj, Resource... contexts)
-		throws QueryEvaluationException
-	{
+	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws QueryEvaluationException {
 		try {
 			return new Eval(dataset.getStatements(subj, pred, obj, contexts));
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}

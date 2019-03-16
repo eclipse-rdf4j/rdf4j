@@ -23,22 +23,17 @@ public class NativeComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 	File dataDir = null;
 
 	@Override
-	protected Repository newRepository()
-		throws Exception
-	{
+	protected Repository newRepository() throws Exception {
 		dataDir = FileUtil.createTempDir("nativestore");
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 
 	}
 
 	@Override
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}

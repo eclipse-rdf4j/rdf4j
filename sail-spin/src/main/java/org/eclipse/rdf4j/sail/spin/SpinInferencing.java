@@ -44,24 +44,21 @@ public class SpinInferencing {
 	private SpinInferencing() {
 	}
 
-	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer,
-			SpinParser parser, InferencerConnection conn)
-		throws OpenRDFException
-	{
+	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer, SpinParser parser,
+			InferencerConnection conn) throws OpenRDFException {
 		int nofInferred;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedOperation parsedOp = parser.parse(rule, tripleSource);
 		if (parsedOp instanceof ParsedGraphQuery) {
-			ParsedGraphQuery graphQuery = (ParsedGraphQuery)parsedOp;
+			ParsedGraphQuery graphQuery = (ParsedGraphQuery) parsedOp;
 			GraphQuery queryOp = queryPreparer.prepare(graphQuery);
 			addBindings(subj, rule, graphQuery, queryOp, tripleSource, parser);
 			CountingRDFInferencerInserter handler = new CountingRDFInferencerInserter(conn,
 					tripleSource.getValueFactory());
 			queryOp.evaluate(handler);
 			nofInferred = handler.getStatementCount();
-		}
-		else if (parsedOp instanceof ParsedUpdate) {
-			ParsedUpdate graphUpdate = (ParsedUpdate)parsedOp;
+		} else if (parsedOp instanceof ParsedUpdate) {
+			ParsedUpdate graphUpdate = (ParsedUpdate) parsedOp;
 			Update updateOp = queryPreparer.prepare(graphUpdate);
 			addBindings(subj, rule, graphUpdate, updateOp, tripleSource, parser);
 			UpdateCountListener listener = new UpdateCountListener();
@@ -70,54 +67,46 @@ public class SpinInferencing {
 			conn.removeConnectionListener(listener);
 			// number of statement changes
 			nofInferred = listener.getAddedStatementCount() + listener.getRemovedStatementCount();
-		}
-		else {
+		} else {
 			throw new MalformedSpinException("Invalid rule: " + rule);
 		}
 		return nofInferred;
 	}
 
-	public static ConstraintViolation checkConstraint(Resource subj, Resource constraint,
-			QueryPreparer queryPreparer, SpinParser parser)
-		throws OpenRDFException
-	{
+	public static ConstraintViolation checkConstraint(Resource subj, Resource constraint, QueryPreparer queryPreparer,
+			SpinParser parser) throws OpenRDFException {
 		ConstraintViolation violation;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedQuery parsedQuery = parser.parseQuery(constraint, tripleSource);
 		if (parsedQuery instanceof ParsedBooleanQuery) {
-			ParsedBooleanQuery askQuery = (ParsedBooleanQuery)parsedQuery;
+			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;
 			BooleanQuery queryOp = queryPreparer.prepare(askQuery);
 			addBindings(subj, constraint, askQuery, queryOp, tripleSource, parser);
 			if (queryOp.evaluate()) {
 				violation = parser.parseConstraintViolation(constraint, tripleSource);
-			}
-			else {
+			} else {
 				violation = null;
 			}
-		}
-		else if (parsedQuery instanceof ParsedGraphQuery) {
-			ParsedGraphQuery graphQuery = (ParsedGraphQuery)parsedQuery;
+		} else if (parsedQuery instanceof ParsedGraphQuery) {
+			ParsedGraphQuery graphQuery = (ParsedGraphQuery) parsedQuery;
 			GraphQuery queryOp = queryPreparer.prepare(graphQuery);
 			addBindings(subj, constraint, graphQuery, queryOp, tripleSource, parser);
 			ConstraintViolationRDFHandler handler = new ConstraintViolationRDFHandler();
 			queryOp.evaluate(handler);
 			violation = handler.getConstraintViolation();
-		}
-		else {
+		} else {
 			throw new MalformedSpinException("Invalid constraint: " + constraint);
 		}
 		return violation;
 	}
 
-	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp,
-			Operation op, TripleSource tripleSource, SpinParser parser)
-		throws OpenRDFException
-	{
+	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp, Operation op,
+			TripleSource tripleSource, SpinParser parser) throws OpenRDFException {
 		if (!parser.isThisUnbound(opResource, tripleSource)) {
 			op.setBinding(THIS_VAR, subj);
 		}
 		if (parsedOp instanceof ParsedTemplate) {
-			for (Binding b : ((ParsedTemplate)parsedOp).getBindings()) {
+			for (Binding b : ((ParsedTemplate) parsedOp).getBindings()) {
 				op.setBinding(b.getName(), b.getValue());
 			}
 		}
@@ -157,9 +146,7 @@ public class SpinInferencing {
 		}
 
 		@Override
-		protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
-			throws OpenRDFException
-		{
+		protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws OpenRDFException {
 			super.addStatement(subj, pred, obj, ctxt);
 			stmtCount++;
 		}

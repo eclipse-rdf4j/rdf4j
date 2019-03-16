@@ -34,9 +34,7 @@ public class StrBeforeTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		strBeforeFunc = new StrBefore();
 	}
 
@@ -44,9 +42,7 @@ public class StrBeforeTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 	}
 
 	@Test
@@ -59,8 +55,7 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("foo", result.getLabel());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -75,8 +70,7 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("", result.getLabel());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -93,8 +87,7 @@ public class StrBeforeTest {
 			assertEquals("foo", result.getLabel());
 			assertEquals("en", result.getLanguage().orElse(null));
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -111,8 +104,7 @@ public class StrBeforeTest {
 			assertEquals("foo", result.getLabel());
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -129,8 +121,7 @@ public class StrBeforeTest {
 			assertEquals("foo", result.getLabel());
 			assertEquals(XMLSchema.STRING, result.getDatatype());
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -145,8 +136,7 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand with incompatible datatype, should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			assertEquals(
 					"incompatible operands for STRBEFORE: \"foobar\", \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
 					e.getMessage());
@@ -163,10 +153,8 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand with incompatible datatype, should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRBEFORE: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
+		} catch (ValueExprEvaluationException e) {
+			assertEquals("incompatible operands for STRBEFORE: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
 					e.getMessage());
 		}
 	}
@@ -181,11 +169,8 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRBEFORE: http://example.org/foobar, \"b\"",
-					e.getMessage());
+		} catch (ValueExprEvaluationException e) {
+			assertEquals("incompatible operands for STRBEFORE: http://example.org/foobar, \"b\"", e.getMessage());
 		}
 	}
 
@@ -198,8 +183,7 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			assertEquals("incompatible operands for STRBEFORE: \"foobar\"@en, \"b\"@nl", e.getMessage());
 		}
 	}
@@ -213,11 +197,8 @@ public class StrBeforeTest {
 			Literal result = strBeforeFunc.evaluate(f, leftArg, rightArg);
 
 			fail("operand of incompatible type, should have resulted in error");
-		}
-		catch (ValueExprEvaluationException e) {
-			assertEquals(
-					"incompatible operands for STRBEFORE: \"foobar\", \"b\"@nl",
-					e.getMessage());
+		} catch (ValueExprEvaluationException e) {
+			assertEquals("incompatible operands for STRBEFORE: \"foobar\", \"b\"@nl", e.getMessage());
 		}
 	}
 
@@ -233,8 +214,7 @@ public class StrBeforeTest {
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
 			assertEquals("en", result.getLanguage().orElse(null));
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -251,8 +231,7 @@ public class StrBeforeTest {
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
 			assertEquals("nl", result.getLanguage().orElse(null));
 
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}

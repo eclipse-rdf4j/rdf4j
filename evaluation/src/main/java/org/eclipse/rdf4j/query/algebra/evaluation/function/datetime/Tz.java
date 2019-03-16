@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * The SPARQL built-in {@link Function} TZ, as defined in
- * <a href="http://www.w3.org/TR/sparql11-query/#func-tz">SPARQL Query Language for RDF</a>
+ * The SPARQL built-in {@link Function} TZ, as defined in <a href="http://www.w3.org/TR/sparql11-query/#func-tz">SPARQL
+ * Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -32,16 +32,14 @@ public class Tz implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("TZ requires 1 argument, got " + args.length);
 		}
 
 		Value argValue = args[0];
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
 			IRI datatype = literal.getDatatype();
 
@@ -57,12 +55,10 @@ public class Tz implements Function {
 				}
 
 				return valueFactory.createLiteral(timeZone);
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + argValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 	}

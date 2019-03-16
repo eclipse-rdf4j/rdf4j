@@ -8,24 +8,21 @@
 package org.eclipse.rdf4j.sail;
 
 /**
- * An interface for {@link Sail}s that notify registered {@link SailChangedListener}s of changes in the data
- * in the Sail.
+ * An interface for {@link Sail}s that notify registered {@link SailChangedListener}s of changes in the data in the
+ * Sail.
  * 
  * @author James Leigh
  */
 public interface NotifyingSail extends Sail {
 
 	/**
-	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the
-	 * implementation handles concurrent access, a call to this method might block when there is another open
-	 * connection on this Sail.
+	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the implementation
+	 * handles concurrent access, a call to this method might block when there is another open connection on this Sail.
 	 * 
-	 * @throws SailException
-	 *         If no transaction could be started, for example because the Sail is not writable.
+	 * @throws SailException If no transaction could be started, for example because the Sail is not writable.
 	 */
 	@Override
-	public NotifyingSailConnection getConnection()
-		throws SailException;
+	public NotifyingSailConnection getConnection() throws SailException;
 
 	/**
 	 * Adds the specified SailChangedListener to receive events when the data in this Sail object changes.

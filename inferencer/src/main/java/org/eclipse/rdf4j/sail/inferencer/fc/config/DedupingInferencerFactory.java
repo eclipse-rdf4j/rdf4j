@@ -36,9 +36,7 @@ public class DedupingInferencerFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config)
-		throws SailConfigException
-	{
+	public Sail getSail(SailImplConfig config) throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}

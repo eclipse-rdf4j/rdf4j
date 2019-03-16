@@ -48,27 +48,25 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 			try {
 				Value subj = getConstantValue(sp.getSubjectVar());
 				if (!(subj instanceof Resource)) {
-					// can happen when a previous optimizer has inlined a comparison operator. 
-					// this can cause, for example, the subject variable to be equated to a literal value. 
-					// See SES-970 
+					// can happen when a previous optimizer has inlined a comparison operator.
+					// this can cause, for example, the subject variable to be equated to a literal value.
+					// See SES-970
 					subj = null;
 				}
 				Value pred = getConstantValue(sp.getPredicateVar());
 				if (!(pred instanceof IRI)) {
-					//  can happen when a previous optimizer has inlined a comparison operator. See SES-970 
+					// can happen when a previous optimizer has inlined a comparison operator. See SES-970
 					pred = null;
 				}
 				Value obj = getConstantValue(sp.getObjectVar());
 				Value context = getConstantValue(sp.getContextVar());
 				if (!(context instanceof Resource)) {
-					//  can happen when a previous optimizer has inlined a comparison operator. See SES-970 
+					// can happen when a previous optimizer has inlined a comparison operator. See SES-970
 					context = null;
 				}
-				return cardinality((Resource)subj, (IRI)pred, obj, (Resource)context);
-			}
-			catch (IOException e) {
-				log.error(
-						"Failed to estimate statement pattern cardinality, falling back to generic implementation",
+				return cardinality((Resource) subj, (IRI) pred, obj, (Resource) context);
+			} catch (IOException e) {
+				log.error("Failed to estimate statement pattern cardinality, falling back to generic implementation",
 						e);
 				return super.getCardinality(sp);
 			}
@@ -79,9 +77,7 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 		}
 	}
 
-	private double cardinality(Resource subj, IRI pred, Value obj, Resource context)
-		throws IOException
-	{
+	private double cardinality(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);

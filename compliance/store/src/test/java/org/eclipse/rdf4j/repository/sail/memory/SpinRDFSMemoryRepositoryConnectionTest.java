@@ -32,8 +32,7 @@ public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnection
 
 	@Override
 	protected Repository createRepository()
-		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException
-	{
+			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
 		return new SailRepository(
 				new SpinSail(new ForwardChainingRDFSInferencer(new DedupingInferencer(new MemoryStore()))));
 	}

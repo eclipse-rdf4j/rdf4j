@@ -13,8 +13,8 @@ import org.locationtech.spatial4j.shape.Shape;
 
 /**
  * The GeoSPARQL {@link Function} geof:boundary, as defined in
- * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for
- * RDF Data</a>.
+ * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for RDF
+ * Data</a>.
  */
 public class Boundary extends GeometricUnaryFunction {
 

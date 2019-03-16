@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -40,7 +40,6 @@ public class PrepareCommitTest {
 		shaclSail.shutDown();
 	}
 
-
 	@Test
 	public void testMultiplePrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
@@ -61,7 +60,6 @@ public class PrepareCommitTest {
 		shaclSail.shutDown();
 	}
 
-
 	@Test
 	public void testWithoutPrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
@@ -75,7 +73,6 @@ public class PrepareCommitTest {
 
 		shaclSail.shutDown();
 	}
-
 
 	@Test
 	public void testPrepareAfterRollback() throws IOException {
@@ -102,7 +99,6 @@ public class PrepareCommitTest {
 	@Test
 	public void testAutomaticRollback() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
-
 
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();
 
@@ -165,11 +161,9 @@ public class PrepareCommitTest {
 		assertTrue(exception);
 	}
 
-
-
 	@Test
 	public void testAutomaticRollbackRepository() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl",false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
 
 		boolean exception = false;
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();
@@ -200,7 +194,5 @@ public class PrepareCommitTest {
 
 		assertTrue(exception);
 	}
-
-
 
 }

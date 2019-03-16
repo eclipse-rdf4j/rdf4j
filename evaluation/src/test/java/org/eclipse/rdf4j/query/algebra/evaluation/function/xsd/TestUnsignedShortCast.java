@@ -19,7 +19,7 @@ public class TestUnsignedShortCast extends TestIntegerDatatypeCast<UnsignedShort
 
 	@Override
 	protected Optional<BigInteger> getMaxValue() {
-		return Optional.of(new BigInteger(String.valueOf((long)Math.pow(2, 16) - 1l)));
+		return Optional.of(new BigInteger(String.valueOf((long) Math.pow(2, 16) - 1l)));
 	}
 
 	@Override

@@ -24,13 +24,12 @@ public abstract class GeometricRelationFunctionTest {
 	Literal brussels = SimpleValueFactory.getInstance().createLiteral("POINT(4.35 50.85)", GEO.WKT_LITERAL);
 
 	protected abstract GeometricRelationFunction testedFunction();
-	
+
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testRelationExceptionHandling() {
 		GeometricRelationFunction testedFunction = Mockito.spy(testedFunction());
 		Mockito.doThrow(new RuntimeException("forsooth!")).when(testedFunction).relation(Mockito.any(), Mockito.any());
 		testedFunction.evaluate(SimpleValueFactory.getInstance(), amsterdam, brussels);
 	}
-
 
 }

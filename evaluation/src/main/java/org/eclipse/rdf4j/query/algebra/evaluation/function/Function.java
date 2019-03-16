@@ -18,6 +18,5 @@ public interface Function {
 
 	public String getURI();
 
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException;
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException;
 }
