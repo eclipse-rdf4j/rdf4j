@@ -9,6 +9,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import java.util.Arrays;
+<<<<<<< HEAD
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -19,6 +20,9 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+=======
+import org.eclipse.rdf4j.common.net.ParsedIRI;
+>>>>>>> 72ecaec0... #7 - "file:" not a recognized protocol in SparqlBuilder
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.AnonymousBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
@@ -31,13 +35,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
  * Model objects.
  */
 public class Rdf {
-
-	// not sure if other protocols are generally used in RDF iri's?
-	private static final Set<String> IRI_PROTOCOLS = Stream.of("http://", "https://", "mailto:")
-			.collect(Collectors.toSet());
-
-	private Rdf() {
-	}
+	private Rdf() { }
 
 	/**
 	 * Create a SparqlBuilder Iri instance from a String iri
@@ -46,8 +44,19 @@ public class Rdf {
 	 * @return the {@link Iri} instance
 	 */
 	public static Iri iri(String iriString) {
-		return () -> IRI_PROTOCOLS.stream().anyMatch(iriString.toLowerCase()::startsWith) ? "<" + iriString + ">"
-				: iriString;
+		try {
+			ParsedIRI parsedIri = ParsedIRI.create(iriString);
+			
+			if (parsedIri != null) {
+				return () -> "<" + iriString + ">";
+			}
+			else {
+				return () -> iriString;
+			}
+		}
+		catch (IllegalArgumentException e) {
+			return () -> iriString;
+		}
 	}
 
 	/**
