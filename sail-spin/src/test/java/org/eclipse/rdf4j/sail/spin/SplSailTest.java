@@ -49,7 +49,7 @@ public class SplSailTest {
 	public void setup() throws RepositoryException {
 		NotifyingSail baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
-		SchemaCachingRDFSInferencer rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);
+		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		repo = new SailRepository(spinSail);
 		repo.initialize();
