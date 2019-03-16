@@ -44,17 +44,16 @@ public class Load extends ConsoleCommand {
 	public String getHelpShort() {
 		return "Loads a data file into a repository, takes a file path or URL as argument";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE 
-			+ "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
-			+ "  <file-or-url>   The path or URL identifying the data file\n"
-			+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
-			+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
-			+ "Loads the specified data file into the current repository\n";
+		return PrintHelp.USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+				+ "  <file-or-url>   The path or URL identifying the data file\n"
+				+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
+				+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
+				+ "Loads the specified data file into the current repository\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -76,7 +75,7 @@ public class Load extends ConsoleCommand {
 			} else {
 				String baseURI = null;
 				String context = null;
-				
+
 				int index = 2;
 				if (tokens.length >= index + 2 && tokens[index].equalsIgnoreCase("from")) {
 					baseURI = tokens[index + 1];
@@ -101,7 +100,7 @@ public class Load extends ConsoleCommand {
 	 * @param repository repository
 	 * @param baseURI
 	 * @param context
-	 * @param tokens 
+	 * @param tokens
 	 */
 	private void load(Repository repository, String baseURI, String context, final String... tokens) {
 		final String dataPath = tokens[1];
@@ -136,12 +135,12 @@ public class Load extends ConsoleCommand {
 	}
 
 	/**
-	 * Handle exceptions when loading data in a read-only repository.
-	 * If a lock is present and can be removed, the command will be executed again.
+	 * Handle exceptions when loading data in a read-only repository. If a lock is present and can be removed, the
+	 * command will be executed again.
 	 * 
 	 * @param repository repository
-	 * @param caught exception
-	 * @param tokens full command as series of tokens
+	 * @param caught     exception
+	 * @param tokens     full command as series of tokens
 	 */
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
 			final String... tokens) {
@@ -161,23 +160,22 @@ public class Load extends ConsoleCommand {
 	}
 
 	/**
-	 * Add data from a URL or local file.
-	 * If the dataURL is null, then the datafile will be used.
+	 * Add data from a URL or local file. If the dataURL is null, then the datafile will be used.
 	 * 
 	 * @param repository repository
-	 * @param baseURI base URI
-	 * @param context context (can be null)
-	 * @param dataURL url of the data
-	 * @param dataFile file containing data
+	 * @param baseURI    base URI
+	 * @param context    context (can be null)
+	 * @param dataURL    url of the data
+	 * @param dataFile   file containing data
 	 * @throws RepositoryException
 	 * @throws IOException
-	 * @throws RDFParseException 
+	 * @throws RDFParseException
 	 */
 	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
 			throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
 		consoleIO.writeln("Loading data...");
-		
+
 		final long startTime = System.nanoTime();
 		try (RepositoryConnection con = repository.getConnection()) {
 			if (dataURL == null) {
@@ -187,8 +185,7 @@ public class Load extends ConsoleCommand {
 			}
 		}
 		final long endTime = System.nanoTime();
-		consoleIO.writeln(
-				"Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
+		consoleIO.writeln("Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 
 	/**
@@ -207,7 +204,7 @@ public class Load extends ConsoleCommand {
 			} else {
 				contextURI = repository.getValueFactory().createIRI(context);
 			}
-			contexts = new Resource[]{contextURI};
+			contexts = new Resource[] { contextURI };
 		}
 		return contexts;
 	}

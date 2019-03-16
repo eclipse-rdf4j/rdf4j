@@ -34,16 +34,13 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class SizeController extends AbstractController {
 
-	public SizeController()
-		throws ApplicationContextException
-	{
+	public SizeController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();
@@ -57,12 +54,9 @@ public class SizeController extends AbstractController {
 
 			long size = -1;
 
-			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
-					request))
-			{
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 				size = repositoryCon.size(contexts);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 			}
 			model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));

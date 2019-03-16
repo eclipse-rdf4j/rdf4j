@@ -22,17 +22,8 @@ public class TestCreateServlet {
 	 */
 	@Test
 	public final void testExpectedTemplatesCanBeResolved() {
-		String[] expectedTemplates = {
-				"memory-customrule",
-				"memory-rdfs-dt",
-				"memory-rdfs",
-				"memory",
-				"native-customrule",
-				"native-rdfs-dt",
-				"native-rdfs",
-				"native",
-				"remote",
-				"sparql" };
+		String[] expectedTemplates = { "memory-customrule", "memory-rdfs-dt", "memory-rdfs", "memory",
+				"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql" };
 		for (String template : expectedTemplates) {
 			String resource = template + ".ttl";
 			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);

@@ -54,31 +54,26 @@ public class CacheFilter implements Filter {
 	 */
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
-		throws IOException, ServletException
-	{
+			throws IOException, ServletException {
 		if (null != expiry) {
-			((HttpServletResponse)res).setHeader(CACHE_CONTROL, "max-age=" + expiry + ", public");
+			((HttpServletResponse) res).setHeader(CACHE_CONTROL, "max-age=" + expiry + ", public");
 		}
 		chain.doFilter(req, res);
 	}
 
 	/**
-	 * Parse the Cache-Control configuration parameter as a long integer, and set the filter expiry value,
-	 * modulo the minimum and maximum expiry constraints. If the configuration parameter is not present, or
-	 * not a valid long integer value, then no Cache-Control headers will be applied by the filter.
+	 * Parse the Cache-Control configuration parameter as a long integer, and set the filter expiry value, modulo the
+	 * minimum and maximum expiry constraints. If the configuration parameter is not present, or not a valid long
+	 * integer value, then no Cache-Control headers will be applied by the filter.
 	 * 
 	 * @see #MIN_EXPIRY
 	 * @see #MAX_EXPIRY
 	 */
 	@Override
-	public void init(FilterConfig config)
-		throws ServletException
-	{
+	public void init(FilterConfig config) throws ServletException {
 		try {
-			expiry = Math.min(Math.max(MIN_EXPIRY, Long.parseLong(config.getInitParameter(CACHE_CONTROL))),
-					MAX_EXPIRY);
-		}
-		catch (NumberFormatException nfe) {
+			expiry = Math.min(Math.max(MIN_EXPIRY, Long.parseLong(config.getInitParameter(CACHE_CONTROL))), MAX_EXPIRY);
+		} catch (NumberFormatException nfe) {
 			LOGGER.warn("Failed to parse " + CACHE_CONTROL + " value.", nfe);
 			expiry = null;
 		}

@@ -45,8 +45,7 @@ public class QueryStorage {
 	private static QueryStorage instance;
 
 	public static QueryStorage getSingletonInstance(final AppConfiguration config)
-		throws RepositoryException, IOException
-	{
+			throws RepositoryException, IOException {
 		synchronized (LOCK) {
 			if (instance == null || instance.isShutdown()) {
 				instance = new QueryStorage(config);
@@ -115,15 +114,11 @@ public class QueryStorage {
 	/**
 	 * Create a new object for accessing the store of user queries.
 	 * 
-	 * @param appConfig
-	 *        the application configuration, for obtaining the data directory
-	 * @throws RepositoryException
-	 *         if there is an issue creating the object to access the repository
+	 * @param appConfig the application configuration, for obtaining the data directory
+	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 * @throws IOException
 	 */
-	protected QueryStorage(final AppConfiguration appConfig)
-		throws RepositoryException, IOException
-	{
+	protected QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
 		queries.initialize();
 	}
@@ -133,8 +128,7 @@ public class QueryStorage {
 			if (queries != null && queries.isInitialized()) {
 				queries.shutDown();
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			LOGGER.warn(e.getMessage());
 		}
 	}
@@ -142,61 +136,45 @@ public class QueryStorage {
 	/**
 	 * Checks whether the current user/password credentials can really access the current repository.
 	 * 
-	 * @param repository
-	 *        the current repository
+	 * @param repository the current repository
 	 * @return true, if it is possible to request a statement from the repository with the given credentials
-	 * @throws RepositoryException
-	 *         if there is an issue closing the connection
+	 * @throws RepositoryException if there is an issue closing the connection
 	 */
-	public boolean checkAccess(final HTTPRepository repository)
-		throws RepositoryException
-	{
+	public boolean checkAccess(final HTTPRepository repository) throws RepositoryException {
 		LOGGER.info("repository: {}", repository.getRepositoryURL());
 		boolean rval = true;
 		try (RepositoryConnection con = repository.getConnection()) {
 			// Manufacture an unlikely unique statement to check.
 			IRI uri = con.getValueFactory().createIRI("urn:uuid:" + UUID.randomUUID());
 			con.hasStatement(uri, uri, uri, false, uri);
-		}
-		catch (RepositoryException re) {
+		} catch (RepositoryException re) {
 			rval = false;
 		}
 		return rval;
 	}
 
 	/**
-	 * Save a query. UNSAFE from an injection point of view. It is the responsibility of the calling code to
-	 * call checkAccess() with the full credentials first.
+	 * Save a query. UNSAFE from an injection point of view. It is the responsibility of the calling code to call
+	 * checkAccess() with the full credentials first.
 	 * 
-	 * @param repository
-	 *        the repository the query is associated with
-	 * @param queryName
-	 *        the name for the query
-	 * @param userName
-	 *        the user saving the query
-	 * @param shared
-	 *        whether the query is to be shared with other users
-	 * @param queryLanguage
-	 *        the language, SeRQL or SPARQL, of the query
-	 * @param queryText
-	 *        the actual query text
+	 * @param repository    the repository the query is associated with
+	 * @param queryName     the name for the query
+	 * @param userName      the user saving the query
+	 * @param shared        whether the query is to be shared with other users
+	 * @param queryLanguage the language, SeRQL or SPARQL, of the query
+	 * @param queryText     the actual query text
 	 * @param infer
-	 * @param rowsPerPage
-	 *        rows to display per page, may be 0 (all), 10, 50, 100, or 200)
+	 * @param rowsPerPage   rows to display per page, may be 0 (all), 10, 50, 100, or 200)
 	 * @throws RDF4JException
 	 */
 	public void saveQuery(final HTTPRepository repository, final String queryName, final String userName,
-			final boolean shared, final QueryLanguage queryLanguage, final String queryText,
-			final boolean infer, final int rowsPerPage)
-		throws RDF4JException
-	{
+			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
+			final int rowsPerPage) throws RDF4JException {
 		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
-			throw new RepositoryException(
-					"May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
+			throw new RepositoryException("May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
 		}
-		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage
-				&& 100 != rowsPerPage && 200 != rowsPerPage)
-		{
+		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
+				&& 200 != rowsPerPage) {
 			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
 		}
 		this.checkQueryText(queryText);
@@ -211,37 +189,29 @@ public class QueryStorage {
 	/**
 	 * Determines whether the user with the given userName is allowed to update or delete the given query.
 	 * 
-	 * @param query
-	 *        the node identifying the query of interest
-	 * @param currentUser
-	 *        the user to check access for
+	 * @param query       the node identifying the query of interest
+	 * @param currentUser the user to check access for
 	 * @return <tt>true</tt> if the given query was saved by the given user or the anonymous user
 	 */
 	public boolean canChange(final IRI query, final String currentUser)
-		throws RepositoryException, QueryEvaluationException, MalformedQueryException
-	{
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		return performAccessQuery(ASK_UPDATABLE, query, currentUser);
 	}
 
 	/**
 	 * Determines whether the user with the given userName is allowed to read the given query.
 	 * 
-	 * @param query
-	 *        the node identifying the query of interest
-	 * @param currentUser
-	 *        the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or
-	 *         is shared
+	 * @param query       the node identifying the query of interest
+	 * @param currentUser the user to check access for
+	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or is shared
 	 */
 	public boolean canRead(IRI query, String currentUser)
-		throws RepositoryException, QueryEvaluationException, MalformedQueryException
-	{
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		return performAccessQuery(ASK_READABLE, query, currentUser);
 	}
 
 	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
-		throws RepositoryException, QueryEvaluationException, MalformedQueryException
-	{
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		final QueryStringBuilder canDelete = new QueryStringBuilder(accessSPARQL);
 		canDelete.replaceURI(QUERY, query.toString());
 		canDelete.replaceQuote(USER_NAME, currentUser);
@@ -252,8 +222,7 @@ public class QueryStorage {
 	}
 
 	public boolean askExists(final HTTPRepository repository, final String queryName, final String userName)
-		throws QueryEvaluationException, RepositoryException, MalformedQueryException
-	{
+			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		final QueryStringBuilder ask = new QueryStringBuilder(ASK_EXISTS);
 		ask.replaceURI(REPOSITORY, repository.getRepositoryURL());
 		ask.replaceQuote(QUERY_NAME, queryName);
@@ -265,8 +234,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Delete the given query for the given user. It is the responsibility of the calling code to call
-	 * checkAccess() and canDelete() with the full credentials first.
+	 * Delete the given query for the given user. It is the responsibility of the calling code to call checkAccess() and
+	 * canDelete() with the full credentials first.
 	 * 
 	 * @param query
 	 * @param userName
@@ -275,8 +244,7 @@ public class QueryStorage {
 	 * @throws MalformedQueryException
 	 */
 	public void deleteQuery(final IRI query, final String userName)
-		throws RepositoryException, UpdateExecutionException, MalformedQueryException
-	{
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder delete = new QueryStringBuilder(DELETE);
 		delete.replaceQuote(QueryStorage.USER_NAME, userName);
 		delete.replaceURI(QUERY, query.toString());
@@ -284,34 +252,23 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Update the entry for the given query. It is the responsibility of the calling code to call
-	 * checkAccess() with the full credentials first.
+	 * Update the entry for the given query. It is the responsibility of the calling code to call checkAccess() with the
+	 * full credentials first.
 	 * 
-	 * @param query
-	 *        the query to update
-	 * @param userName
-	 *        the user name
-	 * @param shared
-	 *        whether to share with other users
-	 * @param queryLanguage
-	 *        the query language
-	 * @param queryText
-	 *        the text of the query
+	 * @param query         the query to update
+	 * @param userName      the user name
+	 * @param shared        whether to share with other users
+	 * @param queryLanguage the query language
+	 * @param queryText     the text of the query
 	 * @param infer
-	 * @param rowsPerPage
-	 *        the rows per page to display of the query
-	 * @throws RepositoryException
-	 *         if a problem occurs during the update
-	 * @throws UpdateExecutionException
-	 *         if a problem occurs during the update
-	 * @throws MalformedQueryException
-	 *         if a problem occurs during the update
+	 * @param rowsPerPage   the rows per page to display of the query
+	 * @throws RepositoryException      if a problem occurs during the update
+	 * @throws UpdateExecutionException if a problem occurs during the update
+	 * @throws MalformedQueryException  if a problem occurs during the update
 	 */
 	public void updateQuery(final IRI query, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer,
-			final int rowsPerPage)
-		throws RepositoryException, UpdateExecutionException, MalformedQueryException
-	{
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
 		update.replaceURI(QUERY, query);
 		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
@@ -319,59 +276,42 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Prepares a query to retrieve the queries accessible to the given user in the given repository. When
-	 * evaluated, the query result will have the following binding names: query, user, queryName, shared,
-	 * queryLn, queryText, rowsPerPage. It is the responsibility of the calling code to call checkAccess()
-	 * with the full credentials first.
+	 * Prepares a query to retrieve the queries accessible to the given user in the given repository. When evaluated,
+	 * the query result will have the following binding names: query, user, queryName, shared, queryLn, queryText,
+	 * rowsPerPage. It is the responsibility of the calling code to call checkAccess() with the full credentials first.
 	 * 
-	 * @param repository
-	 *        that the saved queries run against
-	 * @param userName
-	 *        that is requesting the saved queries
-	 * @param builder
-	 *        receives a list of all the saved queries against the given repository and accessible to the
-	 *        given user
-	 * @throws RepositoryException
-	 *         if there's a problem connecting to the saved queries repository
-	 * @throws MalformedQueryException
-	 *         if the query is not legal SPARQL
-	 * @throws QueryEvaluationException
-	 *         if there is a problem while attempting to evaluate the query
+	 * @param repository that the saved queries run against
+	 * @param userName   that is requesting the saved queries
+	 * @param builder    receives a list of all the saved queries against the given repository and accessible to the
+	 *                   given user
+	 * @throws RepositoryException         if there's a problem connecting to the saved queries repository
+	 * @throws MalformedQueryException     if the query is not legal SPARQL
+	 * @throws QueryEvaluationException    if there is a problem while attempting to evaluate the query
 	 * @throws QueryResultHandlerException
 	 */
 	public void selectSavedQueries(final HTTPRepository repository, final String userName,
 			final TupleResultBuilder builder)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException,
-		QueryResultHandlerException
-	{
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
 		select.replaceQuote(USER_NAME, userName);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			EVAL.evaluateTupleQuery(builder,
-					connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
+			EVAL.evaluateTupleQuery(builder, connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
 		}
 	}
 
 	/**
-	 * Returns the URI for the saved query in the given repository with the given name, owned by the given
-	 * owner.
+	 * Returns the URI for the saved query in the given repository with the given name, owned by the given owner.
 	 * 
-	 * @param repository
-	 *        The repository the query is associated with.
-	 * @param owner
-	 *        The user that saved the query.
-	 * @param queryName
-	 *        The name given to the query.
+	 * @param repository The repository the query is associated with.
+	 * @param owner      The user that saved the query.
+	 * @param queryName  The name given to the query.
 	 * @return if it exists, the URI referring to the specified saved query.
-	 * @throws RDF4JException
-	 *         if issues occur performing the necessary queries.
-	 * @throws BadRequestException
-	 *         if the the specified stored query doesn't exist
+	 * @throws RDF4JException      if issues occur performing the necessary queries.
+	 * @throws BadRequestException if the the specified stored query doesn't exist
 	 */
 	public IRI selectSavedQuery(final HTTPRepository repository, final String owner, final String queryName)
-		throws RDF4JException, BadRequestException
-	{
+			throws RDF4JException, BadRequestException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_URI);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
@@ -381,36 +321,28 @@ public class QueryStorage {
 		try {
 			final TupleQueryResult result = query.evaluate();
 			if (result.hasNext()) {
-				return (IRI)(result.next().getValue("query"));
-			}
-			else {
+				return (IRI) (result.next().getValue("query"));
+			} else {
 				throw new BadRequestException("Could not find query entry in storage.");
 			}
-		}
-		finally {
+		} finally {
 			connection.close();
 		}
 	}
 
 	/**
-	 * Retrieves the specified query text. No security checks are done here. If the saved query exists, its
-	 * text is returned.
+	 * Retrieves the specified query text. No security checks are done here. If the saved query exists, its text is
+	 * returned.
 	 * 
-	 * @param repository
-	 *        Repository that the saved query is associated with.
-	 * @param owner
-	 *        The user that saved the query.
-	 * @param queryName
-	 *        The name given to the saved query.
+	 * @param repository Repository that the saved query is associated with.
+	 * @param owner      The user that saved the query.
+	 * @param queryName  The name given to the saved query.
 	 * @return the text of the saved query, if it exists
-	 * @throws RDF4JException
-	 *         if a problem occurs accessing storage
-	 * @throws BadRequestException
-	 *         if the specified query doesn't exist
+	 * @throws RDF4JException      if a problem occurs accessing storage
+	 * @throws BadRequestException if the specified query doesn't exist
 	 */
 	public String getQueryText(final HTTPRepository repository, final String owner, final String queryName)
-		throws RDF4JException, BadRequestException
-	{
+			throws RDF4JException, BadRequestException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_TEXT);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
@@ -421,19 +353,16 @@ public class QueryStorage {
 			final TupleQueryResult result = query.evaluate();
 			if (result.hasNext()) {
 				return result.next().getValue("queryText").stringValue();
-			}
-			else {
+			} else {
 				throw new BadRequestException("Could not find query entry in storage.");
 			}
-		}
-		finally {
+		} finally {
 			connection.close();
 		}
 	}
 
 	private void updateQueryRepository(final String update)
-		throws RepositoryException, UpdateExecutionException, MalformedQueryException
-	{
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", update);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
 			connection.prepareUpdate(QueryLanguage.SPARQL, update).execute();
@@ -443,39 +372,30 @@ public class QueryStorage {
 	/**
 	 * Perform replacement on several common fields for update operations.
 	 * 
-	 * @param userName
-	 *        the name of the current user
-	 * @param shared
-	 *        whether the saved query is to be shared with other users
-	 * @param queryLanguage
-	 *        the language of the saved query
-	 * @param queryText
-	 *        the actual text of the query to save
+	 * @param userName      the name of the current user
+	 * @param shared        whether the saved query is to be shared with other users
+	 * @param queryLanguage the language of the saved query
+	 * @param queryText     the actual text of the query to save
 	 * @param infer
-	 * @param rowsPerPage
-	 *        the rows per page to display for results
+	 * @param rowsPerPage   the rows per page to display for results
 	 */
-	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName,
-			final boolean shared, final QueryLanguage queryLanguage, final String queryText,
-			final boolean infer, final int rowsPerPage)
-	{
+	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage) {
 		builder.replaceQuote(USER_NAME, userName);
 		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
 		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());
 		checkQueryText(queryText);
 		builder.replace("$<queryText>", QueryStringBuilder.quote(queryText, "'''", "'''"));
 		builder.replace("$<infer>", QueryStringBuilder.xsdQuote(String.valueOf(infer), "boolean"));
-		builder.replace("$<rowsPerPage>",
-				QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
+		builder.replace("$<rowsPerPage>", QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
 	}
 
 	/**
-	 * Imposes the rule that the query may not contain '''-quoted string, since that is how we'll be quoting
-	 * it in our SPARQL/Update statements. Quoting the query with ''' assuming all string literals in the
-	 * query are of the STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
+	 * Imposes the rule that the query may not contain '''-quoted string, since that is how we'll be quoting it in our
+	 * SPARQL/Update statements. Quoting the query with ''' assuming all string literals in the query are of the
+	 * STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
 	 * 
-	 * @param queryText
-	 *        the query text
+	 * @param queryText the query text
 	 */
 	private void checkQueryText(final String queryText) {
 		if (queryText.indexOf("'''") > 0) {

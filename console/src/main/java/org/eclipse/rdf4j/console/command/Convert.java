@@ -48,16 +48,15 @@ public class Convert extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-			+ "convert <fileFrom> <fileTo>   Converts a file from one RDF format to another\n";
+		return PrintHelp.USAGE + "convert <fileFrom> <fileTo>   Converts a file from one RDF format to another\n";
 	}
-	
+
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 3) {
 			consoleIO.writeln(getHelpLong());
 			return;
-		} 
+		}
 
 		convert(tokens[1], tokens[2]);
 	}
@@ -66,7 +65,7 @@ public class Convert extends ConsoleCommand {
 	 * Convert a file
 	 * 
 	 * @param fileFrom file name
-	 * @param fileTo file name
+	 * @param fileTo   file name
 	 */
 	private void convert(String fileFrom, String fileTo) {
 		// check from
@@ -84,7 +83,7 @@ public class Convert extends ConsoleCommand {
 			consoleIO.writeError("No RDF parser for " + fileFrom);
 			return;
 		}
-		
+
 		// check to
 		Path pathTo = Util.getPath(fileTo);
 		if (pathTo == null) {
@@ -110,20 +109,20 @@ public class Convert extends ConsoleCommand {
 
 		RDFParser parser = Rio.createParser(fmtFrom.get());
 		String baseURI = pathFrom.toUri().toString();
-			
-		try (	BufferedInputStream r = new BufferedInputStream(Files.newInputStream(pathFrom));
+
+		try (BufferedInputStream r = new BufferedInputStream(Files.newInputStream(pathFrom));
 				BufferedWriter w = Files.newBufferedWriter(pathTo)) {
 			RDFWriter writer = Rio.createWriter(fmtTo.get(), w);
 			parser.setRDFHandler(writer);
-		
+
 			long startTime = System.nanoTime();
 			consoleIO.writeln("Converting file ...");
-			
+
 			parser.parse(r, baseURI);
-			
+
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
 			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
-		} catch (IOException|RDFParseException|RDFHandlerException e) {
+		} catch (IOException | RDFParseException | RDFHandlerException e) {
 			consoleIO.writeError("Failed to convert data: " + e.getMessage());
 		}
 	}

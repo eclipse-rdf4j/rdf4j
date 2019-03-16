@@ -17,12 +17,12 @@ import java.nio.file.Paths;
  */
 public class WorkDir extends ConsoleSetting<Path> {
 	public final static String NAME = "workdir";
-	
+
 	@Override
 	public String getHelpLong() {
 		return "set workDir=<dir>              Set the working directory\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -31,7 +31,7 @@ public class WorkDir extends ConsoleSetting<Path> {
 	public WorkDir() {
 		super(Paths.get(System.getProperty("user.dir")));
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -40,7 +40,7 @@ public class WorkDir extends ConsoleSetting<Path> {
 	public WorkDir(Path initValue) {
 		super(initValue);
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;

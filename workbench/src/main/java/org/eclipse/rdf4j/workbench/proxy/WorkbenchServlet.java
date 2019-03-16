@@ -55,9 +55,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
 
 	@Override
-	public void init(final ServletConfig config)
-		throws ServletException
-	{
+	public void init(final ServletConfig config) throws ServletException {
 		this.config = config;
 		if (config.getInitParameter(DEFAULT_PATH) == null) {
 			throw new MissingInitParameterException(DEFAULT_PATH);
@@ -68,11 +66,9 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 		try {
 			manager = createRepositoryManager(param);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new ServletException(e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServletException(e);
 		}
 	}
@@ -94,45 +90,35 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
-		throws ServletException, IOException
-	{
+			throws ServletException, IOException {
 		final String pathInfo = req.getPathInfo();
 		if (pathInfo == null) {
 			final String defaultPath = config.getInitParameter(DEFAULT_PATH);
 			resp.sendRedirect(req.getRequestURI() + defaultPath);
-		}
-		else if ("/".equals(pathInfo)) {
+		} else if ("/".equals(pathInfo)) {
 			final String defaultPath = config.getInitParameter(DEFAULT_PATH);
 			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));
-		}
-		else if ('/' == pathInfo.charAt(0)) {
+		} else if ('/' == pathInfo.charAt(0)) {
 			try {
 				handleRequest(req, resp, pathInfo);
-			}
-			catch (QueryResultHandlerException e) {
+			} catch (QueryResultHandlerException e) {
 				throw new IOException(e);
 			}
-		}
-		else {
+		} else {
 			throw new BadRequestException("Request path must contain a repository ID");
 		}
 	}
 
 	/**
-	 * @param req
-	 *        the servlet request
-	 * @param resp
-	 *        the servlet response
-	 * @param pathInfo
-	 *        the path info from the request
+	 * @param req      the servlet request
+	 * @param resp     the servlet response
+	 * @param pathInfo the path info from the request
 	 * @throws IOException
 	 * @throws ServletException
 	 * @throws QueryResultHandlerException
 	 */
-	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp,
-			final String pathInfo)
-		throws IOException, ServletException, QueryResultHandlerException
-	{
+	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp, final String pathInfo)
+			throws IOException, ServletException, QueryResultHandlerException {
 		int idx = pathInfo.indexOf('/', 1);
 		if (idx < 0) {
 			idx = pathInfo.length();
@@ -140,22 +126,17 @@ public class WorkbenchServlet extends AbstractServlet {
 		final String repoID = pathInfo.substring(1, idx);
 		try {
 			service(repoID, req, resp);
-		}
-		catch (RepositoryConfigException e) {
+		} catch (RepositoryConfigException e) {
 			throw new ServletException(e);
-		}
-		catch (UnauthorizedException e) {
+		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
-		}
-		catch (ServletException e) {
+		} catch (ServletException e) {
 			if (e.getCause() instanceof UnauthorizedException) {
 				handleUnauthorizedException(req, resp);
-			}
-			else {
+			} else {
 				throw e;
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServletException(e);
 		}
 	}
@@ -167,8 +148,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	 * @throws QueryResultHandlerException
 	 */
 	private void handleUnauthorizedException(final HttpServletRequest req, final HttpServletResponse resp)
-		throws IOException, QueryResultHandlerException
-	{
+			throws IOException, QueryResultHandlerException {
 		// Invalid credentials or insufficient authorization. Present
 		// entry form again with error message.
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
@@ -179,29 +159,23 @@ public class WorkbenchServlet extends AbstractServlet {
 		builder.end();
 	}
 
-	private RepositoryManager createRepositoryManager(final String param)
-		throws IOException, RepositoryException
-	{
+	private RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
 		if (param.startsWith("file:")) {
 			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
-		}
-		else {
+		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
 		manager.initialize();
 		return manager;
 	}
 
-	private File asLocalFile(final URL rdf)
-		throws UnsupportedEncodingException
-	{
+	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
 		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
 	}
 
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
-		throws RepositoryConfigException, RepositoryException, ServletException, IOException
-	{
+			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
 		setCredentials(req, resp);
 		final DynamicHttpRequest http = new DynamicHttpRequest(req);
@@ -212,8 +186,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		http.setPathInfo(pathInfo.length() == 0 ? null : pathInfo);
 		if (repositories.containsKey(repoID)) {
 			repositories.get(repoID).service(http, resp);
-		}
-		else {
+		} else {
 			final Repository repository = manager.getRepository(repoID);
 			if (repository == null) {
 				final String noId = config.getInitParameter(NO_REPOSITORY);
@@ -242,18 +215,14 @@ public class WorkbenchServlet extends AbstractServlet {
 	/**
 	 * Set the username and password for all requests to the repository.
 	 * 
-	 * @param req
-	 *        the servlet request
-	 * @param resp
-	 *        the servlet response
-	 * @throws MalformedURLException
-	 *         if the repository location is malformed
+	 * @param req  the servlet request
+	 * @param resp the servlet response
+	 * @throws MalformedURLException if the repository location is malformed
 	 */
 	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
-		throws MalformedURLException, RepositoryException
-	{
+			throws MalformedURLException, RepositoryException {
 		if (manager instanceof RemoteRepositoryManager) {
-			final RemoteRepositoryManager rrm = (RemoteRepositoryManager)manager;
+			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
 			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
 			final CookieHandler cookies = new CookieHandler(config);
 			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
@@ -263,11 +232,11 @@ public class WorkbenchServlet extends AbstractServlet {
 				String decoded;
 				try {
 					decoded = new String(Base64.getDecoder().decode(user_password));
-				} catch(IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					decoded = user_password; // older browsers
 				}
 				final String user = decoded.substring(0, decoded.indexOf(':'));
-				final String password = decoded.substring(decoded.indexOf(':')+1);
+				final String password = decoded.substring(decoded.indexOf(':') + 1);
 				LOGGER.info("Setting user '{}' and their password.", user);
 				rrm.setUsernameAndPassword(user, password);
 			}

@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.console.Help;
  */
 public class PrintHelp extends ConsoleCommand {
 	public static final String USAGE = "Usage:\n";
-	
-	private final Map<String,? extends Help> commands;
-	
+
+	private final Map<String, ? extends Help> commands;
+
 	@Override
 	public String getName() {
 		return "help";
@@ -32,19 +32,19 @@ public class PrintHelp extends ConsoleCommand {
 	public String getHelpShort() {
 		return "Displays this help message";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return "No additional help available";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
-	 * @param commands 
+	 * @param consoleIO
+	 * @param commands
 	 */
-	public PrintHelp(ConsoleIO consoleIO, Map<String,? extends Help> commands) {
+	public PrintHelp(ConsoleIO consoleIO, Map<String, ? extends Help> commands) {
 		super(consoleIO);
 		this.commands = commands;
 	}
@@ -55,7 +55,7 @@ public class PrintHelp extends ConsoleCommand {
 			printCommandOverview();
 			return;
 		}
-		
+
 		final String target = parameters[1].toLowerCase(Locale.ENGLISH);
 		Help cmd = commands.get(target);
 		if (cmd != null) {
@@ -71,11 +71,11 @@ public class PrintHelp extends ConsoleCommand {
 	private void printCommandOverview() {
 		consoleIO.writeln("For more information on a specific command, try 'help <command>'.");
 		consoleIO.writeln("List of all commands:");
-		
-		commands.forEach((k,v) -> {
+
+		commands.forEach((k, v) -> {
 			consoleIO.writeln(String.format("%-11s %s", k, v.getHelpShort()));
 		});
-		
+
 		consoleIO.writeln("exit, quit  Exit the console");
 	}
 }

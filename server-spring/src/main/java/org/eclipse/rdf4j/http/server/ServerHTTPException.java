@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.http.server;
 import java.net.HttpURLConnection;
 
 /**
- * HTTP-related exception indicating that an error occurred in a server. Status codes for these types of
- * errors are in the 5xx range. The default status code for constructors without a <tt>statusCode</tt>
- * parameter is <tt>500 Internal Server Error</tt>.
+ * HTTP-related exception indicating that an error occurred in a server. Status codes for these types of errors are in
+ * the 5xx range. The default status code for constructors without a <tt>statusCode</tt> parameter is
+ * <tt>500 Internal Server Error</tt>.
  * 
  * @author Arjohn Kampman
  */
@@ -44,44 +44,40 @@ public class ServerHTTPException extends HTTPException {
 	}
 
 	/**
-	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be
-	 * in the 5xx range.
+	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+	 * range.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 5xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 5xx range.
 	 */
 	public ServerHTTPException(int statusCode) {
 		super(statusCode);
 	}
 
 	/**
-	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be
-	 * in the 5xx range.
+	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+	 * range.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 5xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 5xx range.
 	 */
 	public ServerHTTPException(int statusCode, String message) {
 		super(statusCode, message);
 	}
 
 	/**
-	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be
-	 * in the 5xx range.
+	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+	 * range.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 5xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 5xx range.
 	 */
 	public ServerHTTPException(int statusCode, String message, Throwable t) {
 		super(statusCode, message, t);
 	}
 
 	/**
-	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be
-	 * in the 5xx range.
+	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+	 * range.
 	 * 
-	 * @throws IllegalArgumentException
-	 *         If <tt>statusCode</tt> is not in the 5xx range.
+	 * @throws IllegalArgumentException If <tt>statusCode</tt> is not in the 5xx range.
 	 */
 	public ServerHTTPException(int statusCode, Throwable t) {
 		super(statusCode, t);

@@ -66,9 +66,7 @@ public class TestServer {
 		jetty.setHandler(webapp);
 	}
 
-	public void start()
-		throws Exception
-	{
+	public void start() throws Exception {
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
@@ -78,11 +76,8 @@ public class TestServer {
 		createTestRepositories();
 	}
 
-	public void stop()
-		throws Exception
-	{
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+	public void stop() throws Exception {
+		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 		try (RepositoryConnection con = systemRepo.getConnection()) {
 			con.clear();
 		}
@@ -91,11 +86,8 @@ public class TestServer {
 		System.clearProperty("org.mortbay.log.class");
 	}
 
-	private void createTestRepositories()
-		throws RepositoryException, RepositoryConfigException
-	{
-		Repository systemRep = new HTTPRepository(
-				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
+		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();

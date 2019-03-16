@@ -38,9 +38,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 
 	@Override
 	@SuppressWarnings("unchecked")
-	public void init(ServletConfig config)
-		throws ServletException
-	{
+	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
 		lastModified = System.currentTimeMillis();
 		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null)
@@ -51,14 +49,11 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 			if (path.startsWith("/")) {
 				try {
 					servlets.put(path, createServlet(path));
-				}
-				catch (InstantiationException e) {
+				} catch (InstantiationException e) {
 					throw new ServletException(e);
-				}
-				catch (IllegalAccessException e) {
+				} catch (IllegalAccessException e) {
 					throw new ServletException(e);
-				}
-				catch (ClassNotFoundException e) {
+				} catch (ClassNotFoundException e) {
 					throw new ServletException(e);
 				}
 			}
@@ -77,15 +72,12 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	@Override
-	public void service(HttpServletRequest req, HttpServletResponse resp)
-		throws ServletException, IOException
-	{
+	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
 		if (isCachable(req)) {
 			long ifModifiedSince = req.getDateHeader(HEADER_IFMODSINCE);
 			if (ifModifiedSince < lastModified) {
 				resp.setDateHeader(HEADER_LASTMOD, lastModified);
-			}
-			else {
+			} else {
 				resp.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
 				return;
 			}
@@ -94,12 +86,10 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 		if (pathInfo == null) {
 			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);
 			resp.sendRedirect(req.getRequestURI() + defaultPath);
-		}
-		else if ("/".equals(pathInfo)) {
+		} else if ("/".equals(pathInfo)) {
 			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);
 			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));
-		}
-		else {
+		} else {
 			RepositoryServlet servlet = servlets.get(pathInfo);
 			if (servlet == null)
 				throw new BadRequestException("Unconfigured path: " + pathInfo);
@@ -110,8 +100,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 		}
 		if ("POST".equals(req.getMethod())) {
 			lastModified = System.currentTimeMillis();
-		}
-		else if (lastModified % 1000 != 0) {
+		} else if (lastModified % 1000 != 0) {
 			long modified = System.currentTimeMillis() / 1000 * 1000;
 			if (lastModified < modified) {
 				lastModified = modified;
@@ -127,10 +116,9 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	private RepositoryServlet createServlet(String path)
-		throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException
-	{
+			throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException {
 		Class<?> klass = Class.forName(config.getInitParameter(path));
-		RepositoryServlet servlet = (RepositoryServlet)klass.newInstance();
+		RepositoryServlet servlet = (RepositoryServlet) klass.newInstance();
 		servlet.setRepositoryManager(manager);
 		servlet.setRepositoryInfo(info);
 		servlet.setRepository(repository);

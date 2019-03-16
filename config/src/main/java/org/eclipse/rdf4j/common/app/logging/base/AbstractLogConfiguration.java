@@ -44,7 +44,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	/**
 	 * Constructor
 	 * 
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	protected AbstractLogConfiguration() throws IOException {
 		debugLoggingEnabled = false;
@@ -80,7 +80,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	/**
 	 * Initialize logging, setting log levels and handlers.
 	 * 
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private void initBase() throws IOException {
 		Properties loggingConfig = ConfigurationUtil.loadConfigurationProperties(LOGGING_CONFIG_FILE, null);

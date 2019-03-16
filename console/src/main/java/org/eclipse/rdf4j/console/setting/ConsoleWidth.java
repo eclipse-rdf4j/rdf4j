@@ -14,12 +14,12 @@ package org.eclipse.rdf4j.console.setting;
  */
 public class ConsoleWidth extends ConsoleSetting<Integer> {
 	public final static String NAME = "width";
-	
+
 	@Override
 	public String getHelpLong() {
 		return "set width=<number>             Set the width for query result tables\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -28,7 +28,7 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 	public ConsoleWidth() {
 		super(80);
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -37,7 +37,7 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 	public ConsoleWidth(Integer initValue) {
 		super(initValue);
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;

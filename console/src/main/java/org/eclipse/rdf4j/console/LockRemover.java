@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
  */
 public class LockRemover {
 	/**
-	 *  Try to remove  lock from repository
+	 * Try to remove lock from repository
 	 * 
 	 * @param repo
 	 * @param consoleIO
@@ -30,13 +30,13 @@ public class LockRemover {
 	 * @throws IOException
 	 * @throws RepositoryException
 	 */
-	public static boolean tryToRemoveLock(Repository repo, ConsoleIO consoleIO) 
-						throws IOException, RepositoryException {
+	public static boolean tryToRemoveLock(Repository repo, ConsoleIO consoleIO)
+			throws IOException, RepositoryException {
 		boolean lockRemoved = false;
-		
+
 		LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
-		if (lockManager.isLocked() && consoleIO.askProceed(
-				"WARNING: The lock from another process on this repository needs to be removed", true)) {
+		if (lockManager.isLocked() && consoleIO
+				.askProceed("WARNING: The lock from another process on this repository needs to be removed", true)) {
 			repo.shutDown();
 			lockRemoved = lockManager.revokeLock();
 			repo.initialize();
@@ -50,17 +50,17 @@ public class LockRemover {
 	 * @param rle
 	 * @param consoleIO
 	 * @return true if lock was removed
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public static boolean tryToRemoveLock(RepositoryLockedException rle, ConsoleIO consoleIO) throws IOException {
 		boolean lockRemoved = false;
-		
+
 		if (rle.getCause() instanceof SailLockedException) {
-			SailLockedException sle = (SailLockedException)rle.getCause();
+			SailLockedException sle = (SailLockedException) rle.getCause();
 			LockManager lockManager = sle.getLockManager();
-			if (lockManager != null && lockManager.isLocked()
-					&& consoleIO.askProceed("WARNING: The lock from process '" + sle.getLockedBy()
-							+ "' on this repository needs to be removed", true)) {
+			if (lockManager != null && lockManager.isLocked() && consoleIO.askProceed(
+					"WARNING: The lock from process '" + sle.getLockedBy() + "' on this repository needs to be removed",
+					true)) {
 				lockRemoved = lockManager.revokeLock();
 			}
 		}

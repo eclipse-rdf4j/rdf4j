@@ -14,8 +14,8 @@ import java.util.List;
 import org.eclipse.rdf4j.common.text.StringUtil;
 
 /**
- * An element in an HTTP header value. An HTTP header element has a value and zero or more parameters
- * consisting of a key and a value. An example header element is <tt>audio/*; q=0.2</tt>.
+ * An element in an HTTP header value. An HTTP header element has a value and zero or more parameters consisting of a
+ * key and a value. An example header element is <tt>audio/*; q=0.2</tt>.
  */
 public class HeaderElement {
 
@@ -39,7 +39,7 @@ public class HeaderElement {
 
 			// Add parameters to the header element
 			for (int i = 1; i < tokens.size(); i++) {
-				token = (String)tokens.get(i);
+				token = (String) tokens.get(i);
 
 				int splitIdx = token.indexOf('=');
 
@@ -51,8 +51,7 @@ public class HeaderElement {
 					if (token.length() > 0) {
 						result.addParameter(token);
 					}
-				}
-				else {
+				} else {
 					String key = token.substring(0, splitIdx).trim();
 					String value = token.substring(splitIdx + 1).trim();
 					value = StringUtil.trimDoubleQuotes(value);
@@ -153,7 +152,7 @@ public class HeaderElement {
 	@Override
 	public boolean equals(Object obj) {
 		if (obj instanceof HeaderElement) {
-			HeaderElement other = (HeaderElement)obj;
+			HeaderElement other = (HeaderElement) obj;
 
 			return value.equals(other.getValue()) && parameters.equals(other.getParameters());
 		}

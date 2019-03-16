@@ -14,14 +14,14 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
 /**
- * A product version in Aduna's version format (i.e. major.minor-modifier). Where major stands for the major
- * version number of the release, minor is the minor version number, and modifier is a modifier for the
- * release, e.g. beta1 or RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
+ * A product version in Aduna's version format (i.e. major.minor-modifier). Where major stands for the major version
+ * number of the release, minor is the minor version number, and modifier is a modifier for the release, e.g. beta1 or
+ * RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
  */
 public class AppVersion implements Comparable<AppVersion> {
 
-	private static final Pattern VERSION_REGEX = 
-		Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
+	private static final Pattern VERSION_REGEX = Pattern
+			.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
 
 	/**
 	 * The version's major version number.
@@ -84,8 +84,8 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g.<tt>1.0-beta1</tt>.
 	 * 
-	 * @param major major number
-	 * @param minor minor number
+	 * @param major    major number
+	 * @param minor    minor number
 	 * @param modifier additional string
 	 */
 	public AppVersion(int major, int minor, String modifier) {
@@ -95,9 +95,9 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.<tt>1.0.1-SNAPSHOT</tt>.
 	 * 
-	 * @param major major number
-	 * @param minor minor number
-	 * @param patch patch number
+	 * @param major    major number
+	 * @param minor    minor number
+	 * @param patch    patch number
 	 * @param modifier additional string
 	 */
 	public AppVersion(int major, int minor, int patch, String modifier) {
@@ -105,14 +105,13 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, 
-	 * e.g.<tt>1.0.1M1-SNAPSHOT</tt>.
+	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, e.g.<tt>1.0.1M1-SNAPSHOT</tt>.
 	 * 
-	 * @param major major number
-	 * @param minor minor number
-	 * @param patch patch number
+	 * @param major     major number
+	 * @param minor     minor number
+	 * @param patch     patch number
 	 * @param milestone milestone number
-	 * @param modifier additional string
+	 * @param modifier  additional string
 	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
 		this(major, minor, patch, milestone, modifier, null);
@@ -121,12 +120,12 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Creates a new version number
 	 * 
-	 * @param major major number
-	 * @param minor minor number
-	 * @param patch patch number
+	 * @param major     major number
+	 * @param minor     minor number
+	 * @param patch     patch number
 	 * @param milestone milestone number
-	 * @param modifier additional string
-	 * @param build build string
+	 * @param modifier  additional string
+	 * @param build     build string
 	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier, String build) {
 		this.major = major;
@@ -238,7 +237,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		boolean isEqual = false;
 
 		if (other instanceof AppVersion) {
-			AppVersion o = (AppVersion)other;
+			AppVersion o = (AppVersion) other;
 
 			isEqual = major == o.major && minor == o.minor && patch == o.patch && milestone == o.milestone;
 
@@ -292,16 +291,14 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Compares two version numbers according to their major, minor, patch and milestone version numbers,
-	 * ordering from oldest to newest version.
-	 * If all version numbers are equal, then their modifiers are compared lexicographically 
-	 * (based on the Unicode value of each character), ignoring case. 
-	 * Versions without a modifier or milestone are considered to be the "final" versions 
-	 * and come after other versions with a modifier or milestone.
+	 * Compares two version numbers according to their major, minor, patch and milestone version numbers, ordering from
+	 * oldest to newest version. If all version numbers are equal, then their modifiers are compared lexicographically
+	 * (based on the Unicode value of each character), ignoring case. Versions without a modifier or milestone are
+	 * considered to be the "final" versions and come after other versions with a modifier or milestone.
 	 * 
 	 * @param other
-	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than
-	 *         <tt>other</tt>, or a positive number otherwise.
+	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than <tt>other</tt>, or
+	 *         a positive number otherwise.
 	 */
 	@Override
 	public int compareTo(AppVersion other) {
@@ -319,12 +316,10 @@ public class AppVersion implements Comparable<AppVersion> {
 			if (milestone > -1) {
 				if (other.milestone == -1) {
 					result = -1;
-				}
-				else {
+				} else {
 					result = milestone - other.milestone;
 				}
-			}
-			else {
+			} else {
 				if (other.milestone > -1) {
 					result = 1;
 				}
@@ -334,11 +329,9 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (result == 0 && !ObjectUtil.nullEquals(modifier, other.modifier)) {
 			if (modifier == null) {
 				result = 1;
-			}
-			else if (other.modifier == null) {
+			} else if (other.modifier == null) {
 				result = -1;
-			}
-			else {
+			} else {
 				result = modifier.compareToIgnoreCase(other.modifier);
 			}
 		}
@@ -349,11 +342,9 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Parses a version string into a Version object.
 	 * 
-	 * @param versionString
-	 *        A version string, e.g. 1.0.1 or 1.0-beta1.
+	 * @param versionString A version string, e.g. 1.0.1 or 1.0-beta1.
 	 * @return The parsed Version.
-	 * @exception NumberFormatException
-	 *            If versionString could not be parsed to a version.
+	 * @exception NumberFormatException If versionString could not be parsed to a version.
 	 */
 	public static AppVersion parse(String versionString) {
 		if (versionString.equals("dev")) {
@@ -364,11 +355,11 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (!m.find()) {
 			throw new NumberFormatException("Illegal version string: " + versionString);
 		}
-		int minorSeparator = m.start(2)-1;
-		int patchSeparator = m.start(3)-1;
+		int minorSeparator = m.start(2) - 1;
+		int patchSeparator = m.start(3) - 1;
 		int milestoneSeparator = m.start(4);
-		int modifierSeparator = m.start(5)-1;
-		int buildSeparator = m.start(6)-1;
+		int modifierSeparator = m.start(5) - 1;
+		int buildSeparator = m.start(6) - 1;
 
 		if (minorSeparator == -1) {
 			throw new NumberFormatException("Illegal version string: " + versionString);
@@ -393,8 +384,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (hasModifier) {
 			if (hasBuild) {
 				modifier = versionString.substring(modifierSeparator + 1, buildSeparator);
-			}
-			else {
+			} else {
 				modifier = versionString.substring(modifierSeparator + 1);
 			}
 		}
@@ -402,11 +392,9 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (hasMilestone) {
 			if (hasModifier) {
 				milestone = versionString.substring(milestoneSeparator + 1, modifierSeparator);
-			}
-			else if (hasBuild) {
+			} else if (hasBuild) {
 				milestone = versionString.substring(milestoneSeparator + 1, buildSeparator);
-			}
-			else {
+			} else {
 				milestone = versionString.substring(milestoneSeparator + 1);
 			}
 		}
@@ -415,29 +403,22 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (hasPatch) {
 			if (hasMilestone) {
 				patch = versionString.substring(patchSeparator + 1, milestoneSeparator);
-			}
-			else if (hasModifier) {
+			} else if (hasModifier) {
 				patch = versionString.substring(patchSeparator + 1, modifierSeparator);
-			}
-			else if (hasBuild) {
+			} else if (hasBuild) {
 				patch = versionString.substring(patchSeparator + 1, buildSeparator);
-			}
-			else {
+			} else {
 				patch = versionString.substring(patchSeparator + 1);
 			}
 			minor = versionString.substring(minorSeparator + 1, patchSeparator);
-		}
-		else {
+		} else {
 			if (hasMilestone) {
 				minor = versionString.substring(minorSeparator + 1, milestoneSeparator);
-			}
-			else if (hasModifier) {
+			} else if (hasModifier) {
 				minor = versionString.substring(minorSeparator + 1, modifierSeparator);
-			}
-			else if (hasBuild) {
+			} else if (hasBuild) {
 				minor = versionString.substring(minorSeparator + 1, buildSeparator);
-			}
-			else {
+			} else {
 				minor = versionString.substring(minorSeparator + 1);
 			}
 

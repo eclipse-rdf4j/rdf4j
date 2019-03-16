@@ -33,24 +33,21 @@ public class NavigationHandlerInterceptor implements HandlerInterceptor {
 
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
-			Exception ex)
-	{
+			Exception ex) {
 		// nop
 	}
 
 	@Override
-	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
-			ModelAndView mav)
-	{
-		NavigationModel sessionNavigationModel = (NavigationModel)request.getSession().getAttribute(
-				NavigationModel.NAVIGATION_MODEL_KEY);
+	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
+		NavigationModel sessionNavigationModel = (NavigationModel) request.getSession()
+				.getAttribute(NavigationModel.NAVIGATION_MODEL_KEY);
 		if (sessionNavigationModel == null) {
 			sessionNavigationModel = navigationModel;
 		}
 
 		if (mav != null && sessionNavigationModel != null) {
-			mav.addObject("view", sessionNavigationModel.findView(
-					request.getRequestURI().substring(request.getContextPath().length())));
+			mav.addObject("view", sessionNavigationModel
+					.findView(request.getRequestURI().substring(request.getContextPath().length())));
 		}
 	}
 

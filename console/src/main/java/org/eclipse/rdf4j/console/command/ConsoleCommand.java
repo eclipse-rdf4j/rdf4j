@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.console.setting.ShowPrefix;
 public abstract class ConsoleCommand implements Command, Help {
 	final ConsoleIO consoleIO;
 	final ConsoleState state;
-	
+
 	/**
 	 * Convert old console parameters to new way (map) of storing parameters.
 	 * 
@@ -37,29 +37,29 @@ public abstract class ConsoleCommand implements Command, Help {
 	 * @return map of console settings
 	 */
 	@Deprecated
-	public static Map<String,ConsoleSetting> convertParams(ConsoleParameters parameters) {
-		Map<String,ConsoleSetting> settings = new HashMap<>();
-		
+	public static Map<String, ConsoleSetting> convertParams(ConsoleParameters parameters) {
+		Map<String, ConsoleSetting> settings = new HashMap<>();
+
 		settings.put(ConsoleWidth.NAME, new ConsoleWidth(parameters.getWidth()));
 		settings.put(QueryPrefix.NAME, new QueryPrefix(parameters.isQueryPrefix()));
 		settings.put(ShowPrefix.NAME, new ShowPrefix(parameters.isShowPrefix()));
-		
+
 		return settings;
 	}
-	
+
 	/**
 	 * Get console IO
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public ConsoleIO getConsoleIO() {
 		return this.consoleIO;
 	}
-	
+
 	/**
 	 * Get console state
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public ConsoleState getConsoleState() {
 		return this.state;
@@ -68,23 +68,23 @@ public abstract class ConsoleCommand implements Command, Help {
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
-	 * @return 
+	 * @return
 	 */
 	@Override
 	public String getHelpShort() {
 		return "No help available";
 	}
-	
+
 	/**
 	 * Get long description
 	 * 
-	 * @return string, can be multiple lines 
+	 * @return string, can be multiple lines
 	 */
 	@Override
 	public String getHelpLong() {
 		return "No additional help available";
 	}
-	
+
 	@Override
 	public void execute(String... parameters) throws IOException {
 		throw new UnsupportedOperationException("Not supported yet.");
@@ -93,18 +93,18 @@ public abstract class ConsoleCommand implements Command, Help {
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
+	 * @param consoleIO
 	 */
 	public ConsoleCommand(ConsoleIO consoleIO) {
 		this.consoleIO = consoleIO;
 		this.state = null;
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param state 
+	 * @param state
 	 */
 	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state) {
 		this.consoleIO = consoleIO;

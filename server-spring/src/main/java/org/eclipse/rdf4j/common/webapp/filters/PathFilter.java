@@ -27,9 +27,7 @@ import javax.servlet.http.HttpServletResponseWrapper;
 public class PathFilter implements Filter {
 
 	@Override
-	public void init(FilterConfig filterConf)
-		throws ServletException
-	{
+	public void init(FilterConfig filterConf) throws ServletException {
 		// do nothing
 	}
 
@@ -40,15 +38,14 @@ public class PathFilter implements Filter {
 
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res, FilterChain filterChain)
-		throws IOException, ServletException
-	{
+			throws IOException, ServletException {
 		if (req instanceof HttpServletRequest) {
-			HttpServletRequest request = (HttpServletRequest)req;
-			HttpServletResponse response = (HttpServletResponse)res;
+			HttpServletRequest request = (HttpServletRequest) req;
+			HttpServletResponse response = (HttpServletResponse) res;
 			String path = request.getContextPath();
 
 			PrintWriter out = response.getWriter();
-			CharResponseWrapper wrapper = new CharResponseWrapper((HttpServletResponse)response);
+			CharResponseWrapper wrapper = new CharResponseWrapper((HttpServletResponse) response);
 			filterChain.doFilter(request, wrapper);
 			CharArrayWriter caw = new CharArrayWriter();
 			caw.write(wrapper.toString().replace("${path}", path));

@@ -43,9 +43,7 @@ public class SystemInfoController implements Controller {
 	}
 
 	@Override
-	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
 		ModelAndView result = new ModelAndView();
 		result.setViewName(view);
 
@@ -111,11 +109,11 @@ public class SystemInfoController implements Controller {
 			long maxMemory = runtime.maxMemory();
 
 			// Memory usage (percentage)
-			percentageInUse = (float)((float)usedMemory / (float)maxMemory);
+			percentageInUse = (float) ((float) usedMemory / (float) maxMemory);
 
 			// Memory usage in MB
-			used = (int)(usedMemory / 1024 / 1024);
-			maximum = (int)(maxMemory / 1024 / 1024);
+			used = (int) (usedMemory / 1024 / 1024);
+			maximum = (int) (maxMemory / 1024 / 1024);
 		}
 
 		public int getMaximum() {

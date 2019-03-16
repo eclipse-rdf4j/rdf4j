@@ -17,33 +17,27 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  */
 public class QueryFactory {
 
-	public static Query prepareQuery(final RepositoryConnection con, final QueryLanguage queryLn,
-			final String query)
-		throws RDF4JException
-	{
+	public static Query prepareQuery(final RepositoryConnection con, final QueryLanguage queryLn, final String query)
+			throws RDF4JException {
 		Query rval = null;
 		try {
 			rval = con.prepareQuery(queryLn, query);
-		}
-		catch (UnsupportedOperationException exc) {
+		} catch (UnsupportedOperationException exc) {
 			// TODO must be an HTTP repository
 			try {
 				con.prepareTupleQuery(queryLn, query).evaluate().close();
 				rval = con.prepareTupleQuery(queryLn, query);
-			}
-			catch (Exception e1) {
+			} catch (Exception e1) {
 				// guess its not a tuple query
 				try {
 					con.prepareGraphQuery(queryLn, query).evaluate().close();
 					rval = con.prepareGraphQuery(queryLn, query);
-				}
-				catch (Exception e2) {
+				} catch (Exception e2) {
 					// guess its not a graph query
 					try {
 						con.prepareBooleanQuery(queryLn, query).evaluate();
 						rval = con.prepareBooleanQuery(queryLn, query);
-					}
-					catch (Exception e3) {
+					} catch (Exception e3) {
 						// guess its not a boolean query
 						// let's assume it is an malformed tuple query
 						rval = con.prepareTupleQuery(queryLn, query);

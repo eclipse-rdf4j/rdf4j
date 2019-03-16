@@ -38,8 +38,7 @@ public class AddServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws IOException, RepositoryException, FileUploadException, QueryResultHandlerException
-	{
+			throws IOException, RepositoryException, FileUploadException, QueryResultHandlerException {
 		try {
 			String baseURI = req.getParameter("baseURI");
 			String contentType = req.getParameter("Content-Type");
@@ -47,22 +46,18 @@ public class AddServlet extends TransformationServlet {
 				Resource context = req.getResource(CONTEXT);
 				if (req.isParameterPresent(URL)) {
 					add(req.getUrl(URL), baseURI, contentType, context);
-				}
-				else {
+				} else {
 					add(req.getContentParameter(), baseURI, contentType, req.getContentFileName(), context);
 				}
-			}
-			else {
+			} else {
 				if (req.isParameterPresent(URL)) {
 					add(req.getUrl(URL), baseURI, contentType);
-				}
-				else {
+				} else {
 					add(req.getContentParameter(), baseURI, contentType, req.getContentFileName());
 				}
 			}
 			resp.sendRedirect("summary");
-		}
-		catch (BadRequestException exc) {
+		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "add.xsl");
@@ -77,73 +72,62 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	private void add(InputStream stream, String baseURI, String contentType, String contentFileName,
-			Resource... context)
-		throws BadRequestException, RepositoryException, IOException
-	{
+			Resource... context) throws BadRequestException, RepositoryException, IOException {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(contentFileName).orElseThrow(
-					() -> new BadRequestException(
-							"Could not automatically determine Content-Type for content: "
-									+ contentFileName));
-		}
-		else {
-			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
-					() -> new BadRequestException("Unknown Content-Type: " + contentType));
+			format = Rio.getParserFormatForFileName(contentFileName)
+					.orElseThrow(() -> new BadRequestException(
+							"Could not automatically determine Content-Type for content: " + contentFileName));
+		} else {
+			format = Rio.getParserFormatForMIMEType(contentType)
+					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.add(stream, baseURI, format, context);
-		}
-		catch (RDFParseException exc) {
+		} catch (RDFParseException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
-		}
-		catch (IllegalArgumentException exc) {
+		} catch (IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
 	}
 
 	private void add(URL url, String baseURI, String contentType, Resource... context)
-		throws BadRequestException, RepositoryException, IOException
-	{
+			throws BadRequestException, RepositoryException, IOException {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(url.getFile()).orElseThrow(() -> new BadRequestException(
-					"Could not automatically determine Content-Type for content: " + url.getFile()));
-		}
-		else {
-			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
-					() -> new BadRequestException("Unknown Content-Type: " + contentType));
+			format = Rio.getParserFormatForFileName(url.getFile())
+					.orElseThrow(() -> new BadRequestException(
+							"Could not automatically determine Content-Type for content: " + url.getFile()));
+		} else {
+			format = Rio.getParserFormatForMIMEType(contentType)
+					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
 		try {
 			try (RepositoryConnection con = repository.getConnection()) {
 				con.add(url, baseURI, format, context);
 			}
-		}
-		catch (RDFParseException exc) {
+		} catch (RDFParseException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
-		}
-		catch (MalformedURLException exc) {
+		} catch (MalformedURLException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
-		}
-		catch (IllegalArgumentException exc) {
+		} catch (IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
 	}
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = getTupleResultBuilder(req, resp);
 		builder.transform(xslPath, "add.xsl");
 		builder.start();

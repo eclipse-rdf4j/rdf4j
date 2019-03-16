@@ -14,7 +14,7 @@ import java.io.IOException;
  *
  * @author Dale Visser
  */
-public interface Command {	
+public interface Command {
 	/**
 	 * Execute the given parameters.
 	 *

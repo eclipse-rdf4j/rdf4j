@@ -20,13 +20,13 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  */
 class DefaultConsoleState implements ConsoleState {
 	private final AppConfiguration cfg;
-		
+
 	private RepositoryManager manager;
 	private String managerID;
 
 	private Repository repository;
 	private String repositoryID;
-	
+
 	@Override
 	public String getApplicationName() {
 		return cfg.getFullName();
@@ -56,7 +56,7 @@ class DefaultConsoleState implements ConsoleState {
 	public void setManager(RepositoryManager manager) {
 		this.manager = manager;
 	}
-	
+
 	@Override
 	public void setManagerID(String managerID) {
 		this.managerID = managerID;
@@ -76,7 +76,7 @@ class DefaultConsoleState implements ConsoleState {
 	public void setRepository(Repository repository) {
 		this.repository = repository;
 	}
-	
+
 	/**
 	 * Constructor
 	 * 

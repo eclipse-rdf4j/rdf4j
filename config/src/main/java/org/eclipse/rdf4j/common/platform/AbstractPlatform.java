@@ -41,16 +41,14 @@ public abstract class AbstractPlatform implements Platform {
 
 		if ((sysProp = System.getProperty(APPDATA_BASEDIR_PROPERTY)) != null) {
 			result = new File(sysProp);
-		}
-		else if ((sysProp = System.getProperty(OLD_DATADIR_PROPERTY)) != null) {
+		} else if ((sysProp = System.getProperty(OLD_DATADIR_PROPERTY)) != null) {
 			logger.info(
 					"Old Aduna datadir property \"{}\" detected. This property has been replaced with \"{}\". "
 							+ "Support for the old property may be removed in a future version of this application.",
 					OLD_DATADIR_PROPERTY, APPDATA_BASEDIR_PROPERTY);
 
 			result = new File(sysProp);
-		}
-		else {
+		} else {
 			result = getOSApplicationDataDir();
 		}
 
@@ -69,17 +67,17 @@ public abstract class AbstractPlatform implements Platform {
 
 	@Override
 	public String getRelativeApplicationDataDir(String applicationName) {
-		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(),
-				dataDirReplaceWhitespace(), dataDirReplaceColon());
+		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(), dataDirReplaceWhitespace(),
+				dataDirReplaceColon());
 	}
 
 	/**
 	 * Get the relative name of the application directory
 	 * 
-	 * @param applicationName name of the application
-	 * @param caseSensitive true when case-sensitive
+	 * @param applicationName   name of the application
+	 * @param caseSensitive     true when case-sensitive
 	 * @param replaceWhitespace true when whitespace is to be replaced
-	 * @param replaceColon true when colon needs to be replaced
+	 * @param replaceColon      true when colon needs to be replaced
 	 * @return name of the application directory
 	 */
 	public String getRelativeApplicationDataDir(String applicationName, boolean caseSensitive,

@@ -29,10 +29,10 @@ public class ShowPrefixTest extends AbstractSettingTest {
 	@Test
 	public void testShowQueryPrefix() {
 		setParameters.execute("set", "showPrefix=true");
-		
+
 		setParameters.execute("set", "showPrefix");
 		verify(mockConsoleIO).writeln("showPrefix: true");
-		
+
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
 }

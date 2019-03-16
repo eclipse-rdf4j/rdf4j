@@ -59,17 +59,14 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	public void setAppender(Appender<?> appender) {
 		super.setAppender(appender);
 		if (appender instanceof RollingFileAppender) {
-			RollingPolicy rp = ((RollingFileAppender<?>)appender).getRollingPolicy();
+			RollingPolicy rp = ((RollingFileAppender<?>) appender).getRollingPolicy();
 			if (rp instanceof TimeBasedRollingPolicy) {
-				fileNamePattern = ((TimeBasedRollingPolicy)rp).getFileNamePattern();
-			}
-			else {
+				fileNamePattern = ((TimeBasedRollingPolicy) rp).getFileNamePattern();
+			} else {
 				throw new UnsupportedOperationException("Must be TimeBasedRollingPolicy!");
 			}
-		}
-		else {
-			throw new RuntimeException(
-					"MultipleFileLogReader appender must be an instance of RollingFileAppender!");
+		} else {
+			throw new RuntimeException("MultipleFileLogReader appender must be an instance of RollingFileAppender!");
 		}
 	}
 
@@ -96,7 +93,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		if (!dfMatcher.matches()) {
 			throw new RuntimeException("Wrong filename pattern: " + fileNamePattern);
 		}
-		
+
 		String dfs = dfMatcher.group(2);
 		SimpleDateFormat df = new SimpleDateFormat(dfs);
 		String spattern = new File(fileNamePattern).getName();
@@ -104,7 +101,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		spattern = spattern.replace("%d{" + dfs + "}", "(.*)");
 		Pattern pattern = Pattern.compile(spattern);
 		File dir = new File(fileNamePattern).getParentFile();
-		
+
 		String[] files = dir.list(new DateRangeFilenameFilter(pattern, df, startCal, endCal));
 		Arrays.sort(files);
 		for (int i = files.length - 1; i >= 0; i--) {
@@ -141,15 +138,13 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		try {
 			next = getNext();
 			count++;
-		}
-		catch (Exception ex) {
+		} catch (Exception ex) {
 			throw new RuntimeException("Unable to get next log record.", ex);
 		}
 		if (!hasNext()) {
 			try {
 				destroy();
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
@@ -160,7 +155,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	 * Get next log record
 	 * 
 	 * @return log record
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	private LogRecord getNext() throws Exception {
 		if (currentReader.hasNext()) {
@@ -205,8 +200,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	/**
 	 * Set start date
 	 * 
-	 * @param startDate
-	 *        The startDate to set.
+	 * @param startDate The startDate to set.
 	 */
 	@Override
 	public void setStartDate(Date startDate) {
@@ -226,8 +220,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	/**
 	 * Set the end date
 	 * 
-	 * @param endDate
-	 *        The endDate to set.
+	 * @param endDate The endDate to set.
 	 */
 	@Override
 	public void setEndDate(Date endDate) {
@@ -265,8 +258,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		 * @param startCal
 		 * @param endCal
 		 */
-		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal,
-																			Calendar endCal) {
+		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal, Calendar endCal) {
 			this.pattern = pattern;
 			this.df = df;
 			this.startCal = startCal;
@@ -283,8 +275,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			Date d;
 			try {
 				d = df.parse(ds);
-			}
-			catch (ParseException e) {
+			} catch (ParseException e) {
 				e.printStackTrace();
 				return false;
 			}

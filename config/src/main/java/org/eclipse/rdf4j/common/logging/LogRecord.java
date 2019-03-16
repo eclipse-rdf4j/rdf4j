@@ -16,8 +16,7 @@ import java.util.List;
  */
 public interface LogRecord {
 
-	public static final SimpleDateFormat ISO8601_TIMESTAMP_FORMAT = new SimpleDateFormat(
-			"yyyy-MM-dd HH:mm:ss,SSS");
+	public static final SimpleDateFormat ISO8601_TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
 
 	/**
 	 * Get log level
@@ -51,6 +50,6 @@ public interface LogRecord {
 	 * Get stack trace as list of strings
 	 * 
 	 * @return list of strings
-	 */	
+	 */
 	public List<String> getStackTrace();
 }

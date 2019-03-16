@@ -18,13 +18,12 @@ import javax.servlet.http.HttpServletRequest;
 public class HttpServerUtil {
 
 	/**
-	 * Extracts the MIME type from the specified content type string. This method parses the content type
-	 * string and returns just the MIME type, ignoring any parameters that are included.
+	 * Extracts the MIME type from the specified content type string. This method parses the content type string and
+	 * returns just the MIME type, ignoring any parameters that are included.
 	 * 
-	 * @param contentType
-	 *        A content type string, e.g. <tt>application/xml; charset=utf-8</tt> .
-	 * @return The MIME type part of the specified content type string, or <tt>null</tt> if the specified
-	 *         content type string was <tt>null</tt>.
+	 * @param contentType A content type string, e.g. <tt>application/xml; charset=utf-8</tt> .
+	 * @return The MIME type part of the specified content type string, or <tt>null</tt> if the specified content type
+	 *         string was <tt>null</tt>.
 	 */
 	public static String getMIMEType(String contentType) {
 		if (contentType == null) {
@@ -35,15 +34,13 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Selects from a set of MIME types, the MIME type that has the highest quality score when matched with
-	 * the Accept headers in the supplied request.
+	 * Selects from a set of MIME types, the MIME type that has the highest quality score when matched with the Accept
+	 * headers in the supplied request.
 	 * 
-	 * @param mimeTypes
-	 *        The set of available MIME types.
-	 * @param request
-	 *        The request to match the MIME types against.
-	 * @return The MIME type that best matches the types that the client finds acceptable, or <tt>null</tt> in
-	 *         case no acceptable MIME type could be found.
+	 * @param mimeTypes The set of available MIME types.
+	 * @param request   The request to match the MIME types against.
+	 * @return The MIME type that best matches the types that the client finds acceptable, or <tt>null</tt> in case no
+	 *         acceptable MIME type could be found.
 	 */
 	public static String selectPreferredMIMEType(Iterator<String> mimeTypes, HttpServletRequest request) {
 		List<HeaderElement> acceptElements = getHeaderElements(request, "Accept");
@@ -53,8 +50,7 @@ public class HttpServerUtil {
 			// from the list
 			if (mimeTypes.hasNext()) {
 				return mimeTypes.next();
-			}
-			else {
+			} else {
 				return null;
 			}
 		}
@@ -76,8 +72,7 @@ public class HttpServerUtil {
 				if (qualityStr != null) {
 					try {
 						quality = Double.parseDouble(qualityStr);
-					}
-					catch (NumberFormatException e) {
+					} catch (NumberFormatException e) {
 						// Illegal quality value, assume it has a different meaning
 						// and ignore it
 					}
@@ -87,8 +82,7 @@ public class HttpServerUtil {
 					result = mimeType;
 					matchingAcceptType = acceptType;
 					highestQuality = quality;
-				}
-				else if (quality == highestQuality) {
+				} else if (quality == highestQuality) {
 					// found a match with equal quality preference. check if the
 					// accept type is more specific
 					// than the previous match.
@@ -108,12 +102,9 @@ public class HttpServerUtil {
 	 * 
 	 * @param leftMimeTypeElem
 	 * @param rightMimeTypeElem
-	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false
-	 *         otherwise.
+	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false otherwise.
 	 */
-	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem,
-			HeaderElement rightMimeTypeElem)
-	{
+	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem, HeaderElement rightMimeTypeElem) {
 
 		String[] leftMimeType = splitMIMEType(leftMimeTypeElem.getValue());
 		String[] rightMimeType = splitMIMEType(rightMimeTypeElem.getValue());
@@ -131,8 +122,7 @@ public class HttpServerUtil {
 			}
 
 			return false;
-		}
-		else {
+		} else {
 			return true;
 		}
 	}
@@ -143,8 +133,7 @@ public class HttpServerUtil {
 			String type = mimeTypeString.substring(0, slashIdx);
 			String subType = mimeTypeString.substring(slashIdx + 1);
 			return new String[] { type, subType };
-		}
-		else {
+		} else {
 			// invalid mime type
 			return null;
 		}
@@ -153,10 +142,8 @@ public class HttpServerUtil {
 	/**
 	 * Gets the elements of the request header with the specified name.
 	 * 
-	 * @param request
-	 *        The request to get the header from.
-	 * @param headerName
-	 *        The name of the header to get the elements of.
+	 * @param request    The request to get the header from.
+	 * @param headerName The name of the header to get the elements of.
 	 * @return A List of {@link HeaderElement} objects.
 	 */
 	public static List<HeaderElement> getHeaderElements(HttpServletRequest request, String headerName) {
@@ -182,13 +169,11 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Splits the supplied string into sub parts using the specified splitChar as a separator, ignoring
-	 * occurrences of this character inside quoted strings.
+	 * Splits the supplied string into sub parts using the specified splitChar as a separator, ignoring occurrences of
+	 * this character inside quoted strings.
 	 * 
-	 * @param s
-	 *        The header string to split into sub parts.
-	 * @param splitChar
-	 *        The character to use as separator.
+	 * @param s         The header string to split into sub parts.
+	 * @param splitChar The character to use as separator.
 	 * @return A <tt>List</tt> of <tt>String</tt>s.
 	 */
 	public static List<String> splitHeaderString(String s, char splitChar) {
@@ -203,8 +188,7 @@ public class HttpServerUtil {
 			if (c == splitChar && !parsingQuotedString) {
 				result.add(s.substring(startIdx, i));
 				startIdx = i + 1;
-			}
-			else if (c == '"') {
+			} else if (c == '"') {
 				parsingQuotedString = !parsingQuotedString;
 			}
 		}
@@ -217,16 +201,14 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Tries to match the specified MIME type spec against the list of Accept header elements, returning the
-	 * applicable header element if available.
+	 * Tries to match the specified MIME type spec against the list of Accept header elements, returning the applicable
+	 * header element if available.
 	 * 
-	 * @param mimeTypeSpec
-	 *        The MIME type to determine the quality for, e.g. "text/plain" or
-	 *        "application/xml; charset=utf-8".
-	 * @param acceptElements
-	 *        A List of {@link HeaderElement} objects.
-	 * @return The Accept header element that matches the MIME type spec most closely, or <tt>null</tt> if no
-	 *         such header element could be found.
+	 * @param mimeTypeSpec   The MIME type to determine the quality for, e.g. "text/plain" or "application/xml;
+	 *                       charset=utf-8".
+	 * @param acceptElements A List of {@link HeaderElement} objects.
+	 * @return The Accept header element that matches the MIME type spec most closely, or <tt>null</tt> if no such
+	 *         header element could be found.
 	 */
 	public static HeaderElement matchAcceptHeader(String mimeTypeSpec, List<HeaderElement> acceptElements) {
 		HeaderElement mimeTypeElem = HeaderElement.parse(mimeTypeSpec);
@@ -270,8 +252,8 @@ public class HttpServerUtil {
 	 * <li>If the MIME type element has one or more parameters, the last parameter is removed.
 	 * <li>Otherwise, if the MIME type element's subtype is not equal to '*' then it is set to this value.
 	 * <li>Otherwise, if the MIME type element's type is not equal to '*' then it is set to this value.
-	 * <li>Otherwise, the MIME type is equal to "*&slash;*" and cannot be generalized any further;
-	 * <tt>null</tt> is returned.
+	 * <li>Otherwise, the MIME type is equal to "*&slash;*" and cannot be generalized any further; <tt>null</tt> is
+	 * returned.
 	 * </ul>
 	 * <p>
 	 * Example generalizations:
@@ -299,8 +281,7 @@ public class HttpServerUtil {
 	 * </tr>
 	 * </table>
 	 * 
-	 * @param mimeTypeElem
-	 *        The MIME type element that should be generalized.
+	 * @param mimeTypeElem The MIME type element that should be generalized.
 	 * @return The generalized MIME type element, or <tt>null</tt> if it could not be generalized any further.
 	 */
 	private static HeaderElement generalizeMIMEType(HeaderElement mimeTypeElem) {
@@ -308,8 +289,7 @@ public class HttpServerUtil {
 		if (parameterCount > 0) {
 			// remove last parameter
 			mimeTypeElem.removeParameter(parameterCount - 1);
-		}
-		else {
+		} else {
 			String mimeType = mimeTypeElem.getValue();
 
 			int slashIdx = mimeType.indexOf('/');
@@ -320,17 +300,14 @@ public class HttpServerUtil {
 				if (!subType.equals("*")) {
 					// generalize subtype
 					mimeTypeElem.setValue(type + "/*");
-				}
-				else if (!type.equals("*")) {
+				} else if (!type.equals("*")) {
 					// generalize type
 					mimeTypeElem.setValue("*/*");
-				}
-				else {
+				} else {
 					// Cannot generalize any further
 					mimeTypeElem = null;
 				}
-			}
-			else {
+			} else {
 				// invalid MIME type
 				mimeTypeElem = null;
 			}
@@ -350,20 +327,18 @@ public class HttpServerUtil {
 		try {
 			Object param = formData.get(name);
 			if (param instanceof String[]) {
-				String[] paramArray = (String[])param;
+				String[] paramArray = (String[]) param;
 				if (paramArray.length > 0) {
 					result = paramArray[0];
 				}
-			}
-			else if (param instanceof String) {
-				result = (String)param;
+			} else if (param instanceof String) {
+				result = (String) param;
 			}
 
 			if (result != null) {
 				result = result.trim();
 			}
-		}
-		catch (ClassCastException cce) {
+		} catch (ClassCastException cce) {
 			// ignore, return null
 		}
 

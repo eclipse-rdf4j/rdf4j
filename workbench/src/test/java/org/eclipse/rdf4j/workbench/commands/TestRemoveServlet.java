@@ -39,8 +39,7 @@ public class TestRemoveServlet {
 
 	@Test
 	public void testSES1958regression()
-		throws RepositoryException, QueryResultHandlerException, IOException, BadRequestException
-	{
+			throws RepositoryException, QueryResultHandlerException, IOException, BadRequestException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(CONTEXT)).thenReturn(true);
 		IRI context = SimpleValueFactory.getInstance().createIRI("<http://foo.org/bar>");

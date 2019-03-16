@@ -29,8 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Interceptor for repository requests. Should not be a singleton bean! Configure as inner bean in
- * openrdf-servlet.xml
+ * Interceptor for repository requests. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -64,9 +63,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	}
 
 	@Override
-	public boolean preHandle(HttpServletRequest request, HttpServletResponse respons, Object handler)
-		throws Exception
-	{
+	public boolean preHandle(HttpServletRequest request, HttpServletResponse respons, Object handler) throws Exception {
 		String pathInfoStr = request.getPathInfo();
 		logger.debug("path info: {}", pathInfoStr);
 
@@ -98,15 +95,12 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	}
 
 	@Override
-	protected void setRequestAttributes(HttpServletRequest request)
-		throws ClientHTTPException, ServerHTTPException
-	{
+	protected void setRequestAttributes(HttpServletRequest request) throws ClientHTTPException, ServerHTTPException {
 		String nextRepositoryID = repositoryID;
 		if (RepositoryConfigRepository.ID.equals(nextRepositoryID)) {
 			request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager));
-		}
-		else if (nextRepositoryID != null) {
+		} else if (nextRepositoryID != null) {
 			try {
 				Repository repository = repositoryManager.getRepository(nextRepositoryID);
 
@@ -116,30 +110,27 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 				request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 				request.setAttribute(REPOSITORY_KEY, repository);
-			}
-			catch (RepositoryConfigException e) {
+			} catch (RepositoryConfigException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
 			}
 		}
 	}
 
 	public static String getRepositoryID(HttpServletRequest request) {
-		return (String)request.getAttribute(REPOSITORY_ID_KEY);
+		return (String) request.getAttribute(REPOSITORY_ID_KEY);
 	}
 
 	public static Repository getRepository(HttpServletRequest request) {
-		return (Repository)request.getAttribute(REPOSITORY_KEY);
+		return (Repository) request.getAttribute(REPOSITORY_KEY);
 	}
 
 	/**
-	 * Obtain a new {@link RepositoryConnection} with suitable parser/writer configuration for handling the
-	 * incoming HTTP request. The caller of this method is responsible for closing the connection.
+	 * Obtain a new {@link RepositoryConnection} with suitable parser/writer configuration for handling the incoming
+	 * HTTP request. The caller of this method is responsible for closing the connection.
 	 * 
-	 * @param request
-	 *        the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
+	 * @param request the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
 	 * @return a configured {@link RepositoryConnection}
 	 */
 	public static RepositoryConnection getRepositoryConnection(HttpServletRequest request) {

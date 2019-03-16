@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 
-
 /**
  * Write query results to console
  * 
@@ -29,22 +28,22 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 public class ConsoleRDFWriter extends AbstractRDFWriter {
 	private final ConsoleIO consoleIO;
 	private final int consoleWidth;
-	private final Map<String,String> namespaces = new HashMap<>();
+	private final Map<String, String> namespaces = new HashMap<>();
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
-	
+
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO 
+	 * @param consoleIO
 	 * @param consoleWidth console width
 	 */
 	public ConsoleRDFWriter(ConsoleIO consoleIO, int consoleWidth) {
 		this.consoleIO = consoleIO;
 		this.consoleWidth = consoleWidth;
 	}
-	
+
 	@Override
 	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// use uri as the key, so the prefix can be retrieved and shown on the console
@@ -53,7 +52,8 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 
 	@Override
 	public RDFFormat getRDFFormat() {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
+																		// Tools | Templates.
 	}
 
 	@Override

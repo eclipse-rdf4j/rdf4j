@@ -37,9 +37,7 @@ public class SummaryServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryEvaluationException, MalformedQueryException,
-		QueryResultHandlerException
-	{
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.transform(xslPath, "summary.xsl");
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(Arrays.asList(INFO));
@@ -50,12 +48,10 @@ public class SummaryServlet extends TransformationServlet {
 				List<Future<String>> futures = getRepositoryStatistics(con);
 				size = getResult("repository size.", futures.get(0));
 				numContexts = getResult("labeled contexts.", futures.get(1));
-			}
-			catch (InterruptedException e) {
+			} catch (InterruptedException e) {
 				LOGGER.warn("Interrupted while requesting repository statistics.", e);
 			}
-			builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), size,
-					numContexts);
+			builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), size, numContexts);
 			builder.end();
 		}
 	}
@@ -65,43 +61,34 @@ public class SummaryServlet extends TransformationServlet {
 		try {
 			if (future.isCancelled()) {
 				result = "Timed out while requesting " + itemRequested;
-			}
-			else {
+			} else {
 				try {
 					result = future.get();
-				}
-				catch (ExecutionException e) {
+				} catch (ExecutionException e) {
 					LOGGER.warn("Exception occured during async request.", e);
 					result = "Exception occured while requesting " + itemRequested;
 				}
 			}
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			LOGGER.error("Unexpected exception", e);
 		}
 		return result;
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<Future<String>> getRepositoryStatistics(final RepositoryConnection con)
-		throws InterruptedException
-	{
+	private List<Future<String>> getRepositoryStatistics(final RepositoryConnection con) throws InterruptedException {
 		List<Future<String>> futures;
 		futures = executorService.invokeAll(Arrays.asList(new Callable<String>() {
 
 			@Override
-			public String call()
-				throws RepositoryException
-			{
+			public String call() throws RepositoryException {
 				return Long.toString(con.size());
 			}
 
 		}, new Callable<String>() {
 
 			@Override
-			public String call()
-				throws RepositoryException
-			{
+			public String call() throws RepositoryException {
 				return Integer.toString(Iterations.asList(con.getContextIDs()).size());
 			}
 
@@ -112,10 +99,9 @@ public class SummaryServlet extends TransformationServlet {
 	private String getServer() {
 		String result = null; // gracefully ignored by builder.result(...)
 		if (manager instanceof LocalRepositoryManager) {
-			result = ((LocalRepositoryManager)manager).getBaseDir().toString();
-		}
-		else if (manager instanceof RemoteRepositoryManager) {
-			result = ((RemoteRepositoryManager)manager).getServerURL();
+			result = ((LocalRepositoryManager) manager).getBaseDir().toString();
+		} else if (manager instanceof RemoteRepositoryManager) {
+			result = ((RemoteRepositoryManager) manager).getServerURL();
 		}
 		return result;
 	}

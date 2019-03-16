@@ -25,7 +25,7 @@ public class Sparql extends QueryEvaluator {
 	public String getName() {
 		return "sparql";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Evaluate a SPARQL query";
@@ -33,18 +33,16 @@ public class Sparql extends QueryEvaluator {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE 
-			+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
-			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
-			+ "\n"
-			+ "sparql INFILE=\"infile.ext\"           Evaluates the query stored in a file.\n"
-			+ "sparql OUTFILE=\"outfile.ext\" <query> Save the results to a file.\n"
-			+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
-			+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
-			+ "sparql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n"
-			+ "\n"
-			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
-			+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
+		return PrintHelp.USAGE
+				+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
+				+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
+				+ "\n" + "sparql INFILE=\"infile.ext\"           Evaluates the query stored in a file.\n"
+				+ "sparql OUTFILE=\"outfile.ext\" <query> Save the results to a file.\n"
+				+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
+				+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
+				+ "sparql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n" + "\n"
+				+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
+				+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
 	}
 
 	/**
@@ -52,13 +50,13 @@ public class Sparql extends QueryEvaluator {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param params 
+	 * @param params
 	 */
 	@Deprecated
 	public Sparql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
 		super(consoleIO, state, params);
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -72,7 +70,7 @@ public class Sparql extends QueryEvaluator {
 	protected boolean hasQueryPrefixes(String qry) {
 		return qry.startsWith("prefix");
 	}
-	
+
 	@Override
 	protected void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces) {
 		StringBuilder str = new StringBuilder(512);

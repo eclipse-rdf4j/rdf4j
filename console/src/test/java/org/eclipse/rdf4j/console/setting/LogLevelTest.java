@@ -25,24 +25,24 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Bart Hanssens
  */
-public class LogLevelTest extends AbstractSettingTest {	
+public class LogLevelTest extends AbstractSettingTest {
 	private Level originalLevel;
 
 	@Before
 	public void setUp() {
-		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+		originalLevel = ((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 		settings.put(LogLevel.NAME, new LogLevel());
 		super.setUp();
 	}
 
 	@After
 	public void tearDown() throws Exception {
-		((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
+		((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
 	}
 
 	@Test
 	public void testNoValueShowsCurrentLevel() {
-		Logger logger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		logger.setLevel(Level.INFO);
 
 		setParameters.execute("set", "log");
@@ -53,7 +53,7 @@ public class LogLevelTest extends AbstractSettingTest {
 
 	@Test
 	public void testSettingLogChangesLevel() {
-		Logger logger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		logger.setLevel(Level.DEBUG);
 
 		setParameters.execute("set", "log=warning");
@@ -71,12 +71,12 @@ public class LogLevelTest extends AbstractSettingTest {
 
 	@Test
 	public void testLevelsThatDoNotMatchSlf4jAreMapped() {
-		Logger logger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		logger.setLevel(Level.WARN);
 
 		setParameters.execute("set", "log");
 
 		verify(mockConsoleIO).writeln("log: warning");
 		verifyNoMoreInteractions(mockConsoleIO);
-	}	
+	}
 }
