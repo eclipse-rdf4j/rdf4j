@@ -9,20 +9,13 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import java.util.Arrays;
-<<<<<<< HEAD
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
-=======
-import org.eclipse.rdf4j.common.net.ParsedIRI;
->>>>>>> 72ecaec0... #7 - "file:" not a recognized protocol in SparqlBuilder
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.AnonymousBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
@@ -35,7 +28,8 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
  * Model objects.
  */
 public class Rdf {
-	private Rdf() { }
+	private Rdf() {
+	}
 
 	/**
 	 * Create a SparqlBuilder Iri instance from a String iri
@@ -46,15 +40,13 @@ public class Rdf {
 	public static Iri iri(String iriString) {
 		try {
 			ParsedIRI parsedIri = ParsedIRI.create(iriString);
-			
+
 			if (parsedIri != null) {
 				return () -> "<" + iriString + ">";
-			}
-			else {
+			} else {
 				return () -> iriString;
 			}
-		}
-		catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException e) {
 			return () -> iriString;
 		}
 	}
