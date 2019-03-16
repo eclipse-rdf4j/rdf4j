@@ -278,8 +278,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 						List<Tuple> collect = stream.collect(Collectors.toList());
 
-						List<Tuple> collect = stream.collect(Collectors.toList());
-
 						if (LoggingNode.loggingEnabled) {
 							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 							logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(),

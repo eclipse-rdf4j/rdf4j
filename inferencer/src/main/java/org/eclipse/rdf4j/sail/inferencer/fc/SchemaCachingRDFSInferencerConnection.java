@@ -195,7 +195,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			addInferredStatementInternal(subject, RDF.TYPE, RDFS.RESOURCE, inferredContext);
 
 			if (object instanceof Resource) {
-				addInferredStatementInternal((Resource)object, RDF.TYPE, RDFS.RESOURCE, inferredContext);
+				addInferredStatementInternal((Resource) object, RDF.TYPE, RDFS.RESOURCE, inferredContext);
 			}
 		}
 
@@ -207,7 +207,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 					addInferredStatementInternal(subject, RDFS.MEMBER, object, inferredContext);
 
 					addInferredStatementInternal(predicate, RDF.TYPE, RDFS.RESOURCE, inferredContext);
-					addInferredStatementInternal(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY, inferredContext);
+					addInferredStatementInternal(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY,
+							inferredContext);
 					addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY, inferredContext);
 					addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, predicate, inferredContext);
 					addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER, inferredContext);
@@ -238,36 +239,33 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
 					addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
 				}
-			}).filter(inferredType -> !inferredType.equals(object)).forEach(
-					inferredType -> addInferredStatementInternal(subject, RDF.TYPE, inferredType, inferredContext));
+			})
+					.filter(inferredType -> !inferredType.equals(object))
+					.forEach(
+							inferredType -> addInferredStatementInternal(subject, RDF.TYPE, inferredType,
+									inferredContext));
 		}
 
 		sail.resolveProperties(predicate)
-			.stream()
-			.filter(inferredProperty -> !inferredProperty.equals(predicate))
-			.filter(inferredPropery -> inferredPropery instanceof IRI)
-			.map(inferredPropery -> ((IRI) inferredPropery))
-			.forEach(inferredProperty -> addInferredStatementInternal(subject, inferredProperty, object, inferredContext));
+				.stream()
+				.filter(inferredProperty -> !inferredProperty.equals(predicate))
+				.filter(inferredPropery -> inferredPropery instanceof IRI)
+				.map(inferredPropery -> ((IRI) inferredPropery))
+				.forEach(inferredProperty -> addInferredStatementInternal(subject, inferredProperty, object,
+						inferredContext));
 
 		if (object instanceof Resource) {
 			sail.resolveRangeTypes(predicate)
-				.stream()
-				.peek(inferredType -> {
-					if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-						addInferredStatementInternal(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
-					}
-				})
-				.forEach(inferredType -> addInferredStatementInternal(((Resource) object), RDF.TYPE, inferredType, inferredContext));
+					.stream()
+					.peek(inferredType -> {
+						if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+							addInferredStatementInternal(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE,
+									inferredContext);
+						}
+					})
+					.forEach(inferredType -> addInferredStatementInternal(((Resource) object), RDF.TYPE, inferredType,
+							inferredContext));
 		}
-
-		if (object instanceof Resource) {
-			sail.resolveRangeTypes(predicate).stream().peek(inferredType -> {
-				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-					addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
-				}
-			})
-			.forEach(inferredType -> addInferredStatementInternal((subject), RDF.TYPE, inferredType, inferredContext));
-
 	}
 
 	void addAxiomStatements() {
