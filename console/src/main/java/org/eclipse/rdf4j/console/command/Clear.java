@@ -43,9 +43,8 @@ public class Clear extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-			+ "clear                   Clears the entire repository\n"
-			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
+		return PrintHelp.USAGE + "clear                   Clears the entire repository\n"
+				+ "clear (<uri>|null)...   Clears the specified context(s)\n";
 	}
 
 	/**
@@ -53,7 +52,7 @@ public class Clear extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-
+	 * 
 	 */
 	public Clear(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -62,7 +61,7 @@ public class Clear extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
-		
+
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
 		} else {
@@ -81,7 +80,7 @@ public class Clear extends ConsoleCommand {
 	 * Clear repository, either completely or only triples of specific contexts.
 	 * 
 	 * @param repository repository to be cleared
-	 * @param contexts array of contexts
+	 * @param contexts   array of contexts
 	 */
 	private void clear(Repository repository, Resource[] contexts) {
 		if (contexts.length == 0) {

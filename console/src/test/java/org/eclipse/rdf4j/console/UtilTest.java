@@ -27,63 +27,56 @@ import static org.junit.Assert.fail;
  */
 public class UtilTest {
 	private static Repository repo;
-	
+
 	@BeforeClass
 	public static void setupClass() {
 		repo = new SailRepository(new MemoryStore());
 		repo.initialize();
 	}
-	
+
 	@AfterClass
 	public static void tearDownClass() {
 		repo.shutDown();
 	}
-	
+
 	@Test
 	public final void testContextsTwo() {
 		String ONE = "http://one.rdf4j.org";
 		String TWO = "_:two";
-		
+
 		ValueFactory f = repo.getValueFactory();
 		Resource[] check = new Resource[] { f.createIRI(ONE), f.createBNode(TWO.substring(2)) };
 
-		String[] tokens = {"command", ONE, TWO};
+		String[] tokens = { "command", ONE, TWO };
 		Resource[] ctxs = Util.getContexts(tokens, 1, repo);
 
 		assertTrue("Not equal", Arrays.equals(check, ctxs));
 	}
 
-	
 	@Test
 	public final void testContextsNull() {
-		String[] tokens = {"command", "command2", "NULL"};
-		
-		Resource[] ctxs = Util.getContexts(tokens, 2, repo);
-		assertTrue("Not null", ctxs[0] == null);	
-	}
+		String[] tokens = { "command", "command2", "NULL" };
 
+		Resource[] ctxs = Util.getContexts(tokens, 2, repo);
+		assertTrue("Not null", ctxs[0] == null);
+	}
 
 	@Test
 	public final void testContextsInvalid() {
-		String[] tokens = {"command", "invalid"};
-		
+		String[] tokens = { "command", "invalid" };
+
 		try {
 			Resource[] ctxs = Util.getContexts(tokens, 1, repo);
 			fail("No exception generated");
-		} catch(IllegalArgumentException expected) {
+		} catch (IllegalArgumentException expected) {
 		}
 	}
-	
+
 	@Test
 	public final void testFormatToWidth() {
 		String str = "one, two, three, four, five, six, seven, eight";
-		
-		String expect = " one, two\n" +
-						" three\n" +
-						" four\n" +
-						" five, six\n" +
-						" seven\n" +
-						" eight";
+
+		String expect = " one, two\n" + " three\n" + " four\n" + " five, six\n" + " seven\n" + " eight";
 		String fmt = Util.formatToWidth(10, " ", str, ", ");
 		System.err.println(fmt);
 		assertTrue("Format not OK", expect.equals(fmt));

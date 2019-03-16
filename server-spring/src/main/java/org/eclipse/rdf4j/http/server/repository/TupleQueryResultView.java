@@ -32,8 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * View used to render tuple query results. Renders results in a format specified using a parameter or Accept
- * header.
+ * View used to render tuple query results. Renders results in a format specified using a parameter or Accept header.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -63,20 +62,19 @@ public class TupleQueryResultView extends QueryResultView {
 	@SuppressWarnings("rawtypes")
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws IOException
-	{
-		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory)model.get(FACTORY_KEY);
+			throws IOException {
+		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
 		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
 
 		response.setStatus(SC_OK);
 		setContentType(response, qrFormat);
 		setContentDisposition(model, response, qrFormat);
 
-		final Boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
+		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 		if (headersOnly == null || !headersOnly.booleanValue()) {
 			try (OutputStream out = response.getOutputStream()) {
 				TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
-				TupleQueryResult tupleQueryResult = (TupleQueryResult)model.get(QUERY_RESULT_KEY);
+				TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
 
 				if (qrWriter.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 					String parameter = request.getParameter(DEFAULT_JSONP_CALLBACK_PARAMETER);
@@ -99,16 +97,13 @@ public class TupleQueryResultView extends QueryResultView {
 				}
 
 				QueryResults.report(tupleQueryResult, qrWriter);
-			}
-			catch (QueryInterruptedException e) {
+			} catch (QueryInterruptedException e) {
 				logger.error("Query interrupted", e);
 				response.sendError(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
-			}
-			catch (TupleQueryResultHandlerException e) {
+			} catch (TupleQueryResultHandlerException e) {
 				logger.error("Serialization error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
 			}

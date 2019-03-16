@@ -46,9 +46,9 @@ public class ExportTest extends AbstractCommandTest {
 	public void setUp() throws IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
-		
+
 		addRepositories("export", MEMORY_MEMBER);
-		
+
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
@@ -62,32 +62,29 @@ public class ExportTest extends AbstractCommandTest {
 		manager.shutDown();
 	}
 
-	
 	@Test
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("all.nq");
 		export.execute("export", nq.toString());
-		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), 
-							"http://example.com", RDFFormat.NQUADS);
-		
+		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
+
 		assertTrue("File is empty", nq.length() > 0);
 		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
-		
+
 		nq.delete();
 	}
-	
+
 	@Test
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("default.nq");
 		export.execute("export", nq.toString(), "null", "http://example.org/ns/context/resurrection");
-		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), 
-								"http://example.com", RDFFormat.NQUADS);
-		
+		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
+
 		assertTrue("File is empty", nq.length() > 0);
 
 		assertEquals("Number of contexts incorrect", 2, exp.contexts().size());
 		assertEquals("Number of triples incorrect", 4, exp.size());
-		
+
 		nq.delete();
 	}
 }

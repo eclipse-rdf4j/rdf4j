@@ -23,16 +23,13 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 public class NamespacesServlet extends TransformationServlet {
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		try (RepositoryConnection con = repository.getConnection()) {
 			String prefix = req.getParameter("prefix");
 			String namespace = req.getParameter("namespace");
 			if (namespace.length() > 0) {
 				con.setNamespace(prefix, namespace);
-			}
-			else {
+			} else {
 				con.removeNamespace(prefix);
 			}
 		}
@@ -41,8 +38,7 @@ public class NamespacesServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = new TupleResultBuilder(out);
 		builder.transform(xslPath, "namespaces.xsl");
 		RepositoryConnection con = repository.getConnection();
@@ -54,8 +50,7 @@ public class NamespacesServlet extends TransformationServlet {
 				builder.result(ns.getPrefix(), ns.getName());
 			}
 			builder.end();
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}

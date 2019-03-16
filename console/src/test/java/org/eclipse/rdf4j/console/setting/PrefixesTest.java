@@ -34,33 +34,33 @@ public class PrefixesTest extends AbstractSettingTest {
 	@Test
 	public void testClearPrefixes() {
 		setParameters.execute("set", "prefixes=<none>");
-		
+
 		setParameters.execute("set", "prefixes");
 		verify(mockConsoleIO).writeln("prefixes: ");
 
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
-	
+
 	@Test
 	public void testDefaultPrefixes() {
 		setParameters.execute("set", "prefixes=<none>");
 		setParameters.execute("set", "prefixes=<default>");
-		
+
 		setParameters.execute("set", "prefixes");
-		ArgumentCaptor<String> s  = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<String> s = ArgumentCaptor.forClass(String.class);
 		verify(mockConsoleIO).writeln(s.capture());
 		assertTrue("Does not contain dcterms", s.getValue().contains(DCTERMS.NAMESPACE));
 
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
-	
+
 	@Test
 	public void testNewPrefix() {
 		setParameters.execute("set", "prefixes=<none>");
 		setParameters.execute("set", "prefixes=" + DCTERMS.PREFIX + " " + DCTERMS.NAMESPACE);
-		
+
 		setParameters.execute("set", "prefixes");
-		ArgumentCaptor<String> s  = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<String> s = ArgumentCaptor.forClass(String.class);
 		verify(mockConsoleIO).writeln(s.capture());
 		assertTrue("Does not contain dcterms", s.getValue().contains(DCTERMS.NAMESPACE));
 

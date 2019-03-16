@@ -28,7 +28,7 @@ public class SetParametersTest extends AbstractCommandTest {
 
 	@Before
 	public void setUp() {
-		Map<String,ConsoleSetting> settings = new HashMap<>();
+		Map<String, ConsoleSetting> settings = new HashMap<>();
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
 	}
 

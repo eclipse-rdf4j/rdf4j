@@ -18,8 +18,7 @@ public class InformationServlet extends TransformationServlet {
 
 	@Override
 	public void service(final TupleResultBuilder builder, final String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		// final TupleResultBuilder builder = getTupleResultBuilder(req, resp);
 		builder.transform(xslPath, "information.xsl");
 		builder.start("version", "os", "jvm", "user", "memory-used", "maximum-memory");

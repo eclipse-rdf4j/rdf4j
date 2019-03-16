@@ -78,27 +78,25 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final Map<String,ConsoleSetting> settings;
+	private final Map<String, ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator evaluator;
 
-	private final List<String> sparqlQueryStart = Arrays.asList(
-								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
-	
+	private final List<String> sparqlQueryStart = Arrays
+			.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
+
 	private final long MAX_INPUT = 1_000_000;
 
 	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
-	private final static Pattern PATTERN_IO = 
-			Pattern.compile(	"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + 
-								",?(?<enc>\\w[\\w-]+)?)? ?" +
-								"(?<out>OUTFILE=\"(?<o>[^\"]+)\")?", 
-								Pattern.CASE_INSENSITIVE);	
+	private final static Pattern PATTERN_IO = Pattern.compile(
+			"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?" + "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
+			Pattern.CASE_INSENSITIVE);
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param parameters 
+	 * @param parameters
 	 */
 	@Deprecated
 	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
@@ -117,26 +115,25 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		this.settings = evaluator.getConsoleSettings();
 		this.evaluator = evaluator;
 	}
-	
+
 	/**
 	 * Check if query string already contains query prefixes
 	 * 
 	 * @param query query string
-	 * @return true if namespaces are already used 
+	 * @return true if namespaces are already used
 	 */
 	protected abstract boolean hasQueryPrefixes(String query);
-		
+
 	/**
 	 * Add namespace prefixes to query
 	 * 
-	 * @param result 
+	 * @param result
 	 * @param namespaces collection of known namespaces
 	 */
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
 
 	/**
-	 * Get console width setting
-	 * Use a new console width setting when not found.
+	 * Get console width setting Use a new console width setting when not found.
 	 * 
 	 * @return boolean
 	 */
@@ -145,27 +142,25 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Get query prefix setting
-	 * Use a new query prefix setting when not found.
+	 * Get query prefix setting Use a new query prefix setting when not found.
 	 * 
 	 * @return boolean
 	 */
 	private boolean getQueryPrefix() {
 		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
 	}
+
 	/**
-	 * Get show prefix setting
-	 * Use a new show prefix setting when not found.
+	 * Get show prefix setting Use a new show prefix setting when not found.
 	 * 
 	 * @return boolean
 	 */
 	private boolean getShowPrefix() {
 		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
 	}
-	
+
 	/**
-	 * Get a set of namespaces
-	 * Use a list of default namespaces when not found.
+	 * Get a set of namespaces Use a list of default namespaces when not found.
 	 * 
 	 * @return boolean
 	 */
@@ -174,8 +169,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Get working dir setting
-	 * Use a working dir setting when not found.
+	 * Get working dir setting Use a working dir setting when not found.
 	 * 
 	 * @return path of working dir
 	 */
@@ -186,7 +180,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	/**
 	 * Execute a SPARQL or SERQL query, defaults to SPARQL
 	 * 
-	 * @param command to execute
+	 * @param command   to execute
 	 * @param operation "sparql", "serql", "base" or SPARQL query form
 	 */
 	public void executeQuery(final String command, final String operation) {
@@ -208,21 +202,20 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Read query string from a file.
-	 * Optionally a character set can be specified, otherwise UTF-8 will be used.
+	 * Read query string from a file. Optionally a character set can be specified, otherwise UTF-8 will be used.
 	 *
 	 * @param filename file name
-	 * @param cset character set name or null
+	 * @param cset     character set name or null
 	 * @return query from file as string
 	 * @throws IllegalArgumentException when character set was not recognized
-	 * @throws IOException when input file could not be read
+	 * @throws IOException              when input file could not be read
 	 */
 	private String readFile(String filename, String cset) throws IllegalArgumentException, IOException {
 		if (filename == null || filename.isEmpty()) {
 			throw new IllegalArgumentException("Empty file name");
 		}
 		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);
-		
+
 		Path p = Paths.get(filename);
 		if (!p.isAbsolute()) {
 			p = getWorkDir().resolve(p);
@@ -239,8 +232,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Get absolute path to output file, using working directory for relative file name.
-	 * Verifies that the file doesn't exist or can be overwritten if it does exist.
+	 * Get absolute path to output file, using working directory for relative file name. Verifies that the file doesn't
+	 * exist or can be overwritten if it does exist.
 	 * 
 	 * @param filename file name
 	 * @return path absolute path
@@ -253,32 +246,32 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		Path p = Paths.get(filename);
-		if (! p.isAbsolute()) {
+		if (!p.isAbsolute()) {
 			p = getWorkDir().resolve(filename);
 		}
-		
+
 		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");
 	}
-	
+
 	/**
-	 * Read (possibly multi-line) query.
-	 * Returns multi-line query as one string, or the original string if query is not multi-line.
+	 * Read (possibly multi-line) query. Returns multi-line query as one string, or the original string if query is not
+	 * multi-line.
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn   query language
 	 * @param queryText query string
 	 * @return query or null
 	 */
 	private String readMultiline(QueryLanguage queryLn, String queryText) {
-		String str = queryText.trim(); 
+		String str = queryText.trim();
 		if (!str.isEmpty()) {
 			return str;
 		}
 		try {
 			consoleIO.writeln("Enter multi-line " + queryLn.getName() + " query "
-							+ "(terminate with line containing single '.')");
+					+ "(terminate with line containing single '.')");
 			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {
 			consoleIO.writeError("I/O error: " + e.getMessage());
@@ -286,13 +279,12 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		return null;
 	}
-	
+
 	/**
-	 * Parse and evaluate a SERQL or SPARQL query.
-	 * Check if query is multi-line or to be read from input file, 
-	 * and check if results are to be written to an output file.
+	 * Parse and evaluate a SERQL or SPARQL query. Check if query is multi-line or to be read from input file, and check
+	 * if results are to be written to an output file.
 	 * 
-	 * @param queryLn query language
+	 * @param queryLn   query language
 	 * @param queryText query string
 	 */
 	private void parseAndEvaluateQuery(QueryLanguage queryLn, String queryText) {
@@ -303,7 +295,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		Path path = null;
-		
+
 		// check if input and/or output file are specified
 		Matcher m = PATTERN_IO.matcher(str);
 		if (m.lookingAt()) {
@@ -318,7 +310,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				if (infile != null && !infile.isEmpty()) {
 					str = readFile(infile, m.group("enc")); // ignore remainder of command line query
 				}
-			} catch (IOException|IllegalArgumentException ex) {
+			} catch (IOException | IllegalArgumentException ex) {
 				consoleIO.writeError(ex.getMessage());
 				return;
 			}
@@ -350,23 +342,21 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Get a query result writer based upon the file name (extension),
-	 * or return the console result writer when path is null.
+	 * Get a query result writer based upon the file name (extension), or return the console result writer when path is
+	 * null.
 	 * 
 	 * @param path path or null
-	 * @param out output stream or null
+	 * @param out  output stream or null
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) 
-																		throws IllegalArgumentException {
+	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) throws IllegalArgumentException {
 		QueryResultWriter w;
 
 		if (path == null) {
 			w = new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());
 		} else {
-			Optional<QueryResultFormat> fmt = 
-										QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
+			Optional<QueryResultFormat> fmt = QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
 			if (!fmt.isPresent()) {
 				throw new IllegalArgumentException("No suitable result writer found");
 			}
@@ -374,16 +364,16 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		if (getShowPrefix()) {
 			getPrefixes().stream().forEach(ns -> w.handleNamespace(ns.getPrefix(), ns.getName()));
-		}		
+		}
 		return w;
 	}
 
 	/**
-	 * Get a graph result (RIO) writer based upon the file name (extension),
-	 * or return the console result writer when path is null.
+	 * Get a graph result (RIO) writer based upon the file name (extension), or return the console result writer when
+	 * path is null.
 	 * 
 	 * @param path path or null
-	 * @param out output stream or null
+	 * @param out  output stream or null
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
@@ -403,7 +393,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		return w;
 	}
-	
+
 	/**
 	 * Get output stream for a file, or for the console output if path is null
 	 * 
@@ -412,31 +402,28 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @throws IOException
 	 */
 	private OutputStream getOutputStream(Path path) throws IOException {
-		return (path != null) 
-					? Files.newOutputStream(path, StandardOpenOption.CREATE, 
-													StandardOpenOption.TRUNCATE_EXISTING,
-													StandardOpenOption.WRITE)
-					: new UncloseableOutputStream(consoleIO.getOutputStream());
+		return (path != null) ? Files.newOutputStream(path, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
+				: new UncloseableOutputStream(consoleIO.getOutputStream());
 	}
 
-			
 	/**
 	 * Evaluate a SPARQL or SERQL query that has already been parsed
 	 * 
 	 * @param queryLn query language
-	 * @param query parsed query
+	 * @param query   parsed query
 	 * @param path
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException
-	 * @throws UpdateExecutionException 
+	 * @throws UpdateExecutionException
 	 */
 	private void evaluateQuery(QueryLanguage queryLn, ParsedOperation query, Path path)
-			throws MalformedQueryException, QueryEvaluationException,  UpdateExecutionException {
+			throws MalformedQueryException, QueryEvaluationException, UpdateExecutionException {
 
 		String queryString = query.getSourceString();
 
-		try(OutputStream os = getOutputStream(path)) {
+		try (OutputStream os = getOutputStream(path)) {
 			if (query instanceof ParsedTupleQuery) {
 				QueryResultWriter writer = getQueryResultWriter(path, os);
 				evaluator.evaluateTupleQuery(queryLn, queryString, writer);
@@ -469,10 +456,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private String addRepositoryQueryPrefixes(String queryString) {
 		StringBuffer result = new StringBuffer(queryString.length() + 512);
 		result.append(queryString);
-		
+
 		String upperCaseQuery = queryString.toUpperCase(Locale.ENGLISH);
 		Repository repository = state.getRepository();
-			
+
 		if (repository != null && getQueryPrefix() && !hasQueryPrefixes(upperCaseQuery)) {
 			addQueryPrefixes(result, getPrefixes());
 		}

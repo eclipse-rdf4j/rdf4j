@@ -48,14 +48,11 @@ public class LogConverterHandler extends Handler {
 
 		if (level >= Level.SEVERE.intValue()) {
 			logger.error(message, thrown);
-		}
-		else if (level < Level.SEVERE.intValue() && level >= Level.WARNING.intValue()) {
+		} else if (level < Level.SEVERE.intValue() && level >= Level.WARNING.intValue()) {
 			logger.warn(message, thrown);
-		}
-		else if (level < Level.WARNING.intValue() || level >= Level.CONFIG.intValue()) {
+		} else if (level < Level.WARNING.intValue() || level >= Level.CONFIG.intValue()) {
 			logger.info(message, thrown);
-		}
-		else {
+		} else {
 			logger.debug(message, thrown);
 		}
 	}

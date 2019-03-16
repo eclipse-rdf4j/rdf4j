@@ -33,8 +33,7 @@ public class RemoveServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws IOException, RepositoryException, QueryResultHandlerException
-	{
+			throws IOException, RepositoryException, QueryResultHandlerException {
 		String objectParameter = req.getParameter("obj");
 		try {
 			try (RepositoryConnection con = repository.getConnection()) {
@@ -50,45 +49,39 @@ public class RemoveServlet extends TransformationServlet {
 					obj = Protocol.decodeValue(objectParameter.replace("\r\n", "\n"), con.getValueFactory());
 					remove(con, subj, pred, obj, req);
 				}
-			}
-			catch (ClassCastException exc) {
+			} catch (ClassCastException exc) {
 				throw new BadRequestException(exc.getMessage(), exc);
 			}
 			resp.sendRedirect("summary");
-		}
-		catch (BadRequestException exc) {
+		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "remove.xsl");
 			builder.start("error-message", "subj", "pred", "obj", CONTEXT);
 			builder.link(Arrays.asList(INFO));
-			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"),
-					objectParameter, req.getParameter(CONTEXT));
+			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"), objectParameter,
+					req.getParameter(CONTEXT));
 			builder.end();
 		}
 	}
 
 	private void remove(RepositoryConnection con, Resource subj, IRI pred, Value obj, WorkbenchRequest req)
-		throws BadRequestException, RepositoryException
-	{
+			throws BadRequestException, RepositoryException {
 		if (req.isParameterPresent(CONTEXT)) {
 			Resource ctx = req.getResource(CONTEXT);
 			if (subj == null && pred == null && obj == null) {
 				con.clear(ctx);
-			}
-			else {
+			} else {
 				con.remove(subj, pred, obj, ctx);
 			}
-		}
-		else {
+		} else {
 			con.remove(subj, pred, obj);
 		}
 	}
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "remove.xsl");
 		builder.start();
 		builder.link(Arrays.asList(INFO));

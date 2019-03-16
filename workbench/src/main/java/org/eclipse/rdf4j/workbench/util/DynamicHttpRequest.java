@@ -28,7 +28,7 @@ public class DynamicHttpRequest extends HttpServletRequestWrapper {
 	private Locale locale;
 
 	public DynamicHttpRequest(ServletRequest request) {
-		super((HttpServletRequest)request);
+		super((HttpServletRequest) request);
 		contextPath = super.getContextPath();
 		method = super.getMethod();
 		pathInfo = super.getPathInfo();

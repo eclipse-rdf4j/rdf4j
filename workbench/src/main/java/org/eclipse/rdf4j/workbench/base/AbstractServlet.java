@@ -54,14 +54,14 @@ public abstract class AbstractServlet implements Servlet {
 	protected static final String APPLICATION_JAVASCRIPT = "application/javascript";
 
 	/**
-	 * This response content type is used in cases where application/xml is explicitly requested, or in cases
-	 * where the user agent is known to be a commonly available browser.
+	 * This response content type is used in cases where application/xml is explicitly requested, or in cases where the
+	 * user agent is known to be a commonly available browser.
 	 */
 	protected static final String APPLICATION_XML = "application/xml";
 
 	/**
-	 * This response content type is used for SPARQL Results XML results in non-browser user agents or other
-	 * cases where application/xml is not specifically requested.
+	 * This response content type is used for SPARQL Results XML results in non-browser user agents or other cases where
+	 * application/xml is not specifically requested.
 	 */
 	protected static final String APPLICATION_SPARQL_RESULTS_XML = "application/sparql-results+xml";
 
@@ -102,16 +102,13 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	@Override
-	public void init(final ServletConfig config)
-		throws ServletException
-	{
+	public void init(final ServletConfig config) throws ServletException {
 		this.config = config;
 		this.appConfig = new AppConfiguration("Workbench", "RDF4J Workbench");
 		try {
 			// Suppress loading of log configuration.
 			this.appConfig.init(false);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new ServletException(e);
 		}
 	}
@@ -122,25 +119,20 @@ public abstract class AbstractServlet implements Servlet {
 
 	@Override
 	public final void service(final ServletRequest req, final ServletResponse resp)
-		throws ServletException, IOException
-	{
-		final HttpServletRequest hreq = (HttpServletRequest)req;
-		final HttpServletResponse hresp = (HttpServletResponse)resp;
+			throws ServletException, IOException {
+		final HttpServletRequest hreq = (HttpServletRequest) req;
+		final HttpServletResponse hresp = (HttpServletResponse) resp;
 		service(hreq, hresp);
 	}
 
-	public void service(HttpServletRequest req, HttpServletResponse resp)
-		throws ServletException, IOException
-	{
+	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
 		// default empty implementation
 	}
 
-	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req,
-			final ServletResponse resp)
-	{
+	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = null;
 		if (req instanceof WorkbenchRequest) {
-			header = ((WorkbenchRequest)req).getParameter(ACCEPT);
+			header = ((WorkbenchRequest) req).getParameter(ACCEPT);
 		}
 		if (null == header) {
 			header = req.getHeader(ACCEPT);
@@ -155,14 +147,11 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req,
-			final ServletResponse resp)
-	{
+	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			// Then try boolean format
-			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(
-					header);
+			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(header);
 			if (booleanFormat.isPresent()) {
 				return booleanFormat.get();
 			}
@@ -171,9 +160,7 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req,
-			final ServletResponse resp)
-	{
+	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req, final ServletResponse resp) {
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			if (header.equals(APPLICATION_JAVASCRIPT)) {
@@ -185,9 +172,7 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	protected QueryResultWriter getResultWriter(final HttpServletRequest req, final ServletResponse resp,
-			final OutputStream outputStream)
-		throws UnsupportedQueryResultFormatException, IOException
-	{
+			final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		QueryResultFormat resultFormat = getTupleResultFormat(req, resp);
 
 		if (resultFormat == null) {
@@ -208,23 +193,18 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	/**
-	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the result content type to the
-	 * best available match for that, returning a builder that can be used to write out the results.
+	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the result content type to the best
+	 * available match for that, returning a builder that can be used to write out the results.
 	 * 
-	 * @param req
-	 *        the current HTTP request
-	 * @param resp
-	 *        the current HTTP response
-	 * @param outputStream
-	 *        TODO
+	 * @param req          the current HTTP request
+	 * @param resp         the current HTTP response
+	 * @param outputStream TODO
 	 * @return a builder that can be used to write out the results
 	 * @throws IOException
 	 * @throws UnsupportedQueryResultFormatException
 	 */
 	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
-			OutputStream outputStream)
-		throws UnsupportedQueryResultFormatException, IOException
-	{
+			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		String contentType = null;
 		QueryResultWriter resultWriter = checkJSONP(req, outputStream);
 
@@ -232,8 +212,7 @@ public abstract class AbstractServlet implements Servlet {
 			// explicitly set the content type to "application/javascript"
 			// to fit JSONP best practices
 			contentType = APPLICATION_JAVASCRIPT;
-		}
-		else {
+		} else {
 			// If the JSON-P check above failed, use the normal methods to
 			// determine output format
 			resultWriter = getResultWriter(req, resp, resp.getOutputStream());
@@ -261,8 +240,7 @@ public abstract class AbstractServlet implements Servlet {
 			// Switch back to application/xml for user agents who accept either
 			// application/xml or text/html
 			else if (acceptHeader != null
-					&& (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML)))
-			{
+					&& (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML))) {
 				contentType = APPLICATION_XML;
 			}
 		}
@@ -284,18 +262,14 @@ public abstract class AbstractServlet implements Servlet {
 
 		// Convert rdf:langString back to language literals where this behaviour
 		// is supported
-		if (resultWriter.getSupportedSettings().contains(
-				BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL))
-		{
+		if (resultWriter.getSupportedSettings().contains(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL)) {
 			resultWriter.getWriterConfig().set(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL, true);
 		}
 
 		return new TupleResultBuilder(resultWriter, SimpleValueFactory.getInstance());
 	}
 
-	protected QueryResultWriter checkJSONP(HttpServletRequest req, OutputStream outputStream)
-		throws IOException
-	{
+	protected QueryResultWriter checkJSONP(HttpServletRequest req, OutputStream outputStream) throws IOException {
 		QueryResultWriter resultWriter = null;
 		// HACK : SES-2043 : Need to support Chrome who decide to send Accept: */*
 		// instead of application/javascript for JSONP queries, so need to check

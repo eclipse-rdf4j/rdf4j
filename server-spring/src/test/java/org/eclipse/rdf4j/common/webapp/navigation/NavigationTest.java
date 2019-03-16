@@ -42,8 +42,7 @@ public class NavigationTest {
 		assertFalse("logging view should not be hidden", loggingView.isHidden());
 		assertTrue("logging view should be enabled", loggingView.isEnabled());
 		assertEquals("Path for logging is not correct", "/system/logging.view", loggingView.getPath());
-		assertEquals("Icon for logging is not correct", "/images/icons/system_logging.png",
-				loggingView.getIcon());
+		assertEquals("Icon for logging is not correct", "/images/icons/system_logging.png", loggingView.getIcon());
 		assertEquals("I18N for logging is not correct", "system.logging.title", loggingView.getI18n());
 		Group loggingGroup = systemGroup.getGroups().get(0);
 		assertEquals("logging subgroup should have 1 views", 1, loggingGroup.getViews().size());

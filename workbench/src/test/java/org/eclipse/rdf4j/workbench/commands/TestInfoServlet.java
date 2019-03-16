@@ -36,25 +36,20 @@ public class TestInfoServlet {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		servlet.setRepositoryInfo(info);
 		manager = mock(RepositoryManager.class);
 		servlet.setRepositoryManager(manager);
 	}
 
 	/**
-	 * Throwing exceptions for invalid repository ID's results in a 500 response code to the client. As seen
-	 * in the bug report, some versions of Internet Explorer don't gracefully handle error responses during
-	 * XSLT parsing.
+	 * Throwing exceptions for invalid repository ID's results in a 500 response code to the client. As seen in the bug
+	 * report, some versions of Internet Explorer don't gracefully handle error responses during XSLT parsing.
 	 * 
 	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1770">SES-1770</a>
 	 */
 	@Test
-	public final void testSES1770regression()
-		throws Exception
-	{
+	public final void testSES1770regression() throws Exception {
 		when(manager.hasRepositoryConfig(null)).thenThrow(new NullPointerException());
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		when(req.getParameter(anyString())).thenReturn(SESAME.NIL.toString());

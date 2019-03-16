@@ -65,20 +65,17 @@ public abstract class AbstractLogReader implements LogReader {
 
 	@Override
 	public void setEndDate(Date date) {
-		throw new UnsupportedOperationException(
-				"Date ranges are not supported by this LogReader implementation!");
+		throw new UnsupportedOperationException("Date ranges are not supported by this LogReader implementation!");
 	}
 
 	@Override
 	public void setLevel(LogLevel level) {
-		throw new UnsupportedOperationException(
-				"Level filter is not supported by this LogReader implementation!");
+		throw new UnsupportedOperationException("Level filter is not supported by this LogReader implementation!");
 	}
 
 	@Override
 	public void setStartDate(Date date) {
-		throw new UnsupportedOperationException(
-				"Date ranges are not supported by this LogReader implementation!");
+		throw new UnsupportedOperationException("Date ranges are not supported by this LogReader implementation!");
 	}
 
 	@Override
@@ -108,8 +105,7 @@ public abstract class AbstractLogReader implements LogReader {
 
 	@Override
 	public void setThread(String threadname) {
-		throw new UnsupportedOperationException(
-				"Thread filter is not supported by this LogReader implementation!");
+		throw new UnsupportedOperationException("Thread filter is not supported by this LogReader implementation!");
 	}
 
 	@Override
@@ -130,8 +126,7 @@ public abstract class AbstractLogReader implements LogReader {
 	/**
 	 * Set the limit
 	 * 
-	 * @param limit
-	 *        The limit to set.
+	 * @param limit The limit to set.
 	 */
 	@Override
 	public void setLimit(int limit) {
@@ -151,8 +146,7 @@ public abstract class AbstractLogReader implements LogReader {
 	/**
 	 * Set the offset
 	 * 
-	 * @param offset
-	 *        The offset to set.
+	 * @param offset The offset to set.
 	 */
 	@Override
 	public void setOffset(int offset) {

@@ -35,36 +35,29 @@ public class PagedQuery {
 
 	/***
 	 * <p>
-	 * Creates an object that adds or modifies the limit and offset clauses of the query to be executed so
-	 * that only those results to be displayed are requested from the query engine.
+	 * Creates an object that adds or modifies the limit and offset clauses of the query to be executed so that only
+	 * those results to be displayed are requested from the query engine.
 	 * </p>
 	 * <p>
-	 * Implementation note: The new object contains the user's query with appended or modified LIMIT and
-	 * OFFSET clauses.
+	 * Implementation note: The new object contains the user's query with appended or modified LIMIT and OFFSET clauses.
 	 * </p>
 	 * 
-	 * @param query
-	 *        as it was specified by the user
-	 * @param language
-	 *        SPARQL or SeRQL, as specified by the user
-	 * @param requestLimit
-	 *        maximum number of results to return, as specified by the URL query parameters or cookies
-	 * @param requestOffset
-	 *        which result to start at when populating the result set
+	 * @param query         as it was specified by the user
+	 * @param language      SPARQL or SeRQL, as specified by the user
+	 * @param requestLimit  maximum number of results to return, as specified by the URL query parameters or cookies
+	 * @param requestOffset which result to start at when populating the result set
 	 */
 	public PagedQuery(final String query, final QueryLanguage language, final int requestLimit,
-			final int requestOffset)
-	{
-		LOGGER.debug(
-				"Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
+			final int requestOffset) {
+		LOGGER.debug("Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
 				language);
 		LOGGER.debug("Query: {}", query);
 
 		String rval = query;
 
 		/*
-		 * the matcher on the pattern will have a group for "limit l#" as well as a group for l#, similarly
-		 * for "offset o#" and o#. If either exists, disable paging.
+		 * the matcher on the pattern will have a group for "limit l#" as well as a group for l#, similarly for
+		 * "offset o#" and o#. If either exists, disable paging.
 		 */
 		final Matcher matcher = LIMIT_OR_OFFSET.matcher(query);
 		// requestLimit <= 0 actually means don't limit display
@@ -105,8 +98,7 @@ public class PagedQuery {
 			if (offset > 0) {
 				rval = ensureNewlineAndAppend(rval, newOffsetClause);
 			}
-		}
-		else {
+		} else {
 			/*
 			 * SeRQL, add the clause before before the namespace section
 			 */
@@ -125,41 +117,32 @@ public class PagedQuery {
 		return buffer.append(append).toString();
 	}
 
-	private static String modifyLimit(final QueryLanguage language, final String query,
-			final int limitSubstitute)
-	{
+	private static String modifyLimit(final QueryLanguage language, final String query, final int limitSubstitute) {
 		String rval = query;
 
 		/*
-		 * In SPARQL, LIMIT and/or OFFSET can occur at the end, in either order. In SeRQL, LIMIT and/or OFFSET
-		 * must be immediately prior to the *optional* namespace declaration section (which is itself last),
-		 * and LIMIT must precede OFFSET. This code makes no attempt to correct if the user places them out of
-		 * order in the query.
+		 * In SPARQL, LIMIT and/or OFFSET can occur at the end, in either order. In SeRQL, LIMIT and/or OFFSET must be
+		 * immediately prior to the *optional* namespace declaration section (which is itself last), and LIMIT must
+		 * precede OFFSET. This code makes no attempt to correct if the user places them out of order in the query.
 		 */
 		if (QueryLanguage.SPARQL == language) {
 			rval = ensureNewlineAndAppend(rval, "limit " + limitSubstitute);
-		}
-		else {
+		} else {
 			rval = insertAtMatchOnOwnLine(SERQL_NAMESPACE, rval, "limit " + limitSubstitute);
 		}
 		return rval;
 	}
 
 	/**
-	 * Insert a given string into another string at the point at which the given matcher matches, making sure
-	 * to place the insertion string on its own line. If there is no match, appends to end on own line.
+	 * Insert a given string into another string at the point at which the given matcher matches, making sure to place
+	 * the insertion string on its own line. If there is no match, appends to end on own line.
 	 * 
-	 * @param pattern
-	 *        pattern to search for insertion location
-	 * @param orig
-	 *        string to perform insertion on
-	 * @param insert
-	 *        string to insert on own line
+	 * @param pattern pattern to search for insertion location
+	 * @param orig    string to perform insertion on
+	 * @param insert  string to insert on own line
 	 * @returns result of inserting text
 	 */
-	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig,
-			final String insert)
-	{
+	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig, final String insert) {
 		final Matcher matcher = pattern.matcher(orig);
 		final boolean found = matcher.find();
 		final int location = found ? matcher.start() : orig.length();

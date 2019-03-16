@@ -22,12 +22,12 @@ import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
  */
 public class Serql extends QueryEvaluator {
 	private static final String NAMESPACE = "USING NAMESPACE";
-	
+
 	@Override
 	public String getName() {
 		return "serql";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Evaluate a SeRQL query";
@@ -35,14 +35,13 @@ public class Serql extends QueryEvaluator {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE 
-			+ "serql                         Starts multi-line input for large SeRQL queries.\n"
-			+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
-			+ "serql INFILE=\"infile.ext\"            Evaluates the query stored in a file.\n"
-			+ "serql OUTFILE=\"outfile.ext\" <query>  Save the results to a file.\n"
-			+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
-			+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
-			+ "serql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n";
+		return PrintHelp.USAGE + "serql                         Starts multi-line input for large SeRQL queries.\n"
+				+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
+				+ "serql INFILE=\"infile.ext\"            Evaluates the query stored in a file.\n"
+				+ "serql OUTFILE=\"outfile.ext\" <query>  Save the results to a file.\n"
+				+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
+				+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
+				+ "serql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n";
 	}
 
 	/**
@@ -50,13 +49,13 @@ public class Serql extends QueryEvaluator {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param params 
+	 * @param params
 	 */
 	@Deprecated
 	public Serql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
 		super(consoleIO, state, params);
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -65,7 +64,7 @@ public class Serql extends QueryEvaluator {
 	public Serql(TupleAndGraphQueryEvaluator evaluator) {
 		super(evaluator);
 	}
-	
+
 	@Override
 	protected boolean hasQueryPrefixes(String query) {
 		return query.contains(NAMESPACE + " ");
@@ -74,7 +73,7 @@ public class Serql extends QueryEvaluator {
 	@Override
 	protected void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces) {
 		StringBuilder str = new StringBuilder(512);
-		
+
 		str.append(" ").append(NAMESPACE).append(" ");
 		for (Namespace namespace : namespaces) {
 			str.append(namespace.getPrefix()).append(" = ");

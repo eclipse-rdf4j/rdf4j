@@ -33,8 +33,7 @@ public interface LogConfiguration extends Configuration {
 	/**
 	 * Set the base location on the file system for logging configuration and data
 	 *
-	 * @param baseDir
-	 *        the base location on the file system for logging configuration and data
+	 * @param baseDir the base location on the file system for logging configuration and data
 	 * @throws IOException
 	 */
 	public abstract void setBaseDir(File baseDir) throws IOException;
@@ -63,8 +62,7 @@ public interface LogConfiguration extends Configuration {
 	/**
 	 * A reader that can read logging information as stored by the specific logger's appender.
 	 * 
-	 * @param appender
-	 *        Name of the appender to which the LogReader is attached
+	 * @param appender Name of the appender to which the LogReader is attached
 	 * @return a reader that can read logging information as stored by the logger configured through this
 	 *         LogConfiguration
 	 */
@@ -87,8 +85,7 @@ public interface LogConfiguration extends Configuration {
 	/**
 	 * Enable or disable debug logging.
 	 * 
-	 * @param enabled
-	 *        set to true if debug logging should be enabled, set to false otherwise
+	 * @param enabled set to true if debug logging should be enabled, set to false otherwise
 	 */
 	public abstract void setDebugLoggingEnabled(boolean enabled);
 

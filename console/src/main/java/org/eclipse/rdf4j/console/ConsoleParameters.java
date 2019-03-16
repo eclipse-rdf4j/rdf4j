@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.console;
 
 /**
- * Console parameters interface.
- * Deprecated: to be replaced by a collection of Setting's.
+ * Console parameters interface. Deprecated: to be replaced by a collection of Setting's.
  * 
  * @author dale
  */
@@ -19,7 +18,7 @@ public interface ConsoleParameters {
 	/**
 	 * Get screen width
 	 * 
-	 * @return width in columns 
+	 * @return width in columns
 	 */
 	int getWidth();
 
@@ -54,7 +53,7 @@ public interface ConsoleParameters {
 	/**
 	 * Toggle query prefix
 	 * 
-	 * @param value true for query prefix 
+	 * @param value true for query prefix
 	 */
 	void setQueryPrefix(boolean value);
 }

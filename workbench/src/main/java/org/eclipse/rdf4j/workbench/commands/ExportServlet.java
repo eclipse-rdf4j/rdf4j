@@ -33,13 +33,10 @@ public class ExportServlet extends TupleServlet {
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		if (req.isParameterPresent("Accept")) {
 			String accept = req.getParameter("Accept");
-			RDFFormat format = Rio.getWriterFormatForMIMEType(accept).orElseThrow(
-					Rio.unsupportedFormat(accept));
+			RDFFormat format = Rio.getWriterFormatForMIMEType(accept).orElseThrow(Rio.unsupportedFormat(accept));
 			resp.setContentType(accept);
 			String ext = format.getDefaultFileExtension();
 			String attachment = "attachment; filename=export." + ext;
@@ -47,27 +44,22 @@ public class ExportServlet extends TupleServlet {
 			RepositoryConnection con = repository.getConnection();
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			try {
-				RDFWriterFactory factory = getInstance().get(format).orElseThrow(
-						Rio.unsupportedFormat(format));
+				RDFWriterFactory factory = getInstance().get(format).orElseThrow(Rio.unsupportedFormat(format));
 				if (format.getCharset() != null) {
 					resp.setCharacterEncoding(format.getCharset().name());
 				}
 				con.export(factory.getWriter(resp.getOutputStream()));
-			}
-			finally {
+			} finally {
 				con.close();
 			}
-		}
-		else {
+		} else {
 			super.service(req, resp, xslPath);
 		}
 	}
 
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, TupleResultBuilder builder,
-			RepositoryConnection con)
-		throws Exception
-	{
+			RepositoryConnection con) throws Exception {
 		int limit = ExploreServlet.LIMIT_DEFAULT;
 		if (req.getInt(ExploreServlet.LIMIT) > 0) {
 			limit = req.getInt(ExploreServlet.LIMIT);

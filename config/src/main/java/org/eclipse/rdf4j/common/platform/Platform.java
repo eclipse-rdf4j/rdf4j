@@ -11,8 +11,8 @@ package org.eclipse.rdf4j.common.platform;
 import java.io.File;
 
 /**
- * The Platform interface defines methods that are expected to differ slightly between operating systems, e.g.
- * methods for opening local files, storing application data, etc.
+ * The Platform interface defines methods that are expected to differ slightly between operating systems, e.g. methods
+ * for opening local files, storing application data, etc.
  */
 public interface Platform {
 
@@ -36,8 +36,8 @@ public interface Platform {
 	public File getOSApplicationDataDir();
 
 	/**
-	 * Returns the operating system dependent application data directory. This will be a sub-directory of the
-	 * directory returned by the no-argument version of this method.
+	 * Returns the operating system dependent application data directory. This will be a sub-directory of the directory
+	 * returned by the no-argument version of this method.
 	 * 
 	 * @param applicationName name of the application
 	 * @return application directory
@@ -60,13 +60,12 @@ public interface Platform {
 	public File getApplicationDataDir();
 
 	/**
-	 * Returns the directory in which a specific application can store all its application-dependent data.
-	 * This will be a sub-directory of the directory returned by the no-argument version of this method. Note:
-	 * the directory might not exist yet.
+	 * Returns the directory in which a specific application can store all its application-dependent data. This will be
+	 * a sub-directory of the directory returned by the no-argument version of this method. Note: the directory might
+	 * not exist yet.
 	 * 
 	 * @see #getApplicationDataDir()
-	 * @param applicationName
-	 *        the name of the application for which to determine the directory
+	 * @param applicationName the name of the application for which to determine the directory
 	 * @return an application-specific data directory
 	 */
 	public File getApplicationDataDir(String applicationName);
@@ -74,8 +73,7 @@ public interface Platform {
 	/**
 	 * Get the directory relative to getApplicationDataDir() for the specified application.
 	 * 
-	 * @param applicationName
-	 *        the name of the application
+	 * @param applicationName the name of the application
 	 * @return the directory relative to getApplicationDataDir() for the specified application
 	 */
 	public String getRelativeApplicationDataDir(String applicationName);
@@ -83,21 +81,21 @@ public interface Platform {
 	/**
 	 * Check if case is preserved
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public boolean dataDirPreserveCase();
 
 	/**
 	 * Check if whitespace is replaced
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public boolean dataDirReplaceWhitespace();
 
 	/**
 	 * Check if colon is replaced
 	 * 
-	 * @return 
+	 * @return
 	 */
 	public boolean dataDirReplaceColon();
 }

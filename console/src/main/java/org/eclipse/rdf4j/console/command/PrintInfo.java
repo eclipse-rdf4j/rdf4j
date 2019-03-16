@@ -26,18 +26,17 @@ public class PrintInfo extends ConsoleCommand {
 	public String getHelpShort() {
 		return "Shows info about the console";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE
-			+ "info                  Shows information about the console\n";
+		return PrintHelp.USAGE + "info                  Shows information about the console\n";
 	}
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param state 
+	 * @param state
 	 */
 	public PrintInfo(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);

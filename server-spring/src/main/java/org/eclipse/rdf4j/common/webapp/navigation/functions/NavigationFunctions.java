@@ -19,12 +19,9 @@ public class NavigationFunctions {
 	/**
 	 * Is the specified potential parent indeed a parent of the specified node.
 	 * 
-	 * @param potentialParent
-	 *        the potential parent
-	 * @param node
-	 *        the node
-	 * @return true if the potential parent is part of the hierarchical string of parents for the specified
-	 *         node
+	 * @param potentialParent the potential parent
+	 * @param node            the node
+	 * @return true if the potential parent is part of the hierarchical string of parents for the specified node
 	 */
 	public static boolean isParent(NavigationNode potentialParent, NavigationNode node) {
 		return potentialParent.isParent(node);

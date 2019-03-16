@@ -14,19 +14,20 @@ package org.eclipse.rdf4j.console.setting;
  */
 public class ShowPrefix extends ConsoleSetting<Boolean> {
 	public final static String NAME = "showprefix";
-	
+
 	@Override
 	public String getHelpLong() {
 		return "set showPrefix=<true|false>    Toggles use of prefixed names in query results\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 */
 	public ShowPrefix() {
 		super(true);
-		
+
 	}
+
 	/**
 	 * Constructor
 	 * 
@@ -35,12 +36,12 @@ public class ShowPrefix extends ConsoleSetting<Boolean> {
 	public ShowPrefix(Boolean initValue) {
 		super(initValue);
 	}
-	
+
 	@Override
 	public String getName() {
 		return NAME;
 	}
-	
+
 	@Override
 	public void setFromString(String value) throws IllegalArgumentException {
 		set(Boolean.valueOf(value));

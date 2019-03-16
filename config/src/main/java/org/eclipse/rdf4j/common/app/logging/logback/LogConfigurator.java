@@ -55,17 +55,15 @@ public class LogConfigurator extends JoranConfigurator {
 			String className = logReaderClassNames.get(appenderName);
 			if (className != null) {
 				try {
-					LogReader logReader = (LogReader)OptionHelper.instantiateByClassName(className,
+					LogReader logReader = (LogReader) OptionHelper.instantiateByClassName(className,
 							org.eclipse.rdf4j.common.logging.LogReader.class, context);
 					logReader.setAppender(appenders.get(appenderName));
 					return logReader;
-				}
-				catch (Exception ex) {
+				} catch (Exception ex) {
 					System.err.println("Could not create logreader of type " + className + " !");
 					ex.printStackTrace();
 				}
-			}
-			else {
+			} else {
 				System.err.println("Could not find logreader for appender " + appenderName + " !");
 			}
 		}
@@ -88,8 +86,7 @@ public class LogConfigurator extends JoranConfigurator {
 		@Override
 		public void begin(InterpretationContext ec, String name, Attributes attributes) {
 			className = attributes.getValue(CLASS_ATTRIBUTE);
-			def = (attributes.getValue("default") != null)
-					&& attributes.getValue("default").equalsIgnoreCase("true");
+			def = (attributes.getValue("default") != null) && attributes.getValue("default").equalsIgnoreCase("true");
 			ec.pushObject(className);
 		}
 
@@ -98,10 +95,9 @@ public class LogConfigurator extends JoranConfigurator {
 			Object o = ec.peekObject();
 			if (o != className) {
 				addWarn("The object on the top the of the stack is not the logreader classname pushed earlier.");
-			}
-			else {
+			} else {
 				ec.popObject();
-				Appender<?> appender = (Appender<?>)ec.peekObject();
+				Appender<?> appender = (Appender<?>) ec.peekObject();
 				logReaderClassNames.put(appender.getName(), className);
 				appenders.put(appender.getName(), appender);
 				if (def) {

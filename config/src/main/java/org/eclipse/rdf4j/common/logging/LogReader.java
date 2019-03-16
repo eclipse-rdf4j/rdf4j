@@ -23,22 +23,19 @@ public interface LogReader extends Iterator<LogRecord> {
 	 * 
 	 * @throws Exception
 	 */
-	public void init()
-		throws Exception;
+	public void init() throws Exception;
 
 	/**
 	 * Destroy the log reader and release all used resources.
 	 * 
 	 * @throws Exception
 	 */
-	public void destroy()
-		throws Exception;
+	public void destroy() throws Exception;
 
 	/**
 	 * Logging appender associated with this reader.
 	 * 
-	 * @param appender
-	 *        logging appender associated with this reader
+	 * @param appender logging appender associated with this reader
 	 */
 	public void setAppender(Appender<?> appender);
 
@@ -52,8 +49,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Max. number of records returned by this log reader. Zero value (default) indicates no limit.
 	 * 
-	 * @param limit
-	 *        max. number of records returned by this log reader.
+	 * @param limit max. number of records returned by this log reader.
 	 */
 	public void setLimit(int limit);
 
@@ -74,8 +70,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Index of the first record returned by this log reader.
 	 * 
-	 * @param offset
-	 *        index of the first record returned by this log reader.
+	 * @param offset index of the first record returned by this log reader.
 	 */
 	public void setOffset(int offset);
 
@@ -124,8 +119,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Thread name of the log records returned by this log reader.
 	 * 
-	 * @return thread name of the log records returned by this log reader or 'null' if no thread filter has
-	 *         been set.
+	 * @return thread name of the log records returned by this log reader or 'null' if no thread filter has been set.
 	 */
 	public String getThread();
 

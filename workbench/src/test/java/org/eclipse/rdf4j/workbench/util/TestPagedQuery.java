@@ -34,11 +34,8 @@ public class TestPagedQuery {
 	 * @throws IOException
 	 */
 	@Test
-	public final void testSES2307regression()
-		throws IOException
-	{
-		PagedQuery pagedQuery = new PagedQuery(ResourceUtil.getString("ses2307.rq"), QueryLanguage.SPARQL,
-				100, 0);
+	public final void testSES2307regression() throws IOException {
+		PagedQuery pagedQuery = new PagedQuery(ResourceUtil.getString("ses2307.rq"), QueryLanguage.SPARQL, 100, 0);
 		assertThat(pagedQuery.getLimit()).isEqualTo(100);
 	}
 }

@@ -24,8 +24,8 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 
 /**
- * Browsers do not expire cache if Cookies have changed. Even if "Vary: Cookie" header is set. This filter
- * intercepts the Last-Modified and If-Modified-Since headers to include modification of browser cookies.
+ * Browsers do not expire cache if Cookies have changed. Even if "Vary: Cookie" header is set. This filter intercepts
+ * the Last-Modified and If-Modified-Since headers to include modification of browser cookies.
  * 
  * @author James Leigh
  */
@@ -38,9 +38,7 @@ public class CookieCacheControlFilter implements Filter {
 	private static final String HEADER_LASTMOD = "Last-Modified";
 
 	@Override
-	public void init(FilterConfig config)
-		throws ServletException
-	{
+	public void init(FilterConfig config) throws ServletException {
 	}
 
 	@Override
@@ -49,8 +47,7 @@ public class CookieCacheControlFilter implements Filter {
 
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
-		throws IOException, ServletException
-	{
+			throws IOException, ServletException {
 		CacheAwareRequest request = new CacheAwareRequest(req);
 		CacheAwareResponse response = new CacheAwareResponse(req, resp);
 		chain.doFilter(request, response);
@@ -59,7 +56,7 @@ public class CookieCacheControlFilter implements Filter {
 	private class CacheAwareRequest extends HttpServletRequestWrapper {
 
 		public CacheAwareRequest(ServletRequest request) {
-			this((HttpServletRequest)request);
+			this((HttpServletRequest) request);
 		}
 
 		public CacheAwareRequest(HttpServletRequest request) {
@@ -67,8 +64,8 @@ public class CookieCacheControlFilter implements Filter {
 		}
 
 		/**
-		 * This method hides the If-Modified-Since header if the browser's cookies have changed since this
-		 * page was cached.
+		 * This method hides the If-Modified-Since header if the browser's cookies have changed since this page was
+		 * cached.
 		 */
 		@Override
 		public long getDateHeader(String name) {
@@ -99,7 +96,7 @@ public class CookieCacheControlFilter implements Filter {
 		private boolean controlCookieAdded;
 
 		public CacheAwareResponse(ServletRequest req, ServletResponse response) {
-			this((HttpServletRequest)req, (HttpServletResponse)response);
+			this((HttpServletRequest) req, (HttpServletResponse) response);
 		}
 
 		public CacheAwareResponse(HttpServletRequest req, HttpServletResponse response) {
@@ -125,8 +122,7 @@ public class CookieCacheControlFilter implements Filter {
 				String contextPath = req.getContextPath();
 				if (contextPath == null) {
 					cookie.setPath("/");
-				}
-				else {
+				} else {
 					cookie.setPath(contextPath);
 				}
 				super.addCookie(cookie);

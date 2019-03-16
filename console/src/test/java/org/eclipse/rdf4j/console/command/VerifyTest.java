@@ -37,17 +37,17 @@ import static org.mockito.Mockito.mock;
 public class VerifyTest extends AbstractCommandTest {
 	private Verify cmd;
 	private ConsoleIO io;
-	
+
 	@Rule
 	public final TemporaryFolder LOCATION = new TemporaryFolder();
-	
+
 	@Before
 	public void prepare() throws IOException, RDF4JException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
 		io = new ConsoleIO(input, out, info);
-		
+
 		cmd = new Verify(io);
 	}
 
@@ -56,21 +56,21 @@ public class VerifyTest extends AbstractCommandTest {
 	 * 
 	 * @param str name of the resource file
 	 * @return path to file in temp directory
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	private String copyFromRes(String str) throws IOException {
 		File f = LOCATION.newFile(str);
-		Files.copy(this.getClass().getResourceAsStream("/verify/" + str) , 
-				f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		Files.copy(this.getClass().getResourceAsStream("/verify/" + str), f.toPath(),
+				StandardCopyOption.REPLACE_EXISTING);
 		return f.getAbsolutePath();
 	}
-	
+
 	@Test
 	public final void testVerifyWrongFormat() {
 		cmd.execute("verify", "does-not-exist.docx");
 		assertTrue(io.wasErrorWritten());
 	}
-	
+
 	@Test
 	public final void testVerifyOK() throws IOException {
 		cmd.execute("verify", copyFromRes("ok.ttl"));
@@ -82,19 +82,19 @@ public class VerifyTest extends AbstractCommandTest {
 		cmd.execute("verify", copyFromRes("broken.ttl"));
 		assertTrue(io.wasErrorWritten());
 	}
-	
+
 	@Test
 	public final void testVerifyMissingType() throws IOException {
 		cmd.execute("verify", copyFromRes("missing_type.ttl"));
 		assertTrue(io.wasErrorWritten());
 	}
-	
+
 	@Test
 	public final void testVerifySpaceIRI() throws IOException {
 		cmd.execute("verify", copyFromRes("space_iri.ttl"));
 		assertTrue(io.wasErrorWritten());
 	}
-		
+
 	@Test
 	public final void testVerifyWrongLang() throws IOException {
 		cmd.execute("verify", copyFromRes("wrong_lang.ttl"));

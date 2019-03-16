@@ -41,16 +41,13 @@ public class NamespaceController extends AbstractController {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	public NamespaceController()
-		throws ApplicationContextException
-	{
+	public NamespaceController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "PUT", "DELETE" });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		String pathInfoStr = request.getPathInfo();
 		String prefix = pathInfoStr.substring(pathInfoStr.lastIndexOf('/') + 1);
 
@@ -71,19 +68,16 @@ public class NamespaceController extends AbstractController {
 		else if ("PUT".equals(reqMethod)) {
 			logger.info("PUT prefix {}", prefix);
 			return getUpdateNamespaceResult(request, prefix);
-		}
-		else if ("DELETE".equals(reqMethod)) {
+		} else if ("DELETE".equals(reqMethod)) {
 			logger.info("DELETE prefix {}", prefix);
 			return getRemoveNamespaceResult(request, prefix);
-		}
-		else {
+		} else {
 			throw new ServerHTTPException("Unexpected request method: " + reqMethod);
 		}
 	}
 
 	private ModelAndView getExportNamespaceResult(HttpServletRequest request, String prefix)
-		throws ServerHTTPException, ClientHTTPException
-	{
+			throws ServerHTTPException, ClientHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			String namespace = repositoryCon.getNamespace(prefix);
 
@@ -95,15 +89,13 @@ public class NamespaceController extends AbstractController {
 			model.put(SimpleResponseView.CONTENT_KEY, namespace);
 
 			return new ModelAndView(SimpleResponseView.getInstance(), model);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 	}
 
 	private ModelAndView getUpdateNamespaceResult(HttpServletRequest request, String prefix)
-		throws IOException, ClientHTTPException, ServerHTTPException
-	{
+			throws IOException, ClientHTTPException, ServerHTTPException {
 		String namespace = IOUtil.readString(request.getReader());
 		namespace = namespace.trim();
 
@@ -114,8 +106,7 @@ public class NamespaceController extends AbstractController {
 
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			repositoryCon.setNamespace(prefix, namespace);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 
@@ -123,12 +114,10 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private ModelAndView getRemoveNamespaceResult(HttpServletRequest request, String prefix)
-		throws ServerHTTPException
-	{
+			throws ServerHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			repositoryCon.removeNamespace(prefix);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 

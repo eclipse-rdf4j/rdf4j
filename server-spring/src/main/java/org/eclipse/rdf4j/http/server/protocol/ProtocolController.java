@@ -26,16 +26,13 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class ProtocolController extends AbstractController {
 
-	public ProtocolController()
-		throws ApplicationContextException
-	{
+	public ProtocolController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception
-	{
+			throws Exception {
 		Map<String, Object> model = new HashMap<>();
 		model.put(SimpleResponseView.CONTENT_KEY, Protocol.VERSION);
 		return new ModelAndView(SimpleResponseView.getInstance(), model);

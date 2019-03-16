@@ -51,9 +51,7 @@ public class HttpServerUtilTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		FileFormatServiceRegistry<? extends FileFormat, ?> registry = TupleQueryResultWriterRegistry.getInstance();
 
 		tupleQueryMimeTypes = new ArrayList<>(16);
@@ -72,8 +70,7 @@ public class HttpServerUtilTest {
 
 		ServletRequestStub testRequest = new ServletRequestStub("application/sparql-results+json, */*");
 
-		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
-				testRequest);
+		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
 		assertEquals("application/sparql-results+json", preferredType);
 
@@ -89,8 +86,7 @@ public class HttpServerUtilTest {
 
 		ServletRequestStub testRequest = new ServletRequestStub("application/sparql-results+json, */*;q=0.9");
 
-		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
-				testRequest);
+		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
 		assertEquals("application/sparql-results+json", preferredType);
 	}
@@ -105,8 +101,7 @@ public class HttpServerUtilTest {
 
 		ServletRequestStub testRequest = new ServletRequestStub("application/xml");
 
-		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
-				testRequest);
+		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
 		assertEquals("application/xml", preferredType);
 	}
@@ -122,8 +117,7 @@ public class HttpServerUtilTest {
 		ServletRequestStub testRequest = new ServletRequestStub("*/*", "application/sparql-result+xml;q=0.9",
 				"application/sparql-results+json");
 
-		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
-				testRequest);
+		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
 		assertEquals("application/sparql-results+json", preferredType);
 	}
@@ -136,11 +130,9 @@ public class HttpServerUtilTest {
 	@Test
 	public void testSelectPreferredMIMEType5() {
 
-		ServletRequestStub testRequest = new ServletRequestStub("application/*",
-				"application/sparql-results+json");
+		ServletRequestStub testRequest = new ServletRequestStub("application/*", "application/sparql-results+json");
 
-		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
-				testRequest);
+		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
 		assertEquals("application/sparql-results+json", preferredType);
 	}
@@ -172,9 +164,7 @@ public class HttpServerUtilTest {
 		}
 
 		@Override
-		public void setCharacterEncoding(String env)
-			throws UnsupportedEncodingException
-		{
+		public void setCharacterEncoding(String env) throws UnsupportedEncodingException {
 			// TODO Auto-generated method stub
 
 		}
@@ -192,9 +182,7 @@ public class HttpServerUtilTest {
 		}
 
 		@Override
-		public ServletInputStream getInputStream()
-			throws IOException
-		{
+		public ServletInputStream getInputStream() throws IOException {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -248,9 +236,7 @@ public class HttpServerUtilTest {
 		}
 
 		@Override
-		public BufferedReader getReader()
-			throws IOException
-		{
+		public BufferedReader getReader() throws IOException {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -484,6 +470,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getServletContext()
 		 */
 		@Override
@@ -494,31 +481,30 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#startAsync()
 		 */
 		@Override
-		public AsyncContext startAsync()
-			throws IllegalStateException
-		{
+		public AsyncContext startAsync() throws IllegalStateException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
-		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest,
-		 * javax.servlet.ServletResponse)
+		 * 
+		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest, javax.servlet.ServletResponse)
 		 */
 		@Override
 		public AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse)
-			throws IllegalStateException
-		{
+				throws IllegalStateException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#isAsyncStarted()
 		 */
 		@Override
@@ -529,6 +515,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#isAsyncSupported()
 		 */
 		@Override
@@ -539,6 +526,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getAsyncContext()
 		 */
 		@Override
@@ -549,6 +537,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.ServletRequest#getDispatcherType()
 		 */
 		@Override
@@ -559,60 +548,55 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#authenticate(javax.servlet.http.HttpServletResponse)
 		 */
 		@Override
-		public boolean authenticate(HttpServletResponse response)
-			throws IOException, ServletException
-		{
+		public boolean authenticate(HttpServletResponse response) throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return false;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
 		 */
 		@Override
-		public void login(String username, String password)
-			throws ServletException
-		{
+		public void login(String username, String password) throws ServletException {
 			// TODO Auto-generated method stub
 
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#logout()
 		 */
 		@Override
-		public void logout()
-			throws ServletException
-		{
+		public void logout() throws ServletException {
 			// TODO Auto-generated method stub
 
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#getParts()
 		 */
 		@Override
-		public Collection<Part> getParts()
-			throws IOException, ServletException
-		{
+		public Collection<Part> getParts() throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return null;
 		}
 
 		/*
 		 * (non-Javadoc)
+		 * 
 		 * @see javax.servlet.http.HttpServletRequest#getPart(java.lang.String)
 		 */
 		@Override
-		public Part getPart(String name)
-			throws IOException, ServletException
-		{
+		public Part getPart(String name) throws IOException, ServletException {
 			// TODO Auto-generated method stub
 			return null;
 		}

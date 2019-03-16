@@ -28,27 +28,22 @@ import org.json.JSONObject;
 public class DeleteServlet extends TransformationServlet {
 
 	/**
-	 * Deletes the repository with the given ID, then redirects to the repository selection page. If given a
-	 * "checkSafe" parameter, instead returns JSON response with safe field set to true if safe, false if not.
+	 * Deletes the repository with the given ID, then redirects to the repository selection page. If given a "checkSafe"
+	 * parameter, instead returns JSON response with safe field set to true if safe, false if not.
 	 */
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		dropRepository(req.getParameter("id"));
 		resp.sendRedirect("../");
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception
-	{
+	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		String checkSafe = req.getParameter("checkSafe");
 		if (null == checkSafe) {
 			// Display the form.
 			super.service(req, resp, xslPath);
-		}
-		else {
+		} else {
 			// Respond to 'checkSafe' XmlHttpRequest with JSON.
 			final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 			writer.write(new JSONObject().put("safe", manager.isSafeToRemove(checkSafe)).toString());
@@ -57,9 +52,7 @@ public class DeleteServlet extends TransformationServlet {
 
 	}
 
-	private void dropRepository(String identity)
-		throws RepositoryException, RepositoryConfigException
-	{
+	private void dropRepository(String identity) throws RepositoryException, RepositoryConfigException {
 		manager.removeRepository(identity);
 	}
 
@@ -68,8 +61,7 @@ public class DeleteServlet extends TransformationServlet {
 	 */
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException
-	{
+			throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "delete.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
 		builder.link(Arrays.asList(INFO));

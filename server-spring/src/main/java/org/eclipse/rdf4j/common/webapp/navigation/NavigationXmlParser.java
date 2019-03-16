@@ -38,20 +38,16 @@ public class NavigationXmlParser {
 	public void parseInto(NavigationModel result, URL navigationXml) {
 		try {
 			Document document = DocumentUtil.getDocument(navigationXml);
-			Node rootNode = (Node)xpath.evaluate("/navigation", document, XPathConstants.NODE);
+			Node rootNode = (Node) xpath.evaluate("/navigation", document, XPathConstants.NODE);
 			fillModel(result, rootNode);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			e.printStackTrace();
-		}
-		catch (XPathExpressionException e) {
+		} catch (XPathExpressionException e) {
 			e.printStackTrace();
 		}
 	}
 
-	private void fillModel(NavigationModel result, Node modelNode)
-		throws XPathExpressionException
-	{
+	private void fillModel(NavigationModel result, Node modelNode) throws XPathExpressionException {
 		String id = xpath.evaluate("@id", modelNode);
 		result.setId(id);
 
@@ -95,9 +91,7 @@ public class NavigationXmlParser {
 		setGroupsAndViews(result, modelNode);
 	}
 
-	private void setAttributes(NavigationNode navNode, Node xmlNode)
-		throws XPathExpressionException
-	{
+	private void setAttributes(NavigationNode navNode, Node xmlNode) throws XPathExpressionException {
 		boolean hidden = getBooleanAttribute(xpath.evaluate("@hidden", xmlNode), false);
 		navNode.setHidden(hidden);
 
@@ -125,10 +119,8 @@ public class NavigationXmlParser {
 		}
 	}
 
-	private void setGroupsAndViews(Group parent, Node xmlNode)
-		throws XPathExpressionException
-	{
-		NodeList groupList = (NodeList)xpath.evaluate("group", xmlNode, XPathConstants.NODESET);
+	private void setGroupsAndViews(Group parent, Node xmlNode) throws XPathExpressionException {
+		NodeList groupList = (NodeList) xpath.evaluate("group", xmlNode, XPathConstants.NODESET);
 		int groupCount = groupList.getLength();
 		for (int groupIndex = 0; groupIndex < groupCount; groupIndex++) {
 			Node groupNode = groupList.item(groupIndex);
@@ -139,7 +131,7 @@ public class NavigationXmlParser {
 			setGroupsAndViews(group, groupNode);
 		}
 
-		NodeList viewList = (NodeList)xpath.evaluate("view", xmlNode, XPathConstants.NODESET);
+		NodeList viewList = (NodeList) xpath.evaluate("view", xmlNode, XPathConstants.NODESET);
 		int viewCount = viewList.getLength();
 		for (int viewIndex = 0; viewIndex < viewCount; viewIndex++) {
 			Node viewNode = viewList.item(viewIndex);

@@ -31,8 +31,7 @@ public interface NavigationNode extends Cloneable {
 	/**
 	 * Set the hidden status of the node.
 	 * 
-	 * @param hidden
-	 *        the new hidden status of the node
+	 * @param hidden the new hidden status of the node
 	 */
 	public void setHidden(boolean hidden);
 
@@ -46,8 +45,7 @@ public interface NavigationNode extends Cloneable {
 	/**
 	 * Set the enabled status of the node.
 	 * 
-	 * @param enabled
-	 *        the new enabled status of the node
+	 * @param enabled the new enabled status of the node
 	 */
 	public void setEnabled(boolean enabled);
 
@@ -61,23 +59,21 @@ public interface NavigationNode extends Cloneable {
 	/**
 	 * Set the parent of this node.
 	 * 
-	 * @param parent
-	 *        the new parent of this node
+	 * @param parent the new parent of this node
 	 */
 	public void setParent(NavigationNode parent);
 
 	/**
 	 * Is this node a parent of the specified node?
 	 * 
-	 * @param node
-	 *        the node to check
+	 * @param node the node to check
 	 * @return true if this node is a direct or indirect parent of the specified node, false otherwise
 	 */
 	public boolean isParent(NavigationNode node);
 
 	/**
-	 * Get the depth of this node in the hierarchy. The root NavigationModel has depth 0, all other nodes have
-	 * a depth equal to the depth of their parent + 1.
+	 * Get the depth of this node in the hierarchy. The root NavigationModel has depth 0, all other nodes have a depth
+	 * equal to the depth of their parent + 1.
 	 * 
 	 * @return the depth of the node in the hierarhcy
 	 */
