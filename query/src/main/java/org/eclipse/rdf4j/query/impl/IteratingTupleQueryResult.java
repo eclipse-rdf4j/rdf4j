@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
 public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException>
-		implements TupleQueryResult
-{
+		implements TupleQueryResult {
 
 	/*-----------*
 	 * Variables *
@@ -36,35 +35,29 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 *--------------*/
 
 	/**
-	 * Creates a query result object with the supplied binding names.
-	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
-	 * contents of this list doesn't change after supplying it to this solution.
+	 * Creates a query result object with the supplied binding names. <em>The supplied list of binding names is assumed
+	 * to be constant</em>; care should be taken that the contents of this list doesn't change after supplying it to
+	 * this solution.
 	 * 
-	 * @param bindingNames
-	 *        The binding names, in order of projection.
+	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames, Iterable<? extends BindingSet> bindingSets) {
 		this(bindingNames, bindingSets.iterator());
 	}
 
-	public IteratingTupleQueryResult(List<String> bindingNames,
-			Iterator<? extends BindingSet> bindingSetIter)
-	{
-		this(bindingNames,
-				new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
+	public IteratingTupleQueryResult(List<String> bindingNames, Iterator<? extends BindingSet> bindingSetIter) {
+		this(bindingNames, new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
 	}
 
 	/**
-	 * Creates a query result object with the supplied binding names.
-	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
-	 * contents of this list doesn't change after supplying it to this solution.
+	 * Creates a query result object with the supplied binding names. <em>The supplied list of binding names is assumed
+	 * to be constant</em>; care should be taken that the contents of this list doesn't change after supplying it to
+	 * this solution.
 	 * 
-	 * @param bindingNames
-	 *        The binding names, in order of projection.
+	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames,
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter)
-	{
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
 		super(bindingSetIter);
 		// Don't allow modifications to the binding names when it is accessed
 		// through getBindingNames:
@@ -76,9 +69,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 *---------*/
 
 	@Override
-	public List<String> getBindingNames()
-		throws QueryEvaluationException
-	{
+	public List<String> getBindingNames() throws QueryEvaluationException {
 		return bindingNames;
 	}
 

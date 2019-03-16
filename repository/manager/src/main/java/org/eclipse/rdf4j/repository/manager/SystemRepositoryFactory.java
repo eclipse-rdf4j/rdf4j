@@ -25,9 +25,7 @@ public class SystemRepositoryFactory implements RepositoryFactory {
 	}
 
 	@Override
-	public Repository getRepository(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
 		return new SystemRepository();
 	}
 

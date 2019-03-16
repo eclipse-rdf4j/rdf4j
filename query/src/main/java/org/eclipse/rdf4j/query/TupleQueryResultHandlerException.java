@@ -8,9 +8,9 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * An exception that can be thrown by an TupleQueryResultHandler when it encounters an unrecoverable error. If
- * an exception is associated with the error then this exception can be wrapped in a TupleHandlerException and
- * can later be retrieved from it when the TupleHandlerException is caught using the <tt>getCause()</tt>.
+ * An exception that can be thrown by an TupleQueryResultHandler when it encounters an unrecoverable error. If an
+ * exception is associated with the error then this exception can be wrapped in a TupleHandlerException and can later be
+ * retrieved from it when the TupleHandlerException is caught using the <tt>getCause()</tt>.
  */
 public class TupleQueryResultHandlerException extends QueryResultHandlerException {
 
@@ -19,8 +19,7 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 	/**
 	 * Creates a new TupleQueryResultHandlerException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public TupleQueryResultHandlerException(String msg) {
 		super(msg);
@@ -29,8 +28,7 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param cause The cause of the exception.
 	 */
 	public TupleQueryResultHandlerException(Throwable cause) {
 		super(cause);
@@ -39,10 +37,8 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param msg   An error message.
+	 * @param cause The cause of the exception.
 	 */
 	public TupleQueryResultHandlerException(String msg, Throwable cause) {
 		super(msg, cause);

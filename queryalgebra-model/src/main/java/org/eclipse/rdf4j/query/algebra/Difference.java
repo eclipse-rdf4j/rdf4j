@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.Set;
 
 /**
- * The MINUS set operator, which returns the result of the left tuple expression, except for the results that
- * are also returned by the right tuple expression.
+ * The MINUS set operator, which returns the result of the left tuple expression, except for the results that are also
+ * returned by the right tuple expression.
  */
 public class Difference extends BinaryTupleOperator {
 
@@ -25,10 +25,8 @@ public class Difference extends BinaryTupleOperator {
 	/**
 	 * Creates a new minus operator that operates on the two specified arguments.
 	 * 
-	 * @param leftArg
-	 *        The left argument of the minus operator.
-	 * @param rightArg
-	 *        The right argument of the minus operator.
+	 * @param leftArg  The left argument of the minus operator.
+	 * @param rightArg The right argument of the minus operator.
 	 */
 	public Difference(TupleExpr leftArg, TupleExpr rightArg) {
 		super(leftArg, rightArg);
@@ -49,9 +47,7 @@ public class Difference extends BinaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -67,6 +63,6 @@ public class Difference extends BinaryTupleOperator {
 
 	@Override
 	public Difference clone() {
-		return (Difference)super.clone();
+		return (Difference) super.clone();
 	}
 }

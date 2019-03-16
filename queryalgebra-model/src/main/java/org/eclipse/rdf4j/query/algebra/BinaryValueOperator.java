@@ -36,10 +36,8 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Creates a new binary value operator.
 	 * 
-	 * @param leftArg
-	 *        The operator's left argument, must not be <tt>null</tt>.
-	 * @param rightArg
-	 *        The operator's right argument, must not be <tt>null</tt>.
+	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
+	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
 	 */
 	public BinaryValueOperator(ValueExpr leftArg, ValueExpr rightArg) {
 		setLeftArg(leftArg);
@@ -62,8 +60,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Sets the left argument of this binary value operator.
 	 * 
-	 * @param leftArg
-	 *        The (new) left argument for this operator, must not be <tt>null</tt>.
+	 * @param leftArg The (new) left argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setLeftArg(ValueExpr leftArg) {
 		assert leftArg != null : "leftArg must not be null";
@@ -83,8 +80,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Sets the right argument of this binary value operator.
 	 * 
-	 * @param rightArg
-	 *        The (new) right argument for this operator, must not be <tt>null</tt>.
+	 * @param rightArg The (new) right argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setRightArg(ValueExpr rightArg) {
 		assert rightArg != null : "rightArg must not be null";
@@ -93,9 +89,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		leftArg.visit(visitor);
 		rightArg.visit(visitor);
 	}
@@ -103,12 +97,10 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (leftArg == current) {
-			setLeftArg((ValueExpr)replacement);
-		}
-		else if (rightArg == current) {
-			setRightArg((ValueExpr)replacement);
-		}
-		else {
+			setLeftArg((ValueExpr) replacement);
+		} else if (rightArg == current) {
+			setRightArg((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -116,7 +108,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof BinaryValueOperator) {
-			BinaryValueOperator o = (BinaryValueOperator)other;
+			BinaryValueOperator o = (BinaryValueOperator) other;
 			return leftArg.equals(o.getLeftArg()) && rightArg.equals(o.getRightArg());
 		}
 
@@ -130,7 +122,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	@Override
 	public BinaryValueOperator clone() {
-		BinaryValueOperator clone = (BinaryValueOperator)super.clone();
+		BinaryValueOperator clone = (BinaryValueOperator) super.clone();
 		clone.setLeftArg(getLeftArg().clone());
 		clone.setRightArg(getRightArg().clone());
 		return clone;

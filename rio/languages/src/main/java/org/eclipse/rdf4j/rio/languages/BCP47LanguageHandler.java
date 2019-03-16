@@ -39,8 +39,7 @@ public class BCP47LanguageHandler implements LanguageHandler {
 
 		try {
 			Literals.normalizeLanguageTag(languageTag);
-		}
-		catch (IllformedLocaleException e) {
+		} catch (IllformedLocaleException e) {
 			return false;
 		}
 
@@ -48,12 +47,10 @@ public class BCP47LanguageHandler implements LanguageHandler {
 	}
 
 	@Override
-	public boolean verifyLanguage(String literalValue, String languageTag)
-		throws LiteralUtilException
-	{
+	public boolean verifyLanguage(String literalValue, String languageTag) throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
-		
+
 		if (isRecognizedLanguage(languageTag)) {
 			// Language tag syntax already checked in isRecognizedLanguage
 			return true;
@@ -64,15 +61,13 @@ public class BCP47LanguageHandler implements LanguageHandler {
 
 	@Override
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
-		throws LiteralUtilException
-	{
+			throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		try {
 			return valueFactory.createLiteral(literalValue, Literals.normalizeLanguageTag(languageTag));
-		}
-		catch (IllformedLocaleException e) {
+		} catch (IllformedLocaleException e) {
 			throw new LiteralUtilException("Could not normalize BCP47 language tag", e);
 		}
 	}

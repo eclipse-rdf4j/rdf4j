@@ -22,31 +22,24 @@ public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
 	private static HTTPMemServer server;
 
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;
 	}
 
 	@Override
-	protected Repository newRepository()
-		throws Exception
-	{
+	protected Repository newRepository() throws Exception {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
 				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 

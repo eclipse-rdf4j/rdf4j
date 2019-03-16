@@ -8,12 +8,11 @@
 package org.eclipse.rdf4j.model;
 
 /**
- * An RDF-1.1 blank node (aka <em>bnode</em>, aka <em>anonymous node</em>). A blank node has an identifier to
- * be able to compare it to other blank nodes internally. Please note that, conceptually, blank node equality
- * can only be determined by examining the statements that refer to them.
+ * An RDF-1.1 blank node (aka <em>bnode</em>, aka <em>anonymous node</em>). A blank node has an identifier to be able to
+ * compare it to other blank nodes internally. Please note that, conceptually, blank node equality can only be
+ * determined by examining the statements that refer to them.
  * 
- * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-blank-nodes">RDF-1.1 Concepts and Abstract
- *      Syntax</a>
+ * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-blank-nodes">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface BNode extends Resource {
 
@@ -27,10 +26,9 @@ public interface BNode extends Resource {
 	/**
 	 * Compares a blank node object to another object.
 	 *
-	 * @param o
-	 *        The object to compare this blank node to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal,
-	 *         <tt>false</tt> otherwise.
+	 * @param o The object to compare this blank node to.
+	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal, <tt>false</tt>
+	 *         otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);

@@ -42,9 +42,7 @@ public class TriXParserTest {
 	private Locale platformLocale;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		platformLocale = Locale.getDefault();
 
 		Locale.setDefault(Locale.ENGLISH);
@@ -57,16 +55,12 @@ public class TriXParserTest {
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		Locale.setDefault(platformLocale);
 	}
 
 	@Test
-	public void testFatalErrorDoctypeDecl()
-		throws Exception
-	{
+	public void testFatalErrorDoctypeDecl() throws Exception {
 		// Temporarily override System.err to verify that nothing is being
 		// printed to it for this test
 		PrintStream oldErr = System.err;
@@ -75,21 +69,18 @@ public class TriXParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
-		
+
 		// configure parser to disallow doctype declarations
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, true);
-	
-		try (final InputStream in = this.getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");)
-		{
+
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");) {
 			parser.parse(in, "");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			assertEquals(
 					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 1, column 10]",
 					e.getMessage());
-		}
-		finally {
+		} finally {
 			// Reset System Error output to ensure that we don't interfere with
 			// other tests
 			System.setErr(oldErr);
@@ -110,9 +101,7 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testIgnoreExternalGeneralEntity()
-		throws Exception
-	{
+	public void testIgnoreExternalGeneralEntity() throws Exception {
 		// Temporarily override System.err to verify that nothing is being
 		// printed to it for this test
 		PrintStream oldErr = System.err;
@@ -121,16 +110,13 @@ public class TriXParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
-		
-		try (final InputStream in = this.getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");)
-		{
+
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");) {
 			parser.parse(in, "");
-		}
-		catch (FileNotFoundException e) {
+		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external general entity");
-		}
-		finally {
+		} finally {
 			// Reset System Error output to ensure that we don't interfere with
 			// other tests
 			System.setErr(oldErr);
@@ -145,20 +131,17 @@ public class TriXParserTest {
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(0, el.getFatalErrors().size());
-		
+
 		assertThat(sc.getStatements().size()).isEqualTo(1);
-	
+
 		Statement st = sc.getStatements().iterator().next();
-		
+
 		// literal value should be empty string as it should not have processed the external entity
 		assertThat(st.getObject().stringValue()).isEqualTo("");
 	}
 
-	
 	@Test
-	public void testIgnoreExternalParameterEntity()
-		throws Exception
-	{
+	public void testIgnoreExternalParameterEntity() throws Exception {
 		// Temporarily override System.err to verify that nothing is being
 		// printed to it for this test
 		PrintStream oldErr = System.err;
@@ -167,19 +150,16 @@ public class TriXParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
-	
+
 		// configure parser to allow doctype declarations
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
-	
-		try (final InputStream in = this.getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix");)
-		{
+
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix");) {
 			parser.parse(in, "");
-		}
-		catch (FileNotFoundException e) {
+		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external parameter entity");
-		}
-		finally {
+		} finally {
 			// Reset System Error output to ensure that we don't interfere with
 			// other tests
 			System.setErr(oldErr);
@@ -197,9 +177,7 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testFatalErrorPrologContent()
-		throws Exception
-	{
+	public void testFatalErrorPrologContent() throws Exception {
 		// Temporarily override System.err to verify that nothing is being
 		// printed to it for this test
 		PrintStream oldErr = System.err;
@@ -208,15 +186,12 @@ public class TriXParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
-		try (final InputStream in = this.getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/rio/trix/not-a-trix-file.trix");)
-		{
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/not-a-trix-file.trix");) {
 			parser.parse(in, "");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
-		}
-		finally {
+		} finally {
 			// Reset System Error output to ensure that we don't interfere with
 			// other tests
 			System.setErr(oldErr);

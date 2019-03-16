@@ -18,14 +18,12 @@ public class ASTConstructQuery extends ASTGraphQuery {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTConstruct getConstructClause() {
-		return (ASTConstruct)children.get(0);
+		return (ASTConstruct) children.get(0);
 	}
 
 	public boolean hasQueryBody() {

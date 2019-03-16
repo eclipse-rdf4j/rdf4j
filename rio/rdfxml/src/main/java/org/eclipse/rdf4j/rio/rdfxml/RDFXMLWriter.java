@@ -62,8 +62,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the RDF/XML document to.
+	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(OutputStream out) {
 		this(out, null);
@@ -72,8 +71,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the RDF/XML document to.
+	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
 		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
@@ -82,8 +80,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the RDF/XML document to.
+	 * @param writer The Writer to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(Writer writer) {
 		this(writer, null);
@@ -92,8 +89,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the RDF/XML document to.
+	 * @param writer The Writer to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
@@ -114,18 +110,14 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		if (writingStarted) {
 			throw new RDFHandlerException("Document writing has already started");
 		}
 		writingStarted = true;
 	}
 
-	protected void writeHeader()
-		throws IOException
-	{
+	protected void writeHeader() throws IOException {
 		try {
 			// This export format needs the RDF namespace to be defined, add a
 			// prefix for it if there isn't one yet.
@@ -171,16 +163,13 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			}
 
 			writeNewLine();
-		}
-		finally {
+		} finally {
 			headerWritten = true;
 		}
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not yet started");
 		}
@@ -199,11 +188,9 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			}
 
 			writer.flush();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		}
-		finally {
+		} finally {
 			writingStarted = false;
 			headerWritten = false;
 		}
@@ -250,9 +237,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not yet been started");
 		}
@@ -266,8 +251,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		String predString = pred.toString();
 		int predSplitIdx = XMLUtil.findURISplitIndex(predString);
 		if (predSplitIdx == -1) {
-			throw new RDFHandlerException(
-					"Unable to create XML namespace-qualified name for predicate: " + predString);
+			throw new RDFHandlerException("Unable to create XML namespace-qualified name for predicate: " + predString);
 		}
 
 		String predNamespace = predString.substring(0, predSplitIdx);
@@ -286,14 +270,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 				writeNewLine();
 				writeStartOfStartTag(RDF.NAMESPACE, "Description");
 				if (subj instanceof BNode) {
-					BNode bNode = (BNode)subj;
+					BNode bNode = (BNode) subj;
 					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
-				}
-				else if (baseIRI != null) {
+				} else if (baseIRI != null) {
 					writeAttribute(RDF.NAMESPACE, "about", baseIRI.relativize(subj.stringValue()));
-				}
-				else {
-					IRI uri = (IRI)subj;
+				} else {
+					IRI uri = (IRI) subj;
 					writeAttribute(RDF.NAMESPACE, "about", uri.toString());
 				}
 				writeEndOfStartTag();
@@ -308,40 +290,35 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 			// OBJECT
 			if (obj instanceof Resource) {
-				Resource objRes = (Resource)obj;
+				Resource objRes = (Resource) obj;
 
 				if (objRes instanceof BNode) {
-					BNode bNode = (BNode)objRes;
+					BNode bNode = (BNode) objRes;
 					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
-				}
-				else if (baseIRI != null) {
+				} else if (baseIRI != null) {
 					writeAttribute(RDF.NAMESPACE, "resource", baseIRI.relativize(objRes.stringValue()));
-				}
-				else {
-					IRI uri = (IRI)objRes;
+				} else {
+					IRI uri = (IRI) objRes;
 					writeAttribute(RDF.NAMESPACE, "resource", uri.toString());
 				}
 
 				writeEndOfEmptyTag();
-			}
-			else if (obj instanceof Literal) {
-				Literal objLit = (Literal)obj;
+			} else if (obj instanceof Literal) {
+				Literal objLit = (Literal) obj;
 				// datatype attribute
 				boolean isXMLLiteral = false;
 
 				// language attribute
 				if (Literals.isLanguageLiteral(objLit)) {
 					writeAttribute("xml:lang", objLit.getLanguage().get());
-				}
-				else {
+				} else {
 					IRI datatype = objLit.getDatatype();
 					// Check if datatype is rdf:XMLLiteral
 					isXMLLiteral = datatype.equals(RDF.XMLLITERAL);
 
 					if (isXMLLiteral) {
 						writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
-					}
-					else if (!datatype.equals(XMLSchema.STRING)) {
+					} else if (!datatype.equals(XMLSchema.STRING)) {
 						writeAttribute(RDF.NAMESPACE, "datatype", datatype.toString());
 					}
 				}
@@ -352,8 +329,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 				if (isXMLLiteral) {
 					// Write XML literal as plain XML
 					writer.write(objLit.getLabel());
-				}
-				else {
+				} else {
 					writeCharacterData(objLit.getLabel());
 				}
 
@@ -364,16 +340,13 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 			// Don't write </rdf:Description> yet, maybe the next statement
 			// has the same subject.
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		try {
 			if (!headerWritten) {
 				writeHeader();
@@ -385,15 +358,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write(comment);
 			writer.write(" -->");
 			writeNewLine();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
-	protected void flushPendingStatements()
-		throws IOException, RDFHandlerException
-	{
+	protected void flushPendingStatements() throws IOException, RDFHandlerException {
 		if (lastWrittenSubject != null) {
 			// The last statement still has to be closed:
 			writeEndTag(RDF.NAMESPACE, "Description");
@@ -403,14 +373,11 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	protected void writeStartOfStartTag(String namespace, String localName)
-		throws IOException
-	{
+	protected void writeStartOfStartTag(String namespace, String localName) throws IOException {
 		if (namespace.equals(defaultNamespace)) {
 			writer.write("<");
 			writer.write(localName);
-		}
-		else {
+		} else {
 			String prefix = namespaceTable.get(namespace);
 
 			// If the prefix was not defined, or the root rdf:RDF tag was not
@@ -421,8 +388,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 				writer.write(" xmlns=\"");
 				writer.write(XMLUtil.escapeDoubleQuotedAttValue(namespace));
 				writer.write("\"");
-			}
-			else {
+			} else {
 				writer.write("<");
 				writer.write(prefix);
 				writer.write(":");
@@ -431,9 +397,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	protected void writeAttribute(String attName, String value)
-		throws IOException
-	{
+	protected void writeAttribute(String attName, String value) throws IOException {
 		writer.write(" ");
 		writer.write(attName);
 		writer.write("=\"");
@@ -442,8 +406,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	protected void writeAttribute(String namespace, String attName, String value)
-		throws IOException, RDFHandlerException
-	{
+			throws IOException, RDFHandlerException {
 		// Note: attribute cannot use the default namespace
 		String prefix = namespaceTable.get(namespace);
 
@@ -461,27 +424,20 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		writer.write("\"");
 	}
 
-	protected void writeEndOfStartTag()
-		throws IOException
-	{
+	protected void writeEndOfStartTag() throws IOException {
 		writer.write(">");
 	}
 
-	protected void writeEndOfEmptyTag()
-		throws IOException
-	{
+	protected void writeEndOfEmptyTag() throws IOException {
 		writer.write("/>");
 	}
 
-	protected void writeEndTag(String namespace, String localName)
-		throws IOException
-	{
+	protected void writeEndTag(String namespace, String localName) throws IOException {
 		if (namespace.equals(defaultNamespace)) {
 			writer.write("</");
 			writer.write(localName);
 			writer.write(">");
-		}
-		else {
+		} else {
 			writer.write("</");
 			String prefix = namespaceTable.get(namespace);
 			if (prefix != null) {
@@ -493,55 +449,42 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	protected void writeCharacterData(String chars)
-		throws IOException
-	{
+	protected void writeCharacterData(String chars) throws IOException {
 		writer.write(XMLUtil.escapeCharacterData(chars));
 	}
 
-	protected void writeIndent()
-		throws IOException
-	{
+	protected void writeIndent() throws IOException {
 		writer.write("\t");
 	}
 
-	protected void writeNewLine()
-		throws IOException
-	{
+	protected void writeNewLine() throws IOException {
 		writer.write("\n");
 	}
 
 	/**
-	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML
-	 * syntax enforces the blank node id is a valid NCName.
+	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML syntax
+	 * enforces the blank node id is a valid NCName.
 	 * 
-	 * @param bNode
-	 *        a blank node identifier
+	 * @param bNode a blank node identifier
 	 * @return the blank node identifier converted to a form that is a valid NCName.
-	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34 of the RDF/XML Syntax
-	 *      specification</a>
+	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34 of the RDF/XML Syntax specification</a>
 	 */
-	protected String getValidNodeId(BNode bNode)
-		throws IOException
-	{
+	protected String getValidNodeId(BNode bNode) throws IOException {
 		String validNodeId = bNode.getID();
 		if (!XMLUtil.isNCName(validNodeId)) {
 			StringBuilder builder = new StringBuilder();
 			if (validNodeId.isEmpty()) {
 				if (this.getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS)) {
-					throw new IOException(
-							"Cannot consistently write blank nodes with empty internal identifiers");
+					throw new IOException("Cannot consistently write blank nodes with empty internal identifiers");
 				}
 				builder.append("genid-hash-");
 				builder.append(Integer.toHexString(System.identityHashCode(bNode)));
-			}
-			else {
+			} else {
 				if (!XMLUtil.isNCNameStartChar(validNodeId.charAt(0))) {
 					// prepend legal start char
 					builder.append("genid-start-");
 					builder.append(Integer.toHexString(validNodeId.charAt(0)));
-				}
-				else {
+				} else {
 					builder.append(validNodeId.charAt(0));
 				}
 
@@ -550,8 +493,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 					// necessary.
 					if (XMLUtil.isNCNameChar(validNodeId.charAt(i))) {
 						builder.append(validNodeId.charAt(i));
-					}
-					else {
+					} else {
 						// replace incompatible char with encoded hex value that will
 						// always be alphanumeric.
 						builder.append(Integer.toHexString(validNodeId.charAt(i)));

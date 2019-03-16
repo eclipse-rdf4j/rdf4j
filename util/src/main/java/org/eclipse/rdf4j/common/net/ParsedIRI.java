@@ -31,54 +31,52 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 /**
  * Represents an Internationalized Resource Identifier (IRI) reference.
  * <p>
- * Aside from some minor deviations noted below, an instance of this class represents a IRI reference as
- * defined by <a href="http://www.ietf.org/rfc/rfc3987.txt"><i>RFC&nbsp;3987: Internationalized Resource
- * Identifiers (IRI): IRI Syntax</i></a>. This class provides constructors for creating IRI instances from
- * their components or by parsing their string forms, methods for accessing the various components of an
- * instance, and methods for normalizing, resolving, and relativizing IRI instances. Instances of this class
- * are immutable.
+ * Aside from some minor deviations noted below, an instance of this class represents a IRI reference as defined by
+ * <a href="http://www.ietf.org/rfc/rfc3987.txt"><i>RFC&nbsp;3987: Internationalized Resource Identifiers (IRI): IRI
+ * Syntax</i></a>. This class provides constructors for creating IRI instances from their components or by parsing their
+ * string forms, methods for accessing the various components of an instance, and methods for normalizing, resolving,
+ * and relativizing IRI instances. Instances of this class are immutable.
  * <p>
  * An IRI instance has the following seven components in string form has the syntax <blockquote>
  * [<i>scheme</i><b>{@code :}</b>][<b>{@code //}</b>[<i>user-info</i><b>{@code @}</b>]<i>host</i>[<b>{@code :}</b><i>port</i>]][<i>path</i>][<b>{@code ?}</b><i>query</i>][<b>{@code #}</b><i>fragment</i>]
  * </blockquote>
  * <p>
- * In a given instance any particular component is either <i>undefined</i> or <i>defined</i> with a distinct
- * value. Undefined string components are represented by {@code null}, while undefined integer components are
- * represented by {@code -1}. A string component may be defined to have the empty string as its value; this is
- * not equivalent to that component being undefined.
+ * In a given instance any particular component is either <i>undefined</i> or <i>defined</i> with a distinct value.
+ * Undefined string components are represented by {@code null}, while undefined integer components are represented by
+ * {@code -1}. A string component may be defined to have the empty string as its value; this is not equivalent to that
+ * component being undefined.
  * <p>
  * Whether a particular component is or is not defined in an instance depends upon the type of the IRI being
- * represented. An absolute IRI has a scheme component. An opaque IRI has a scheme, a scheme-specific part,
- * and possibly a fragment, but has no other components. A hierarchical IRI always has a path (though it may
- * be empty) and a scheme-specific-part (which at least contains the path), and may have any of the other
- * components.
+ * represented. An absolute IRI has a scheme component. An opaque IRI has a scheme, a scheme-specific part, and possibly
+ * a fragment, but has no other components. A hierarchical IRI always has a path (though it may be empty) and a
+ * scheme-specific-part (which at least contains the path), and may have any of the other components.
  * <h4>IRIs, URIs, URLs, and URNs</h4>
  * <p>
- * IRIs are meant to replace URIs in identifying resources for protocols, formats, and software components
- * that use a UCS-based character repertoire.
+ * IRIs are meant to replace URIs in identifying resources for protocols, formats, and software components that use a
+ * UCS-based character repertoire.
  * <p>
- * Internationalized Resource Identifier (IRI) is a complement to the Uniform Resource Identifier (URI). An
- * IRI is a sequence of characters from the Universal Character Set (Unicode/ISO 10646). A mapping from IRIs
- * to URIs is defined using {@link #toASCIIString()}, which means that IRIs can be used instead of URIs, where
- * appropriate, to identify resources. While all URIs are also IRIs, the {@link #normalize()} method can be
- * used to convert a URI back into a normalized IRI.
+ * Internationalized Resource Identifier (IRI) is a complement to the Uniform Resource Identifier (URI). An IRI is a
+ * sequence of characters from the Universal Character Set (Unicode/ISO 10646). A mapping from IRIs to URIs is defined
+ * using {@link #toASCIIString()}, which means that IRIs can be used instead of URIs, where appropriate, to identify
+ * resources. While all URIs are also IRIs, the {@link #normalize()} method can be used to convert a URI back into a
+ * normalized IRI.
  * <p>
- * A URI is a uniform resource <i>identifier</i> while a URL is a uniform resource <i>locator</i>. Hence every
- * URL is a URI, abstractly speaking, but not every URI is a URL. This is because there is another subcategory
- * of URIs, uniform resource <i>names</i> (URNs), which name resources but do not specify how to locate them.
- * The {@code mailto}, {@code news}, and {@code isbn} URIs shown above are examples of URNs.
+ * A URI is a uniform resource <i>identifier</i> while a URL is a uniform resource <i>locator</i>. Hence every URL is a
+ * URI, abstractly speaking, but not every URI is a URL. This is because there is another subcategory of URIs, uniform
+ * resource <i>names</i> (URNs), which name resources but do not specify how to locate them. The {@code mailto},
+ * {@code news}, and {@code isbn} URIs shown above are examples of URNs.
  * <h4>Deviations</h4>
  * <p>
- * <b>jar:</b> This implementation treats the first colon as part of the scheme if the scheme starts with
- * "jar:". For example the IRI <i>jar:http://www.foo.com/bar/jar.jar!/baz/entry.txt</i> is parsed with the
- * scheme <i>jar:http</i> and the path <i>/bar/jar.jar!/baz/entry.txt</i>.
+ * <b>jar:</b> This implementation treats the first colon as part of the scheme if the scheme starts with "jar:". For
+ * example the IRI <i>jar:http://www.foo.com/bar/jar.jar!/baz/entry.txt</i> is parsed with the scheme <i>jar:http</i>
+ * and the path <i>/bar/jar.jar!/baz/entry.txt</i>.
  *
  * @author James Leigh
  * @since 2.3
  * @see <a href="http://www.ietf.org/rfc/rfc3987.txt"><i>RFC&nbsp;3987: Internationalized Resource Identifiers
  *      (IRIs)</i></a>, <br>
- *      <a href="http://www.ietf.org/rfc/rfc3986.txt"><i>RFC&nbsp;3986: Uniform Resource Identifiers (URI):
- *      Generic Syntax</i></a>
+ *      <a href="http://www.ietf.org/rfc/rfc3986.txt"><i>RFC&nbsp;3986: Uniform Resource Identifiers (URI): Generic
+ *      Syntax</i></a>
  */
 public class ParsedIRI implements Cloneable, Serializable {
 
@@ -94,29 +92,15 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static int EOF = 0;
 
-	private static int[][] iprivate = {
-			new int[] { 0xE000, 0xF8FF },
-			new int[] { 0xF0000, 0xFFFFD },
+	private static int[][] iprivate = { new int[] { 0xE000, 0xF8FF }, new int[] { 0xF0000, 0xFFFFD },
 			new int[] { 0x100000, 0x10FFFD } };
 
-	private static int[][] ucschar = {
-			new int[] { 0x00A0, 0xD7FF },
-			new int[] { 0xF900, 0xFDCF },
-			new int[] { 0xFDF0, 0xFFEF },
-			new int[] { 0x10000, 0x1FFFD },
-			new int[] { 0x20000, 0x2FFFD },
-			new int[] { 0x30000, 0x3FFFD },
-			new int[] { 0x40000, 0x4FFFD },
-			new int[] { 0x50000, 0x5FFFD },
-			new int[] { 0x60000, 0x6FFFD },
-			new int[] { 0x70000, 0x7FFFD },
-			new int[] { 0x80000, 0x8FFFD },
-			new int[] { 0x90000, 0x9FFFD },
-			new int[] { 0xA0000, 0xAFFFD },
-			new int[] { 0xB0000, 0xBFFFD },
-			new int[] { 0xC0000, 0xCFFFD },
-			new int[] { 0xD0000, 0xDFFFD },
-			new int[] { 0xE1000, 0xEFFFD } };
+	private static int[][] ucschar = { new int[] { 0x00A0, 0xD7FF }, new int[] { 0xF900, 0xFDCF },
+			new int[] { 0xFDF0, 0xFFEF }, new int[] { 0x10000, 0x1FFFD }, new int[] { 0x20000, 0x2FFFD },
+			new int[] { 0x30000, 0x3FFFD }, new int[] { 0x40000, 0x4FFFD }, new int[] { 0x50000, 0x5FFFD },
+			new int[] { 0x60000, 0x6FFFD }, new int[] { 0x70000, 0x7FFFD }, new int[] { 0x80000, 0x8FFFD },
+			new int[] { 0x90000, 0x9FFFD }, new int[] { 0xA0000, 0xAFFFD }, new int[] { 0xB0000, 0xBFFFD },
+			new int[] { 0xC0000, 0xCFFFD }, new int[] { 0xD0000, 0xDFFFD }, new int[] { 0xE1000, 0xEFFFD } };
 
 	private static int[][] ALPHA = { new int[] { 'A', 'Z' }, new int[] { 'a', 'z' } };
 
@@ -144,8 +128,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static int[][] fchar = union(pchar, '/', '?');
 
-	private static int[] HEXDIG = flatten(
-			union(DIGIT, new int[][] { new int[] { 'A', 'F' }, new int[] { 'a', 'f' } }));
+	private static int[] HEXDIG = flatten(union(DIGIT, new int[][] { new int[] { 'A', 'F' }, new int[] { 'a', 'f' } }));
 
 	private static int[] ascii = flatten(union(unreserved_rfc3986, reserved, '%'));
 
@@ -158,16 +141,14 @@ public class ParsedIRI implements Cloneable, Serializable {
 		List<int[]> list = new ArrayList<>();
 		for (Object set : sets) {
 			if (set instanceof int[][]) {
-				int[][] ar = (int[][])set;
+				int[][] ar = (int[][]) set;
 				for (int i = 0; i < ar.length; i++) {
 					list.add(ar[i]);
 				}
-			}
-			else if (set instanceof Character) {
-				char chr = (Character)set;
+			} else if (set instanceof Character) {
+				char chr = (Character) set;
 				list.add(new int[] { chr, chr });
-			}
-			else {
+			} else {
 				assert false;
 			}
 		}
@@ -182,13 +163,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 			int[] str = arrays[i];
 			if (str.length == 1) {
 				list.add(str[0]); // character
-			}
-			else if (str.length == 2) {
+			} else if (str.length == 2) {
 				for (int chr = str[0], end = str[1]; chr <= end; chr++) {
 					list.add(chr); // range
 				}
-			}
-			else {
+			} else {
 				assert false;
 			}
 		}
@@ -208,13 +187,12 @@ public class ParsedIRI implements Cloneable, Serializable {
 			ByteBuffer bb = null;
 			try {
 				bb = encoder.encode(CharBuffer.wrap(ns));
-			}
-			catch (CharacterCodingException x) {
+			} catch (CharacterCodingException x) {
 				assert false;
 			}
 			StringBuilder sb = new StringBuilder();
 			while (bb.hasRemaining()) {
-				byte b = (byte)(bb.get() & 0xff);
+				byte b = (byte) (bb.get() & 0xff);
 				sb.append('%');
 				sb.appendCodePoint(HEXDIG[(b >> 4) & 0x0f]);
 				sb.appendCodePoint(HEXDIG[(b >> 0) & 0x0f]);
@@ -228,29 +206,24 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * Creates a ParsedIRI by parsing the given string.
 	 * <p>
 	 * This convenience factory method works as if by invoking the {@link #ParsedIRI(String)} constructor; any
-	 * {@link URISyntaxException} thrown by the constructor is caught and the error code point is percent
-	 * encoded. This process is repeated until a syntactically valid IRI is formed or a
-	 * {@link IllegalArgumentException} is thrown.
+	 * {@link URISyntaxException} thrown by the constructor is caught and the error code point is percent encoded. This
+	 * process is repeated until a syntactically valid IRI is formed or a {@link IllegalArgumentException} is thrown.
 	 * <p>
-	 * This method is provided for use in situations where it is known that the given string is an IRI, even
-	 * if it is not completely syntactically valid, for example a IRI constants declared within in a program.
-	 * The constructors, which throw {@link URISyntaxException} directly, should be used situations where a
-	 * IRI is being constructed from user input or from some other source that may be prone to errors.
+	 * This method is provided for use in situations where it is known that the given string is an IRI, even if it is
+	 * not completely syntactically valid, for example a IRI constants declared within in a program. The constructors,
+	 * which throw {@link URISyntaxException} directly, should be used situations where a IRI is being constructed from
+	 * user input or from some other source that may be prone to errors.
 	 * </p>
 	 *
-	 * @param str
-	 *        The string to be parsed into an IRI
+	 * @param str The string to be parsed into an IRI
 	 * @return The new ParsedIRI
-	 * @throws NullPointerException
-	 *         If {@code str} is {@code null}
-	 * @throws IllegalArgumentException
-	 *         If the given string could not be converted into an IRI
+	 * @throws NullPointerException     If {@code str} is {@code null}
+	 * @throws IllegalArgumentException If the given string could not be converted into an IRI
 	 */
 	public static ParsedIRI create(String str) {
 		try {
 			return new ParsedIRI(str);
-		}
-		catch (URISyntaxException x) {
+		} catch (URISyntaxException x) {
 			try {
 				int problem = x.getIndex();
 				StringBuilder sb = new StringBuilder(str);
@@ -261,18 +234,15 @@ public class ParsedIRI implements Cloneable, Serializable {
 					sb.replace(problem, end, encoded);
 					try {
 						return new ParsedIRI(sb.toString());
-					}
-					catch (URISyntaxException ex) {
+					} catch (URISyntaxException ex) {
 						if (ex.getIndex() <= problem) {
 							throw new IllegalArgumentException(x.getMessage(), x);
-						}
-						else {
+						} else {
 							problem = ex.getIndex();
 						}
 					}
 				}
-			}
-			catch (UnsupportedEncodingException ex) {
+			} catch (UnsupportedEncodingException ex) {
 				assert false;
 				return null;
 			}
@@ -300,16 +270,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Constructs a ParsedIRI by parsing the given string.
 	 *
-	 * @param iri
-	 *        The string to be parsed into a IRI
-	 * @throws NullPointerException
-	 *         If {@code iri} is {@code null}
-	 * @throws URISyntaxException
-	 *         If the given string violates RFC&nbsp;3987, as augmented by the above deviations
+	 * @param iri The string to be parsed into a IRI
+	 * @throws NullPointerException If {@code iri} is {@code null}
+	 * @throws URISyntaxException   If the given string violates RFC&nbsp;3987, as augmented by the above deviations
 	 */
-	public ParsedIRI(String iri)
-		throws URISyntaxException
-	{
+	public ParsedIRI(String iri) throws URISyntaxException {
 		assert iri != null;
 		this.iri = iri;
 		parse();
@@ -318,28 +283,20 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Constructs a hierarchical IRI from the given components.
 	 * <p>
-	 * This constructor first builds a IRI string from the given components according to the rules specified
-	 * in <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
+	 * This constructor first builds a IRI string from the given components according to the rules specified in
+	 * <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
 	 * </p>
 	 *
-	 * @param scheme
-	 *        Scheme name
-	 * @param userInfo
-	 *        User name and authorization information
-	 * @param host
-	 *        Host name
-	 * @param port
-	 *        Port number
-	 * @param path
-	 *        Path
-	 * @param query
-	 *        Query
-	 * @param fragment
-	 *        Fragment
+	 * @param scheme   Scheme name
+	 * @param userInfo User name and authorization information
+	 * @param host     Host name
+	 * @param port     Port number
+	 * @param path     Path
+	 * @param query    Query
+	 * @param fragment Fragment
 	 */
 	public ParsedIRI(String scheme, String userInfo, String host, int port, String path, String query,
-			String fragment)
-	{
+			String fragment) {
 		this.iri = buildIRI(scheme, userInfo, host, port, path, query, fragment);
 		this.scheme = scheme;
 		this.userInfo = userInfo;
@@ -358,27 +315,26 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Tests this IRI for simple string comparison with another object.
 	 * <p>
-	 * If two IRI strings are identical, then it is safe to conclude that they are equivalent. However, even
-	 * if the IRI strings are not identical the IRIs might still be equivalent. Further comparison can be made
-	 * using the {@link #normalize()} forms.
+	 * If two IRI strings are identical, then it is safe to conclude that they are equivalent. However, even if the IRI
+	 * strings are not identical the IRIs might still be equivalent. Further comparison can be made using the
+	 * {@link #normalize()} forms.
 	 *
-	 * @param obj
-	 *        The object to which this object is to be compared
+	 * @param obj The object to which this object is to be compared
 	 * @return {@code true} if the given object is a ParsedIRI that represents the same IRI
 	 */
 	@Override
 	public boolean equals(Object obj) {
-		return obj instanceof ParsedIRI && this.iri.equals(((ParsedIRI)obj).iri);
+		return obj instanceof ParsedIRI && this.iri.equals(((ParsedIRI) obj).iri);
 	}
 
 	/**
 	 * Returns the content of this IRI as a string.
 	 * <p>
-	 * If this URI was created by invoking one of the constructors in this class then a string equivalent to
-	 * the original input string, or to the string computed from the originally-given components, as
-	 * appropriate, is returned. Otherwise this IRI was created by normalization, resolution, or
-	 * relativization, and so a string is constructed from this IRI's components according to the rules
-	 * specified in <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
+	 * If this URI was created by invoking one of the constructors in this class then a string equivalent to the
+	 * original input string, or to the string computed from the originally-given components, as appropriate, is
+	 * returned. Otherwise this IRI was created by normalization, resolution, or relativization, and so a string is
+	 * constructed from this IRI's components according to the rules specified in
+	 * <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
 	 * </p>
 	 *
 	 * @return The string form of this IRI
@@ -391,14 +347,14 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Returns the content of this IRI as a US-ASCII string.
 	 * <p>
-	 * If this IRI only contains 8bit characters then an invocation of this method will return the same value
-	 * as an invocation of the {@link #toString() toString} method. Otherwise this method works as if by
-	 * encoding the host via <a href="http://www.ietf.org/rfc/rfc3490.txt">RFC 3490</a> and all other
-	 * components by percent encoding their UTF-8 values.
+	 * If this IRI only contains 8bit characters then an invocation of this method will return the same value as an
+	 * invocation of the {@link #toString() toString} method. Otherwise this method works as if by encoding the host via
+	 * <a href="http://www.ietf.org/rfc/rfc3490.txt">RFC 3490</a> and all other components by percent encoding their
+	 * UTF-8 values.
 	 * </p>
 	 *
-	 * @return The string form of this IRI, encoded as needed so that it only contains characters in the
-	 *         US-ASCII charset
+	 * @return The string form of this IRI, encoded as needed so that it only contains characters in the US-ASCII
+	 *         charset
 	 */
 	public String toASCIIString() {
 		StringBuilder sb = new StringBuilder(iri.length());
@@ -444,9 +400,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Tells whether or not this IRI is opaque.
 	 * <p>
-	 * A IRI is opaque if, and only if, it is absolute and its path part does not begin with a slash character
-	 * ('/'). An opaque IRI has a scheme, a path, and possibly a query or fragment; all other components
-	 * (userInfo, host, and port) are undefined.
+	 * A IRI is opaque if, and only if, it is absolute and its path part does not begin with a slash character ('/'). An
+	 * opaque IRI has a scheme, a path, and possibly a query or fragment; all other components (userInfo, host, and
+	 * port) are undefined.
 	 * </p>
 	 *
 	 * @return {@code true} if, and only if, this IRI is absolute and its path does not start with a slash
@@ -458,9 +414,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Returns the scheme component of this IRI.
 	 * <p>
-	 * The scheme component of a IRI, if defined, only contains characters in the <i>alphanum</i> category and
-	 * in the string {@code "-.+"}, unless the scheme starts with {@code "jar:"}, in which case it may also
-	 * contain one colon. A scheme always starts with an <i>alpha</i> character.
+	 * The scheme component of a IRI, if defined, only contains characters in the <i>alphanum</i> category and in the
+	 * string {@code "-.+"}, unless the scheme starts with {@code "jar:"}, in which case it may also contain one colon.
+	 * A scheme always starts with an <i>alpha</i> character.
 	 * <p>
 	 * The scheme component of a IRI cannot contain escaped octets.
 	 *
@@ -473,8 +429,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Returns the raw user-information component of this IRI.
 	 *
-	 * @return The raw user-information component of this IRI, or {@code null} if the user information is
-	 *         undefined
+	 * @return The raw user-information component of this IRI, or {@code null} if the user information is undefined
 	 */
 	public String getUserInfo() {
 		return userInfo;
@@ -516,8 +471,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * The query component of a IRI, if defined, only contains legal IRI characters.
 	 * </p>
 	 *
-	 * @return The raw query component of this IRI, or {@code null} if the IRI does not contain a question
-	 *         mark
+	 * @return The raw query component of this IRI, or {@code null} if the IRI does not contain a question mark
 	 */
 	public String getQuery() {
 		return query;
@@ -526,8 +480,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Returns the raw fragment component of this IRI after the hash.
 	 * <p>
-	 * The fragment component of a IRI, if defined, only contains legal IRI characters and does not contain a
-	 * hash.
+	 * The fragment component of a IRI, if defined, only contains legal IRI characters and does not contain a hash.
 	 * </p>
 	 *
 	 * @return The raw fragment component of this IRI, or {@code null} if the IRI does not contain a hash
@@ -539,30 +492,28 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Normalizes this IRI's components.
 	 * <p>
-	 * Because IRIs exist to identify resources, presumably they should be considered equivalent when they
-	 * identify the same resource. However, this definition of equivalence is not of much practical use, as
-	 * there is no way for an implementation to compare two resources unless it has full knowledge or control
-	 * of them. Therefore, IRI normalization is designed to minimize false negatives while strictly avoiding
-	 * false positives.
+	 * Because IRIs exist to identify resources, presumably they should be considered equivalent when they identify the
+	 * same resource. However, this definition of equivalence is not of much practical use, as there is no way for an
+	 * implementation to compare two resources unless it has full knowledge or control of them. Therefore, IRI
+	 * normalization is designed to minimize false negatives while strictly avoiding false positives.
 	 * <p>
-	 * <b>Case Normalization</b> the hexadecimal digits within a percent-encoding triplet (e.g., "%3a" versus
-	 * "%3A") are case-insensitive and are normalized to use uppercase letters for the digits A - F. The
-	 * scheme and host are case insensitive and are normalized to lowercase.
+	 * <b>Case Normalization</b> the hexadecimal digits within a percent-encoding triplet (e.g., "%3a" versus "%3A") are
+	 * case-insensitive and are normalized to use uppercase letters for the digits A - F. The scheme and host are case
+	 * insensitive and are normalized to lowercase.
 	 * <p>
-	 * <b>Character Normalization</b> The Unicode Standard defines various equivalences between sequences of
-	 * characters for various purposes. Unicode Standard Annex defines various Normalization Forms for these
-	 * equivalences and is applied to the IRI components.
+	 * <b>Character Normalization</b> The Unicode Standard defines various equivalences between sequences of characters
+	 * for various purposes. Unicode Standard Annex defines various Normalization Forms for these equivalences and is
+	 * applied to the IRI components.
 	 * <p>
 	 * <b>Percent-Encoding Normalization</b> decodes any percent-encoded octet sequence that corresponds to an
 	 * unreserved character anywhere in the IRI.
 	 * <p>
-	 * <b>Path Segment Normalization</b> is the process of removing unnecessary {@code "."} and {@code ".."}
-	 * segments from the path component of a hierarchical IRI. Each {@code "."} segment is simply removed. A
-	 * {@code ".."} segment is removed only if it is preceded by a non-{@code ".."} segment or the start of
-	 * the path.
+	 * <b>Path Segment Normalization</b> is the process of removing unnecessary {@code "."} and {@code ".."} segments
+	 * from the path component of a hierarchical IRI. Each {@code "."} segment is simply removed. A {@code ".."} segment
+	 * is removed only if it is preceded by a non-{@code ".."} segment or the start of the path.
 	 * <p>
-	 * <b>HTTP(S) Scheme Normalization</b> if the port uses the default port number or not given it is set to
-	 * undefined. An empty path is replaced with "/".
+	 * <b>HTTP(S) Scheme Normalization</b> if the port uses the default port number or not given it is set to undefined.
+	 * An empty path is replaced with "/".
 	 * <p>
 	 * <b>File Scheme Normalization</b> if the host is "localhost" or empty it is set to undefined.
 	 * <p>
@@ -587,8 +538,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		ParsedIRI normalized = new ParsedIRI(_scheme, _userInfo, _host, _port, _path, _query, _fragment);
 		if (this.iri.equals(normalized.iri)) {
 			return this;
-		}
-		else {
+		} else {
 			return normalized;
 		}
 	}
@@ -597,11 +547,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * Resolves the given IRI against this ParsedIRI.
 	 *
 	 * @see #resolve(ParsedIRI)
-	 * @param iri
-	 *        The IRI to be resolved against this ParsedIRI
+	 * @param iri The IRI to be resolved against this ParsedIRI
 	 * @return The resulting IRI
-	 * @throws NullPointerException
-	 *         If {@code relative} is {@code null}
+	 * @throws NullPointerException If {@code relative} is {@code null}
 	 */
 	public String resolve(String iri) {
 		return resolve(ParsedIRI.create(iri)).toString();
@@ -610,32 +558,28 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Resolves the given IRI against this ParsedIRI.
 	 * <p>
-	 * <i>Resolution</i> is the process of resolving one IRI against another, <i>base</i> IRI. The resulting
-	 * IRI is constructed from components of both IRIs in the manner specified by RFC&nbsp;3986, taking
-	 * components from the base IRI for those not specified in the original. For hierarchical IRIs, the path
-	 * of the original is resolved against the path of the base and then normalized.
+	 * <i>Resolution</i> is the process of resolving one IRI against another, <i>base</i> IRI. The resulting IRI is
+	 * constructed from components of both IRIs in the manner specified by RFC&nbsp;3986, taking components from the
+	 * base IRI for those not specified in the original. For hierarchical IRIs, the path of the original is resolved
+	 * against the path of the base and then normalized.
 	 * <p>
 	 * If the given IRI is already absolute, or if this IRI is opaque, then the given IRI is returned.
 	 * <p>
-	 * <a name="resolve-frag"></a> If the given URI's fragment component is defined, its path component is
-	 * empty, and its scheme, authority, and query components are undefined, then a URI with the given
-	 * fragment but with all other components equal to those of this URI is returned. This allows an IRI
-	 * representing a standalone fragment reference, such as {@code "#foo"}, to be usefully resolved against a
-	 * base IRI.
+	 * <a name="resolve-frag"></a> If the given URI's fragment component is defined, its path component is empty, and
+	 * its scheme, authority, and query components are undefined, then a URI with the given fragment but with all other
+	 * components equal to those of this URI is returned. This allows an IRI representing a standalone fragment
+	 * reference, such as {@code "#foo"}, to be usefully resolved against a base IRI.
 	 * <p>
 	 * Otherwise this method constructs a new hierarchical IRI in a manner consistent with
 	 * <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
 	 * </p>
 	 * <p>
-	 * The result of this method is absolute if, and only if, either this IRI is absolute or the given IRI is
-	 * absolute.
+	 * The result of this method is absolute if, and only if, either this IRI is absolute or the given IRI is absolute.
 	 * </p>
 	 *
-	 * @param relative
-	 *        The IRI to be resolved against this ParsedIRI
+	 * @param relative The IRI to be resolved against this ParsedIRI
 	 * @return The resulting IRI
-	 * @throws NullPointerException
-	 *         If {@code relative} is {@code null}
+	 * @throws NullPointerException If {@code relative} is {@code null}
 	 */
 	public ParsedIRI resolve(ParsedIRI relative) {
 		// This algorithm is based on the algorithm specified in chapter 5 of
@@ -654,17 +598,16 @@ public class ParsedIRI implements Cloneable, Serializable {
 			// Inherit any fragment identifier from relURI
 			String fragment = relative.getFragment();
 
-			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(),
-					this.getPath(), this.getQuery(), fragment);
-		}
-		else if (relative.getHost() == null && relative.getPath().length() == 0) {
+			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(), this.getPath(),
+					this.getQuery(), fragment);
+		} else if (relative.getHost() == null && relative.getPath().length() == 0) {
 
 			// Inherit any query or fragment from relURI
 			String query = relative.getQuery();
 			String fragment = relative.getFragment();
 
-			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(),
-					this.getPath(), query, fragment);
+			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(), this.getPath(),
+					query, fragment);
 		}
 
 		// We can start combining the URIs
@@ -682,8 +625,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			host = relative.getHost();
 			port = relative.getPort();
 			path = relative.getPath();
-		}
-		else {
+		} else {
 			userInfo = this.getUserInfo();
 			host = this.getHost();
 			port = this.getPort();
@@ -691,15 +633,13 @@ public class ParsedIRI implements Cloneable, Serializable {
 			// RFC, step 5:
 			if (relative.getPath().startsWith("/")) {
 				path = relative.getPath();
-			}
-			else {
+			} else {
 				// RFC, step 6:
 				path = this.getPath();
 
 				if (path == null) {
 					path = "/";
-				}
-				else {
+				} else {
 					if (!path.endsWith("/")) {
 						// Remove the last segment of the path. Note: if
 						// lastSlashIdx is -1, the path will become empty,
@@ -733,11 +673,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * Relativizes the given IRI against this ParsedIRI.
 	 *
 	 * @see #relativize(ParsedIRI)
-	 * @param iri
-	 *        The IRI to be relativized against this ParsedIRI
+	 * @param iri The IRI to be relativized against this ParsedIRI
 	 * @return The resulting IRI
-	 * @throws NullPointerException
-	 *         If {@code absolute} is {@code null}
+	 * @throws NullPointerException If {@code absolute} is {@code null}
 	 */
 	public String relativize(String iri) {
 		return relativize(ParsedIRI.create(iri)).toString();
@@ -746,33 +684,30 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Relativizes the given IRI against this ParsedIRI.
 	 * <p>
-	 * <i>Relativization</i> is the inverse of resolution. This operation is often useful when constructing a
-	 * document containing IRIs that must be made relative to the base IRI of the document wherever possible.
+	 * <i>Relativization</i> is the inverse of resolution. This operation is often useful when constructing a document
+	 * containing IRIs that must be made relative to the base IRI of the document wherever possible.
 	 * <p>
 	 * The relativization of the given URI against this URI is computed as follows:
 	 * </p>
 	 * <ol>
 	 * <li>
 	 * <p>
-	 * If either this IRI or the given IRI are opaque, or if the scheme and authority components of the two
-	 * IRIs are not identical, or if the path of this IRI is not a prefix of the path of the given URI, then
-	 * the given IRI is returned.
+	 * If either this IRI or the given IRI are opaque, or if the scheme and authority components of the two IRIs are not
+	 * identical, or if the path of this IRI is not a prefix of the path of the given URI, then the given IRI is
+	 * returned.
 	 * </p>
 	 * </li>
 	 * <li>
 	 * <p>
-	 * Otherwise a new relative hierarchical IRI is constructed with query and fragment components taken from
-	 * the given IRI and with a path component computed by removing this IRI's path from the beginning of the
-	 * given IRI's path.
+	 * Otherwise a new relative hierarchical IRI is constructed with query and fragment components taken from the given
+	 * IRI and with a path component computed by removing this IRI's path from the beginning of the given IRI's path.
 	 * </p>
 	 * </li>
 	 * </ol>
 	 *
-	 * @param absolute
-	 *        The IRI to be relativized against this ParsedIRI
+	 * @param absolute The IRI to be relativized against this ParsedIRI
 	 * @return The resulting IRI
-	 * @throws NullPointerException
-	 *         If {@code absolute} is {@code null}
+	 * @throws NullPointerException If {@code absolute} is {@code null}
 	 */
 	public ParsedIRI relativize(ParsedIRI absolute) {
 		// identity URI reference
@@ -798,8 +733,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				if (absolute.iri.startsWith(this.iri) && absolute.iri.charAt(iri.length()) == '#') {
 					return new ParsedIRI(null, null, null, -1, "", null, _frag);
 				}
-			}
-			else {
+			} else {
 				int this_idx = iri.length() - this.getFragment().length();
 				int abs_idx = absolute.iri.length() - _frag.length();
 				if (iri.substring(0, this_idx).equals(absolute.iri.substring(0, abs_idx))) {
@@ -817,8 +751,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				if (absolute.iri.startsWith(this.iri) && absolute.iri.charAt(iri.length()) == '?') {
 					return new ParsedIRI(null, null, null, -1, "", _query, _frag);
 				}
-			}
-			else {
+			} else {
 				int this_idx = this.getQuery() == null ? iri.indexOf('#') : iri.indexOf('?');
 				int abs_idx = absolute.iri.indexOf('?');
 				if (iri.substring(0, this_idx).equals(absolute.iri.substring(0, abs_idx))) {
@@ -843,9 +776,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return new ParsedIRI(null, null, null, -1, relativizePath(_path), _query, _frag);
 	}
 
-	private void parse()
-		throws URISyntaxException
-	{
+	private void parse() throws URISyntaxException {
 		pos = 0;
 		scheme = parseScheme();
 		if ("jar".equalsIgnoreCase(scheme)) {
@@ -863,26 +794,21 @@ public class ParsedIRI implements Cloneable, Serializable {
 				String p = parseMember(DIGIT, '/');
 				if (p.length() > 0) {
 					port = Integer.parseInt(p);
-				}
-				else {
+				} else {
 					port = -1;
 				}
 			}
 			int next = peek();
 			if ('/' == next || '?' == next || '#' == next || EOF == next) {
 				path = parsePath();
-			}
-			else {
+			} else {
 				throw error("absolute or empty path expected");
 			}
-		}
-		else if ('/' == peek || '?' == peek || '#' == peek || EOF == peek) {
+		} else if ('/' == peek || '?' == peek || '#' == peek || EOF == peek) {
 			path = parsePath();
-		}
-		else if ('%' == peek || ':' != peek && isMember(pchar, peek)) {
+		} else if ('%' == peek || ':' != peek && isMember(pchar, peek)) {
 			path = parsePath();
-		}
-		else if (scheme != null && ':' == peek) {
+		} else if (scheme != null && ':' == peek) {
 			path = parsePath();
 		}
 		if ('?' == peek()) {
@@ -899,8 +825,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private String buildIRI(String scheme, String userInfo, String host, int port, String path, String query,
-			String fragment)
-	{
+			String fragment) {
 		StringBuffer sb = new StringBuffer();
 		if (scheme != null) {
 			sb.append(scheme).append(':');
@@ -927,41 +852,33 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return sb.toString();
 	}
 
-	private String parseScheme()
-		throws URISyntaxException
-	{
+	private String parseScheme() throws URISyntaxException {
 		if (isMember(ALPHA, peek())) {
 			int start = pos;
 			String scheme = parseMember(schar, ':');
 			if (':' == peek()) {
 				advance(1);
 				return scheme;
-			}
-			else {
+			} else {
 				pos = start; // reset
 			}
 		}
 		return null;
 	}
 
-	private String parseUserInfo()
-		throws URISyntaxException
-	{
+	private String parseUserInfo() throws URISyntaxException {
 		int start = pos;
 		String userinfo = parsePctEncoded(uchar, '@', '/');
 		if ('@' == peek()) {
 			advance(1);
 			return userinfo;
-		}
-		else {
+		} else {
 			pos = start; // reset
 			return null;
 		}
 	}
 
-	private String parseHost()
-		throws URISyntaxException
-	{
+	private String parseHost() throws URISyntaxException {
 		int start = pos;
 		if ('[' == peek()) {
 			advance(1); // IP-Literal
@@ -969,12 +886,10 @@ public class ParsedIRI implements Cloneable, Serializable {
 			if (']' == peek()) {
 				advance(1);
 				return iri.substring(start, pos);
-			}
-			else {
+			} else {
 				throw error("Invalid host IP address");
 			}
-		}
-		else if (isMember(DIGIT, peek())) {
+		} else if (isMember(DIGIT, peek())) {
 			URISyntaxException parsingException = null;
 			int startPos = pos;
 			for (int i = 0; i < 4; i++) {
@@ -991,8 +906,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				}
 				if ('.' == peek()) {
 					advance(1);
-				}
-				else {
+				} else {
 					if (i == 3 && (EOF == peek() || ':' == peek() || '/' == peek())) {
 						// next is end of IRI, a port, or a path
 					} else {
@@ -1008,15 +922,14 @@ public class ParsedIRI implements Cloneable, Serializable {
 				// Reset position and parse host
 				pos = startPos;
 				String host = parsePctEncoded(hchar, ':', '/');
-				
-				if (isTLDValid(start) || scheme.equalsIgnoreCase("bundle")) { 
+
+				if (isTLDValid(start) || scheme.equalsIgnoreCase("bundle")) {
 					return host;
 				} else {
 					throw parsingException;
 				}
 			}
-		}
-		else {
+		} else {
 			return parsePctEncoded(hchar, ':', '/');
 		}
 	}
@@ -1025,7 +938,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		int step = 0;
 		boolean illegalCharFound = false;
 
-		while(pos + step > hostStartPos) {
+		while (pos + step > hostStartPos) {
 			int currChar = peek(--step);
 			if ('.' == currChar) {
 				return !illegalCharFound;
@@ -1040,55 +953,42 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return true;
 	}
 
-	private String parsePath()
-		throws URISyntaxException
-	{
+	private String parsePath() throws URISyntaxException {
 		return parsePctEncoded(fchar, '?', '#');
 	}
 
-	private String parsePctEncoded(int[][] set, int end1, int end2)
-		throws URISyntaxException
-	{
+	private String parsePctEncoded(int[][] set, int end1, int end2) throws URISyntaxException {
 		int start = pos;
 		while (true) {
 			int chr = peek();
 			if (chr == EOF || chr == end1 || chr == end2) {
 				break; // optimize end character
-			}
-			else if (('a' <= chr && chr <= 'z') || ('A' <= chr && chr <= 'Z') || ('0' <= chr && chr <= '9')) {
+			} else if (('a' <= chr && chr <= 'z') || ('A' <= chr && chr <= 'Z') || ('0' <= chr && chr <= '9')) {
 				advance(1);
-			}
-			else if ('%' == chr) {
+			} else if ('%' == chr) {
 				if (Arrays.binarySearch(HEXDIG, peek(1)) >= 0 && Arrays.binarySearch(HEXDIG, peek(2)) >= 0) {
 					advance(3);
-				}
-				else {
+				} else {
 					throw error("Illegal percent encoding");
 				}
-			}
-			else if (isMember(set, chr)) {
+			} else if (isMember(set, chr)) {
 				advance(1);
-			}
-			else {
+			} else {
 				break;
 			}
 		}
 		return iri.substring(start, pos);
 	}
 
-	private String parseMember(int[][] set, int end)
-		throws URISyntaxException
-	{
+	private String parseMember(int[][] set, int end) throws URISyntaxException {
 		int start = pos;
 		while (true) {
 			int chr = peek();
 			if (chr == EOF || chr == end) {
 				break;
-			}
-			else if (isMember(set, chr)) {
+			} else if (isMember(set, chr)) {
 				advance(1);
-			}
-			else {
+			} else {
 				break;
 			}
 		}
@@ -1099,11 +999,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 		int idx = Arrays.binarySearch(set, new int[] { chr }, CMP);
 		if (idx >= 0) {
 			return true; // lower range matched exactly
-		}
-		else if (idx == -1) {
+		} else if (idx == -1) {
 			return false; // insertion point is 0, below lowest range
-		}
-		else {
+		} else {
 			int i = -idx - 2; // range just before insertion point
 			assert set[i][0] <= chr && set[i].length == 2;
 			return chr <= set[i][1];
@@ -1113,8 +1011,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private int peek() {
 		if (pos < iri.length()) {
 			return iri.codePointAt(pos);
-		}
-		else {
+		} else {
 			return EOF;
 		}
 	}
@@ -1122,8 +1019,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private int peek(int ahead) {
 		if (pos + ahead < iri.length()) {
 			return iri.codePointAt(iri.offsetByCodePoints(pos, ahead));
-		}
-		else {
+		} else {
 			return EOF;
 		}
 	}
@@ -1131,8 +1027,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private void advance(int ahead) {
 		if (pos + ahead < iri.length()) {
 			pos = iri.offsetByCodePoints(pos, ahead);
-		}
-		else {
+		} else {
 			pos += ahead;
 		}
 	}
@@ -1150,8 +1045,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			int chr = input.codePointAt(input.offsetByCodePoints(0, c));
 			if (Arrays.binarySearch(ascii, chr) >= 0) {
 				sb.appendCodePoint(chr);
-			}
-			else {
+			} else {
 				sb.append(pctEncode(chr));
 			}
 		}
@@ -1167,7 +1061,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			char c = sb.charAt(i);
 			if ((c >= 'A') && (c <= 'Z')) {
 				changed = true;
-				sb.setCharAt(i, (char)(c + ('a' - 'A')));
+				sb.setCharAt(i, (char) (c + ('a' - 'A')));
 			}
 		}
 		return changed ? sb.toString() : string;
@@ -1183,7 +1077,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			char c = sb.charAt(i);
 			if ((c >= 'a') && (c <= 'z')) {
 				changed = true;
-				sb.setCharAt(i, (char)(c - ('a' - 'A')));
+				sb.setCharAt(i, (char) (c - ('a' - 'A')));
 			}
 		}
 		return changed ? sb.toString() : string;
@@ -1197,21 +1091,16 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private String normalizePath(String path) {
 		if ("".equals(path)) {
 			return isScheme("http") || isScheme("https") ? "/" : "";
-		}
-		else if (isScheme("file")) {
+		} else if (isScheme("file")) {
 			if (path.indexOf("%5C") >= 0) {
 				// replace "/c:\path\to\file" with "/c:/path/to/file"
 				return normalizePath(path.replace("%5C", "/"));
-			}
-			else if (!path.startsWith("/") && isMember(ALPHA, path.codePointAt(0))
-					&& (':' == path.charAt(1) || path.length() >= 4 && "%7C".equals(path.substring(1, 4))))
-			{
+			} else if (!path.startsWith("/") && isMember(ALPHA, path.codePointAt(0))
+					&& (':' == path.charAt(1) || path.length() >= 4 && "%7C".equals(path.substring(1, 4)))) {
 				// replace "c:/path/to/file" with "/c:/path/to/file"
 				return normalizePath("/" + path);
-			}
-			else if (path.length() >= 5 && "%7C".equals(path.substring(2, 5))
-					&& isMember(ALPHA, path.codePointAt(1)))
-			{
+			} else if (path.length() >= 5 && "%7C".equals(path.substring(2, 5))
+					&& isMember(ALPHA, path.codePointAt(1))) {
 				// replace "/c|/path/to/file" with "/c:/path/to/file"
 				return normalizePath(path.substring(0, 2) + ':' + path.substring(5));
 			}
@@ -1247,8 +1136,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			// optimize common encoded members by grouping separately
 			if (Arrays.binarySearch(common_pct, path.substring(pct, pct + 3)) < 0) {
 				while (pct + 3 < path.length() && path.charAt(pct + 3) == '%'
-						&& Arrays.binarySearch(common_pct, path.substring(pct + 3, pct + 6)) < 0)
-				{
+						&& Arrays.binarySearch(common_pct, path.substring(pct + 3, pct + 6)) < 0) {
 					pct += 3;
 				}
 			}
@@ -1261,8 +1149,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		int cidx = Arrays.binarySearch(common_pct, encoded);
 		if (cidx >= 0 && isMember(unreserved, common[cidx])) {
 			return new String(Character.toChars(common[cidx])); // quickly decode unreserved encodings
-		}
-		else if (cidx >= 0) {
+		} else if (cidx >= 0) {
 			return encoded; // pass through reserved encodings
 		}
 		String decoded = pctDecode(encoded);
@@ -1272,11 +1159,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 			int chr = ns.codePointAt(ns.offsetByCodePoints(0, c));
 			if (isMember(unreserved, chr)) {
 				sb.appendCodePoint(chr);
-			}
-			else if (n == 1) {
+			} else if (n == 1) {
 				return toUpperCase(encoded);
-			}
-			else {
+			} else {
 				sb.append(pctEncode(chr));
 			}
 		}
@@ -1286,8 +1171,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private String pctDecode(String encoded) {
 		try {
 			return URLDecoder.decode(encoded, "UTF-8");
-		}
-		catch (UnsupportedEncodingException e) {
+		} catch (UnsupportedEncodingException e) {
 			assert false;
 			return encoded;
 		}
@@ -1296,17 +1180,16 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private String pctEncode(int chr) {
 		try {
 			return URLEncoder.encode(new String(Character.toChars(chr)), "UTF-8");
-		}
-		catch (UnsupportedEncodingException e) {
+		} catch (UnsupportedEncodingException e) {
 			assert false;
 			return new String(Character.toChars(chr));
 		}
 	}
 
 	/**
-	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and
-	 * '..' segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be
-	 * normalized to <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
+	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and '..'
+	 * segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be normalized to
+	 * <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
 	 */
 	private String pathSegmentNormalization(String _path) {
 		if (_path == null) {
@@ -1356,8 +1239,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 					// two consecutive '..' segments at position i-1 and i,
 					// continue at i + 2
 					i += 2;
-				}
-				else {
+				} else {
 					// Bingo! Remove these two segments...
 					if (i == segments.size() - 1) {
 						lastSegmentRemoved = true;
@@ -1375,8 +1257,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 						i--;
 					}
 				}
-			}
-			else {
+			} else {
 				// Not a '..' segment, check next
 				i++;
 			}

@@ -18,10 +18,10 @@ public abstract class ASTTupleQuerySet extends ASTTupleQuery {
 	}
 
 	public ASTTupleQuery getLeftArg() {
-		return (ASTTupleQuery)children.get(0);
+		return (ASTTupleQuery) children.get(0);
 	}
 
 	public ASTTupleQuery getRightArg() {
-		return (ASTTupleQuery)children.get(1);
+		return (ASTTupleQuery) children.get(1);
 	}
 }

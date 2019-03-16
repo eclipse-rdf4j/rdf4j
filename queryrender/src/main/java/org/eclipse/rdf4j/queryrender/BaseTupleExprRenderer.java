@@ -115,79 +115,61 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	/**
 	 * Render the ParsedQuery as a query string
 	 * 
-	 * @param theQuery
-	 *        the parsed query to render
+	 * @param theQuery the parsed query to render
 	 * @return the query object rendered in the serql syntax
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	public String render(ParsedQuery theQuery)
-		throws Exception
-	{
+	public String render(ParsedQuery theQuery) throws Exception {
 		return render(theQuery.getTupleExpr());
 	}
 
 	/**
 	 * Render the TupleExpr as a query or query fragment depending on what kind of TupleExpr it is
 	 * 
-	 * @param theExpr
-	 *        the expression to render
+	 * @param theExpr the expression to render
 	 * @return the TupleExpr rendered in the serql syntax
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	public abstract String render(TupleExpr theExpr)
-		throws Exception;
+	public abstract String render(TupleExpr theExpr) throws Exception;
 
 	/**
 	 * Render the given ValueExpr
 	 * 
-	 * @param theExpr
-	 *        the expr to render
+	 * @param theExpr the expr to render
 	 * @return the rendered expression
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	protected abstract String renderValueExpr(final ValueExpr theExpr)
-		throws Exception;
+	protected abstract String renderValueExpr(final ValueExpr theExpr) throws Exception;
 
 	/**
-	 * Turn a ProjectionElemList for a construct query projection (three elements aliased as 'subject',
-	 * 'predicate' and 'object' in that order) into a StatementPattern.
+	 * Turn a ProjectionElemList for a construct query projection (three elements aliased as 'subject', 'predicate' and
+	 * 'object' in that order) into a StatementPattern.
 	 * 
-	 * @param theList
-	 *        the elem list to render
+	 * @param theList the elem list to render
 	 * @return the elem list for a construct projection as a statement pattern
-	 * @throws Exception
-	 *         if there is an exception while rendering
+	 * @throws Exception if there is an exception while rendering
 	 */
-	public StatementPattern toStatementPattern(ProjectionElemList theList)
-		throws Exception
-	{
+	public StatementPattern toStatementPattern(ProjectionElemList theList) throws Exception {
 		ProjectionElem aSubj = theList.getElements().get(0);
 		ProjectionElem aPred = theList.getElements().get(1);
 		ProjectionElem aObj = theList.getElements().get(2);
 
 		return new StatementPattern(
 				mExtensions.containsKey(aSubj.getSourceName())
-						? new Var(scrubVarName(aSubj.getSourceName()),
-								asValue(mExtensions.get(aSubj.getSourceName())))
+						? new Var(scrubVarName(aSubj.getSourceName()), asValue(mExtensions.get(aSubj.getSourceName())))
 						: new Var(scrubVarName(aSubj.getSourceName())),
 				mExtensions.containsKey(aPred.getSourceName())
-						? new Var(scrubVarName(aPred.getSourceName()),
-								asValue(mExtensions.get(aPred.getSourceName())))
+						? new Var(scrubVarName(aPred.getSourceName()), asValue(mExtensions.get(aPred.getSourceName())))
 						: new Var(scrubVarName(aPred.getSourceName())),
 				mExtensions.containsKey(aObj.getSourceName())
-						? new Var(scrubVarName(aObj.getSourceName()),
-								asValue(mExtensions.get(aObj.getSourceName())))
+						? new Var(scrubVarName(aObj.getSourceName()), asValue(mExtensions.get(aObj.getSourceName())))
 						: new Var(scrubVarName(aObj.getSourceName())));
 	}
 
 	/**
 	 * Scrub any illegal characters out of the variable name
 	 * 
-	 * @param theName
-	 *        the potential variable name
+	 * @param theName the potential variable name
 	 * @return the name scrubbed of any illegal characters
 	 */
 	public static String scrubVarName(String theName) {
@@ -197,35 +179,27 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	/**
 	 * Return the {@link ValueExpr} as a {@link Value} if possible.
 	 * 
-	 * @param theValue
-	 *        the ValueExpr to convert
+	 * @param theValue the ValueExpr to convert
 	 * @return the expression as a Value, or null if it cannot be converted
-	 * @throws Exception
-	 *         if there is an error converting to a Value
+	 * @throws Exception if there is an error converting to a Value
 	 */
-	private Value asValue(ValueExpr theValue)
-		throws Exception
-	{
+	private Value asValue(ValueExpr theValue) throws Exception {
 		if (theValue instanceof ValueConstant) {
-			return ((ValueConstant)theValue).getValue();
-		}
-		else if (theValue instanceof Var) {
-			Var aVar = (Var)theValue;
+			return ((ValueConstant) theValue).getValue();
+		} else if (theValue instanceof Var) {
+			Var aVar = (Var) theValue;
 			if (aVar.hasValue()) {
 				return aVar.getValue();
-			}
-			else {
+			} else {
 				return null;
 			}
-		}
-		else {
+		} else {
 			return null;
 		}
 	}
 
 	/**
-	 * Returns whether or not the results of scanning the query model indicates that this represents a select
-	 * query
+	 * Returns whether or not the results of scanning the query model indicates that this represents a select query
 	 * 
 	 * @return true if its a select query, false if its a construct query
 	 */
@@ -245,8 +219,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	/**
 	 * Return whether or not this projection looks like an spo binding for a construct query
 	 * 
-	 * @param theList
-	 *        the projection element list to inspect
+	 * @param theList the projection element list to inspect
 	 * @return true if it has the format of a spo construct projection element, false otherwise
 	 */
 	public static boolean isSPOElemList(ProjectionElemList theList) {
@@ -260,9 +233,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final StatementPattern theStatementPattern)
-		throws Exception
-	{
+	public void meet(final StatementPattern theStatementPattern) throws Exception {
 		theStatementPattern.visitChildren(this);
 	}
 
@@ -270,9 +241,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Slice theSlice)
-		throws Exception
-	{
+	public void meet(final Slice theSlice) throws Exception {
 		if (theSlice.hasOffset()) {
 			mOffset = theSlice.getOffset();
 		}
@@ -288,9 +257,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final ExtensionElem theExtensionElem)
-		throws Exception
-	{
+	public void meet(final ExtensionElem theExtensionElem) throws Exception {
 		mExtensions.put(theExtensionElem.getName(), theExtensionElem.getExpr());
 	}
 
@@ -298,9 +265,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final ProjectionElemList theProjectionElemList)
-		throws Exception
-	{
+	public void meet(final ProjectionElemList theProjectionElemList) throws Exception {
 		if (!theProjectionElemList.getElements().isEmpty()) {
 			mProjection.add(theProjectionElemList.clone());
 		}
@@ -312,9 +277,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final OrderElem theOrderElem)
-		throws Exception
-	{
+	public void meet(final OrderElem theOrderElem) throws Exception {
 		mOrdering.add(theOrderElem);
 	}
 
@@ -322,9 +285,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Distinct theDistinct)
-		throws Exception
-	{
+	public void meet(final Distinct theDistinct) throws Exception {
 		mDistinct = true;
 
 		theDistinct.getArg().visit(this);
@@ -334,9 +295,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Reduced theReduced)
-		throws Exception
-	{
+	public void meet(final Reduced theReduced) throws Exception {
 		mReduced = true;
 
 		theReduced.visitChildren(this);

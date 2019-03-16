@@ -18,21 +18,19 @@ import java.util.Arrays;
 public class GZipUtil {
 
 	/**
-	 * GZIP header magic number bytes, like found in a gzipped files, which are encoded in Intel format
-	 * (i&#x2e;e&#x2e; little endian).
+	 * GZIP header magic number bytes, like found in a gzipped files, which are encoded in Intel format (i&#x2e;e&#x2e;
+	 * little endian).
 	 */
-	private final static byte MAGIC_NUMBER[] = { (byte)0x1f, (byte)0x8b };
+	private final static byte MAGIC_NUMBER[] = { (byte) 0x1f, (byte) 0x8b };
 
 	/**
 	 * Check if a stream is a GZIP stream, by checking the first bytes of the stream.
 	 * 
 	 * @param in input stream
 	 * @return true if a stream is a GZIP stream
-	 * @throws IOException 
+	 * @throws IOException
 	 */
-	public static boolean isGZipStream(InputStream in)
-		throws IOException
-	{
+	public static boolean isGZipStream(InputStream in) throws IOException {
 		in.mark(MAGIC_NUMBER.length);
 		byte[] fileHeader = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 		in.reset();

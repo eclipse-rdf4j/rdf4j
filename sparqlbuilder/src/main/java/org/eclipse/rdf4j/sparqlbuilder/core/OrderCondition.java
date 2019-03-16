@@ -13,9 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * An ascending or descending order condition
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOrderBy">
- *      SPARQL Order By Clause</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOrderBy"> SPARQL Order By Clause</a>
  */
 public class OrderCondition implements Orderable {
 	private static final String ASC = "ASC";

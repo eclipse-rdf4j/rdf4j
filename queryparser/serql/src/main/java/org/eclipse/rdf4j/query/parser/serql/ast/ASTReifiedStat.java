@@ -20,9 +20,7 @@ public class ASTReifiedStat extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -35,14 +33,14 @@ public class ASTReifiedStat extends SimpleNode {
 	}
 
 	public ASTNodeElem getSubject() {
-		return (ASTNodeElem)children.get(0);
+		return (ASTNodeElem) children.get(0);
 	}
 
 	public ASTEdge getPredicate() {
-		return (ASTEdge)children.get(1);
+		return (ASTEdge) children.get(1);
 	}
 
 	public ASTNodeElem getObject() {
-		return (ASTNodeElem)children.get(2);
+		return (ASTNodeElem) children.get(2);
 	}
 }

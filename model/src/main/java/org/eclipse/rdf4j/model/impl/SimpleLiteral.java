@@ -64,8 +64,7 @@ public class SimpleLiteral implements Literal {
 	/**
 	 * Creates a new plain literal with the supplied label.
 	 * 
-	 * @param label
-	 *        The label for the literal, must not be <tt>null</tt>.
+	 * @param label The label for the literal, must not be <tt>null</tt>.
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
@@ -75,10 +74,8 @@ public class SimpleLiteral implements Literal {
 	/**
 	 * Creates a new plain literal with the supplied label and language tag.
 	 * 
-	 * @param label
-	 *        The label for the literal, must not be <tt>null</tt>.
-	 * @param language
-	 *        The language tag for the literal, must not be <tt>null</tt> and not be empty.
+	 * @param label    The label for the literal, must not be <tt>null</tt>.
+	 * @param language The language tag for the literal, must not be <tt>null</tt> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
@@ -88,17 +85,14 @@ public class SimpleLiteral implements Literal {
 	/**
 	 * Creates a new datyped literal with the supplied label and datatype.
 	 * 
-	 * @param label
-	 *        The label for the literal, must not be <tt>null</tt>.
-	 * @param datatype
-	 *        The datatype for the literal.
+	 * @param label    The label for the literal, must not be <tt>null</tt>.
+	 * @param datatype The datatype for the literal.
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {
 		setLabel(label);
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
-		}
-		else if (datatype == null) {
+		} else if (datatype == null) {
 			datatype = XMLSchema.STRING;
 		}
 		setDatatype(datatype);
@@ -149,7 +143,7 @@ public class SimpleLiteral implements Literal {
 		}
 
 		if (o instanceof Literal) {
-			Literal other = (Literal)o;
+			Literal other = (Literal) o;
 
 			// Compare labels
 			if (!label.equals(other.getLabel())) {
@@ -182,8 +176,8 @@ public class SimpleLiteral implements Literal {
 	}
 
 	/**
-	 * Returns the label of the literal with its language or datatype. Note that this method does not escape
-	 * the quoted label.
+	 * Returns the label of the literal with its language or datatype. Note that this method does not escape the quoted
+	 * label.
 	 *
 	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(Literal)
 	 */
@@ -194,13 +188,11 @@ public class SimpleLiteral implements Literal {
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
-		}
-		else if (XMLSchema.STRING.equals(datatype) || datatype == null) {
+		} else if (XMLSchema.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);
 			sb.append('"').append(label).append('"');
 			return sb.toString();
-		}
-		else {
+		} else {
 			StringBuilder sb = new StringBuilder(label.length() + datatype.stringValue().length() + 6);
 			sb.append('"').append(label).append('"');
 			sb.append("^^<").append(datatype.toString()).append(">");

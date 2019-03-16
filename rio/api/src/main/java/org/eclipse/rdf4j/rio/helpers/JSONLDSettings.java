@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class JSONLDSettings {
 
 	/**
-	 * If set to true, the JSON-LD processor replaces arrays with just one element with that element during
-	 * compaction. If set to false, all arrays will remain arrays even if they have just one element.
+	 * If set to true, the JSON-LD processor replaces arrays with just one element with that element during compaction.
+	 * If set to false, all arrays will remain arrays even if they have just one element.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
@@ -32,8 +32,8 @@ public class JSONLDSettings {
 
 	/**
 	 * If set to true, the JSON-LD processor is allowed to optimize the output of the
-	 * <a href= "http://json-ld.org/spec/latest/json-ld-api/#compaction-algorithm" >Compaction algorithm</a> to
-	 * produce even compacter representations.
+	 * <a href= "http://json-ld.org/spec/latest/json-ld-api/#compaction-algorithm" >Compaction algorithm</a> to produce
+	 * even compacter representations.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
@@ -41,13 +41,13 @@ public class JSONLDSettings {
 	 * 
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
-	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.optimize", "Optimize output", Boolean.FALSE);
+	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
+			"Optimize output", Boolean.FALSE);
 
 	/**
-	 * If set to true, the JSON-LD processor will try to convert typed values to JSON native types instead of
-	 * using the expanded object form when converting from RDF. xsd:boolean values will be converted to true or
-	 * false. xsd:integer and xsd:double values will be converted to JSON numbers.
+	 * If set to true, the JSON-LD processor will try to convert typed values to JSON native types instead of using the
+	 * expanded object form when converting from RDF. xsd:boolean values will be converted to true or false. xsd:integer
+	 * and xsd:double values will be converted to JSON numbers.
 	 * <p>
 	 * Defaults to false for RDF compatibility.
 	 * <p>
@@ -59,8 +59,8 @@ public class JSONLDSettings {
 			"org.eclipse.rdf4j.rio.jsonld.use_native_types", "Use Native JSON Types", Boolean.FALSE);
 
 	/**
-	 * If set to true, the JSON-LD processor will use the expanded rdf:type IRI as the property instead of @type
-	 * when converting from RDF.
+	 * If set to true, the JSON-LD processor will use the expanded rdf:type IRI as the property instead of @type when
+	 * converting from RDF.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
@@ -89,8 +89,7 @@ public class JSONLDSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.hierarchical_view}.
 	 */
 	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON",
-			Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**
 	 * Private default constructor.

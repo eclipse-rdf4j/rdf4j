@@ -37,8 +37,7 @@ public class Join extends BinaryTupleOperator {
 
 	/**
 	 * @deprecated Since 2.7.3. Use {@link TupleExprs#containsProjection(TupleExpr)} instead.
-	 * @return <code>true</code> if the right argument of this Join contains a projection, <code>false</code>
-	 *         otherwise.
+	 * @return <code>true</code> if the right argument of this Join contains a projection, <code>false</code> otherwise.
 	 */
 	@Deprecated
 	public boolean hasSubSelectInRightArg() {
@@ -62,9 +61,7 @@ public class Join extends BinaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -80,7 +77,7 @@ public class Join extends BinaryTupleOperator {
 
 	@Override
 	public Join clone() {
-		return (Join)super.clone();
+		return (Join) super.clone();
 	}
 
 }

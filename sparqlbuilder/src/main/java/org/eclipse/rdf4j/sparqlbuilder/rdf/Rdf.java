@@ -31,8 +31,8 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.NumericLiteral;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
 
 /**
- * A class with static methods to create basic {@link SparqlBuilder} RDF objects from either string values or
- * RDF4J Model objects.
+ * A class with static methods to create basic {@link SparqlBuilder} RDF objects from either string values or RDF4J
+ * Model objects.
  */
 public class Rdf {
 	private Rdf() { }
@@ -40,8 +40,7 @@ public class Rdf {
 	/**
 	 * Create a SparqlBuilder Iri instance from a String iri
 	 * 
-	 * @param iriString
-	 *        the String representing the iri
+	 * @param iriString the String representing the iri
 	 * @return the {@link Iri} instance
 	 */
 	public static Iri iri(String iriString) {
@@ -63,8 +62,7 @@ public class Rdf {
 	/**
 	 * Create a SparqlBuilder Iri instance from an {@link IRI}
 	 * 
-	 * @param iri
-	 *        the IRI
+	 * @param iri the IRI
 	 * @return the SparqlBuilder {@link Iri} instance
 	 */
 	public static Iri iri(IRI iri) {
@@ -74,10 +72,8 @@ public class Rdf {
 	/**
 	 * Create a SparqlBuilder Iri instance from a namespace and local name
 	 * 
-	 * @param namespace
-	 *        the namespace of the Iri
-	 * @param localName
-	 *        the local name of the Iri
+	 * @param namespace the namespace of the Iri
+	 * @param localName the local name of the Iri
 	 * @return a {@link Iri} instance
 	 */
 	public static Iri iri(String namespace, String localName) {
@@ -87,8 +83,7 @@ public class Rdf {
 	/**
 	 * creates a labeled blank node
 	 * 
-	 * @param label
-	 *        the label of the blank node
+	 * @param label the label of the blank node
 	 * @return a new {@link LabeledBlankNode} instance
 	 */
 	public static LabeledBlankNode bNode(String label) {
@@ -98,13 +93,10 @@ public class Rdf {
 	/**
 	 * creates a label-less blank node, identified by the supplied predicate-object lists
 	 * 
-	 * @param predicate
-	 *        the predicate of the initial predicate-object list to populate this blank node with
-	 * @param objects
-	 *        the objects of the initial predicate-object list to populate this blank node with
+	 * @param predicate the predicate of the initial predicate-object list to populate this blank node with
+	 * @param objects   the objects of the initial predicate-object list to populate this blank node with
 	 * @return a new {@link PropertiesBlankNode} instance
-	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> Blank node
-	 *      syntax</a>
+	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> Blank node syntax</a>
 	 */
 	public static PropertiesBlankNode bNode(RdfPredicate predicate, RdfObject... objects) {
 		return new PropertiesBlankNode(predicate, objects);
@@ -122,8 +114,7 @@ public class Rdf {
 	/**
 	 * create an RDF string literal
 	 * 
-	 * @param stringValue
-	 *        the String instance to create a literal from
+	 * @param stringValue the String instance to create a literal from
 	 * @return a {@link StringLiteral} instance representing the given String
 	 */
 	public static StringLiteral literalOf(String stringValue) {
@@ -133,10 +124,8 @@ public class Rdf {
 	/**
 	 * create a literal with a datatype
 	 * 
-	 * @param stringValue
-	 *        the literal string
-	 * @param dataType
-	 *        the datatype tag
+	 * @param stringValue the literal string
+	 * @param dataType    the datatype tag
 	 * @return a {@link StringLiteral} instance representing the given String and datatype
 	 */
 	public static StringLiteral literalOfType(String stringValue, Iri dataType) {
@@ -146,10 +135,8 @@ public class Rdf {
 	/**
 	 * create a literal with a datatype
 	 * 
-	 * @param stringValue
-	 *        the literal string
-	 * @param dataType
-	 *        the datatype as a {@link IRI}
+	 * @param stringValue the literal string
+	 * @param dataType    the datatype as a {@link IRI}
 	 * @return a {@link StringLiteral} instance representing the given String and datatype
 	 */
 	public static StringLiteral literalOfType(String stringValue, IRI dataType) {
@@ -159,10 +146,8 @@ public class Rdf {
 	/**
 	 * create a literal with a language tag
 	 * 
-	 * @param stringValue
-	 *        the literal string
-	 * @param language
-	 *        the language tag
+	 * @param stringValue the literal string
+	 * @param language    the language tag
 	 * @return a {@link StringLiteral} instance representing the given String and language
 	 */
 	public static StringLiteral literalOfLanguage(String stringValue, String language) {
@@ -172,8 +157,7 @@ public class Rdf {
 	/**
 	 * create an RDF numeric literal
 	 * 
-	 * @param numberValue
-	 *        the Number instance to create a literal from
+	 * @param numberValue the Number instance to create a literal from
 	 * @return a {@link NumericLiteral} instance representing the given Number
 	 */
 	public static NumericLiteral literalOf(Number numberValue) {
@@ -183,8 +167,7 @@ public class Rdf {
 	/**
 	 * create an RDF boolean literal
 	 * 
-	 * @param boolValue
-	 *        the boolean to create a literal from
+	 * @param boolValue the boolean to create a literal from
 	 * @return a {@link BooleanLiteral} instance representing the given boolean
 	 */
 	public static BooleanLiteral literalOf(Boolean boolValue) {
@@ -194,10 +177,8 @@ public class Rdf {
 	/**
 	 * Create a {@link RdfPredicateObjectList}
 	 * 
-	 * @param predicate
-	 *        the {@link RdfPredicate} of the predicate-object list
-	 * @param objects
-	 *        the {@link RdfObject}(s) of the list
+	 * @param predicate the {@link RdfPredicate} of the predicate-object list
+	 * @param objects   the {@link RdfObject}(s) of the list
 	 * @return a new {@link RdfPredicateObjectList}
 	 */
 	public static RdfPredicateObjectList predicateObjectList(RdfPredicate predicate, RdfObject... objects) {
@@ -207,36 +188,30 @@ public class Rdf {
 	/**
 	 * Create a {@link RdfPredicateObjectListCollection} with an initial {@link RdfPredicateObjectList}
 	 * 
-	 * @param predicate
-	 *        the {@link RdfPredicate} of the initial {@link RdfPredicateObjectList}
-	 * @param objects
-	 *        the {@link RdfObject}(s) of the initial {@link RdfPredicateObjectList}
+	 * @param predicate the {@link RdfPredicate} of the initial {@link RdfPredicateObjectList}
+	 * @param objects   the {@link RdfObject}(s) of the initial {@link RdfPredicateObjectList}
 	 * @return a new {@link RdfPredicateObjectListCollection}
 	 */
 	public static RdfPredicateObjectListCollection predicateObjectListCollection(RdfPredicate predicate,
-			RdfObject... objects)
-	{
+			RdfObject... objects) {
 		return new RdfPredicateObjectListCollection().andHas(predicate, objects);
 	}
 
 	/**
 	 * Create a {@link RdfPredicateObjectListCollection} with the given {@link RdfPredicateObjectList}(s)
 	 * 
-	 * @param predicateObjectLists
-	 *        the {@link RdfPredicateObjectList}(s) to add to the collection
+	 * @param predicateObjectLists the {@link RdfPredicateObjectList}(s) to add to the collection
 	 * @return a new {@link RdfPredicateObjectListCollection}
 	 */
 	public static RdfPredicateObjectListCollection predicateObjectListCollection(
-			RdfPredicateObjectList... predicateObjectLists)
-	{
+			RdfPredicateObjectList... predicateObjectLists) {
 		return new RdfPredicateObjectListCollection().andHas(predicateObjectLists);
 	}
 
 	/**
 	 * Converts an array of object {@link Value}s to an array of {@link RdfObject}s.
 	 * 
-	 * @param values
-	 *        an array of {@link Value}.
+	 * @param values an array of {@link Value}.
 	 * @return an array of {@link RdfObject}
 	 */
 	public static RdfObject[] objects(Value... values) {
@@ -246,20 +221,19 @@ public class Rdf {
 	/**
 	 * Converts an object {@link Value}s to an {@link RdfObject}s.
 	 * 
-	 * @param value
-	 *        an RDF {@link Value}.
+	 * @param value an RDF {@link Value}.
 	 * @return an {@link RdfObject}
 	 */
 	public static RdfObject object(Value value) {
 		if (value instanceof IRI) {
-			return iri((IRI)value);
+			return iri((IRI) value);
 		}
 
 		if (value instanceof BNode) {
-			return bNode(((BNode)value).getID());
+			return bNode(((BNode) value).getID());
 		}
 
-		Literal lit = (Literal)value;
+		Literal lit = (Literal) value;
 
 		if (lit.getLanguage().isPresent()) {
 			return literalOfLanguage(lit.getLabel(), lit.getLanguage().orElse(null));
@@ -270,8 +244,7 @@ public class Rdf {
 	/**
 	 * Convert an array of {@link String}s to an array of {@link StringLiteral}s
 	 * 
-	 * @param literals
-	 *        the {@link String}s to convert
+	 * @param literals the {@link String}s to convert
 	 * @return an array of the corresponding {@link StringLiteral}s
 	 */
 	public static StringLiteral[] toRdfLiteralArray(String... literals) {
@@ -281,8 +254,7 @@ public class Rdf {
 	/**
 	 * Convert an array of {@link Boolean}s to an array of {@link BooleanLiteral}s
 	 * 
-	 * @param literals
-	 *        the {@link Boolean}s to convert
+	 * @param literals the {@link Boolean}s to convert
 	 * @return an array of the corresponding {@link BooleanLiteral}s
 	 */
 	public static BooleanLiteral[] toRdfLiteralArray(Boolean... literals) {
@@ -292,8 +264,7 @@ public class Rdf {
 	/**
 	 * Convert an array of {@link Number}s to an array of {@link NumericLiteral}s
 	 * 
-	 * @param literals
-	 *        the {@link Number}s to convert
+	 * @param literals the {@link Number}s to convert
 	 * @return an array of the corresponding {@link NumericLiteral}s
 	 */
 	public static NumericLiteral[] toRdfLiteralArray(Number... literals) {

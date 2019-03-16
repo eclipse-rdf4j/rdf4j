@@ -12,16 +12,14 @@ import org.eclipse.rdf4j.rio.RioSetting;
 /**
  * ParserSettings for the TriX parser features.
  * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
  * 
  * @author Peter Ansell
  */
 public class TriXParserSettings {
 
 	/**
-	 * Boolean setting for parser to determine whether the TriX parser should treat missing datatypes as an
-	 * error.
+	 * Boolean setting for parser to determine whether the TriX parser should treat missing datatypes as an error.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
@@ -37,13 +35,11 @@ public class TriXParserSettings {
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE = FAIL_ON_MISSING_DATATYPE;
 
 	/**
-	 * Boolean setting for parser to determine whether the TriX parser should treat invalid statements as an
-	 * error.
+	 * Boolean setting for parser to determine whether the TriX parser should treat invalid statements as an error.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);

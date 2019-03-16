@@ -95,14 +95,14 @@ public class ProtocolTest {
 		IRI uri = vf.createIRI("http://example.org/foo-bar");
 
 		String encodedUri = Protocol.encodeValue(uri);
-		IRI decodedUri = (IRI)Protocol.decodeValue(encodedUri, vf);
+		IRI decodedUri = (IRI) Protocol.decodeValue(encodedUri, vf);
 
 		assertEquals(uri, decodedUri);
 
 		BNode bnode = vf.createBNode("foo-bar-1");
 		String encodedBnode = Protocol.encodeValue(bnode);
 
-		BNode decodedNode = (BNode)Protocol.decodeValue(encodedBnode, vf);
+		BNode decodedNode = (BNode) Protocol.decodeValue(encodedBnode, vf);
 		assertEquals(bnode, decodedNode);
 
 	}

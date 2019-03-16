@@ -43,17 +43,13 @@ public class SPARQLBooleanJSONWriter extends AbstractSPARQLJSONWriter implements
 	}
 
 	@Override
-	public void write(boolean value)
-		throws IOException
-	{
+	public void write(boolean value) throws IOException {
 		try {
 			handleBoolean(value);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			if (e.getCause() != null && e.getCause() instanceof IOException) {
-				throw (IOException)e.getCause();
-			}
-			else {
+				throw (IOException) e.getCause();
+			} else {
 				throw new IOException(e);
 			}
 		}

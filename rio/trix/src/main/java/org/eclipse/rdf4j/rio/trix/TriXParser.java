@@ -53,8 +53,7 @@ import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 
 /**
- * A parser that can parse RDF files that are in the <a href="http://www.w3.org/2004/03/trix/">TriX format</a>
- * .
+ * A parser that can parse RDF files that are in the <a href="http://www.w3.org/2004/03/trix/">TriX format</a> .
  * 
  * @author Arjohn Kampman
  */
@@ -67,19 +66,18 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	private SimpleSAXParser saxParser;
 
 	/**
-	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to create objects for resources,
-	 * bNodes, literals and statements.
+	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to create objects for resources, bNodes,
+	 * literals and statements.
 	 */
 	public TriXParser() {
 		this(SimpleValueFactory.getInstance());
 	}
 
 	/**
-	 * Creates a new TriXParser that will use the supplied ValueFactory to create objects for resources,
-	 * bNodes, literals and statements.
+	 * Creates a new TriXParser that will use the supplied ValueFactory to create objects for resources, bNodes,
+	 * literals and statements.
 	 * 
-	 * @param valueFactory
-	 *        A ValueFactory.
+	 * @param valueFactory A ValueFactory.
 	 */
 	public TriXParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -93,7 +91,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	public final RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
 	}
-	
+
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		// Override to add TriX/XML specific supported settings
@@ -112,28 +110,18 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		return results;
 	}
 
-
 	/**
-	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI
-	 * references.
+	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
 	 * 
-	 * @param in
-	 *        The InputStream from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream, must not be <tt>null</tt>.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException
-	 *         If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException
-	 *         If the configured statement handler encountered an unrecoverable error.
-	 * @throws IllegalArgumentException
-	 *         If the supplied input stream or base URI is <tt>null</tt>.
+	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
+	 * @throws IllegalArgumentException If the supplied input stream or base URI is <tt>null</tt>.
 	 */
 	@Override
-	public void parse(InputStream in, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream cannot be 'null'");
 		}
@@ -148,26 +136,17 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	/**
-	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI
-	 * references.
+	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
 	 * 
-	 * @param reader
-	 *        The Reader from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream, must not be <tt>null</tt>.
-	 * @throws IOException
-	 *         If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException
-	 *         If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException
-	 *         If the configured statement handler has encountered an unrecoverable error.
-	 * @throws IllegalArgumentException
-	 *         If the supplied reader or base URI is <tt>null</tt>.
+	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException      If the configured statement handler has encountered an unrecoverable error.
+	 * @throws IllegalArgumentException If the supplied reader or base URI is <tt>null</tt>.
 	 */
 	@Override
-	public void parse(Reader reader, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		if (reader == null) {
 			throw new IllegalArgumentException("Reader cannot be 'null'");
 		}
@@ -181,11 +160,9 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		parse(inputSource);
 	}
 
-	private void parse(InputSource inputStreamOrReader)
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	private void parse(InputSource inputStreamOrReader) throws IOException, RDFParseException, RDFHandlerException {
 		clear();
-		
+
 		try {
 			if (rdfHandler != null) {
 				rdfHandler.startRDF();
@@ -199,34 +176,27 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 			saxParser.setListener(new TriXSAXHandler());
 
 			saxParser.parse(inputStreamOrReader);
-		}
-		catch (SAXParseException e) {
+		} catch (SAXParseException e) {
 			Exception wrappedExc = e.getException();
 
 			if (wrappedExc == null) {
 				reportFatalError(e, e.getLineNumber(), e.getColumnNumber());
-			}
-			else {
+			} else {
 				reportFatalError(wrappedExc, e.getLineNumber(), e.getColumnNumber());
 			}
-		}
-		catch (SAXException e) {
+		} catch (SAXException e) {
 			Exception wrappedExc = e.getException();
 
 			if (wrappedExc == null) {
 				reportFatalError(e);
-			}
-			else if (wrappedExc instanceof RDFParseException) {
-				throw (RDFParseException)wrappedExc;
-			}
-			else if (wrappedExc instanceof RDFHandlerException) {
-				throw (RDFHandlerException)wrappedExc;
-			}
-			else {
+			} else if (wrappedExc instanceof RDFParseException) {
+				throw (RDFParseException) wrappedExc;
+			} else if (wrappedExc instanceof RDFHandlerException) {
+				throw (RDFHandlerException) wrappedExc;
+			} else {
 				reportFatalError(wrappedExc);
 			}
-		}
-		finally {
+		} finally {
 			clear();
 		}
 
@@ -236,80 +206,67 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	@Override
-	protected Literal createLiteral(String label, String lang, IRI datatype)
-		throws RDFParseException
-	{
+	protected Literal createLiteral(String label, String lang, IRI datatype) throws RDFParseException {
 		Locator locator = saxParser.getLocator();
 		if (locator != null) {
 			return createLiteral(label, lang, datatype, locator.getLineNumber(), locator.getColumnNumber());
-		}
-		else {
+		} else {
 			return createLiteral(label, lang, datatype, -1, -1);
 		}
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information
-	 * to the error.
+	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information to the
+	 * error.
 	 */
 	@Override
 	protected void reportWarning(String msg) {
 		Locator locator = saxParser.getLocator();
 		if (locator != null) {
 			reportWarning(msg, locator.getLineNumber(), locator.getColumnNumber());
-		}
-		else {
+		} else {
 			reportWarning(msg, -1, -1);
 		}
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line- and column number
-	 * information to the error.
+	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line- and column number information
+	 * to the error.
 	 */
 	@Override
-	protected void reportError(String msg, RioSetting<Boolean> setting)
-		throws RDFParseException
-	{
+	protected void reportError(String msg, RioSetting<Boolean> setting) throws RDFParseException {
 		Locator locator = saxParser.getLocator();
 		if (locator != null) {
 			reportError(msg, locator.getLineNumber(), locator.getColumnNumber(), setting);
-		}
-		else {
+		} else {
 			reportError(msg, -1, -1, setting);
 		}
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number
-	 * information to the error.
+	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number information to the
+	 * error.
 	 */
 	@Override
-	protected void reportFatalError(String msg)
-		throws RDFParseException
-	{
+	protected void reportFatalError(String msg) throws RDFParseException {
 		Locator locator = saxParser.getLocator();
 		if (locator != null) {
 			reportFatalError(msg, locator.getLineNumber(), locator.getColumnNumber());
-		}
-		else {
+		} else {
 			reportFatalError(msg, -1, -1);
 		}
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line- and column number
-	 * information to the error.
+	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line- and column number information to
+	 * the error.
 	 */
 	@Override
-	protected void reportFatalError(Exception e)
-		throws RDFParseException
-	{
+	protected void reportFatalError(Exception e) throws RDFParseException {
 		Locator locator = saxParser.getLocator();
 		if (locator != null) {
 			reportFatalError(e, locator.getLineNumber(), locator.getColumnNumber());
-		}
-		else {
+		} else {
 			reportFatalError(e, -1, -1);
 		}
 	}
@@ -332,34 +289,27 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		}
 
 		@Override
-		public void startTag(String tagName, Map<String, String> atts, String text)
-			throws SAXException
-		{
+		public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
 			try {
 				if (tagName.equals(URI_TAG)) {
 					valueList.add(createURI(text));
-				}
-				else if (tagName.equals(BNODE_TAG)) {
+				} else if (tagName.equals(BNODE_TAG)) {
 					valueList.add(createNode(text));
-				}
-				else if (tagName.equals(PLAIN_LITERAL_TAG)) {
+				} else if (tagName.equals(PLAIN_LITERAL_TAG)) {
 					String lang = atts.get(LANGUAGE_ATT);
 					valueList.add(createLiteral(text, lang, null));
-				}
-				else if (tagName.equals(TYPED_LITERAL_TAG)) {
+				} else if (tagName.equals(TYPED_LITERAL_TAG)) {
 					String datatype = atts.get(DATATYPE_ATT);
 
 					if (datatype == null) {
 						reportError(DATATYPE_ATT + " attribute missing for typed literal",
 								TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
 						valueList.add(createLiteral(text, null, null));
-					}
-					else {
+					} else {
 						IRI dtURI = createURI(datatype);
 						valueList.add(createLiteral(text, null, dtURI));
 					}
-				}
-				else if (tagName.equals(TRIPLE_TAG)) {
+				} else if (tagName.equals(TRIPLE_TAG)) {
 					if (parsingContext) {
 						try {
 							// First triple in a context, valueList can contain
@@ -367,55 +317,43 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 							if (valueList.size() > 1) {
 								reportError("At most 1 resource can be specified for the context",
 										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
-							}
-							else if (valueList.size() == 1) {
+							} else if (valueList.size() == 1) {
 								try {
-									currentContext = (Resource)valueList.get(0);
-								}
-								catch (ClassCastException e) {
+									currentContext = (Resource) valueList.get(0);
+								} catch (ClassCastException e) {
 									reportError("Context identifier should be a URI or blank node",
 											TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 								}
 							}
-						}
-						finally {
+						} finally {
 							parsingContext = false;
 							valueList.clear();
 						}
 					}
-				}
-				else if (tagName.equals(CONTEXT_TAG)) {
+				} else if (tagName.equals(CONTEXT_TAG)) {
 					parsingContext = true;
 				}
-			}
-			catch (RDFParseException e) {
+			} catch (RDFParseException e) {
 				throw new SAXException(e);
 			}
 		}
 
 		@Override
-		public void endTag(String tagName)
-			throws SAXException
-		{
+		public void endTag(String tagName) throws SAXException {
 			try {
 				if (tagName.equals(TRIPLE_TAG)) {
 					reportStatement();
-				}
-				else if (tagName.equals(CONTEXT_TAG)) {
+				} else if (tagName.equals(CONTEXT_TAG)) {
 					currentContext = null;
 				}
-			}
-			catch (RDFParseException e) {
+			} catch (RDFParseException e) {
 				throw new SAXException(e);
-			}
-			catch (RDFHandlerException e) {
+			} catch (RDFHandlerException e) {
 				throw new SAXException(e);
 			}
 		}
 
-		private void reportStatement()
-			throws RDFParseException, RDFHandlerException
-		{
+		private void reportStatement() throws RDFParseException, RDFHandlerException {
 			try {
 				if (valueList.size() != 3) {
 					reportError("exactly 3 values are required for a triple",
@@ -428,18 +366,16 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				Value obj;
 
 				try {
-					subj = (Resource)valueList.get(0);
-				}
-				catch (ClassCastException e) {
+					subj = (Resource) valueList.get(0);
+				} catch (ClassCastException e) {
 					reportError("First value for a triple should be a URI or blank node",
 							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
 				try {
-					pred = (IRI)valueList.get(1);
-				}
-				catch (ClassCastException e) {
+					pred = (IRI) valueList.get(1);
+				} catch (ClassCastException e) {
 					reportError("Second value for a triple should be a URI",
 							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
@@ -451,8 +387,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				if (rdfHandler != null) {
 					rdfHandler.handleStatement(st);
 				}
-			}
-			finally {
+			} finally {
 				valueList.clear();
 			}
 		}
@@ -462,9 +397,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Implementation of SAX ErrorHandler.warning
 	 */
 	@Override
-	public void warning(SAXParseException exception)
-		throws SAXException
-	{
+	public void warning(SAXParseException exception) throws SAXException {
 		this.reportWarning(exception.getMessage());
 	}
 
@@ -472,13 +405,10 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Implementation of SAX ErrorHandler.error
 	 */
 	@Override
-	public void error(SAXParseException exception)
-		throws SAXException
-	{
+	public void error(SAXParseException exception) throws SAXException {
 		try {
 			this.reportError(exception.getMessage(), XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
-		}
-		catch (RDFParseException rdfpe) {
+		} catch (RDFParseException rdfpe) {
 			throw new SAXException(rdfpe);
 		}
 	}
@@ -487,13 +417,10 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Implementation of SAX ErrorHandler.fatalError
 	 */
 	@Override
-	public void fatalError(SAXParseException exception)
-		throws SAXException
-	{
+	public void fatalError(SAXParseException exception) throws SAXException {
 		try {
 			this.reportFatalError(exception.getMessage());
-		}
-		catch (RDFParseException rdfpe) {
+		} catch (RDFParseException rdfpe) {
 			throw new SAXException(rdfpe);
 		}
 	}

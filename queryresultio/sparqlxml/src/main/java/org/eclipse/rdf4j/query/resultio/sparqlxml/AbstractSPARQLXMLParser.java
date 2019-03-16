@@ -56,22 +56,20 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 	@Override
 	public void parseQueryResult(InputStream in)
-		throws IOException, QueryResultParseException, QueryResultHandlerException
-	{
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parseQueryResultInternal(in, true, true);
 	}
 
-	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean,
-			boolean attemptParseTuple)
-		throws IOException, QueryResultParseException, QueryResultHandlerException
-	{
+	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		if (!attemptParseBoolean && !attemptParseTuple) {
 			throw new IllegalArgumentException(
 					"Internal error: Did not specify whether to parse as either boolean and/or tuple");
 		}
 
 		BufferedInputStream buff = new BufferedInputStream(in);
-		// Wrap in a custom InputStream that doesn't allow close to be called by dependencies before we are ready to call it
+		// Wrap in a custom InputStream that doesn't allow close to be called by dependencies before we are ready to
+		// call it
 		UncloseableInputStream uncloseable = new UncloseableInputStream(buff);
 
 		SAXException caughtException = null;
@@ -88,8 +86,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 					if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
 						xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-					}
-					else {
+					} else {
 						xmlReader = XMLReaderFactory.createXMLReader();
 					}
 					xmlReader.setErrorHandler(this);
@@ -99,14 +96,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 					for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
 						try {
 							xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-						}
-						catch (SAXNotRecognizedException e) {
-							reportWarning(
-									String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-						}
-						catch (SAXNotSupportedException e) {
-							reportWarning(
-									String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+						} catch (SAXNotRecognizedException e) {
+							reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+						} catch (SAXNotSupportedException e) {
+							reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
 						}
 					}
 
@@ -115,14 +108,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 					for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
 						try {
 							xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-						}
-						catch (SAXNotRecognizedException e) {
-							reportWarning(
-									String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-						}
-						catch (SAXNotSupportedException e) {
-							reportWarning(
-									String.format("%s is not a supported SAX property.", aSetting.getKey()));
+						} catch (SAXNotRecognizedException e) {
+							reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+						} catch (SAXNotSupportedException e) {
+							reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
 						}
 					}
 
@@ -133,14 +122,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 							if (getParserConfig().isSet(aSetting)) {
 								xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
 							}
-						}
-						catch (SAXNotRecognizedException e) {
-							reportWarning(
-									String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-						}
-						catch (SAXNotSupportedException e) {
-							reportWarning(
-									String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+						} catch (SAXNotRecognizedException e) {
+							reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+						} catch (SAXNotSupportedException e) {
+							reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
 						}
 					}
 
@@ -151,14 +136,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 							if (getParserConfig().isSet(aSetting)) {
 								xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
 							}
-						}
-						catch (SAXNotRecognizedException e) {
-							reportWarning(
-									String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-						}
-						catch (SAXNotSupportedException e) {
-							reportWarning(
-									String.format("%s is not a supported SAX property.", aSetting.getKey()));
+						} catch (SAXNotRecognizedException e) {
+							reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+						} catch (SAXNotSupportedException e) {
+							reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
 						}
 					}
 
@@ -174,22 +155,18 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 						if (this.handler != null) {
 							this.handler.handleBoolean(result);
 						}
-					}
-					catch (QueryResultHandlerException e) {
+					} catch (QueryResultHandlerException e) {
 						if (e.getCause() != null && e.getCause() instanceof IOException) {
-							throw (IOException)e.getCause();
-						}
-						else {
-							throw new QueryResultParseException(
-									"Found an issue with the query result handler", e);
+							throw (IOException) e.getCause();
+						} else {
+							throw new QueryResultParseException("Found an issue with the query result handler", e);
 						}
 					}
 					// if there were no exceptions up to this point, return the
 					// boolean
 					// result;
 					return result;
-				}
-				catch (SAXException e) {
+				} catch (SAXException e) {
 					caughtException = e;
 				}
 
@@ -205,8 +182,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 					internalSAXParser = new SimpleSAXParser(xmlReader);
 					internalSAXParser.setPreserveWhitespace(true);
 
-					internalSAXParser.setListener(
-							new SPARQLResultsSAXParser(this.valueFactory, this.handler));
+					internalSAXParser.setListener(new SPARQLResultsSAXParser(this.valueFactory, this.handler));
 
 					internalSAXParser.parse(uncloseable);
 
@@ -214,8 +190,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 					// from
 					// the boolean failure
 					caughtException = null;
-				}
-				catch (SAXException e) {
+				} catch (SAXException e) {
 					caughtException = e;
 				}
 			}
@@ -225,20 +200,16 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 				if (wrappedExc == null) {
 					throw new QueryResultParseException(caughtException);
-				}
-				else if (wrappedExc instanceof QueryResultParseException) {
-					throw (QueryResultParseException)wrappedExc;
-				}
-				else if (wrappedExc instanceof QueryResultHandlerException) {
-					throw (QueryResultHandlerException)wrappedExc;
-				}
-				else {
+				} else if (wrappedExc instanceof QueryResultParseException) {
+					throw (QueryResultParseException) wrappedExc;
+				} else if (wrappedExc instanceof QueryResultHandlerException) {
+					throw (QueryResultHandlerException) wrappedExc;
+				} else {
 					throw new QueryResultParseException(wrappedExc);
 				}
 			}
 
-		}
-		finally {
+		} finally {
 			// Explicitly call the delegator to the close method to actually close it
 			uncloseable.doClose();
 		}
@@ -263,7 +234,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
 	public Collection<RioSetting<?>> getCompulsoryXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
+		return Collections.<RioSetting<?>>emptyList();
 	}
 
 	/**
@@ -272,8 +243,8 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
 	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup
-	 *         using {@link XMLReader#setFeature(String, boolean)}.
+	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup using
+	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
 		Set<RioSetting<Boolean>> results = new HashSet<>();
@@ -294,12 +265,12 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
 	public Collection<RioSetting<?>> getOptionalXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
+		return Collections.<RioSetting<?>>emptyList();
 	}
 
 	/**
-	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
-	 * features using {@link XMLReader#setFeature(String, boolean)}.
+	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser features
+	 * using {@link XMLReader#setFeature(String, boolean)}.
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
 	 * 
@@ -329,16 +300,12 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	}
 
 	@Override
-	public void warning(SAXParseException exception)
-		throws SAXException
-	{
+	public void warning(SAXParseException exception) throws SAXException {
 		reportWarning(exception.getMessage());
 	}
 
 	@Override
-	public void error(SAXParseException exception)
-		throws SAXException
-	{
+	public void error(SAXParseException exception) throws SAXException {
 		try {
 			if (getParserConfig().get(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
 				if (getParseErrorListener() != null) {
@@ -348,24 +315,19 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				}
 
 				if (!getParserConfig().isNonFatalError(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
-					throw new QueryResultParseException(exception,
-							internalSAXParser.getLocator().getLineNumber(),
+					throw new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
 							internalSAXParser.getLocator().getColumnNumber());
 				}
 			}
-		}
-		catch (QueryResultParseException e) {
+		} catch (QueryResultParseException e) {
 			throw new SAXException(e);
 		}
 	}
 
 	@Override
-	public void fatalError(SAXParseException exception)
-		throws SAXException
-	{
+	public void fatalError(SAXParseException exception) throws SAXException {
 		if (getParseErrorListener() != null) {
-			getParseErrorListener().fatalError(exception.getMessage(),
-					internalSAXParser.getLocator().getLineNumber(),
+			getParseErrorListener().fatalError(exception.getMessage(), internalSAXParser.getLocator().getLineNumber(),
 					internalSAXParser.getLocator().getColumnNumber());
 		}
 

@@ -59,16 +59,12 @@ public class Regex extends BinaryValueOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		super.visitChildren(visitor);
 		if (flagsArg != null) {
 			flagsArg.visit(visitor);
@@ -78,7 +74,7 @@ public class Regex extends BinaryValueOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Regex && super.equals(other)) {
-			Regex o = (Regex)other;
+			Regex o = (Regex) other;
 			return nullEquals(flagsArg, o.getFlagsArg());
 		}
 		return false;
@@ -95,7 +91,7 @@ public class Regex extends BinaryValueOperator {
 
 	@Override
 	public Regex clone() {
-		Regex clone = (Regex)super.clone();
+		Regex clone = (Regex) super.clone();
 		if (flagsArg != null) {
 			clone.setFlagsArg(flagsArg.clone());
 		}

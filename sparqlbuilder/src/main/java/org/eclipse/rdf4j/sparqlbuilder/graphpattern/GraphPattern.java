@@ -14,14 +14,11 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 /**
  * Denotes a SPARQL Graph Pattern
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GraphPattern">
- *      SPARQL Graph Patterns</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GraphPattern"> SPARQL Graph Patterns</a>
  */
 public interface GraphPattern extends QueryElement {
 	/**
-	 * Convert this graph pattern into a group graph pattern, combining this
-	 * graph pattern with the given patterns: <br>
+	 * Convert this graph pattern into a group graph pattern, combining this graph pattern with the given patterns: <br>
 	 *
 	 * <pre>
 	 * {
@@ -33,21 +30,19 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param patterns
-	 *            the patterns to add
+	 * @param patterns the patterns to add
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">SPARQL
-	 *      Group Graph Pattern</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">SPARQL Group Graph
+	 *      Pattern</a>
 	 */
 	default GraphPattern and(GraphPattern... patterns) {
 		return GraphPatterns.and(this).and(patterns);
 	}
 
 	/**
-	 * Convert this graph pattern into an alternative graph pattern, combining
-	 * this graph pattern with the given patterns: <br>
+	 * Convert this graph pattern into an alternative graph pattern, combining this graph pattern with the given
+	 * patterns: <br>
 	 *
 	 * <pre>
 	 * {
@@ -59,13 +54,11 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param patterns
-	 *            the patterns to add
+	 * @param patterns the patterns to add
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives">SPARQL
-	 *      Alternative Graph Pattern</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives">SPARQL Alternative Graph
+	 *      Pattern</a>
 	 */
 	default GraphPattern union(GraphPattern... patterns) {
 		return GraphPatterns.union(this).union(patterns);
@@ -80,9 +73,8 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals">
-	 *      SPARQL Optional Graph Patterns</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals"> SPARQL Optional Graph
+	 *      Patterns</a>
 	 */
 	default GraphPattern optional() {
 		return optional(true);
@@ -94,13 +86,11 @@ public interface GraphPattern extends QueryElement {
 	 * <p>
 	 * NOTE: This converts this graph pattern into a group graph pattern.
 	 *
-	 * @param isOptional
-	 *            if this graph pattern should be optional or not
+	 * @param isOptional if this graph pattern should be optional or not
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals">
-	 *      SPARQL Optional Graph Patterns</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals"> SPARQL Optional Graph
+	 *      Patterns</a>
 	 */
 	default GraphPattern optional(boolean isOptional) {
 		return and().optional(isOptional);
@@ -116,21 +106,18 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param constraint
-	 *            the filter constraint
+	 * @param constraint the filter constraint
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a href="http://www.w3.org/TR/sparql11-query/#termConstraint">
-	 *      SPARQL Filter</a>
+	 * @see <a href="http://www.w3.org/TR/sparql11-query/#termConstraint"> SPARQL Filter</a>
 	 */
 	default GraphPattern filter(Expression<?> constraint) {
 		return and().filter(constraint);
 	}
 
 	/**
-	 * Create an <code>EXISTS{}</code> filter expression with the given graph
-	 * patterns and add it to this graph pattern (converting this to a group
-	 * graph pattern in the process): <br>
+	 * Create an <code>EXISTS{}</code> filter expression with the given graph patterns and add it to this graph pattern
+	 * (converting this to a group graph pattern in the process): <br>
 	 *
 	 * <pre>
 	 * {
@@ -139,24 +126,20 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param patterns
-	 *            the patterns to pass as arguments to the <code>EXISTS</code>
-	 *            expression
+	 * @param patterns the patterns to pass as arguments to the <code>EXISTS</code> expression
 	 *
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern">
-	 *      Filtering using Graph Pattern</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern"> Filtering using Graph
+	 *      Pattern</a>
 	 */
-	default  GraphPattern filterExists(GraphPattern... patterns) {
+	default GraphPattern filterExists(GraphPattern... patterns) {
 		return filterExists(true, patterns);
 	}
 
 	/**
-	 * Create a <code>NOT EXISTS{}</code> filter expression with the given graph
-	 * patterns and add it to this graph pattern (converting this to a group
-	 * graph pattern in the process): <br>
+	 * Create a <code>NOT EXISTS{}</code> filter expression with the given graph patterns and add it to this graph
+	 * pattern (converting this to a group graph pattern in the process): <br>
 	 *
 	 * <pre>
 	 * {
@@ -165,26 +148,23 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param patterns
-	 *            the patterns to pass as arguments to the
-	 *            <code>NOT EXISTS</code> expression
+	 * @param patterns the patterns to pass as arguments to the <code>NOT EXISTS</code> expression
 	 *
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern">
-	 *      Filtering using Graph Pattern</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern"> Filtering using Graph
+	 *      Pattern</a>
 	 */
 	default GraphPattern filterNotExists(GraphPattern... patterns) {
-		return filterExists(false,patterns);
+		return filterExists(false, patterns);
 	}
 
 	/**
-	 * Create an {@code EXISTS} or {@code NOT EXISTS} filter expression with
-	 * the given patterns based on the {@code exists} paramater and add it to
-	 * this graph pattern (converting this to a group graph pattern in the process)
+	 * Create an {@code EXISTS} or {@code NOT EXISTS} filter expression with the given patterns based on the
+	 * {@code exists} paramater and add it to this graph pattern (converting this to a group graph pattern in the
+	 * process)
 	 *
-	 * @param exists if the filter should ensure the patterns exist or not
+	 * @param exists   if the filter should ensure the patterns exist or not
 	 * @param patterns the patterns to pass to the filter
 	 * @return the new {@code GraphPattern} instance
 	 */
@@ -193,9 +173,8 @@ public interface GraphPattern extends QueryElement {
 	}
 
 	/**
-	 * Create a <code>MINUS</code> graph pattern with the given graph patterns
-	 * and add it to this graph pattern (converting this to a group graph
-	 * pattern in the process): <br>
+	 * Create a <code>MINUS</code> graph pattern with the given graph patterns and add it to this graph pattern
+	 * (converting this to a group graph pattern in the process): <br>
 	 *
 	 * <pre>
 	 * {
@@ -204,14 +183,10 @@ public interface GraphPattern extends QueryElement {
 	 * }
 	 * </pre>
 	 *
-	 * @param patterns
-	 *            the patterns to construct the <code>MINUS</code> graph pattern
-	 *            with
+	 * @param patterns the patterns to construct the <code>MINUS</code> graph pattern with
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-minus">
-	 *      SPARQL MINUS Graph Pattern</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-minus"> SPARQL MINUS Graph Pattern</a>
 	 */
 	default GraphPattern minus(GraphPattern... patterns) {
 		return and(GraphPatterns.minus(patterns));
@@ -224,22 +199,21 @@ public interface GraphPattern extends QueryElement {
 	 * GRAPH graphName { thisPattern }
 	 * </pre>
 	 *
-	 * @param name
-	 *            the name to specify
+	 * @param name the name to specify
 	 * @return the new {@code GraphPattern} instance
 	 *
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#queryDataset">
-	 *      Specifying Datasets in SPARQL Queries</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#queryDataset"> Specifying Datasets in SPARQL
+	 *      Queries</a>
 	 */
 	default GraphPattern from(GraphName name) {
 		return and().from(name);
 	}
 
 	/**
-	 * @return if this pattern is a collection of GraphPatterns (ie., Group or
-	 *         Alternative patterns), returns if the collection contains any
-	 *         patterns
+	 * @return if this pattern is a collection of GraphPatterns (ie., Group or Alternative patterns), returns if the
+	 *         collection contains any patterns
 	 */
-	default boolean isEmpty() { return true; }
+	default boolean isEmpty() {
+		return true;
+	}
 }

@@ -26,7 +26,7 @@ public class DOAP {
 	 * The recommended prefix for the DOAP namespace: "doap"
 	 */
 	public static final String PREFIX = "doap";
-	
+
 	/**
 	 * The DOAP namespace: http://usefulinc.com/ns/doap#
 	 */
@@ -36,7 +36,7 @@ public class DOAP {
 	 * An immutable {@link Namespace} constant that represents the DOAP namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
-	
+
 	/**
 	 * Classes
 	 */

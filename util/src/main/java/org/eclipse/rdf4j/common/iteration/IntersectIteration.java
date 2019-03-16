@@ -12,11 +12,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * An Iteration that returns the intersection of the results of two Iterations. Optionally, the Iteration can
- * be configured to filter duplicates from the returned elements.
+ * An Iteration that returns the intersection of the results of two Iterations. Optionally, the Iteration can be
+ * configured to filter duplicates from the returned elements.
  * <p>
- * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but
- * that has a bit more overhead as it adds a second hash table lookup.
+ * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
+ * bit more overhead as it adds a second hash table lookup.
  */
 public class IntersectIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
@@ -37,33 +37,25 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 *--------------*/
 
 	/**
-	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By
-	 * default, duplicates are <em>not</em> filtered from the results.
+	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By default,
+	 * duplicates are <em>not</em> filtered from the results.
 	 * 
-	 * @param arg1
-	 *        An Iteration containing the first set of elements.
-	 * @param arg2
-	 *        An Iteration containing the second set of elements.
+	 * @param arg1 An Iteration containing the first set of elements.
+	 * @param arg2 An Iteration containing the second set of elements.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1,
-			Iteration<? extends E, ? extends X> arg2)
-	{
+	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2) {
 		this(arg1, arg2, false);
 	}
 
 	/**
 	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
 	 * 
-	 * @param arg1
-	 *        An Iteration containing the first set of elements.
-	 * @param arg2
-	 *        An Iteration containing the second set of elements.
-	 * @param distinct
-	 *        Flag indicating whether duplicate elements should be filtered from the result.
+	 * @param arg1     An Iteration containing the first set of elements.
+	 * @param arg2     An Iteration containing the second set of elements.
+	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1,
-			Iteration<? extends E, ? extends X> arg2, boolean distinct)
-	{
+	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+			boolean distinct) {
 		super(arg1);
 
 		assert arg2 != null;
@@ -81,11 +73,9 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * Returns <tt>true</tt> if the object is in the set of elements of the second argument.
 	 */
 	@Override
-	protected boolean accept(E object)
-		throws X
-	{
+	protected boolean accept(E object) throws X {
 		if (!initialized) {
-			synchronized(this) {
+			synchronized (this) {
 				if (!initialized) {
 					// Build set of elements-to-include from second argument
 					includeSet = addSecondSet(arg2, makeSet());
@@ -109,9 +99,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		return false;
 	}
 
-	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set)
-		throws X
-	{
+	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
 		return Iterations.addAll(arg2, makeSet());
 	}
 
@@ -128,13 +116,10 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(arg2);
 		}
 	}

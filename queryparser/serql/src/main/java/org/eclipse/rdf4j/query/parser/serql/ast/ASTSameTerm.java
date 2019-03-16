@@ -18,17 +18,15 @@ public class ASTSameTerm extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTValueExpr getLeftOperand() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 
 	public ASTValueExpr getRightOperand() {
-		return (ASTValueExpr)children.get(1);
+		return (ASTValueExpr) children.get(1);
 	}
 }

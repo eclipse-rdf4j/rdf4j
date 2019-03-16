@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * The IRI function, as defined in <a href="http://www.w3.org/TR/sparql11-query/#SparqlOps">SPARQL 1.1 Query
- * Language for RDF</a>.
+ * The IRI function, as defined in <a href="http://www.w3.org/TR/sparql11-query/#SparqlOps">SPARQL 1.1 Query Language
+ * for RDF</a>.
  * 
  * @author Jeen Broekstra
  */
@@ -33,9 +33,7 @@ public class IRIFunction extends UnaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -51,12 +49,11 @@ public class IRIFunction extends UnaryValueOperator {
 
 	@Override
 	public IRIFunction clone() {
-		return (IRIFunction)super.clone();
+		return (IRIFunction) super.clone();
 	}
 
 	/**
-	 * @param baseURI
-	 *        The baseURI to set.
+	 * @param baseURI The baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;

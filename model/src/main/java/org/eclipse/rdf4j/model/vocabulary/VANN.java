@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Constants for <a href="http://purl.org/vocab/vann/">a vocabulary for annotating vocabulary
- * descriptions</a> (VANN).
+ * Constants for <a href="http://purl.org/vocab/vann/">a vocabulary for annotating vocabulary descriptions</a> (VANN).
  *
  * @see <a href="http://purl.org/vocab/vann/">A vocabulary for annotating vocabulary descriptions (VANN)</a>
  */
@@ -32,8 +31,9 @@ public class VANN {
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
-	/** A reference to a resource that describes changes between this version of a vocabulary and the
-	 * previous. */
+	/**
+	 * A reference to a resource that describes changes between this version of a vocabulary and the previous.
+	 */
 	public final static IRI CHANGES;
 
 	/** A reference to a resource that provides an example of how this resource can be used. */

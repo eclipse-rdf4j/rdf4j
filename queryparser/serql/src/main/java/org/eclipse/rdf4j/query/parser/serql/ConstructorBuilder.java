@@ -34,9 +34,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 
 class ConstructorBuilder {
 
-	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct,
-			boolean reduced)
-	{
+	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct, boolean reduced) {
 		return buildConstructor(bodyExpr, constructExpr, true, distinct, reduced);
 	}
 
@@ -44,9 +42,8 @@ class ConstructorBuilder {
 		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);
 	}
 
-	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr,
-			boolean explicitConstructor, boolean distinct, boolean reduced)
-	{
+	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
+			boolean distinct, boolean reduced) {
 		TupleExpr result = bodyExpr;
 
 		// Retrieve all StatementPattern's from the construct expression
@@ -77,8 +74,7 @@ class ConstructorBuilder {
 			// Filter the duplicates from these projected bindings
 			if (distinct) {
 				result = new Distinct(result);
-			}
-			else {
+			} else {
 				result = new Reduced(result);
 			}
 		}
@@ -92,8 +88,7 @@ class ConstructorBuilder {
 
 				if (var.hasValue()) {
 					valueExpr = new ValueConstant(var.getValue());
-				}
-				else if (explicitConstructor) {
+				} else if (explicitConstructor) {
 					// only generate bnodes in case of an explicit constructor
 					valueExpr = new BNodeGenerator();
 				}
@@ -126,19 +121,16 @@ class ConstructorBuilder {
 
 			// Note: no need to apply the second duplicate elimination step if
 			// there's just one projection
-		}
-		else if (projections.size() > 1) {
+		} else if (projections.size() > 1) {
 			result = new MultiProjection(result, projections);
 
 			if (distinct) {
 				// Add another distinct to filter duplicate statements
 				result = new Distinct(result);
-			}
-			else if (reduced) {
+			} else if (reduced) {
 				result = new Reduced(result);
 			}
-		}
-		else {
+		} else {
 			// Empty constructor
 			result = new EmptySet();
 		}
@@ -147,8 +139,8 @@ class ConstructorBuilder {
 	}
 
 	/**
-	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject,
-	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
+	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject, predicate
+	 * and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
 		Set<Var> vars = new LinkedHashSet<>(statementPatterns.size() * 2);

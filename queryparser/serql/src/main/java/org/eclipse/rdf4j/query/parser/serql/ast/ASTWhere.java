@@ -18,13 +18,11 @@ public class ASTWhere extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTBooleanExpr getCondition() {
-		return (ASTBooleanExpr)children.get(0);
+		return (ASTBooleanExpr) children.get(0);
 	}
 }

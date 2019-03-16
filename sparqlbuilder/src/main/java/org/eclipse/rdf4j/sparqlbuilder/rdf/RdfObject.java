@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 
 /**
- * Denotes an element that can represent an object in a
- * {@link TriplePattern}
+ * Denotes an element that can represent an object in a {@link TriplePattern}
  */
-public interface RdfObject extends QueryElement { }
+public interface RdfObject extends QueryElement {
+}

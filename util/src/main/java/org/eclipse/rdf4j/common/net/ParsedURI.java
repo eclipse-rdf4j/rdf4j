@@ -14,25 +14,25 @@ import java.util.StringTokenizer;
 import org.eclipse.rdf4j.common.text.StringUtil;
 
 /**
- * A replacement for Java's own URI: java.net.URI. Java's implementation is quite buggy in that it doesn't
- * resolve relative URIs correctly.
+ * A replacement for Java's own URI: java.net.URI. Java's implementation is quite buggy in that it doesn't resolve
+ * relative URIs correctly.
  * <p>
  * Note: this implementation is not guaranteed to handle ipv6 addresses correctly (yet).
+ * 
  * @deprecated use {@link ParsedIRI} instead
  */
 @Deprecated
 public class ParsedURI implements java.lang.Cloneable {
 
 	/*
-	 * // Tesing method public static void main(String[] args) throws Exception { URI baseURI = new
-	 * URI(args[0]); baseURI.normalize(); URI uri = null; for (int i = 0; i < 100; i++) { uri =
-	 * baseURI.resolve(args[1]); } try { Thread.sleep(1000); } catch (Exception e) {} long startTime =
-	 * System.currentTimeMillis(); for (int i = 0; i < 100; i++) { uri = baseURI.resolve(args[1]); } long
-	 * endTime = System.currentTimeMillis(); System.out.println(args[0] + " was parsed as:");
-	 * System.out.println("scheme = " + uri.getScheme()); System.out.println("schemeSpecificPart = " +
-	 * uri.getSchemeSpecificPart()); System.out.println("authority = " + uri.getAuthority());
-	 * System.out.println("path = " + uri.getPath()); System.out.println("query = " + uri.getQuery());
-	 * System.out.println("fragment = " + uri.getFragment()); System.out.println("full URI = " +
+	 * // Tesing method public static void main(String[] args) throws Exception { URI baseURI = new URI(args[0]);
+	 * baseURI.normalize(); URI uri = null; for (int i = 0; i < 100; i++) { uri = baseURI.resolve(args[1]); } try {
+	 * Thread.sleep(1000); } catch (Exception e) {} long startTime = System.currentTimeMillis(); for (int i = 0; i <
+	 * 100; i++) { uri = baseURI.resolve(args[1]); } long endTime = System.currentTimeMillis();
+	 * System.out.println(args[0] + " was parsed as:"); System.out.println("scheme = " + uri.getScheme());
+	 * System.out.println("schemeSpecificPart = " + uri.getSchemeSpecificPart()); System.out.println("authority = " +
+	 * uri.getAuthority()); System.out.println("path = " + uri.getPath()); System.out.println("query = " +
+	 * uri.getQuery()); System.out.println("fragment = " + uri.getFragment()); System.out.println("full URI = " +
 	 * uri.toString()); System.out.println(" parsed 100 times in " + (endTime-startTime) + "ms"); }
 	 */
 
@@ -132,9 +132,9 @@ public class ParsedURI implements java.lang.Cloneable {
 	 *------------------------------*/
 
 	/**
-	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and
-	 * '..' segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be
-	 * normalized to <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
+	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and '..'
+	 * segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be normalized to
+	 * <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
 	 */
 	public void normalize() {
 		if (_path == null) {
@@ -187,8 +187,7 @@ public class ParsedURI implements java.lang.Cloneable {
 					// two consecutive '..' segments at position i-1 and i,
 					// continue at i + 2
 					i += 2;
-				}
-				else {
+				} else {
 					// Bingo! Remove these two segments...
 					if (i == segments.size() - 1) {
 						lastSegmentRemoved = true;
@@ -206,8 +205,7 @@ public class ParsedURI implements java.lang.Cloneable {
 						i--;
 					}
 				}
-			}
-			else {
+			} else {
 				// Not a '..' segment, check next
 				i++;
 			}
@@ -269,7 +267,7 @@ public class ParsedURI implements java.lang.Cloneable {
 		// RFC, step 2:
 		if (relURI._authority == null && relURI._query == null && relURI._path.length() == 0) {
 			// Reference to this URI
-			ParsedURI result = (ParsedURI)this.clone();
+			ParsedURI result = (ParsedURI) this.clone();
 
 			// Inherit any fragment identifier from relURI
 			result._fragment = relURI._fragment;
@@ -289,25 +287,21 @@ public class ParsedURI implements java.lang.Cloneable {
 		if (relURI._authority != null) {
 			authority = relURI._authority;
 			path = relURI._path;
-		}
-		else {
+		} else {
 			authority = this._authority;
 
 			// RFC, step 5:
 			if (relURI._path.startsWith("/")) {
 				path = relURI._path;
-			}
-			else if (relURI._path.length() == 0) {
+			} else if (relURI._path.length() == 0) {
 				path = this._path;
-			}
-			else {
+			} else {
 				// RFC, step 6:
 				path = this._path;
 
 				if (path == null) {
 					path = "/";
-				}
-				else {
+				} else {
 					if (!path.endsWith("/")) {
 						// Remove the last segment of the path. Note: if
 						// lastSlashIdx is -1, the path will become empty,
@@ -355,8 +349,7 @@ public class ParsedURI implements java.lang.Cloneable {
 			if (_schemeSpecificPart != null) {
 				sb.append(_schemeSpecificPart);
 			}
-		}
-		else {
+		} else {
 			// Hierachical URI
 			if (_authority != null) {
 				sb.append("//");
@@ -384,8 +377,7 @@ public class ParsedURI implements java.lang.Cloneable {
 	public Object clone() {
 		try {
 			return super.clone();
-		}
-		catch (CloneNotSupportedException e) {
+		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException(e);
 		}
 	}
@@ -429,15 +421,13 @@ public class ParsedURI implements java.lang.Cloneable {
 				rest = _parsePath(rest);
 				rest = _parseQuery(rest);
 				_parseFragment(rest);
-			}
-			else {
+			} else {
 				// Opaque URI
 				String rest = _schemeSpecificPart;
 				rest = _parseOpaquePart(rest);
 				_parseFragment(rest);
 			}
-		}
-		else {
+		} else {
 			// No scheme was found
 			String rest = uri;
 			rest = _parseAuthority(rest);
@@ -526,8 +516,7 @@ public class ParsedURI implements java.lang.Cloneable {
 
 			_query = s.substring(1, i);
 			return s.substring(i);
-		}
-		else {
+		} else {
 			return s;
 		}
 	}

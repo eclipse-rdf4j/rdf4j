@@ -11,8 +11,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleBNode} instead for extending, and {@link ValueFactory} for
- *             instantiation.
+ * @deprecated since 4.0. Use {@link SimpleBNode} instead for extending, and {@link ValueFactory} for instantiation.
  */
 @Deprecated
 public class BNodeImpl extends SimpleBNode {

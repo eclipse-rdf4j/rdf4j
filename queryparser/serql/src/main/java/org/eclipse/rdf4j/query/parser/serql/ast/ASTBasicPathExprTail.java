@@ -18,24 +18,22 @@ public class ASTBasicPathExprTail extends ASTPathExprTail {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTEdge getEdge() {
-		return (ASTEdge)children.get(0);
+		return (ASTEdge) children.get(0);
 	}
 
 	public ASTNode getNode() {
-		return (ASTNode)children.get(1);
+		return (ASTNode) children.get(1);
 	}
 
 	@Override
 	public ASTPathExprTail getNextTail() {
 		if (children.size() >= 3) {
-			return (ASTPathExprTail)children.get(2);
+			return (ASTPathExprTail) children.get(2);
 		}
 
 		return null;

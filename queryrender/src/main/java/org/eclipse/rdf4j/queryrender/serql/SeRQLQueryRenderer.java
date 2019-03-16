@@ -40,9 +40,7 @@ public class SeRQLQueryRenderer implements QueryRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public String render(final ParsedQuery theQuery)
-		throws Exception
-	{
+	public String render(final ParsedQuery theQuery) throws Exception {
 		mRenderer.reset();
 
 		return mRenderer.render(theQuery.getTupleExpr());

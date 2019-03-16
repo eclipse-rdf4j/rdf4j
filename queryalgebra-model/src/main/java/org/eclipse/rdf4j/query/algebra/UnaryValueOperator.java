@@ -34,8 +34,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Creates a new unary value operator.
 	 * 
-	 * @param arg
-	 *        The operator's argument, must not be <tt>null</tt>.
+	 * @param arg The operator's argument, must not be <tt>null</tt>.
 	 */
 	public UnaryValueOperator(ValueExpr arg) {
 		setArg(arg);
@@ -57,8 +56,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Sets the argument of this unary value operator.
 	 * 
-	 * @param arg
-	 *        The (new) argument for this operator, must not be <tt>null</tt>.
+	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setArg(ValueExpr arg) {
 		assert arg != null : "arg must not be null";
@@ -67,9 +65,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (arg != null) {
 			arg.visit(visitor);
 		}
@@ -78,9 +74,8 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
-			setArg((ValueExpr)replacement);
-		}
-		else {
+			setArg((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -88,7 +83,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof UnaryValueOperator) {
-			UnaryValueOperator o = (UnaryValueOperator)other;
+			UnaryValueOperator o = (UnaryValueOperator) other;
 			return (arg == null && o.getArg() == null) || (arg != null && arg.equals(o.getArg()));
 		}
 
@@ -102,7 +97,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 
 	@Override
 	public UnaryValueOperator clone() {
-		UnaryValueOperator clone = (UnaryValueOperator)super.clone();
+		UnaryValueOperator clone = (UnaryValueOperator) super.clone();
 		if (getArg() != null) {
 			clone.setArg(getArg().clone());
 		}

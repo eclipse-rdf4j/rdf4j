@@ -27,9 +27,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  * 
  * @author James Leigh
  */
-public class BackgroundTupleResult extends IteratingTupleQueryResult
-		implements Runnable, TupleQueryResultHandler
-{
+public class BackgroundTupleResult extends IteratingTupleQueryResult implements Runnable, TupleQueryResultHandler {
 
 	private final TupleQueryResultParser parser;
 
@@ -47,29 +45,23 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		this(new QueueCursor<BindingSet>(10), parser, in);
 	}
 
-	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser,
-			InputStream in)
-	{
-		super(Collections.<String> emptyList(), queue);
+	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {
+		super(Collections.<String>emptyList(), queue);
 		this.queue = queue;
 		this.parser = parser;
 		this.in = in;
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			queue.done();
 		}
 		try {
 			finishedParsing.await();
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		} finally {
 			queue.checkException();
@@ -81,8 +73,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		try {
 			bindingNamesReady.await();
 			return bindingNames;
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			return Collections.emptyList();
 		} finally {
@@ -99,11 +90,9 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 			} finally {
 				in.close();
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			queue.toss(e);
-		}
-		finally {
+		} finally {
 			queue.done();
 			bindingNamesReady.countDown();
 			finishedParsing.countDown();
@@ -111,21 +100,16 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		this.bindingNames.addAll(bindingNames);
 		bindingNamesReady.countDown();
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			queue.put(bindingSet);
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			queue.toss(e);
 			queue.done();
@@ -133,23 +117,17 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		// no-op
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle boolean results");
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		// ignore
 	}
 }

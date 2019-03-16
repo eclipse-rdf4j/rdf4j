@@ -34,9 +34,7 @@ public class ValueFactoryTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		f = SimpleValueFactory.getInstance();
 	}
 
@@ -154,16 +152,14 @@ public class ValueFactoryTest {
 			assertNotNull(l);
 			assertEquals(l.getDatatype(), XMLSchema.DATETIME);
 			// TODO check lexical value?
-		}
-		catch (DatatypeConfigurationException e) {
+		} catch (DatatypeConfigurationException e) {
 			e.printStackTrace();
 			fail("Could not instantiate javax.xml.datatype.DatatypeFactory");
 		}
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(java.util.Date)}
-	 * .
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(java.util.Date)} .
 	 */
 	@Test
 	public void testCreateLiteralDate() {

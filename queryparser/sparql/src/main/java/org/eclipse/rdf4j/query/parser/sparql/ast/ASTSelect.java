@@ -28,9 +28,7 @@ public class ASTSelect extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -55,7 +53,7 @@ public class ASTSelect extends SimpleNode {
 	}
 
 	public boolean isSubSelect() {
-		return ((ASTSelectQuery)parent).isSubSelect();
+		return ((ASTSelectQuery) parent).isSubSelect();
 	}
 
 	public void setWildcard(boolean wildcard) {
@@ -64,7 +62,7 @@ public class ASTSelect extends SimpleNode {
 
 	public List<ASTProjectionElem> getProjectionElemList() {
 		return this.jjtGetChildren(ASTProjectionElem.class);
-		//return new CastingList<ASTProjectionElem>(children);
+		// return new CastingList<ASTProjectionElem>(children);
 	}
 
 	@Override

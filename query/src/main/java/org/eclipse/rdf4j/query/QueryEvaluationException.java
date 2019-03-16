@@ -25,8 +25,7 @@ public class QueryEvaluationException extends RDF4JException {
 	/**
 	 * Creates a new TupleQueryResultHandlerException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public QueryEvaluationException(String msg) {
 		super(msg);
@@ -35,8 +34,7 @@ public class QueryEvaluationException extends RDF4JException {
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param cause The cause of the exception.
 	 */
 	public QueryEvaluationException(Throwable cause) {
 		super(cause);
@@ -45,10 +43,8 @@ public class QueryEvaluationException extends RDF4JException {
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param msg   An error message.
+	 * @param cause The cause of the exception.
 	 */
 	public QueryEvaluationException(String msg, Throwable cause) {
 		super(msg, cause);

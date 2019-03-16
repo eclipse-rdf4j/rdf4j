@@ -19,17 +19,16 @@ import org.slf4j.LoggerFactory;
  * @author Jacek Grzebyta
  */
 public class HTTPRepositorySettings {
-    
-    private static final Logger log = LoggerFactory.getLogger(HTTPRepositorySettings.class);
-    
-    /**
-     * Maximum size (in number of statements) allowed for statement buffers 
-     * before they are forcibly flushed.
-     * <p>
-     * By default inner buffers within {@link HTTPRepositoryConnection} keep in memory up to 200000 statement before they are 
-     * flushed to the remote repository.
-     */
-    public static final RioSetting<Integer> MAX_STATEMENT_BUFFER_SIZE = 
-            new RioSettingImpl<Integer>("org.eclipse.rdf4j.http.maxstatementbuffersize", "Maximum number of statement buffered in memory", 200000);
-    
+
+	private static final Logger log = LoggerFactory.getLogger(HTTPRepositorySettings.class);
+
+	/**
+	 * Maximum size (in number of statements) allowed for statement buffers before they are forcibly flushed.
+	 * <p>
+	 * By default inner buffers within {@link HTTPRepositoryConnection} keep in memory up to 200000 statement before
+	 * they are flushed to the remote repository.
+	 */
+	public static final RioSetting<Integer> MAX_STATEMENT_BUFFER_SIZE = new RioSettingImpl<Integer>(
+			"org.eclipse.rdf4j.http.maxstatementbuffersize", "Maximum number of statement buffered in memory", 200000);
+
 }

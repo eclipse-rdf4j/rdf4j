@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException
- * subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
+ * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
+ * UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
@@ -33,51 +33,40 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	private final HTTPRepositoryConnection conn;
 
-	public HTTPTupleQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString,
-			String baseURI)
-	{
+	public HTTPTupleQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString, String baseURI) {
 		super(conn.getSesameSession(), ql, queryString, baseURI);
 		this.conn = conn;
 	}
 
 	@Override
-	public TupleQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), getBindingsArray());
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
 	}
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException
-	{
+			throws QueryEvaluationException, TupleQueryResultHandlerException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
-			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred,
-					getMaxExecutionTime(), handler, getBindingsArray());
-		}
-		catch (IOException e) {
+			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
+					handler, getBindingsArray());
+		} catch (IOException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
 	}

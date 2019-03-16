@@ -55,18 +55,15 @@ public class SetNamespaceOperation implements TransactionOperation, Serializable
 	}
 
 	@Override
-	public void execute(RepositoryConnection con)
-		throws RepositoryException
-	{
+	public void execute(RepositoryConnection con) throws RepositoryException {
 		con.setNamespace(prefix, name);
 	}
 
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof SetNamespaceOperation) {
-			SetNamespaceOperation o = (SetNamespaceOperation)other;
-			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix())
-					&& ObjectUtil.nullEquals(getName(), o.getName());
+			SetNamespaceOperation o = (SetNamespaceOperation) other;
+			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix()) && ObjectUtil.nullEquals(getName(), o.getName());
 		}
 
 		return false;

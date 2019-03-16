@@ -27,30 +27,22 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class NQuadsHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
 		return writeNQuads(unknownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
 		return writeNQuads(knownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
 		return writeNQuads(unknownLanguageStatements);
 	}
 
 	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeNQuads(knownLanguageStatements);
 	}
 
@@ -66,9 +58,7 @@ public class NQuadsHandlingTest extends AbstractParserHandlingTest {
 	 * @return An {@link InputStream} containing the results.
 	 * @throws RDFHandlerException
 	 */
-	private InputStream writeNQuads(Model statements)
-		throws RDFHandlerException
-	{
+	private InputStream writeNQuads(Model statements) throws RDFHandlerException {
 		StringWriter writer = new StringWriter();
 
 		RDFWriter nQuadsWriter = new NQuadsWriter(writer);

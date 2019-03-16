@@ -18,18 +18,16 @@ public class ASTRegex extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTValueExpr getText() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 
 	public ASTValueExpr getPattern() {
-		return (ASTValueExpr)children.get(1);
+		return (ASTValueExpr) children.get(1);
 	}
 
 	public boolean hasFlags() {
@@ -38,7 +36,7 @@ public class ASTRegex extends ASTBooleanExpr {
 
 	public ASTValueExpr getFlags() {
 		if (children.size() >= 3) {
-			return (ASTValueExpr)children.get(2);
+			return (ASTValueExpr) children.get(2);
 		}
 
 		return null;

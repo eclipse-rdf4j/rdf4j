@@ -36,8 +36,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	/**
 	 * Creates a new N-Ary value operator.
 	 * 
-	 * @param args
-	 *        The operator's list of arguments, must not be <tt>null</tt>.
+	 * @param args The operator's list of arguments, must not be <tt>null</tt>.
 	 */
 	public NAryValueOperator(List<ValueExpr> args) {
 		setArguments(args);
@@ -64,9 +63,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
@@ -81,7 +78,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 			ValueExpr arg = args.get(i);
 			if (arg == current) {
 				args.remove(i);
-				args.add(i, (ValueExpr)replacement);
+				args.add(i, (ValueExpr) replacement);
 				replaced = true;
 			}
 		}
@@ -94,7 +91,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof NAryValueOperator) {
-			NAryValueOperator o = (NAryValueOperator)other;
+			NAryValueOperator o = (NAryValueOperator) other;
 
 			return getArguments().equals(o.getArguments());
 		}
@@ -109,7 +106,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	@Override
 	public NAryValueOperator clone() {
-		NAryValueOperator clone = (NAryValueOperator)super.clone();
+		NAryValueOperator clone = (NAryValueOperator) super.clone();
 
 		clone.setArguments(new ArrayList<>());
 

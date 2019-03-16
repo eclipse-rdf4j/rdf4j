@@ -43,8 +43,7 @@ public class ErrorInfo {
 			sb.append(": ");
 			sb.append(errMSg);
 			return sb.toString();
-		}
-		else {
+		} else {
 			return errMSg;
 		}
 	}

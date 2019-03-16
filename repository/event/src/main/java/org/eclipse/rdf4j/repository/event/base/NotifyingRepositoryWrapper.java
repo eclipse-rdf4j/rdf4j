@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
 import org.eclipse.rdf4j.repository.event.RepositoryListener;
 
 /**
- * This notifying decorator allows listeners to register with the repository or connection and be notified
- * when events occur.
+ * This notifying decorator allows listeners to register with the repository or connection and be notified when events
+ * occur.
  * 
  * @author James Leigh
  * @author Herko ter Horst
@@ -73,8 +73,8 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are
-	 * performed on this repository.
+	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are performed on this
+	 * repository.
 	 */
 	@Override
 	public void addRepositoryListener(RepositoryListener listener) {
@@ -92,8 +92,8 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
-	 * are performed on any< connections that are created by this repository.
+	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * performed on any< connections that are created by this repository.
 	 */
 	@Override
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
@@ -109,9 +109,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public NotifyingRepositoryConnection getConnection()
-		throws RepositoryException
-	{
+	public NotifyingRepositoryConnection getConnection() throws RepositoryException {
 		RepositoryConnection con = getDelegate().getConnection();
 		NotifyingRepositoryConnection ncon = new NotifyingRepositoryConnectionWrapper(this, con,
 				getDefaultReportDeltas());
@@ -129,9 +127,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
+	public void initialize() throws RepositoryException {
 		super.initialize();
 
 		if (activated) {
@@ -153,9 +149,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public void shutDown()
-		throws RepositoryException
-	{
+	public void shutDown() throws RepositoryException {
 		super.shutDown();
 
 		if (activated) {

@@ -36,15 +36,12 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 	}
 
 	@Override
-	public void parse(InputStream in)
-			throws QueryResultParseException, TupleQueryResultHandlerException
-	{
-		if(handler != null) {
+	public void parse(InputStream in) throws QueryResultParseException, TupleQueryResultHandlerException {
+		if (handler != null) {
 			SPARQLResultsTSVMappingStrategy strategy = new SPARQLResultsTSVMappingStrategy(valueFactory);
 
 			Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
-			CsvToBean csvToBean = new CsvToBeanBuilder<BindingSet>(reader)
-					.withType(BindingSet.class)
+			CsvToBean csvToBean = new CsvToBeanBuilder<BindingSet>(reader).withType(BindingSet.class)
 					.withMappingStrategy(strategy)
 					.withSeparator('\t')
 					.build();
@@ -52,7 +49,7 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 			List<BindingSet> bindingSets = csvToBean.parse();
 			List<String> bindingNames = strategy.getBindingNames();
 			handler.startQueryResult(bindingNames);
-			for(BindingSet bs : bindingSets) {
+			for (BindingSet bs : bindingSets) {
 				handler.handleSolution(bs);
 			}
 			handler.endQueryResult();

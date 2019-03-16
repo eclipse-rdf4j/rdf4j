@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the Linked Data Platform.
  *
@@ -65,7 +64,6 @@ public class LDP {
 	/** ldp:Resource */
 	public static final IRI RESOURCE;
 
-
 	// Properties
 	/** ldp:constrainedBy */
 	public static final IRI CONSTRAINED_BY;
@@ -106,7 +104,6 @@ public class LDP {
 	/** ldp:pageSortPredicate */
 	public static final IRI PAGE_SORT_PREDICATE;
 
-
 	// Individuals
 	/** ldp:Ascending */
 	public static final IRI ASCENDING;
@@ -129,7 +126,6 @@ public class LDP {
 
 	/** ldp:PreferMinimalContainer */
 	public static final IRI PREFER_MINIMAL_CONTAINER;
-
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();

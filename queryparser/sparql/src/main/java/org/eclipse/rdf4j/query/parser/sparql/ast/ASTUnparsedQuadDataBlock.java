@@ -33,9 +33,7 @@ public class ASTUnparsedQuadDataBlock extends SimpleNode {
 
 	/** Accept the visitor. **/
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 

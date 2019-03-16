@@ -72,8 +72,10 @@ public class JSONLDHierarchicalWriterTest {
 
 	@Test
 	public void testSingleSubnodeInContext() throws IOException {
-		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred"), vf.createIRI("sch:node2"), vf.createIRI("sch:node3"));
-		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"), vf.createIRI("sch:node3"));
+		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred"), vf.createIRI("sch:node2"),
+				vf.createIRI("sch:node3"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
+				vf.createIRI("sch:node3"));
 
 		verifyOutput();
 	}
@@ -89,9 +91,12 @@ public class JSONLDHierarchicalWriterTest {
 
 	@Test
 	public void testRootIsNotTheParentNodeInContext() throws IOException {
-		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"), vf.createIRI("sch:context1"));
-		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred3"), vf.createLiteral("literal1"), vf.createIRI("sch:context1"));
-		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"), vf.createIRI("sch:context1"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
+				vf.createIRI("sch:context1"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred3"), vf.createLiteral("literal1"),
+				vf.createIRI("sch:context1"));
+		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"),
+				vf.createIRI("sch:context1"));
 
 		verifyOutput();
 	}
@@ -112,7 +117,7 @@ public class JSONLDHierarchicalWriterTest {
 	@Test
 	public void testDeeperHierarchy() throws IOException {
 		int depth = 256;
-		for (int i = 0; i++ < depth; ) {
+		for (int i = 0; i++ < depth;) {
 			addStatement(vf.createIRI("sch:node" + i), vf.createIRI("sch:pred"), vf.createIRI("sch:node" + (i + 1)));
 		}
 
@@ -232,16 +237,20 @@ public class JSONLDHierarchicalWriterTest {
 	@Test
 	public void testDifferentContexts() throws IOException {
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node1"));
-		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node2"), vf.createIRI("sch:context1"));
-		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node3"), vf.createIRI("sch:context2"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node2"),
+				vf.createIRI("sch:context1"));
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node3"),
+				vf.createIRI("sch:context2"));
 		verifyOutput();
 	}
 
 	@Test
 	public void testNodesInDifferentContextsAreNotMixed() throws IOException {
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"));
-		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"), vf.createIRI("sch:context1"));
-		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node1"), vf.createIRI("sch:context2"));
+		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
+				vf.createIRI("sch:context1"));
+		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node1"),
+				vf.createIRI("sch:context2"));
 		verifyOutput();
 	}
 
@@ -332,7 +341,7 @@ public class JSONLDHierarchicalWriterTest {
 	}
 
 	private class ComparingOutputStream extends OutputStream {
-		int[] toIgnore = new int[]{' ', '\n', '\t', '\r'};
+		int[] toIgnore = new int[] { ' ', '\n', '\t', '\r' };
 		int charInFile;
 		InputStream is;
 
@@ -344,7 +353,8 @@ public class JSONLDHierarchicalWriterTest {
 		@Override
 		public void write(int b) throws IOException {
 			if (Arrays.binarySearch(toIgnore, b) < 0) {
-				while (Arrays.binarySearch(toIgnore, charInFile = is.read()) >= 0) ;
+				while (Arrays.binarySearch(toIgnore, charInFile = is.read()) >= 0)
+					;
 				assertEquals("Files are equal", charInFile, b);
 			}
 		}

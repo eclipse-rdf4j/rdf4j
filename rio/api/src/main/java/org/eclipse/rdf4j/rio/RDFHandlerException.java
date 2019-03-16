@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.rio;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * An exception that can be thrown by an RDFHandler when it encounters an unrecoverable error. If an exception
- * is associated with the error then this exception can be wrapped in an RDFHandlerException and can later be
- * retrieved from it when the RDFHandlerException is catched using the <tt>getCause()</tt>.
+ * An exception that can be thrown by an RDFHandler when it encounters an unrecoverable error. If an exception is
+ * associated with the error then this exception can be wrapped in an RDFHandlerException and can later be retrieved
+ * from it when the RDFHandlerException is catched using the <tt>getCause()</tt>.
  */
 public class RDFHandlerException extends RDF4JException {
 
@@ -21,8 +21,7 @@ public class RDFHandlerException extends RDF4JException {
 	/**
 	 * Creates a new RDFHandlerException.
 	 *
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public RDFHandlerException(String msg) {
 		super(msg);
@@ -31,8 +30,7 @@ public class RDFHandlerException extends RDF4JException {
 	/**
 	 * Creates a new RDFHandlerException.
 	 *
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param cause The cause of the exception.
 	 */
 	public RDFHandlerException(Throwable cause) {
 		super(cause);
@@ -41,10 +39,8 @@ public class RDFHandlerException extends RDF4JException {
 	/**
 	 * Creates a new RDFHandlerException wrapping another exception.
 	 *
-	 * @param msg
-	 *        An error message.
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param msg   An error message.
+	 * @param cause The cause of the exception.
 	 */
 	public RDFHandlerException(String msg, Throwable cause) {
 		super(msg, cause);

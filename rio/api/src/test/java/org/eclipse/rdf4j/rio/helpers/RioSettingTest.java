@@ -26,32 +26,24 @@ public abstract class RioSettingTest<T> {
 	protected RioSetting<T> subject;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		subject = createRioSetting(TEST_KEY, TEST_DESCRIPTION, getDefaultValue());
 	}
 
 	@Test
-	public void testDefaultValue()
-		throws Exception
-	{
+	public void testDefaultValue() throws Exception {
 		assertThat(subject.getDefaultValue()).isEqualTo(getDefaultValue());
 	}
 
 	@Test
-	public void testConvert()
-		throws Exception
-	{
+	public void testConvert() throws Exception {
 		assertThat(subject.convert(getLegalStringValue())).isEqualTo(getConvertedStringValue());
 	}
 
 	@Test
-	public void testConvertIllegal()
-		throws Exception
-	{
-		assertThatThrownBy(() -> subject.convert(getIllegalStringValue())).isInstanceOf(
-				RioConfigurationException.class);
+	public void testConvertIllegal() throws Exception {
+		assertThatThrownBy(() -> subject.convert(getIllegalStringValue()))
+				.isInstanceOf(RioConfigurationException.class);
 	}
 
 	/**
@@ -69,8 +61,8 @@ public abstract class RioSettingTest<T> {
 	protected abstract String getLegalStringValue();
 
 	/**
-	 * the value of type T that corresponds to the value returned by {@link #getLegalStringValue()}. NB
-	 * implementors should return a hardcoded value, not doing on-the-fly conversion.
+	 * the value of type T that corresponds to the value returned by {@link #getLegalStringValue()}. NB implementors
+	 * should return a hardcoded value, not doing on-the-fly conversion.
 	 * 
 	 * @return a value of type T corresponding to the the value returned by {@link #getLegalStringValue()}
 	 */
@@ -86,12 +78,9 @@ public abstract class RioSettingTest<T> {
 	/**
 	 * Create a new {@link RioSetting} for use as the test subject.
 	 * 
-	 * @param key
-	 *        the setting key
-	 * @param description
-	 *        the setting description
-	 * @param defaultValue
-	 *        the default value
+	 * @param key          the setting key
+	 * @param description  the setting description
+	 * @param defaultValue the default value
 	 * @return a new {@link RioSetting} object
 	 */
 	protected abstract RioSetting<T> createRioSetting(String key, String description, T defaultValue);

@@ -32,7 +32,7 @@ public class StatementsTest {
 
 		Model m = Statements.create(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY, new TreeModel(), c1, c2, null, c3);
 		assertFalse(m.isEmpty());
-		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, (Resource)null));
+		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, (Resource) null));
 		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, c1));
 		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, c2));
 		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, c3));
@@ -48,18 +48,15 @@ public class StatementsTest {
 	@Test
 	public void testInvalidInput() {
 		try {
-			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY,
-					st -> fail("should have resulted in Exception"), null);
-		}
-		catch (IllegalArgumentException e) {
+			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"),
+					null);
+		} catch (IllegalArgumentException e) {
 			// fall through.
 		}
 
 		try {
-			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY,
-					st -> fail("should have resulted in Exception"));
-		}
-		catch (NullPointerException e) {
+			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"));
+		} catch (NullPointerException e) {
 			// fall through.
 		}
 	}

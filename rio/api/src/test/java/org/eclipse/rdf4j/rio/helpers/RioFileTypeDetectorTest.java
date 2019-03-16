@@ -14,11 +14,9 @@ import java.util.ServiceLoader;
 
 import org.junit.Test;
 
-public class RioFileTypeDetectorTest
-{
-    @Test
-    public void correctClassIsRegisteredInServices()
-    {
-        assertThat(ServiceLoader.load(FileTypeDetector.class)).anyMatch(ftd -> ftd instanceof RioFileTypeDetector);
-    }
+public class RioFileTypeDetectorTest {
+	@Test
+	public void correctClassIsRegisteredInServices() {
+		assertThat(ServiceLoader.load(FileTypeDetector.class)).anyMatch(ftd -> ftd instanceof RioFileTypeDetector);
+	}
 }

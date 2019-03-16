@@ -78,8 +78,7 @@ public class ConfigTemplate {
 				String before = template.substring(Math.max(start - 3, 0), start);
 				int end = matcher.end();
 				if (("'''".equals(before) || "\"\"\"".equals(before))
-						&& before.equals(template.substring(end, end + 3)))
-				{
+						&& before.equals(template.substring(end, end + 3))) {
 					multilineMap.put(var, before);
 				}
 			}
@@ -114,18 +113,14 @@ public class ConfigTemplate {
 	/**
 	 * Escape Turtle multiline literal quote characters in the given value.
 	 * 
-	 * @param quoteVariant
-	 *        either ''' or """
-	 * @param value
-	 *        the value to escape properly
+	 * @param quoteVariant either ''' or """
+	 * @param value        the value to escape properly
 	 * @return the value with any needed multiline quote sequences escaped
 	 */
 	protected static String escapeMultilineQuotes(String quoteVariant, String value) {
 		if ("'''".equals(quoteVariant) || "\"\"\"".equals(quoteVariant)) {
-			return value.replace(quoteVariant,
-					new String(new char[3]).replace("\0", "\\" + quoteVariant.charAt(0)));
-		}
-		else {
+			return value.replace(quoteVariant, new String(new char[3]).replace("\0", "\\" + quoteVariant.charAt(0)));
+		} else {
 			throw new IllegalArgumentException("Only a valid Turtle multi-line quote delmiter is allowed.");
 		}
 	}

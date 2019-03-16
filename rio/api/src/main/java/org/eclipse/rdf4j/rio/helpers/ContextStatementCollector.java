@@ -52,17 +52,14 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements in the supplied collection and that
-	 * uses a new LinkedHashMap to store the reported namespaces.
+	 * Creates a new StatementCollector that stores reported statements in the supplied collection and that uses a new
+	 * LinkedHashMap to store the reported namespaces.
 	 */
-	public ContextStatementCollector(Collection<Statement> statements, ValueFactory vf,
-			Resource... contexts)
-	{
+	public ContextStatementCollector(Collection<Statement> statements, ValueFactory vf, Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		if (statements instanceof NamespaceAware) {
-			this.namespaces = Namespaces.wrap(((NamespaceAware)statements).getNamespaces());
-		}
-		else {
+			this.namespaces = Namespaces.wrap(((NamespaceAware) statements).getNamespaces());
+		} else {
 			this.namespaces = new LinkedHashMap<>();
 		}
 		this.statements = statements;
@@ -71,12 +68,10 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied
-	 * containers.
+	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied containers.
 	 */
-	public ContextStatementCollector(Collection<Statement> statements, Map<String, String> namespaces,
-			ValueFactory vf, Resource... contexts)
-	{
+	public ContextStatementCollector(Collection<Statement> statements, Map<String, String> namespaces, ValueFactory vf,
+			Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		this.statements = statements;
 		this.namespaces = namespaces;
@@ -110,9 +105,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		if (!namespaces.containsKey(prefix)) {
 			namespaces.put(prefix, uri);
 		}
@@ -122,11 +115,9 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	public void handleStatement(Statement st) {
 		if (contexts.length == 0) {
 			statements.add(st);
-		}
-		else {
+		} else {
 			for (Resource nextContext : contexts) {
-				statements.add(
-						vf.createStatement(st.getSubject(), st.getPredicate(), st.getObject(), nextContext));
+				statements.add(vf.createStatement(st.getSubject(), st.getPredicate(), st.getObject(), nextContext));
 			}
 		}
 	}

@@ -60,7 +60,7 @@ public class ErrorType {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ErrorType) {
-			return ((ErrorType)other).getLabel().equals(this.getLabel());
+			return ((ErrorType) other).getLabel().equals(this.getLabel());
 		}
 
 		return false;

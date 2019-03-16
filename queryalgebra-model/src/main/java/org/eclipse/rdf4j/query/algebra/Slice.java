@@ -8,9 +8,9 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * The SLICE operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algSlice">SPARQL
- * Query Language for RDF</a>. The SLICE operator selects specific results from the underlying tuple
- * expression based on an offset and limit value (both optional).
+ * The SLICE operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algSlice">SPARQL Query
+ * Language for RDF</a>. The SLICE operator selects specific results from the underlying tuple expression based on an
+ * offset and limit value (both optional).
  * 
  * @author Arjohn Kampman
  */
@@ -81,9 +81,7 @@ public class Slice extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -109,7 +107,7 @@ public class Slice extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Slice && super.equals(other)) {
-			Slice o = (Slice)other;
+			Slice o = (Slice) other;
 			return offset == o.getOffset() && limit == o.getLimit();
 		}
 		return false;
@@ -118,11 +116,11 @@ public class Slice extends UnaryTupleOperator {
 	@Override
 	public int hashCode() {
 		// casting long to int is not safe, but shouldn't matter for hashcode, should it?
-		return super.hashCode() ^ (int)offset ^ (int)limit;
+		return super.hashCode() ^ (int) offset ^ (int) limit;
 	}
 
 	@Override
 	public Slice clone() {
-		return (Slice)super.clone();
+		return (Slice) super.clone();
 	}
 }

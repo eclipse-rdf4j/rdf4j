@@ -27,9 +27,8 @@ import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 
 /**
- * A filter on SAX events to make life easier on the RDF parser itself. This filter does things like combining
- * a call to startElement() that is directly followed by a call to endElement() to a single call to
- * emptyElement().
+ * A filter on SAX events to make life easier on the RDF parser itself. This filter does things like combining a call to
+ * startElement() that is directly followed by a call to endElement() to a single call to emptyElement().
  */
 class SAXFilter implements ContentHandler {
 
@@ -63,20 +62,20 @@ class SAXFilter implements ContentHandler {
 	private ParsedIRI documentURI;
 
 	/**
-	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the
-	 * rdf:RDF element is optional if it contains just one element.
+	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the rdf:RDF
+	 * element is optional if it contains just one element.
 	 */
 	private boolean parseStandAloneDocuments = true;
 
 	/**
-	 * Variable used to defer reporting of start tags. Reporting start tags is deferred to be able to combine
-	 * a start tag and an immediately following end tag to a single call to emptyElement().
+	 * Variable used to defer reporting of start tags. Reporting start tags is deferred to be able to combine a start
+	 * tag and an immediately following end tag to a single call to emptyElement().
 	 */
 	private ElementInfo deferredElement = null;
 
 	/**
-	 * New namespace mappings that have been reported for the next start tag by the SAX parser, but that are
-	 * not yet assigned to an ElementInfo object.
+	 * New namespace mappings that have been reported for the next start tag by the SAX parser, but that are not yet
+	 * assigned to an ElementInfo object.
 	 */
 	private Map<String, String> newNamespaceMappings = new LinkedHashMap<>();
 
@@ -101,14 +100,14 @@ class SAXFilter implements ContentHandler {
 	private int xmlLiteralStackHeight;
 
 	/**
-	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the
-	 * XML literal's context).
+	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the XML
+	 * literal's context).
 	 */
 	private List<String> xmlLiteralPrefixes = new ArrayList<>();
 
 	/**
-	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML
-	 * literal's context).
+	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML literal's
+	 * context).
 	 */
 	private List<String> unknownPrefixesInXMLLiteral = new ArrayList<>();
 
@@ -174,39 +173,29 @@ class SAXFilter implements ContentHandler {
 	}
 
 	@Override
-	public void startDocument()
-		throws SAXException
-	{
+	public void startDocument() throws SAXException {
 		try {
 			rdfParser.startDocument();
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
 
 	@Override
-	public void endDocument()
-		throws SAXException
-	{
+	public void endDocument() throws SAXException {
 		try {
 			rdfParser.endDocument();
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
 
 	@Override
-	public void startPrefixMapping(String prefix, String uri)
-		throws SAXException
-	{
+	public void startPrefixMapping(String prefix, String uri) throws SAXException {
 		try {
 			if (deferredElement != null) {
 				// This new prefix mapping must come from a new start tag
@@ -223,11 +212,9 @@ class SAXFilter implements ContentHandler {
 			if (rdfParser.getRDFHandler() != null) {
 				rdfParser.getRDFHandler().handleNamespace(prefix, uri);
 			}
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -241,8 +228,7 @@ class SAXFilter implements ContentHandler {
 
 	@Override
 	public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
-		throws SAXException
-	{
+			throws SAXException {
 		try {
 			if (deferredElement != null) {
 				// The next call could set parseLiteralMode to true!
@@ -252,8 +238,7 @@ class SAXFilter implements ContentHandler {
 			if (parseLiteralMode) {
 				appendStartTag(qName, attributes);
 				xmlLiteralStackHeight++;
-			}
-			else {
+			} else {
 				ElementInfo parent = peekStack();
 				ElementInfo elInfo = new ElementInfo(parent, qName, namespaceURI, localName);
 
@@ -261,8 +246,7 @@ class SAXFilter implements ContentHandler {
 				newNamespaceMappings.clear();
 
 				if (!inRDFContext && parseStandAloneDocuments
-						&& (!localName.equals("RDF") || !namespaceURI.equals(RDF.NAMESPACE)))
-				{
+						&& (!localName.equals("RDF") || !namespaceURI.equals(RDF.NAMESPACE))) {
 					// Stand-alone document that does not start with an rdf:RDF root
 					// element. Assume this root element is omitted.
 					inRDFContext = true;
@@ -275,8 +259,7 @@ class SAXFilter implements ContentHandler {
 
 						if ("xml:base".equals(attQName)) {
 							elInfo.setBaseURI(attributes.getValue(i));
-						}
-						else if ("xml:lang".equals(attQName)) {
+						} else if ("xml:lang".equals(attQName)) {
 							elInfo.xmlLang = attributes.getValue(i);
 						}
 					}
@@ -288,8 +271,7 @@ class SAXFilter implements ContentHandler {
 						inRDFContext = true;
 						rdfContextStackHeight = 0;
 					}
-				}
-				else {
+				} else {
 					// We're parsing RDF elements.
 					checkAndCopyAttributes(attributes, elInfo);
 
@@ -299,18 +281,14 @@ class SAXFilter implements ContentHandler {
 
 				charBuf.setLength(0);
 			}
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
 
-	private void reportDeferredStartElement()
-		throws RDFParseException, RDFHandlerException
-	{
+	private void reportDeferredStartElement() throws RDFParseException, RDFHandlerException {
 
 		// Only useful for debugging.
 		// if (deferredElement == null) {
@@ -330,23 +308,18 @@ class SAXFilter implements ContentHandler {
 	}
 
 	@Override
-	public void endElement(String namespaceURI, String localName, String qName)
-		throws SAXException
-	{
+	public void endElement(String namespaceURI, String localName, String qName) throws SAXException {
 		try {
 			// FIXME: in parseLiteralMode we should also check if start- and
 			// end-tags match but these start tags are not tracked yet.
 
-			if (rdfParser.getParserConfig().get(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS)
-					&& !parseLiteralMode)
-			{
+			if (rdfParser.getParserConfig().get(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS) && !parseLiteralMode) {
 				// Verify that the end tag matches the start tag.
 				ElementInfo elInfo;
 
 				if (deferredElement != null) {
 					elInfo = deferredElement;
-				}
-				else {
+				} else {
 					elInfo = peekStack();
 				}
 
@@ -386,12 +359,11 @@ class SAXFilter implements ContentHandler {
 				rdfParser.setBaseURI(deferredElement.baseURI.toString());
 				rdfParser.setXMLLang(deferredElement.xmlLang);
 
-				rdfParser.emptyElement(deferredElement.namespaceURI, deferredElement.localName,
-						deferredElement.qName, deferredElement.atts);
+				rdfParser.emptyElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
+						deferredElement.atts);
 
 				deferredElement = null;
-			}
-			else {
+			} else {
 				if (parseLiteralMode) {
 					// Insert any used namespace prefixes from the XML literal's
 					// context that are not defined in the XML literal itself.
@@ -400,8 +372,7 @@ class SAXFilter implements ContentHandler {
 					rdfParser.text(charBuf.toString());
 
 					parseLiteralMode = false;
-				}
-				else {
+				} else {
 					String s = charBuf.toString();
 
 					// ignore whitespace-only nodes
@@ -418,19 +389,15 @@ class SAXFilter implements ContentHandler {
 
 				rdfParser.endElement(namespaceURI, localName, qName);
 			}
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
 
 	@Override
-	public void characters(char[] ch, int start, int length)
-		throws SAXException
-	{
+	public void characters(char[] ch, int start, int length) throws SAXException {
 		try {
 			if (inRDFContext) {
 				// verify if we need to switch to XMLLiteral processing mode immediately.
@@ -451,8 +418,7 @@ class SAXFilter implements ContentHandler {
 					String s = new String(ch, start, length);
 					s = XMLUtil.escapeCharacterData(s);
 					charBuf.append(s);
-				}
-				else {
+				} else {
 					charBuf.append(ch, start, length);
 
 					// if the element is not empty we need to process it as such. Otherwise,
@@ -462,11 +428,9 @@ class SAXFilter implements ContentHandler {
 					}
 				}
 			}
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			throw new SAXException(e);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -489,8 +453,7 @@ class SAXFilter implements ContentHandler {
 	}
 
 	private void checkAndCopyAttributes(Attributes attributes, ElementInfo elInfo)
-		throws SAXException, RDFParseException
-	{
+			throws SAXException, RDFParseException {
 		Atts atts = new Atts(attributes.getLength());
 
 		int attCount = attributes.getLength();
@@ -503,12 +466,10 @@ class SAXFilter implements ContentHandler {
 			if (qName.startsWith("xml")) {
 				if (qName.equals("xml:lang")) {
 					elInfo.xmlLang = value;
-				}
-				else if (qName.equals("xml:base")) {
+				} else if (qName.equals("xml:base")) {
 					elInfo.setBaseURI(value);
 				}
-			}
-			else {
+			} else {
 				String namespace = attributes.getURI(i);
 				String localName = attributes.getLocalName(i);
 
@@ -516,10 +477,8 @@ class SAXFilter implements ContentHandler {
 				// parsers, as is specified in section 6.1.4 of the spec
 				if ("".equals(namespace)) {
 					if (localName.equals("ID") || localName.equals("about") || localName.equals("resource")
-							|| localName.equals("parseType") || localName.equals("type"))
-					{
-						rdfParser.reportWarning(
-								"use of unqualified attribute " + localName + " has been deprecated");
+							|| localName.equals("parseType") || localName.equals("type")) {
+						rdfParser.reportWarning("use of unqualified attribute " + localName + " has been deprecated");
 						namespace = RDF.NAMESPACE;
 					}
 				}
@@ -596,8 +555,8 @@ class SAXFilter implements ContentHandler {
 	}
 
 	/**
-	 * Inserts prefix mappings from an XML Literal's context for all prefixes that are used in the XML Literal
-	 * and that are not defined in the XML Literal itself.
+	 * Inserts prefix mappings from an XML Literal's context for all prefixes that are used in the XML Literal and that
+	 * are not defined in the XML Literal itself.
 	 */
 	private void insertUsedContextPrefixes() {
 		int unknownPrefixesCount = unknownPrefixesInXMLLiteral.size();
@@ -691,8 +650,7 @@ class SAXFilter implements ContentHandler {
 				// Inherit baseURI and xmlLang from parent
 				this.baseURI = parent.baseURI;
 				this.xmlLang = parent.xmlLang;
-			}
-			else {
+			} else {
 				this.baseURI = documentURI;
 				this.xmlLang = "";
 			}
@@ -706,8 +664,7 @@ class SAXFilter implements ContentHandler {
 		public void setNamespaceMappings(Map<String, String> namespaceMappings) {
 			if (namespaceMappings.isEmpty()) {
 				namespaceMap = null;
-			}
-			else {
+			} else {
 				namespaceMap = new HashMap<>(namespaceMappings);
 			}
 		}

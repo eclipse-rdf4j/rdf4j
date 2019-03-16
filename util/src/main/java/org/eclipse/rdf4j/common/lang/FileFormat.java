@@ -17,9 +17,9 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Abstract representation of a file format. File formats are identified by a {@link #getName() name} and can
- * have one or more associated MIME types, zero or more associated file extensions and can specify a (default)
- * character encoding.
+ * Abstract representation of a file format. File formats are identified by a {@link #getName() name} and can have one
+ * or more associated MIME types, zero or more associated file extensions and can specify a (default) character
+ * encoding.
  * 
  * @author Arjohn Kampman
  */
@@ -35,8 +35,7 @@ public class FileFormat {
 	private final String name;
 
 	/**
-	 * The file format's MIME types. The first item in the list is interpreted as the default MIME type for
-	 * the format.
+	 * The file format's MIME types. The first item in the list is interpreted as the default MIME type for the format.
 	 */
 	private final List<String> mimeTypes = new ArrayList<>(1);
 
@@ -46,8 +45,8 @@ public class FileFormat {
 	private final Charset charset;
 
 	/**
-	 * The file format's file extensions. The first item in the list is interpreted as the default file
-	 * extension for the format.
+	 * The file format's file extensions. The first item in the list is interpreted as the default file extension for
+	 * the format.
 	 */
 	private final List<String> fileExtensions = new ArrayList<>(1);
 
@@ -58,14 +57,10 @@ public class FileFormat {
 	/**
 	 * Creates a new FileFormat object.
 	 * 
-	 * @param name
-	 *        The name of the file format, e.g. "PLAIN TEXT".
-	 * @param mimeType
-	 *        The (default) MIME type of the file format, e.g. <tt>text/plain</tt> for plain text files.
-	 * @param charset
-	 *        The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExtension
-	 *        The (default) file extension for the file format, e.g. <tt>txt</tt> for plain text files.
+	 * @param name          The name of the file format, e.g. "PLAIN TEXT".
+	 * @param mimeType      The (default) MIME type of the file format, e.g. <tt>text/plain</tt> for plain text files.
+	 * @param charset       The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtension The (default) file extension for the file format, e.g. <tt>txt</tt> for plain text files.
 	 */
 	public FileFormat(String name, String mimeType, Charset charset, String fileExtension) {
 		this(name, Arrays.asList(mimeType), charset, Arrays.asList(fileExtension));
@@ -74,15 +69,11 @@ public class FileFormat {
 	/**
 	 * Creates a new FileFormat object.
 	 * 
-	 * @param name
-	 *        The name of the file format, e.g. "PLAIN TEXT".
-	 * @param mimeType
-	 *        The (default) MIME type of the file format, e.g. <tt>text/plain</tt> for plain text files.
-	 * @param charset
-	 *        The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExtensions
-	 *        The file format's file extension(s), e.g. <tt>txt</tt> for plain text files. The first item in
-	 *        the list is interpreted as the default file extension for the format.
+	 * @param name           The name of the file format, e.g. "PLAIN TEXT".
+	 * @param mimeType       The (default) MIME type of the file format, e.g. <tt>text/plain</tt> for plain text files.
+	 * @param charset        The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The file format's file extension(s), e.g. <tt>txt</tt> for plain text files. The first item
+	 *                       in the list is interpreted as the default file extension for the format.
 	 */
 	public FileFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions) {
 		this(name, Arrays.asList(mimeType), charset, fileExtensions);
@@ -91,21 +82,15 @@ public class FileFormat {
 	/**
 	 * Creates a new FileFormat object.
 	 * 
-	 * @param name
-	 *        The name of the file format, e.g. "PLAIN TEXT".
-	 * @param mimeTypes
-	 *        The MIME type(s) of the file format, e.g. <tt>text/plain</tt> for theplain text files. The first
-	 *        item in the list is interpreted as the default MIME type for the format. The supplied list
-	 *        should contain at least one MIME type.
-	 * @param charset
-	 *        The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExtensions
-	 *        The file format's file extension(s), e.g. <tt>txt</tt> for plain text files. The first item in
-	 *        the list is interpreted as the default file extension for the format.
+	 * @param name           The name of the file format, e.g. "PLAIN TEXT".
+	 * @param mimeTypes      The MIME type(s) of the file format, e.g. <tt>text/plain</tt> for theplain text files. The
+	 *                       first item in the list is interpreted as the default MIME type for the format. The supplied
+	 *                       list should contain at least one MIME type.
+	 * @param charset        The default character encoding of the file format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The file format's file extension(s), e.g. <tt>txt</tt> for plain text files. The first item
+	 *                       in the list is interpreted as the default file extension for the format.
 	 */
-	public FileFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions)
-	{
+	public FileFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions) {
 		assert name != null : "name must not be null";
 		assert mimeTypes != null : "mimeTypes must not be null";
 		assert !mimeTypes.isEmpty() : "mimeTypes must not be empty";
@@ -140,11 +125,10 @@ public class FileFormat {
 	}
 
 	/**
-	 * Checks if the specified MIME type matches the FileFormat's default MIME type. The MIME types are
-	 * compared ignoring upper/lower-case differences.
+	 * Checks if the specified MIME type matches the FileFormat's default MIME type. The MIME types are compared
+	 * ignoring upper/lower-case differences.
 	 * 
-	 * @param mimeType
-	 *        The MIME type to compare to the FileFormat's default MIME type.
+	 * @param mimeType The MIME type to compare to the FileFormat's default MIME type.
 	 * @return <tt>true</tt> if the specified MIME type matches the FileFormat's default MIME type.
 	 */
 	public boolean hasDefaultMIMEType(String mimeType) {
@@ -161,11 +145,10 @@ public class FileFormat {
 	}
 
 	/**
-	 * Checks if specified MIME type matches one of the FileFormat's MIME types. The MIME types are compared
-	 * ignoring upper/lower-case differences.
+	 * Checks if specified MIME type matches one of the FileFormat's MIME types. The MIME types are compared ignoring
+	 * upper/lower-case differences.
 	 * 
-	 * @param mimeType
-	 *        The MIME type to compare to the FileFormat's MIME types.
+	 * @param mimeType The MIME type to compare to the FileFormat's MIME types.
 	 * @return <tt>true</tt> if the specified MIME type matches one of the FileFormat's MIME types.
 	 */
 	public boolean hasMIMEType(String mimeType) {
@@ -190,26 +173,24 @@ public class FileFormat {
 	/**
 	 * Gets the default file name extension for this file format.
 	 * 
-	 * @return A file name extension (excluding the dot), e.g. "txt", or <tt>null</tt> if there is no common
-	 *         file extension for the format.
+	 * @return A file name extension (excluding the dot), e.g. "txt", or <tt>null</tt> if there is no common file
+	 *         extension for the format.
 	 */
 	public String getDefaultFileExtension() {
 		if (fileExtensions.isEmpty()) {
 			return null;
-		}
-		else {
+		} else {
 			return fileExtensions.get(0);
 		}
 	}
 
 	/**
-	 * Checks if the specified file name extension matches the FileFormat's default file name extension. The
-	 * file name extension MIME types are compared ignoring upper/lower-case differences.
+	 * Checks if the specified file name extension matches the FileFormat's default file name extension. The file name
+	 * extension MIME types are compared ignoring upper/lower-case differences.
 	 * 
-	 * @param extension
-	 *        The file extension to compare to the FileFormat's file extension.
-	 * @return <tt>true</tt> if the file format has a default file name extension and if it matches the
-	 *         specified extension, <tt>false</tt> otherwise.
+	 * @param extension The file extension to compare to the FileFormat's file extension.
+	 * @return <tt>true</tt> if the file format has a default file name extension and if it matches the specified
+	 *         extension, <tt>false</tt> otherwise.
 	 */
 	public boolean hasDefaultFileExtension(String extension) {
 		String ext = getDefaultFileExtension();
@@ -226,11 +207,10 @@ public class FileFormat {
 	}
 
 	/**
-	 * Checks if the FileFormat's file extension is equal to the specified file extension. The file extensions
-	 * are compared ignoring upper/lower-case differences.
+	 * Checks if the FileFormat's file extension is equal to the specified file extension. The file extensions are
+	 * compared ignoring upper/lower-case differences.
 	 * 
-	 * @param extension
-	 *        The file extension to compare to the FileFormat's file extension.
+	 * @param extension The file extension to compare to the FileFormat's file extension.
 	 * @return <tt>true</tt> if the specified file extension is equal to the FileFormat's file extension.
 	 */
 	public boolean hasFileExtension(String extension) {
@@ -246,8 +226,7 @@ public class FileFormat {
 	/**
 	 * Get the (default) charset for this file format.
 	 * 
-	 * @return the (default) charset for this file format, or null if this format does not have a default
-	 *         charset.
+	 * @return the (default) charset for this file format, or null if this format does not have a default charset.
 	 */
 	public Charset getCharset() {
 		return charset;
@@ -272,7 +251,7 @@ public class FileFormat {
 		}
 
 		if (other instanceof FileFormat) {
-			return name.equalsIgnoreCase(((FileFormat)other).name);
+			return name.equalsIgnoreCase(((FileFormat) other).name);
 		}
 
 		return false;
@@ -317,16 +296,12 @@ public class FileFormat {
 	/**
 	 * Tries to match the specified MIME type with the MIME types of the supplied file formats.
 	 * 
-	 * @param mimeType
-	 *        A MIME type, e.g. "text/plain".
-	 * @param fileFormats
-	 *        The file formats to match the MIME type against.
+	 * @param mimeType    A MIME type, e.g. "text/plain".
+	 * @param fileFormats The file formats to match the MIME type against.
 	 * @return A FileFormat object if the MIME type was recognized, or {@link Optional#empty()} otherwise.
 	 * @see #matchMIMEType(String, Iterable, FileFormat)
 	 */
-	public static <FF extends FileFormat> Optional<FF> matchMIMEType(String mimeType,
-			Iterable<FF> fileFormats)
-	{
+	public static <FF extends FileFormat> Optional<FF> matchMIMEType(String mimeType, Iterable<FF> fileFormats) {
 		// First try to match with the default MIME type
 		for (FF fileFormat : fileFormats) {
 			if (fileFormat.hasDefaultMIMEType(mimeType)) {
@@ -347,16 +322,12 @@ public class FileFormat {
 	/**
 	 * Tries to match the specified file name with the file extensions of the supplied file formats.
 	 * 
-	 * @param fileName
-	 *        A file name.
-	 * @param fileFormats
-	 *        The file formats to match the file name extension against.
+	 * @param fileName    A file name.
+	 * @param fileFormats The file formats to match the file name extension against.
 	 * @return A FileFormat that matches the file name extension, or {@link Optional#empty()} otherwise.
 	 * @see #matchFileName(String, Iterable, FileFormat)
 	 */
-	public static <FF extends FileFormat> Optional<FF> matchFileName(String fileName,
-			Iterable<FF> fileFormats)
-	{
+	public static <FF extends FileFormat> Optional<FF> matchFileName(String fileName, Iterable<FF> fileFormats) {
 		// Strip any directory info from the file name
 		int lastPathSepIdx = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
 		if (lastPathSepIdx >= 0) {

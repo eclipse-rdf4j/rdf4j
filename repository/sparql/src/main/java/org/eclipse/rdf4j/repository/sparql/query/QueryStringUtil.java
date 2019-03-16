@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 import java.util.regex.Matcher;
 
 /**
- * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery},
- * {@link SPARQLGraphQuery} and {@link SPARQLBooleanQuery}.
+ * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
+ * {@link SPARQLBooleanQuery}.
  * 
  * @author Andreas Schwarte
  * @see SPARQLTupleQuery
@@ -44,8 +44,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced, with the
-	 * binding names included in the SELECT clause.
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced, with the binding
+	 * names included in the SELECT clause.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -64,8 +64,7 @@ public class QueryStringUtil {
 			String replacement = valueToString(bindings.getValue(name));
 			if (replacement != null) {
 				String pattern = "[\\?\\$]" + name + "(?=\\W)";
-				select = select.replaceAll(pattern,
-						"(" + Matcher.quoteReplacement(replacement) + " as ?" + name + ")");
+				select = select.replaceAll(pattern, "(" + Matcher.quoteReplacement(replacement) + " as ?" + name + ")");
 
 				// we use Matcher.quoteReplacement to make sure things like newlines
 				// in literal values
@@ -77,8 +76,7 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
-	 * value.
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -89,8 +87,7 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
-	 * value.
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -101,8 +98,7 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
-	 * value.
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -119,7 +115,7 @@ public class QueryStringUtil {
 			if (replacement != null) {
 				String pattern = "[\\?\\$]" + name + "(?=\\W)";
 				// we use Matcher.quoteReplacement to make sure things like newlines
-				// in literal values  are preserved
+				// in literal values are preserved
 				qry = qry.replaceAll(pattern, Matcher.quoteReplacement(replacement));
 			}
 		}
@@ -151,12 +147,10 @@ public class QueryStringUtil {
 		if (value == null)
 			return sb.append("UNDEF"); // see grammar for BINDINGs def
 		else if (value instanceof IRI) {
-			return appendValue(sb, (IRI)value);
-		}
-		else if (value instanceof Literal) {
-			return appendValue(sb, (Literal)value);
-		}
-		else {
+			return appendValue(sb, (IRI) value);
+		} else if (value instanceof Literal) {
+			return appendValue(sb, (Literal) value);
+		} else {
 			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
 		}
 	}
@@ -174,8 +168,7 @@ public class QueryStringUtil {
 		if (Literals.isLanguageLiteral(lit)) {
 			sb.append('@');
 			sb.append(lit.getLanguage().get());
-		}
-		else if (!lit.getDatatype().equals(XMLSchema.STRING)) {
+		} else if (!lit.getDatatype().equals(XMLSchema.STRING)) {
 			// Don't append type if it's xsd:string, this keeps it compatible with RDF 1.0
 			sb.append("^^<");
 			sb.append(lit.getDatatype().stringValue());

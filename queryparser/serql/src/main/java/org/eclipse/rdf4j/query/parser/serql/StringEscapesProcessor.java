@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.query.parser.serql.ast.ASTString;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Processes escape sequences in strings, replacing the escape sequence with their actual value. Escape
- * sequences for SPARQL are documented in section
- * <a href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape sequences in strings</a>.
+ * Processes escape sequences in strings, replacing the escape sequence with their actual value. Escape sequences for
+ * SPARQL are documented in section <a href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape sequences
+ * in strings</a>.
  * 
  * @author Arjohn Kampman
  */
@@ -25,19 +25,14 @@ class StringEscapesProcessor {
 	/**
 	 * Processes escape sequences in ASTString objects.
 	 * 
-	 * @param qc
-	 *        The query that needs to be processed.
-	 * @throws MalformedQueryException
-	 *         If an invalid escape sequence was found.
+	 * @param qc The query that needs to be processed.
+	 * @throws MalformedQueryException If an invalid escape sequence was found.
 	 */
-	public static void process(ASTQueryContainer qc)
-		throws MalformedQueryException
-	{
+	public static void process(ASTQueryContainer qc) throws MalformedQueryException {
 		StringProcessor visitor = new StringProcessor();
 		try {
 			qc.jjtAccept(visitor, null);
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}
@@ -48,15 +43,12 @@ class StringEscapesProcessor {
 		}
 
 		@Override
-		public Object visit(ASTString stringNode, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTString stringNode, Object data) throws VisitorException {
 			String value = stringNode.getValue();
 			try {
 				value = SeRQLUtil.decodeString(value);
 				stringNode.setValue(value);
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				// Invalid escape sequence
 				throw new VisitorException(e.getMessage());
 			}
@@ -65,15 +57,12 @@ class StringEscapesProcessor {
 		}
 
 		@Override
-		public Object visit(ASTLiteral literalNode, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTLiteral literalNode, Object data) throws VisitorException {
 			String label = literalNode.getLabel();
 			try {
 				label = SeRQLUtil.decodeString(label);
 				literalNode.setLabel(label);
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				// Invalid escape sequence
 				throw new VisitorException(e.getMessage());
 			}

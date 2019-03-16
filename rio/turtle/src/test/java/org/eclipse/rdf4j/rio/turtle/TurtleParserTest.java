@@ -93,8 +93,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(new StringReader(data), baseURI);
 			fail("default config should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 	}
@@ -108,8 +107,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).hasSize(1);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(1).overridingErrorMessage(
-				"only syntactically legal triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(1)
+				.overridingErrorMessage("only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -122,8 +121,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).isEmpty();
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(3).overridingErrorMessage(
-				"all triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(3)
+				.overridingErrorMessage("all triples should have been reported");
 	}
 
 	@Test
@@ -133,8 +132,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(new StringReader(data), baseURI);
 			fail("default config should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 	}
@@ -146,8 +144,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(new StringReader(data), baseURI);
 			fail("default config should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 	}
@@ -161,8 +158,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).hasSize(2);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(2).overridingErrorMessage(
-				"only syntactically legal triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(2)
+				.overridingErrorMessage("only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -173,8 +170,7 @@ public class TurtleParserTest {
 			parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
 			parser.parse(new StringReader(data), baseURI);
 			fail("literal as datatype should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 	}
@@ -189,8 +185,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).isEmpty();
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(3).overridingErrorMessage(
-				"all triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(3)
+				.overridingErrorMessage("all triples should have been reported");
 	}
 
 	@Test
@@ -201,8 +197,7 @@ public class TurtleParserTest {
 			parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
 			parser.parse(new StringReader(data), baseURI);
 			fail("literal as datatype should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 	}
@@ -215,8 +210,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(new StringReader(data), baseURI);
 			fail("default config should result in fatal error / parse exception");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 		}
 
@@ -231,8 +225,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).hasSize(1);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(1).overridingErrorMessage(
-				"only syntactically legal triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(1)
+				.overridingErrorMessage("only syntactically legal triples should have been reported");
 
 	}
 
@@ -246,8 +240,8 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getErrors()).isEmpty();
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(2).overridingErrorMessage(
-				"all triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(2)
+				.overridingErrorMessage("all triples should have been reported");
 
 	}
 
@@ -275,8 +269,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(in, baseURI);
 			fail("expected to fail parsing input file");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			// expected
 			assertFalse(errorCollector.getFatalErrors().isEmpty());
 			final String error = errorCollector.getFatalErrors().get(0);
@@ -375,8 +368,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
@@ -389,8 +381,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
@@ -403,8 +394,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
@@ -417,8 +407,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
@@ -451,7 +440,7 @@ public class TurtleParserTest {
 		assertEquals(vf.createIRI("http://www.example.com/#"), stmt1.getSubject());
 		assertEquals(vf.createIRI("http://www.example.com/ns/#document-about"), stmt1.getPredicate());
 
-		Resource res = (Resource)stmt1.getObject();
+		Resource res = (Resource) stmt1.getObject();
 
 		String resourceUrl = res.stringValue();
 
@@ -477,8 +466,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			fail("Did not catch illegal new line");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			assertThat(e.getMessage().startsWith("Illegal carriage return or new line in literal"));
 		}
 	}
@@ -491,8 +479,7 @@ public class TurtleParserTest {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 1);
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			fail("New line is legal inside triple quoted literal");
 		}
 	}

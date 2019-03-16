@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.rio.helpers;
 import java.util.Iterator;
 
 /**
- * Helper class for quickly iterating over a String and receiving each character code point (taking care to
- * handle surrogate pairs correctly).
+ * Helper class for quickly iterating over a String and receiving each character code point (taking care to handle
+ * surrogate pairs correctly).
  * 
  * @author Jeen Broekstra
  * @see CodePointSequence

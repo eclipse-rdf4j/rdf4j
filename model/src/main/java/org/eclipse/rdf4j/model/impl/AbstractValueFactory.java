@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value}
- * creation methods by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and
- * type-optimized subclasses (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
+ * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value} creation methods
+ * by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and type-optimized subclasses
+ * (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra
@@ -37,8 +37,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 public abstract class AbstractValueFactory implements ValueFactory {
 
 	/**
-	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of
-	 * this class)
+	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of this class)
 	 */
 	private static long lastBNodePrefixUID = 0;
 
@@ -51,8 +50,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	static {
 		try {
 			datatypeFactory = DatatypeFactory.newInstance();
-		}
-		catch (DatatypeConfigurationException e) {
+		} catch (DatatypeConfigurationException e) {
 			throw new Error("Could not instantiate javax.xml.datatype.DatatypeFactory", e);
 		}
 	}
@@ -171,8 +169,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#INT} as
-	 * parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#INT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(int value) {
@@ -196,8 +193,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#FLOAT} as
-	 * parameters.
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#FLOAT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(float value) {
@@ -205,8 +201,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#DOUBLE} as
-	 * parameters.
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#DOUBLE} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(double value) {
@@ -235,17 +230,17 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	protected Literal createNumericLiteral(Number number, IRI datatype) {
 		if (number instanceof BigDecimal) {
-			return new DecimalLiteral((BigDecimal)number, datatype);
+			return new DecimalLiteral((BigDecimal) number, datatype);
 		}
 		if (number instanceof BigInteger) {
-			return new IntegerLiteral((BigInteger)number, datatype);
+			return new IntegerLiteral((BigInteger) number, datatype);
 		}
 		return new NumericLiteral(number, datatype);
 	}
 
 	/**
-	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar
-	 * and the appropriate datatype as parameters.
+	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar and the
+	 * appropriate datatype as parameters.
 	 * 
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()

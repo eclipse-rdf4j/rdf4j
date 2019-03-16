@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.rio;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * A parse exception that can be thrown by a parser when it encounters an error from which it cannot or
- * doesn't want to recover.
+ * A parse exception that can be thrown by a parser when it encounters an error from which it cannot or doesn't want to
+ * recover.
  */
 public class RDFParseException extends RDF4JException {
 
@@ -32,8 +32,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public RDFParseException(String msg) {
 		this(msg, -1, -1);
@@ -42,12 +41,9 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param msg      An error message.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public RDFParseException(String msg, long lineNo, long columnNo) {
 		super(msg + getLocationString(lineNo, columnNo));
@@ -56,39 +52,33 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
-	 * from the supplied source exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
+	 * supplied source exception.
 	 * 
-	 * @param t
-	 *        The source exception.
+	 * @param t The source exception.
 	 */
 	public RDFParseException(Throwable t) {
 		this(t, -1, -1);
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
-	 * from the supplied source exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
+	 * supplied source exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param t
-	 *        The source exception.
+	 * @param msg An error message.
+	 * @param t   The source exception.
 	 */
 	public RDFParseException(String msg, Throwable t) {
 		this(msg, t, -1, -1);
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
-	 * from the supplied source exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
+	 * supplied source exception.
 	 * 
-	 * @param t
-	 *        The source exception.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param t        The source exception.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public RDFParseException(Throwable t, long lineNo, long columnNo) {
 		super(t.getMessage() + getLocationString(lineNo, columnNo), t);
@@ -97,15 +87,12 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
-	 * from the supplied source exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
+	 * supplied source exception.
 	 * 
-	 * @param t
-	 *        The source exception.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param t        The source exception.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public RDFParseException(String msg, Throwable t, long lineNo, long columnNo) {
 		super(msg + getLocationString(lineNo, columnNo), t);
@@ -136,9 +123,9 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a string to that shows the specified line and column number. Negative line numbers are
-	 * interpreted as unknowns. Example output: "[line 12, column 34]". If the specified line number is
-	 * negative, this method returns an empty string.
+	 * Creates a string to that shows the specified line and column number. Negative line numbers are interpreted as
+	 * unknowns. Example output: "[line 12, column 34]". If the specified line number is negative, this method returns
+	 * an empty string.
 	 */
 	public static String getLocationString(long lineNo, long columnNo) {
 		if (lineNo < 0) {

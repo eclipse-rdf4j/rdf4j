@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.util.iterators.FilterIterator;
 /**
  * Basic implementation of Graph.
  * 
- * @deprecated since release 2.7.0. Use a {@link org.eclipse.rdf4j.model.Model} implementation (e.g.
- *             {@link TreeModel} or {@link LinkedHashModel} instead.
+ * @deprecated since release 2.7.0. Use a {@link org.eclipse.rdf4j.model.Model} implementation (e.g. {@link TreeModel}
+ *             or {@link LinkedHashModel} instead.
  * @author Arjohn Kampman
  */
 @Deprecated
@@ -91,8 +91,7 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 
 		if (contexts.length == 0) {
 			graphChanged = add(valueFactory.createStatement(subj, pred, obj));
-		}
-		else {
+		} else {
 			for (Resource context : contexts) {
 				graphChanged |= add(valueFactory.createStatement(subj, pred, obj, context));
 			}
@@ -107,15 +106,11 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 		return new PatternIterator(iterator(), subj, pred, obj, contexts);
 	}
 
-	private void writeObject(ObjectOutputStream out)
-		throws IOException
-	{
+	private void writeObject(ObjectOutputStream out) throws IOException {
 		out.defaultWriteObject();
 	}
 
-	private void readObject(ObjectInputStream in)
-		throws IOException, ClassNotFoundException
-	{
+	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
 		in.defaultReadObject();
 		setValueFactory(SimpleValueFactory.getInstance());
 	}
@@ -135,8 +130,7 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 		private Resource[] contexts;
 
 		public PatternIterator(Iterator<? extends Statement> iter, Resource subj, IRI pred, Value obj,
-				Resource... contexts)
-		{
+				Resource... contexts) {
 			super(iter);
 			this.subj = subj;
 			this.pred = pred;
@@ -159,8 +153,7 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 			if (contexts.length == 0) {
 				// Any context matches
 				return true;
-			}
-			else {
+			} else {
 				// Accept if one of the contexts from the pattern matches
 				Resource stContext = st.getContext();
 

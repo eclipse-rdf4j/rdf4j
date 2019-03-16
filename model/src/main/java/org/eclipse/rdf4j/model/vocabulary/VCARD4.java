@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the vCard Ontology.
  *
@@ -240,7 +239,6 @@ public class VCARD4 {
 	/** vcard:X400 */
 	@Deprecated
 	public static final IRI X400;
-
 
 	// Properties
 	/** vcard:additional-name */
@@ -503,7 +501,6 @@ public class VCARD4 {
 	/** vcard:value */
 	public static final IRI VALUE;
 
-
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 
@@ -656,4 +653,3 @@ public class VCARD4 {
 		VALUE = factory.createIRI(NAMESPACE, "value");
 	}
 }
-

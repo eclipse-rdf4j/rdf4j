@@ -50,9 +50,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public boolean hasNext()
-		throws X
-	{
+	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -65,9 +63,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
@@ -76,9 +72,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	}
 
 	@Override
-	public void remove()
-		throws X
-	{
+	public void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException("Iteration has been closed");
 		}

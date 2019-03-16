@@ -34,7 +34,7 @@ public interface HttpClientSessionManager extends SesameClient {
 	 */
 	@Override
 	RDF4JProtocolSession createRDF4JProtocolSession(String serverURL);
-	
+
 	/**
 	 * Closes any remaining connections and threads used by the sessions created by this object.
 	 */

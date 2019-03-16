@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.util.iterators.Iterators;
 
 /**
- * Wraps an Iteration as an Iterator. If the Iteration is a CloseableIteration then this.close() will close it
- * and it will also be automatically closed when this Iterator is exhausted.
+ * Wraps an Iteration as an Iterator. If the Iteration is a CloseableIteration then this.close() will close it and it
+ * will also be automatically closed when this Iterator is exhausted.
  * 
  * @author Mark
  */
@@ -49,9 +49,7 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 	}
 
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		Iterations.closeCloseable(iteration);
 	}
 }

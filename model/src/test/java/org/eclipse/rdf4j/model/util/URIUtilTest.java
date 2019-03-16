@@ -18,9 +18,7 @@ import org.junit.Test;
 public class URIUtilTest {
 
 	@Test
-	public void testIsCorrectURISplit()
-		throws Exception
-	{
+	public void testIsCorrectURISplit() throws Exception {
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", ""));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1"));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1/2"));
@@ -45,9 +43,7 @@ public class URIUtilTest {
 	}
 
 	@Test
-	public void testIsValidURIReference()
-		throws Exception
-	{
+	public void testIsValidURIReference() throws Exception {
 		assertTrue(URIUtil.isValidURIReference("http://example.org/foo/bar/"));
 		assertTrue("whitespace should be allowed",
 				URIUtil.isValidURIReference("http://example.org/foo/bar with a lot of space/"));

@@ -27,14 +27,12 @@ public class ASTNot extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTBooleanExpr getOperand() {
-		return (ASTBooleanExpr)children.get(0);
+		return (ASTBooleanExpr) children.get(0);
 	}
 
 	public void setOperand(ASTBooleanExpr operand) {

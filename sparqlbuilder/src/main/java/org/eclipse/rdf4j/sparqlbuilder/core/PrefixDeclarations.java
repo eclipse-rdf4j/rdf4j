@@ -11,9 +11,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core;
 /**
  * A collection of SPARQL Prefix declarations
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#prefNames">
- *      SPARQL Prefix</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#prefNames"> SPARQL Prefix</a>
  */
 public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	/**
@@ -24,7 +22,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	 */
 	public PrefixDeclarations addPrefix(Prefix... prefixes) {
 		addElements(prefixes);
-		
+
 		return this;
 	}
 }

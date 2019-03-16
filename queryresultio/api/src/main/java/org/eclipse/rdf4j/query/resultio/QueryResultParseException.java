@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.resultio;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * A parse exception that can be thrown by a query result parser when it encounters an error from which it
- * cannot or doesn't want to recover.
+ * A parse exception that can be thrown by a query result parser when it encounters an error from which it cannot or
+ * doesn't want to recover.
  * 
  * @author Arjohn Kampman
  */
@@ -38,8 +38,7 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public QueryResultParseException(String msg) {
 		super(msg);
@@ -48,10 +47,8 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param t
-	 *        The source exception.
+	 * @param msg An error message.
+	 * @param t   The source exception.
 	 */
 	public QueryResultParseException(String msg, Throwable t) {
 		super(msg, t);
@@ -60,12 +57,9 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param msg      An error message.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public QueryResultParseException(String msg, long lineNo, long columnNo) {
 		super(msg);
@@ -74,26 +68,22 @@ public class QueryResultParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will
-	 * inherit its message from the supplied source exception.
+	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will inherit
+	 * its message from the supplied source exception.
 	 * 
-	 * @param t
-	 *        The source exception.
+	 * @param t The source exception.
 	 */
 	public QueryResultParseException(Throwable t) {
 		super(t);
 	}
 
 	/**
-	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will
-	 * inherit its message from the supplied source exception.
+	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will inherit
+	 * its message from the supplied source exception.
 	 * 
-	 * @param t
-	 *        The source exception.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param t        The source exception.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public QueryResultParseException(Throwable t, long lineNo, long columnNo) {
 		super(t);
@@ -104,14 +94,10 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param t
-	 *        The source exception.
-	 * @param lineNo
-	 *        A line number associated with the message.
-	 * @param columnNo
-	 *        A column number associated with the message.
+	 * @param msg      An error message.
+	 * @param t        The source exception.
+	 * @param lineNo   A line number associated with the message.
+	 * @param columnNo A column number associated with the message.
 	 */
 	public QueryResultParseException(String msg, Throwable t, long lineNo, long columnNo) {
 		super(msg, t);

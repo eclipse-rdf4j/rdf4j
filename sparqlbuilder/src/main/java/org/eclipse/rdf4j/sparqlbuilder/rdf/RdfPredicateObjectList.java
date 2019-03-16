@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.StandardQueryElementCollection;
 /**
  * A Predicate-Object List
  * 
- * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists">
- * 		SPARQL Predicate-Object List</a>
+ * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> SPARQL Predicate-Object List</a>
  */
 public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfObject> {
 	RdfPredicateObjectList(RdfPredicate predicate, RdfObject... objects) {
@@ -22,7 +21,7 @@ public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfOb
 		printNameIfEmpty(false);
 		and(objects);
 	}
-	
+
 	/**
 	 * Add {@link RdfObject} instances to this predicate-object list
 	 * 
@@ -32,7 +31,7 @@ public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfOb
 	 */
 	public RdfPredicateObjectList and(RdfObject... objects) {
 		addElements(objects);
-		
+
 		return this;
 	}
 }

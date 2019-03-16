@@ -19,14 +19,14 @@ import org.slf4j.LoggerFactory;
 /**
  * Superclass for {@link ParserConfig} and {@link WriterConfig}.
  * <p>
- * A RioConfig is a container for several {@link RioSetting} objects, each of which has a default value. You
- * can override the default value for a {@link RioSetting} in one of two ways:
+ * A RioConfig is a container for several {@link RioSetting} objects, each of which has a default value. You can
+ * override the default value for a {@link RioSetting} in one of two ways:
  * <ol>
  * <li>You can programmatically set its value using {@link RioConfig#set(RioSetting, Object)}</li>
- * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The
- * property name should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this
- * method is not supported by every type of {@link RioSetting}: boolean values, strings, and numeric (long)
- * values are supported, but more complex types are not</li>
+ * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The property
+ * name should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this method is not supported
+ * by every type of {@link RioSetting}: boolean values, strings, and numeric (long) values are supported, but more
+ * complex types are not</li>
  * </ol>
  * 
  * @author Peter Ansell
@@ -44,8 +44,8 @@ public class RioConfig implements Serializable {
 	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<>();
 
 	/**
-	 * A map containing mappings from settings to system properties that have been discovered since the last
-	 * call to {@link #useDefaults()}.
+	 * A map containing mappings from settings to system properties that have been discovered since the last call to
+	 * {@link #useDefaults()}.
 	 */
 	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<>();
 
@@ -61,8 +61,7 @@ public class RioConfig implements Serializable {
 	/**
 	 * Return the value for a given {@link RioSetting} or the default value if it has not been set.
 	 * 
-	 * @param setting
-	 *        The {@link RioSetting} to fetch a value for.
+	 * @param setting The {@link RioSetting} to fetch a value for.
 	 * @return The value for the parser setting, or the default value if it is not set.
 	 */
 	@SuppressWarnings("unchecked")
@@ -78,10 +77,9 @@ public class RioConfig implements Serializable {
 			if (stringRepresentation != null) {
 				try {
 					T typesafeSystemProperty = setting.convert(stringRepresentation);
-					systemPropertyCache.put((RioSetting<Object>)setting, typesafeSystemProperty);
+					systemPropertyCache.put((RioSetting<Object>) setting, typesafeSystemProperty);
 					return typesafeSystemProperty;
-				}
-				catch (RioConfigurationException e) {
+				} catch (RioConfigurationException e) {
 					log.trace(e.getMessage(), e);
 				}
 			}
@@ -91,33 +89,29 @@ public class RioConfig implements Serializable {
 			return setting.getDefaultValue();
 		}
 
-		return (T)result;
+		return (T) result;
 	}
 
 	/**
-	 * Sets a {@link RioSetting} to have a new value. If the value is null, the parser setting is removed and
-	 * the default will be used instead.
+	 * Sets a {@link RioSetting} to have a new value. If the value is null, the parser setting is removed and the
+	 * default will be used instead.
 	 * 
-	 * @param setting
-	 *        The setting to set a new value for.
-	 * @param value
-	 *        The value for the parser setting, or null to reset the parser setting to use the default value.
-	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @param setting The setting to set a new value for.
+	 * @param value   The value for the parser setting, or null to reset the parser setting to use the default value.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	@SuppressWarnings("unchecked")
 	public <T extends Object> RioConfig set(RioSetting<T> setting, T value) {
 
 		if (value == null) {
 			settings.remove(setting);
-		}
-		else {
-			Object putIfAbsent = settings.putIfAbsent((RioSetting<Object>)setting, value);
+		} else {
+			Object putIfAbsent = settings.putIfAbsent((RioSetting<Object>) setting, value);
 
 			if (putIfAbsent != null) {
 				// override the previous setting anyway, putIfAbsent just gives us
 				// information about whether it was previously set or not
-				settings.put((RioSetting<Object>)setting, value);
+				settings.put((RioSetting<Object>) setting, value);
 
 				// this.log.trace("Overriding previous setting for {}",
 				// setting.getKey());
@@ -132,8 +126,7 @@ public class RioConfig implements Serializable {
 	 * <p>
 	 * A setting can be set via {@link RioConfig#set(RioSetting, Object)}, or via use of a system property.
 	 * 
-	 * @param setting
-	 *        The setting to check for.
+	 * @param setting The setting to check for.
 	 * @return True if the setting has been explicitly set, or false otherwise.
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
@@ -148,8 +141,7 @@ public class RioConfig implements Serializable {
 	/**
 	 * Resets all settings back to their default values.
 	 * 
-	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
-	 *         calls.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	public RioConfig useDefaults() {
 		settings.clear();

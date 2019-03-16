@@ -61,95 +61,70 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	}
 
 	@Override
-	public void write(boolean value)
-		throws IOException
-	{
+	public void write(boolean value) throws IOException {
 		try {
 			handleBoolean(value);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			if (e.getCause() != null && e.getCause() instanceof IOException) {
-				throw (IOException)e.getCause();
-			}
-			else {
+				throw (IOException) e.getCause();
+			} else {
 				throw new IOException(e);
 			}
 		}
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		try {
 			writer.write(Boolean.toString(value));
 			writer.flush();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new BooleanQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void startDocument()
-		throws QueryResultHandlerException
-	{
+	public void startDocument() throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 
 	@Override
-	public void handleStylesheet(String stylesheetUrl)
-		throws QueryResultHandlerException
-	{
+	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 
 	@Override
-	public void startHeader()
-		throws QueryResultHandlerException
-	{
+	public void startHeader() throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 
 	@Override
-	public void endHeader()
-		throws QueryResultHandlerException
-	{
+	public void endHeader() throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle tuple results");
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle tuple results");
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle tuple results");
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// Ignored by BooleanTextWriter
 	}
 }

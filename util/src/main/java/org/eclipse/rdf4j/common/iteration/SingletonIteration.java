@@ -43,9 +43,7 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	}
 
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		E result = value.getAndSet(null);
 		if (result == null) {
 			close();
@@ -60,13 +58,10 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	}
 
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			value.set(null);
 		}
 	}

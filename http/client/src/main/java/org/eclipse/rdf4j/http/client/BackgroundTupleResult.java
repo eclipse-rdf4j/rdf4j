@@ -19,15 +19,12 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  * @deprecated Use {@link org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult} instead.
  */
 @Deprecated
-public class BackgroundTupleResult extends org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult
-{
+public class BackgroundTupleResult extends org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult {
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
 		this(new QueueCursor<BindingSet>(10), parser, in);
 	}
 
-	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser,
-			InputStream in)
-	{
+	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {
 		super(queue, parser, in);
 	}
 

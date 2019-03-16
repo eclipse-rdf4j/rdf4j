@@ -27,30 +27,22 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class RDFXMLHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
 		return writeRDFXML(unknownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
 		return writeRDFXML(knownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
 		return writeRDFXML(unknownLanguageStatements);
 	}
 
 	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeRDFXML(knownLanguageStatements);
 	}
 
@@ -66,9 +58,7 @@ public class RDFXMLHandlingTest extends AbstractParserHandlingTest {
 	 * @return An {@link InputStream} containing the results.
 	 * @throws RDFHandlerException
 	 */
-	private InputStream writeRDFXML(Model statements)
-		throws RDFHandlerException
-	{
+	private InputStream writeRDFXML(Model statements) throws RDFHandlerException {
 		StringWriter writer = new StringWriter();
 
 		RDFWriter rdfxmlWriter = new RDFXMLWriter(writer);

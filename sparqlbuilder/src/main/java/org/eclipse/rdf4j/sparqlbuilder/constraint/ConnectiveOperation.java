@@ -9,8 +9,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 /**
- * Represents a SPARQL connective operation, which takes an arbitrary number of
- * arguments
+ * Represents a SPARQL connective operation, which takes an arbitrary number of arguments
  */
 class ConnectiveOperation extends Operation<ConnectiveOperation> {
 	ConnectiveOperation(ConnectiveOperator operator) {

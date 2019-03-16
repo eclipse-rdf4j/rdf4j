@@ -59,9 +59,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public String render(TupleExpr theExpr)
-		throws Exception
-	{
+	public String render(TupleExpr theExpr) throws Exception {
 		theExpr.visit(this);
 
 		if (mBuffer.length() > 0) {
@@ -75,8 +73,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 		if (!mProjection.isEmpty()) {
 			if (isSelect()) {
 				aQuery.append("select ");
-			}
-			else {
+			} else {
 				aQuery.append("construct ");
 			}
 
@@ -98,19 +95,16 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 				if (isSPOElemList(aList)) {
 					if (!aFirst) {
 						aQuery.append(",\n");
-					}
-					else {
+					} else {
 						aFirst = false;
 					}
 
 					aQuery.append(renderPattern(toStatementPattern(aList)));
-				}
-				else {
+				} else {
 					for (ProjectionElem aElem : aList.getElements()) {
 						if (!aFirst) {
 							aQuery.append(", ");
-						}
-						else {
+						} else {
 							aFirst = false;
 						}
 
@@ -120,11 +114,11 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 						if (!aElem.getSourceName().equals(aElem.getTargetName())
 								|| (mExtensions.containsKey(aElem.getTargetName())
-										&& !mExtensions.containsKey(aElem.getSourceName())))
-						{
-							aQuery.append(" as ").append(mExtensions.containsKey(aElem.getTargetName())
-									? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
-									: aElem.getTargetName());
+										&& !mExtensions.containsKey(aElem.getSourceName()))) {
+							aQuery.append(" as ")
+									.append(mExtensions.containsKey(aElem.getTargetName())
+											? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
+											: aElem.getTargetName());
 						}
 					}
 				}
@@ -168,8 +162,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 			for (OrderElem aOrder : mOrdering) {
 				if (!aFirst) {
 					aQuery.append(", ");
-				}
-				else {
+				} else {
 					aFirst = false;
 				}
 
@@ -177,8 +170,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 				aQuery.append(" ");
 				if (aOrder.isAscending()) {
 					aQuery.append("asc");
-				}
-				else {
+				} else {
 					aQuery.append("desc");
 				}
 			}
@@ -196,18 +188,14 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * Renders the tuple expression as a query string. It creates a new SerqlTupleExprRenderer rather than
-	 * reusing this one.
+	 * Renders the tuple expression as a query string. It creates a new SerqlTupleExprRenderer rather than reusing this
+	 * one.
 	 * 
-	 * @param theExpr
-	 *        the expr to render
+	 * @param theExpr the expr to render
 	 * @return the rendered expression
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	private String renderTupleExpr(TupleExpr theExpr)
-		throws Exception
-	{
+	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
 		SerqlTupleExprRenderer aRenderer = new SerqlTupleExprRenderer();
 
 		aRenderer.mProjection = new ArrayList<>(mProjection);
@@ -225,9 +213,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Union theOp)
-		throws Exception
-	{
+	public void meet(Union theOp) throws Exception {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
@@ -238,9 +224,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Difference theOp)
-		throws Exception
-	{
+	public void meet(Difference theOp) throws Exception {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
@@ -251,9 +235,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Intersection theOp)
-		throws Exception
-	{
+	public void meet(Intersection theOp) throws Exception {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
@@ -263,18 +245,13 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * Render a StatementPattern
 	 * 
-	 * @param thePattern
-	 *        the pattern to render
+	 * @param thePattern the pattern to render
 	 * @return the rendered pattern
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	private String renderPattern(StatementPattern thePattern)
-		throws Exception
-	{
-		return "{" + renderValueExpr(thePattern.getSubjectVar()) + "} "
-				+ renderValueExpr(thePattern.getPredicateVar()) + " " + "{"
-				+ renderValueExpr(thePattern.getObjectVar()) + "} ";
+	private String renderPattern(StatementPattern thePattern) throws Exception {
+		return "{" + renderValueExpr(thePattern.getSubjectVar()) + "} " + renderValueExpr(thePattern.getPredicateVar())
+				+ " " + "{" + renderValueExpr(thePattern.getObjectVar()) + "} ";
 
 	}
 
@@ -282,9 +259,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	protected String renderValueExpr(final ValueExpr theExpr)
-		throws Exception
-	{
+	protected String renderValueExpr(final ValueExpr theExpr) throws Exception {
 		return mValueExprRenderer.render(theExpr);
 	}
 
@@ -292,9 +267,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Join theJoin)
-		throws Exception
-	{
+	public void meet(Join theJoin) throws Exception {
 		theJoin.getLeftArg().visit(this);
 
 		theJoin.getRightArg().visit(this);
@@ -304,9 +277,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LeftJoin theJoin)
-		throws Exception
-	{
+	public void meet(LeftJoin theJoin) throws Exception {
 
 		theJoin.getLeftArg().visit(this);
 
@@ -327,9 +298,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(StatementPattern thePattern)
-		throws Exception
-	{
+	public void meet(StatementPattern thePattern) throws Exception {
 		mJoinBuffer.append(renderPattern(thePattern)).append(",\n");
 	}
 
@@ -337,13 +306,10 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Filter theFilter)
-		throws Exception
-	{
+	public void meet(final Filter theFilter) throws Exception {
 		if (mFilter == null) {
 			mFilter = theFilter.getCondition();
-		}
-		else {
+		} else {
 			mFilter = new And(mFilter, theFilter.getCondition());
 		}
 

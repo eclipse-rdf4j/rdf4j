@@ -20,9 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A registry that stores services by some key. Upon initialization, the registry searches for service
- * description files at <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself
- * accordingly.
+ * A registry that stores services by some key. Upon initialization, the registry searches for service description files
+ * at <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself accordingly.
  * 
  * @see javax.imageio.spi.ServiceRegistry
  * @author Arjohn Kampman
@@ -50,25 +49,22 @@ public abstract class ServiceRegistry<K, S> {
 					}
 
 					logger.debug("Registered service class {}", service.getClass().getName());
-				}
-				else {
+				} else {
 					break;
 				}
-			}
-			catch (Error e) {
+			} catch (Error e) {
 				logger.error("Failed to instantiate service", e);
 			}
 		}
 	}
 
 	/**
-	 * Adds a service to the registry. Any service that is currently registered for the same key (as specified
-	 * by {@link #getKey(Object)}) will be replaced with the new service.
+	 * Adds a service to the registry. Any service that is currently registered for the same key (as specified by
+	 * {@link #getKey(Object)}) will be replaced with the new service.
 	 * 
-	 * @param service
-	 *        The service that should be added to the registry.
-	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there
-	 *         was no such service.
+	 * @param service The service that should be added to the registry.
+	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there was no
+	 *         such service.
 	 */
 	public Optional<S> add(S service) {
 		return Optional.ofNullable(services.put(getKey(service), service));
@@ -77,8 +73,7 @@ public abstract class ServiceRegistry<K, S> {
 	/**
 	 * Removes a service from the registry.
 	 * 
-	 * @param service
-	 *        The service be removed from the registry.
+	 * @param service The service be removed from the registry.
 	 */
 	public void remove(S service) {
 		services.remove(getKey(service));
@@ -87,8 +82,7 @@ public abstract class ServiceRegistry<K, S> {
 	/**
 	 * Gets the service for the specified key, if any.
 	 * 
-	 * @param key
-	 *        The key identifying which service to get.
+	 * @param key The key identifying which service to get.
 	 * @return The service for the specified key, or {@link Optional#empty()} if no such service is avaiable.
 	 */
 	public Optional<S> get(K key) {
@@ -98,8 +92,7 @@ public abstract class ServiceRegistry<K, S> {
 	/**
 	 * Checks whether a service for the specified key is available.
 	 * 
-	 * @param key
-	 *        The key identifying which service to search for.
+	 * @param key The key identifying which service to search for.
 	 * @return <tt>true</tt> if a service for the specific key is available, <tt>false</tt> otherwise.
 	 */
 	public boolean has(K key) {
@@ -127,8 +120,7 @@ public abstract class ServiceRegistry<K, S> {
 	/**
 	 * Gets the key for the specified service.
 	 * 
-	 * @param service
-	 *        The service to get the key for.
+	 * @param service The service to get the key for.
 	 * @return The key for the specified service.
 	 */
 	protected abstract K getKey(S service);

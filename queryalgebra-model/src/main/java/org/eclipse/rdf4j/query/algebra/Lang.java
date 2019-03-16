@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * The LANG function, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#func-lang">SPARQL Query
- * Language for RDF</a>.
+ * The LANG function, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#func-lang">SPARQL Query Language for
+ * RDF</a>.
  * 
  * @author Arjohn Kampman
  */
@@ -31,9 +31,7 @@ public class Lang extends UnaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -49,6 +47,6 @@ public class Lang extends UnaryValueOperator {
 
 	@Override
 	public Lang clone() {
-		return (Lang)super.clone();
+		return (Lang) super.clone();
 	}
 }

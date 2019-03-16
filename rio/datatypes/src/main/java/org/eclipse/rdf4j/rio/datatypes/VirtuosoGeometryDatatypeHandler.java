@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
  */
 public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 
-	private static final IRI VIRTRDF_GEOMETRY = SimpleValueFactory.getInstance().createIRI(
-			"http://www.openlinksw.com/schemas/virtrdf#", "Geometry");
+	private static final IRI VIRTRDF_GEOMETRY = SimpleValueFactory.getInstance()
+			.createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry");
 
 	private static final String POINT_START = "POINT(";
 
@@ -46,9 +46,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 	}
 
 	@Override
-	public boolean verifyDatatype(String literalValue, IRI datatypeUri)
-		throws LiteralUtilException
-	{
+	public boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			return verifyDatatypeInternal(literalValue, datatypeUri);
 		}
@@ -58,8 +56,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 
 	@Override
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-		throws LiteralUtilException
-	{
+			throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri) && verifyDatatypeInternal(literalValue, datatypeUri)) {
 			// TODO: Implement normalization
 			return valueFactory.createLiteral(literalValue, datatypeUri);
@@ -73,9 +70,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 		return DatatypeHandler.VIRTUOSOGEOMETRY;
 	}
 
-	private boolean verifyDatatypeInternal(String literalValue, IRI datatypeUri)
-		throws LiteralUtilException
-	{
+	private boolean verifyDatatypeInternal(String literalValue, IRI datatypeUri) throws LiteralUtilException {
 		if (literalValue == null) {
 			throw new NullPointerException("Literal value cannot be null");
 		}
@@ -101,8 +96,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 				// Verify that both parts of the point reference are valid doubles
 				Double.parseDouble(split[0]);
 				Double.parseDouble(split[1]);
-			}
-			catch (NumberFormatException e) {
+			} catch (NumberFormatException e) {
 				return false;
 			}
 

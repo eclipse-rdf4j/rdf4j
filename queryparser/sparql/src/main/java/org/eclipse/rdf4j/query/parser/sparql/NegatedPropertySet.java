@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * A negated property set is a SPARQL construction of the form {?X !(uri|^uri) ?Y}. This class is a temporary
- * representation used by the parser. It is converted by the TupleExprBuilder into a set of joins and filters
- * on regular statement patterns.
+ * representation used by the parser. It is converted by the TupleExprBuilder into a set of joins and filters on regular
+ * statement patterns.
  * 
  * @author Jeen
  */
@@ -34,8 +34,7 @@ public class NegatedPropertySet {
 	private List<PropertySetElem> propertySetElems = new ArrayList<>();
 
 	/**
-	 * @param scope
-	 *        The scope to set.
+	 * @param scope The scope to set.
 	 */
 	public void setScope(Scope scope) {
 		this.scope = scope;
@@ -49,8 +48,7 @@ public class NegatedPropertySet {
 	}
 
 	/**
-	 * @param subjectVar
-	 *        The subjectVar to set.
+	 * @param subjectVar The subjectVar to set.
 	 */
 	public void setSubjectVar(Var subjectVar) {
 		this.subjectVar = subjectVar;
@@ -64,8 +62,7 @@ public class NegatedPropertySet {
 	}
 
 	/**
-	 * @param objectList
-	 *        The objectList to set.
+	 * @param objectList The objectList to set.
 	 */
 	public void setObjectList(List<ValueExpr> objectList) {
 		this.objectList = objectList;
@@ -79,8 +76,7 @@ public class NegatedPropertySet {
 	}
 
 	/**
-	 * @param contextVar
-	 *        The contextVar to set.
+	 * @param contextVar The contextVar to set.
 	 */
 	public void setContextVar(Var contextVar) {
 		this.contextVar = contextVar;
@@ -94,8 +90,7 @@ public class NegatedPropertySet {
 	}
 
 	/**
-	 * @param propertySetElems
-	 *        The propertySetElems to set.
+	 * @param propertySetElems The propertySetElems to set.
 	 */
 	public void setPropertySetElems(List<PropertySetElem> propertySetElems) {
 		this.propertySetElems = propertySetElems;

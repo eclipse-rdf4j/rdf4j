@@ -18,9 +18,7 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 	}
 
 	@Override
-	public char readChar()
-		throws IOException
-	{
+	public char readChar() throws IOException {
 		if (inBuf > 0) {
 			--inBuf;
 
@@ -59,8 +57,7 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 						backup(backSlashCnt);
 						return '\\';
 					}
-				}
-				catch (java.io.IOException e) {
+				} catch (java.io.IOException e) {
 					// We are returning one backslash so we should only backup (count-1)
 					if (backSlashCnt > 1)
 						backup(backSlashCnt - 1);
@@ -75,20 +72,12 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 			// Here, we have seen an odd number of backslash's followed by a 'u'
 			try {
 				if (c == 'u') {
-					buffer[bufpos] = c = (char)(hexval(ReadByte()) << 12 | hexval(ReadByte()) << 8
+					buffer[bufpos] = c = (char) (hexval(ReadByte()) << 12 | hexval(ReadByte()) << 8
 							| hexval(ReadByte()) << 4 | hexval(ReadByte()));
 					column += 4;
-				}
-				else if (c == 'U') {
-					String hex = new String(new char[] {
-							ReadByte(),
-							ReadByte(),
-							ReadByte(),
-							ReadByte(),
-							ReadByte(),
-							ReadByte(),
-							ReadByte(),
-							ReadByte() });
+				} else if (c == 'U') {
+					String hex = new String(new char[] { ReadByte(), ReadByte(), ReadByte(), ReadByte(), ReadByte(),
+							ReadByte(), ReadByte(), ReadByte() });
 					int cp = Integer.parseInt(hex, 16);
 					char[] chrs = Character.toChars(cp); // length of 1 or 2
 					buffer[bufpos] = c = chrs[0];
@@ -101,8 +90,7 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 					}
 					column += hex.length();
 				}
-			}
-			catch (java.io.IOException | IllegalArgumentException e) {
+			} catch (java.io.IOException | IllegalArgumentException e) {
 				throw new Error("Invalid escape character at line " + line + " column " + column + ".", e);
 			}
 
@@ -112,8 +100,7 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 				backup(backSlashCnt - 1);
 				return '\\';
 			}
-		}
-		else {
+		} else {
 			UpdateLineColumn(c);
 			return c;
 		}

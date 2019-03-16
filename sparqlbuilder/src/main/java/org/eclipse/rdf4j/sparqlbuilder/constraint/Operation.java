@@ -9,8 +9,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 /**
- * A SPARQL Operation. Differs from a {@link Function} in the way operators and
- * arguments are printed.
+ * A SPARQL Operation. Differs from a {@link Function} in the way operators and arguments are printed.
  * 
  * @param <T> The type of operation. Used to support fluency.
  */
@@ -36,16 +35,16 @@ abstract class Operation<T extends Operation<T>> extends Expression<T> {
 		// throw new Exception();
 		return (T) this;
 	}
-	
+
 	@Override
 	public String getQueryString() {
 		return isAtOperatorLimit() ? super.getQueryString() : "";
 	}
-	
+
 	protected boolean isBelowOperatorLimit() {
 		return operandLimit < 0 || elements.size() < operandLimit;
 	}
-	
+
 	protected boolean isAtOperatorLimit() {
 		return operandLimit < 0 || elements.size() == operandLimit;
 	}

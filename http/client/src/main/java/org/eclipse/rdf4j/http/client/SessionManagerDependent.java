@@ -17,9 +17,9 @@ package org.eclipse.rdf4j.http.client;
 public interface SessionManagerDependent extends SesameClientDependent {
 
 	/**
-	 * {@link HttpClientSessionManager} that has been assigned or has been used by this object. The life cycle
-	 * might not be or might be tied to this object, depending on whether {@link HttpClientSessionManager} was
-	 * passed to or created by this object respectively.
+	 * {@link HttpClientSessionManager} that has been assigned or has been used by this object. The life cycle might not
+	 * be or might be tied to this object, depending on whether {@link HttpClientSessionManager} was passed to or
+	 * created by this object respectively.
 	 * 
 	 * @return a {@link HttpClientSessionManager} instance or null
 	 */
@@ -28,9 +28,8 @@ public interface SessionManagerDependent extends SesameClientDependent {
 
 	/**
 	 * Assign an {@link HttpClientSessionManager} that this object should use. The life cycle of the given
-	 * {@link HttpClientSessionManager} is independent of this object. Closing or shutting down this object
-	 * does not have any impact on the given client. Callers must ensure that the given client is properly
-	 * closed elsewhere.
+	 * {@link HttpClientSessionManager} is independent of this object. Closing or shutting down this object does not
+	 * have any impact on the given client. Callers must ensure that the given client is properly closed elsewhere.
 	 * 
 	 * @param client
 	 */

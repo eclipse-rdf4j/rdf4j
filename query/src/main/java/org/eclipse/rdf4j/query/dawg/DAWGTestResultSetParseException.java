@@ -20,8 +20,7 @@ public class DAWGTestResultSetParseException extends RDF4JException {
 	/**
 	 * Creates a new DAWGTestResultSetParseException.
 	 * 
-	 * @param msg
-	 *        An error message.
+	 * @param msg An error message.
 	 */
 	public DAWGTestResultSetParseException(String msg) {
 		super(msg);
@@ -30,8 +29,7 @@ public class DAWGTestResultSetParseException extends RDF4JException {
 	/**
 	 * Creates a new DAWGTestResultSetParseException wrapping another exception.
 	 * 
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param cause The cause of the exception.
 	 */
 	public DAWGTestResultSetParseException(Throwable cause) {
 		super(cause);
@@ -40,10 +38,8 @@ public class DAWGTestResultSetParseException extends RDF4JException {
 	/**
 	 * Creates a new DAWGTestResultSetParseException wrapping another exception.
 	 * 
-	 * @param msg
-	 *        An error message.
-	 * @param cause
-	 *        The cause of the exception.
+	 * @param msg   An error message.
+	 * @param cause The cause of the exception.
 	 */
 	public DAWGTestResultSetParseException(String msg, Throwable cause) {
 		super(msg, cause);

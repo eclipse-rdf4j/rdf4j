@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleStatement} instead for extension, and {@link ValueFactory} for
- *             instantiation.
+ * @deprecated since 4.0. Use {@link SimpleStatement} instead for extension, and {@link ValueFactory} for instantiation.
  */
 @Deprecated
 public class StatementImpl extends SimpleStatement {
@@ -26,6 +25,6 @@ public class StatementImpl extends SimpleStatement {
 	 */
 	@Deprecated
 	public StatementImpl(Resource subject, URI predicate, Value object) {
-		super(subject, (IRI)predicate, object);
+		super(subject, (IRI) predicate, object);
 	}
 }

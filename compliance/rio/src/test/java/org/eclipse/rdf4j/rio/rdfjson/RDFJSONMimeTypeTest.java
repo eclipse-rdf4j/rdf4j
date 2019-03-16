@@ -20,15 +20,14 @@ public class RDFJSONMimeTypeTest {
 
 	@Test
 	public void testApplicationRDFJSON() {
-		assertEquals(RDFFormat.RDFJSON, Rio.getParserFormatForMIMEType("application/rdf+json").orElseThrow(
-				Rio.unsupportedFormat(RDFFormat.RDFJSON)));
+		assertEquals(RDFFormat.RDFJSON, Rio.getParserFormatForMIMEType("application/rdf+json")
+				.orElseThrow(Rio.unsupportedFormat(RDFFormat.RDFJSON)));
 	}
 
 	@Test
 	public void testApplicationRDFJSONUtf8() {
-		assertEquals(RDFFormat.RDFJSON,
-				Rio.getParserFormatForMIMEType("application/rdf+json;charset=UTF-8").orElseThrow(
-						Rio.unsupportedFormat(RDFFormat.RDFJSON)));
+		assertEquals(RDFFormat.RDFJSON, Rio.getParserFormatForMIMEType("application/rdf+json;charset=UTF-8")
+				.orElseThrow(Rio.unsupportedFormat(RDFFormat.RDFJSON)));
 	}
 
 }

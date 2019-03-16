@@ -73,16 +73,16 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new parser for the binary query result format that will use an instance of
-	 * {@link SimpleValueFactory} to create Value objects.
+	 * Creates a new parser for the binary query result format that will use an instance of {@link SimpleValueFactory}
+	 * to create Value objects.
 	 */
 	public BinaryQueryResultParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new parser for the binary query result format that will use the supplied ValueFactory to
-	 * create Value objects.
+	 * Creates a new parser for the binary query result format that will use the supplied ValueFactory to create Value
+	 * objects.
 	 */
 	public BinaryQueryResultParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -99,8 +99,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	@Override
 	public synchronized void parse(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
-	{
+			throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
@@ -144,46 +143,43 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 		// Read value tuples
 		List<Value> currentTuple = new ArrayList<>(columnCount);
-		List<Value> previousTuple = Collections.nCopies(columnCount, (Value)null);
+		List<Value> previousTuple = Collections.nCopies(columnCount, (Value) null);
 
 		int recordTypeMarker = this.in.readByte();
 
 		while (recordTypeMarker != TABLE_END_RECORD_MARKER) {
 			if (recordTypeMarker == ERROR_RECORD_MARKER) {
 				processError();
-			}
-			else if (recordTypeMarker == NAMESPACE_RECORD_MARKER) {
+			} else if (recordTypeMarker == NAMESPACE_RECORD_MARKER) {
 				processNamespace();
-			}
-			else if (recordTypeMarker == EMPTY_ROW_RECORD_MARKER) {
+			} else if (recordTypeMarker == EMPTY_ROW_RECORD_MARKER) {
 				if (handler != null) {
 					handler.handleSolution(EmptyBindingSet.getInstance());
 				}
-			}
-			else {
+			} else {
 				Value value = null;
 				switch (recordTypeMarker) {
-					case NULL_RECORD_MARKER:
-						break; // do nothing
-					case REPEAT_RECORD_MARKER:
-						value = previousTuple.get(currentTuple.size());
-						break;
-					case QNAME_RECORD_MARKER:
-						value = readQName();
-						break;
-					case URI_RECORD_MARKER:
-						value = readURI();
-						break;
-					case BNODE_RECORD_MARKER:
-						value = readBnode();
-						break;
-					case PLAIN_LITERAL_RECORD_MARKER:
-					case LANG_LITERAL_RECORD_MARKER:
-					case DATATYPE_LITERAL_RECORD_MARKER:
-						value = readLiteral(recordTypeMarker);
-						break;
-					default:
-						throw new IOException("Unkown record type: " + recordTypeMarker);
+				case NULL_RECORD_MARKER:
+					break; // do nothing
+				case REPEAT_RECORD_MARKER:
+					value = previousTuple.get(currentTuple.size());
+					break;
+				case QNAME_RECORD_MARKER:
+					value = readQName();
+					break;
+				case URI_RECORD_MARKER:
+					value = readURI();
+					break;
+				case BNODE_RECORD_MARKER:
+					value = readBnode();
+					break;
+				case PLAIN_LITERAL_RECORD_MARKER:
+				case LANG_LITERAL_RECORD_MARKER:
+				case DATATYPE_LITERAL_RECORD_MARKER:
+					value = readLiteral(recordTypeMarker);
+					break;
+				default:
+					throw new IOException("Unkown record type: " + recordTypeMarker);
 				}
 
 				currentTuple.add(value);
@@ -206,19 +202,15 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		}
 	}
 
-	private void processError()
-		throws IOException, QueryResultParseException
-	{
+	private void processError() throws IOException, QueryResultParseException {
 		byte errTypeFlag = in.readByte();
 
 		QueryErrorType errType = null;
 		if (errTypeFlag == MALFORMED_QUERY_ERROR) {
 			errType = QueryErrorType.MALFORMED_QUERY_ERROR;
-		}
-		else if (errTypeFlag == QUERY_EVALUATION_ERROR) {
+		} else if (errTypeFlag == QUERY_EVALUATION_ERROR) {
 			errType = QueryErrorType.QUERY_EVALUATION_ERROR;
-		}
-		else {
+		} else {
 			throw new QueryResultParseException("Unkown error type: " + errTypeFlag);
 		}
 
@@ -228,9 +220,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		throw new QueryResultParseException(errType + ": " + msg);
 	}
 
-	private void processNamespace()
-		throws IOException
-	{
+	private void processNamespace() throws IOException {
 		int namespaceID = in.readInt();
 		String namespace = readString();
 
@@ -244,33 +234,25 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		namespaceArray[namespaceID] = namespace;
 	}
 
-	private IRI readQName()
-		throws IOException
-	{
+	private IRI readQName() throws IOException {
 		int nsID = in.readInt();
 		String localName = readString();
 
 		return valueFactory.createIRI(namespaceArray[nsID], localName);
 	}
 
-	private IRI readURI()
-		throws IOException
-	{
+	private IRI readURI() throws IOException {
 		String uri = readString();
 
 		return valueFactory.createIRI(uri);
 	}
 
-	private BNode readBnode()
-		throws IOException
-	{
+	private BNode readBnode() throws IOException {
 		String bnodeID = readString();
 		return valueFactory.createBNode(bnodeID);
 	}
 
-	private Literal readLiteral(int recordTypeMarker)
-		throws IOException, QueryResultParseException
-	{
+	private Literal readLiteral(int recordTypeMarker) throws IOException, QueryResultParseException {
 		String label = readString();
 
 		if (recordTypeMarker == DATATYPE_LITERAL_RECORD_MARKER) {
@@ -278,55 +260,45 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 			int dtTypeMarker = in.readByte();
 			switch (dtTypeMarker) {
-				case QNAME_RECORD_MARKER:
-					datatype = readQName();
-					break;
-				case URI_RECORD_MARKER:
-					datatype = readURI();
-					break;
-				default:
-					throw new QueryResultParseException("Illegal record type marker for literal's datatype");
+			case QNAME_RECORD_MARKER:
+				datatype = readQName();
+				break;
+			case URI_RECORD_MARKER:
+				datatype = readURI();
+				break;
+			default:
+				throw new QueryResultParseException("Illegal record type marker for literal's datatype");
 			}
 
 			return valueFactory.createLiteral(label, datatype);
-		}
-		else if (recordTypeMarker == LANG_LITERAL_RECORD_MARKER) {
+		} else if (recordTypeMarker == LANG_LITERAL_RECORD_MARKER) {
 			String language = readString();
 			return valueFactory.createLiteral(label, language);
-		}
-		else {
+		} else {
 			return valueFactory.createLiteral(label);
 		}
 	}
 
-	private String readString()
-		throws IOException
-	{
+	private String readString() throws IOException {
 		if (formatVersion == 1) {
 			return readStringV1();
-		}
-		else {
+		} else {
 			return readStringV2();
 		}
 	}
 
 	/**
-	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified
-	 * UTF-8}.
+	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified UTF-8}.
 	 */
-	private String readStringV1()
-		throws IOException
-	{
+	private String readStringV1() throws IOException {
 		return in.readUTF();
 	}
 
 	/**
-	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit
-	 * integer (high byte first) specifying the length of the encoded string.
+	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit integer
+	 * (high byte first) specifying the length of the encoded string.
 	 */
-	private String readStringV2()
-		throws IOException
-	{
+	private String readStringV2() throws IOException {
 		int stringLength = in.readInt();
 		byte[] encodedString = IOUtil.readBytes(in, stringLength);
 
