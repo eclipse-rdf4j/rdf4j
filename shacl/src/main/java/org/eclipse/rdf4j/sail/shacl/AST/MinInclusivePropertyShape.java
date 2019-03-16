@@ -27,24 +27,23 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 	private final Literal minInclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinInclusivePropertyShape.class);
 
-	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal minInclusive) {
+	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
+			boolean deactivated, Literal minInclusive) {
 		super(id, connection, nodeShape, deactivated);
 
 		this.minInclusive = minInclusive;
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new LiteralComparatorFilter(parent, minInclusive, value -> value <= 0),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new LiteralComparatorFilter(parent, minInclusive, value -> value <= 0), this,
+				overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

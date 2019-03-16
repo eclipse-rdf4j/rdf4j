@@ -50,9 +50,8 @@ public class SimplePath extends Path {
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 
-		return
-			addedStatements.hasStatement(null, path, null, false) ||
-				removedStatements.hasStatement(null, path, null, false);
+		return addedStatements.hasStatement(null, path, null, false)
+				|| removedStatements.hasStatement(null, path, null, false);
 	}
 
 	@Override

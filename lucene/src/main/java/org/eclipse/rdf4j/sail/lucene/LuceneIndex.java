@@ -741,8 +741,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			q = addContextTerm(q, (Resource) contextVar.getValue());
 		}
 
-		TopDocs docs = search(
-				new FunctionScoreQuery(q, strategy.makeRecipDistanceValueSource(boundingCircle)));
+		TopDocs docs = search(new FunctionScoreQuery(q, strategy.makeRecipDistanceValueSource(boundingCircle)));
 		final boolean requireContext = (contextVar != null && !contextVar.hasValue());
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentDistance>() {
 

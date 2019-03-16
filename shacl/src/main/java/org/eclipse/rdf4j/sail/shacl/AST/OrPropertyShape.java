@@ -40,31 +40,33 @@ public class OrPropertyShape extends PropertyShape {
 
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
-
-	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource or) {
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource or) {
 		super(id, nodeShape, deactivated);
-		this.or = toList(connection, or).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
+		this.or = toList(connection, or).stream()
+				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+				.collect(Collectors.toList());
 
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		List<List<PlanNode>> initialPlanNodes =
-			or
-				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).filter(Objects::nonNull).collect(Collectors.toList()))
+		List<List<PlanNode>> initialPlanNodes = or.stream()
+				.map(shapes -> shapes.stream()
+						.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
+						.filter(Objects::nonNull)
+						.collect(Collectors.toList()))
 				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
 		BufferedSplitter targetNodesToValidate;
 		if (overrideTargetNode == null) {
-			targetNodesToValidate = new BufferedSplitter(unionAll(
-				initialPlanNodes
-					.stream()
+			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
 					.flatMap(Collection::stream)
 					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
 					.collect(Collectors.toList())));
@@ -73,17 +75,13 @@ public class OrPropertyShape extends PropertyShape {
 			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
 		}
 
-		List<List<PlanNode>> plannodes =
-			or
-				.stream()
-				.map(shapes -> shapes.stream().map(shape ->
-					{
-						if (shaclSailConnection.stats.isBaseSailEmpty()) {
-							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
-						}
-						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
-					}
-				).filter(Objects::nonNull).collect(Collectors.toList()))
+		List<List<PlanNode>> plannodes = or.stream().map(shapes -> shapes.stream().map(shape -> {
+			if (shaclSailConnection.stats.isBaseSailEmpty()) {
+				return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+			}
+			return shape.getPlan(shaclSailConnection, nodeShape, false,
+					new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+		}).filter(Objects::nonNull).collect(Collectors.toList()))
 				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
@@ -124,7 +122,8 @@ public class OrPropertyShape extends PropertyShape {
 					.getJoined(BufferedPlanNode.class), "");
 
 			for (int i = 2; i < plannodes.size(); i++) {
-				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
+				innerJoin = new LoggingNode(
+						new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
 			}
 
 			ret = new LoggingNode(innerJoin, "");
@@ -157,9 +156,7 @@ public class OrPropertyShape extends PropertyShape {
 			return false;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) ||
-			or
-				.stream()
+		return super.requiresEvaluation(addedStatements, removedStatements) || or.stream()
 				.flatMap(Collection::stream)
 				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
 				.reduce((a, b) -> a || b)

@@ -27,7 +27,8 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	private final Literal maxExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MaxExclusivePropertyShape.class);
 
-	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal maxExclusive) {
+	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
+			boolean deactivated, Literal maxExclusive) {
 		super(id, connection, nodeShape, deactivated);
 
 		this.maxExclusive = maxExclusive;
@@ -35,17 +36,15 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new LiteralComparatorFilter(parent, maxExclusive, value -> value > 0),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new LiteralComparatorFilter(parent, maxExclusive, value -> value > 0), this,
+				overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

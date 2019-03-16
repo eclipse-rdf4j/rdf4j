@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -45,7 +44,8 @@ public class ClassPropertyShape extends PathPropertyShape {
 	private final Resource classResource;
 	private static final Logger logger = LoggerFactory.getLogger(ClassPropertyShape.class);
 
-	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource classResource) {
+	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource classResource) {
 		super(id, connection, nodeShape, deactivated);
 		this.classResource = classResource;
 	}
@@ -58,16 +58,21 @@ public class ClassPropertyShape extends PathPropertyShape {
 			return null;
 		}
 
-
 		SailConnection addedStatements = shaclSailConnection.getAddedStatements();
 
 		if (overrideTargetNode != null) {
-			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
-			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
-			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, Collections.singleton(classResource), bulkedEternalLeftOuter, 1, false), "");
+			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
+			// filter by type against addedStatements, this is an optimization for when you add the type statement in
+			// the same transaction
+			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements,
+					Collections.singleton(classResource), bulkedEternalLeftOuter, 1, false), "");
 
 			// filter by type against the base sail
-			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource), addedStatementsTypeFilter, 1, false), "");
+			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(
+					new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource),
+							addedStatementsTypeFilter, 1, false),
+					"");
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTuplesDueToDataAddedThatMatchesTargetOrPath,
 						shaclSailConnection);
@@ -101,16 +106,25 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode joined = new TupleLengthFilter(new UnionNode(innerJoin, bulkedExternalLeftOuter), 2, false)
 					.getTrueNode(UnBufferedPlanNode.class);
 
-			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
-			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, Collections.singleton(classResource), joined, 1, false), "");
+			// filter by type against addedStatements, this is an optimization for when you add the type statement in
+			// the same transaction
+			PlanNode addedStatementsTypeFilter = new LoggingNode(
+					new ExternalTypeFilterNode(addedStatements, Collections.singleton(classResource), joined, 1, false),
+					"");
 
 			// filter by type against the base sail
-			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource), addedStatementsTypeFilter, 1, false), "");
+			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(
+					new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource),
+							addedStatementsTypeFilter, 1, false),
+					"");
 
 			if (shaclSailConnection.stats.hasRemoved()) {
 
-				// Handle when a type statement has been removed, first get all removed type statements that match the classResource for this shape
-				PlanNode removedTypeStatements = new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">", "*"), "removedTypeStatements");
+				// Handle when a type statement has been removed, first get all removed type statements that match the
+				// classResource for this shape
+				PlanNode removedTypeStatements = new LoggingNode(
+						new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">", "*"),
+						"removedTypeStatements");
 
 				// Build a query to run against the base sail. eg:
 				// ?c foaf:knows ?a.
@@ -151,7 +165,8 @@ public class ClassPropertyShape extends PathPropertyShape {
 			return false;
 		}
 
-		return removedStatements.hasStatement(null, RDF.TYPE, classResource, true) || super.requiresEvaluation(addedStatements, removedStatements);
+		return removedStatements.hasStatement(null, RDF.TYPE, classResource, true)
+				|| super.requiresEvaluation(addedStatements, removedStatements);
 	}
 
 	@Override

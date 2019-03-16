@@ -140,16 +140,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 		inferredCleared = false;
 
-
 	}
 
 	private void regenerateCacheAndInferenceMaps() {
 		sail.clearInferenceTables();
 		addAxiomStatements();
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
-				null, null, null, sail.useInferredToCreateSchema))
-		{
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+				null, sail.useInferredToCreateSchema)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
 				processForSchemaCache(next);
@@ -160,10 +158,10 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		originalSchemaSize = sail.getSchemaSize();
 	}
 
-	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws SailException {
 		return super.addInferredStatement(subj, pred, obj, contexts);
 	}
-
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
@@ -524,7 +522,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
 		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject());
-		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.CONTAINERMEMBERSHIPPROPERTY);
+		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF,
+				RDFS.CONTAINERMEMBERSHIPPROPERTY);
 		processForSchemaCache(statement);
 		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject());
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);

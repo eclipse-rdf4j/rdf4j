@@ -32,8 +32,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private final boolean returnMatching;
 	private boolean printed = false;
 
-
-	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index, boolean returnMatching) {
+	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index,
+			boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
@@ -75,9 +75,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
 					return filterOnType.stream()
-						.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
-						.findFirst()
-						.orElse(null);
+							.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
+							.findFirst()
+							.orElse(null);
 				}
 				return null;
 			}
@@ -138,9 +138,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" +
-			"filterOnType=" + Arrays.toString(filterOnType.toArray()) +
-			'}';
+		return "ExternalTypeFilterNode{" + "filterOnType=" + Arrays.toString(filterOnType.toArray()) + '}';
 	}
 
 	@Override

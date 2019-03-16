@@ -19,7 +19,6 @@ public class PatternFilter extends FilterPlanNode {
 
 	private final Pattern pattern;
 
-
 	public PatternFilter(PlanNode parent, String pattern, String flags) {
 		super(parent);
 		if (flags.length() > 0) {

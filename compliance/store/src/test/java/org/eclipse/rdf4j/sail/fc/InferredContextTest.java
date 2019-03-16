@@ -72,10 +72,8 @@ public class InferredContextTest {
 	public void testDefaultBehaviour() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
 
-		assertFalse(
-			"Current default behaviour should be to add all statements to default context",
-			sail.isAddInferredStatementsToDefaultContext()
-		);
+		assertFalse("Current default behaviour should be to add all statements to default context",
+				sail.isAddInferredStatementsToDefaultContext());
 
 	}
 

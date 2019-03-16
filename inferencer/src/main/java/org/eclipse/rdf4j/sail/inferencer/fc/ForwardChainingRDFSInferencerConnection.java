@@ -37,7 +37,6 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 	static private final Logger logger = LoggerFactory.getLogger(ForwardChainingRDFSInferencerConnection.class);
 
-
 	/*-----------*
 	 * Variables *
 	 *-----------*/

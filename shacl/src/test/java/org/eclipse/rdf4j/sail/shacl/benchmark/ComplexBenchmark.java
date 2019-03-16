@@ -73,7 +73,8 @@ public class ComplexBenchmark {
 	@Setup(Level.Iteration)
 	public void setUp() {
 		System.gc();
-		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
@@ -184,7 +185,6 @@ public class ComplexBenchmark {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 

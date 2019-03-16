@@ -268,16 +268,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					planNodeStream = planNodeStream.parallel();
 				}
 
-				return planNodeStream
-					.filter(Objects::nonNull)
-					.flatMap(planNode -> {
-						try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
-							if (LoggingNode.loggingEnabled) {
-								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : " + propertyShape.getId());
-							}
+				return planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
+					try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+						if (LoggingNode.loggingEnabled) {
+							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+							logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
+									+ propertyShape.getId());
+						}
 
-							List<Tuple> collect = stream.collect(Collectors.toList());
+						List<Tuple> collect = stream.collect(Collectors.toList());
 
 						List<Tuple> collect = stream.collect(Collectors.toList());
 

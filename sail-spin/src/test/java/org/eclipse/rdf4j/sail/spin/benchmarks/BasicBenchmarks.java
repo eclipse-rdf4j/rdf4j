@@ -49,24 +49,22 @@ import static org.junit.Assert.assertFalse;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class BasicBenchmarks {
 
-
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	private  static final Resource bob = vf.createBNode();
-	private  static final Resource alice = vf.createBNode();
+	private static final Resource bob = vf.createBNode();
+	private static final Resource alice = vf.createBNode();
 
-	private  static final IRI name = FOAF.NAME;
+	private static final IRI name = FOAF.NAME;
 
-	private  static final Value nameAlice = vf.createLiteral("Alice");
-	private  static final Value nameBob = vf.createLiteral("Bob");
-
+	private static final Value nameAlice = vf.createLiteral("Alice");
+	private static final Value nameBob = vf.createLiteral("Bob");
 
 	@Setup(Level.Invocation)
 	public void setUp() {
@@ -77,7 +75,6 @@ public class BasicBenchmarks {
 	@TearDown(Level.Iteration)
 	public void tearDown() {
 	}
-
 
 	@Benchmark
 	public void spinSailInit() {
@@ -104,8 +101,7 @@ public class BasicBenchmarks {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
-			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
+			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
 					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
@@ -123,22 +119,19 @@ public class BasicBenchmarks {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
-			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
+			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
 					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
 	}
 
-	private void loadRDF(String path, SailRepositoryConnection conn)
-		throws IOException {
+	private void loadRDF(String path, SailRepositoryConnection conn) throws IOException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
 		}
 	}
-
 
 	@Benchmark
 	public void addRemove() {
@@ -156,7 +149,6 @@ public class BasicBenchmarks {
 			connection.remove(alice, null, null);
 		}
 
-
 	}
 
 	@Benchmark
@@ -168,7 +160,6 @@ public class BasicBenchmarks {
 			connection.remove(bob, name, nameBob);
 			connection.remove(alice, null, null);
 		}
-
 
 	}
 
@@ -188,7 +179,6 @@ public class BasicBenchmarks {
 			connection.commit();
 
 		}
-
 
 	}
 
@@ -212,7 +202,6 @@ public class BasicBenchmarks {
 
 		}
 
-
 	}
 
 	@Benchmark
@@ -231,8 +220,6 @@ public class BasicBenchmarks {
 
 		}
 
-
 	}
-
 
 }

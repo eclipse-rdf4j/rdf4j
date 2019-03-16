@@ -58,13 +58,15 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
@@ -88,7 +90,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return subjectVariable + " ?b " + objectVariable;
 	}
 
@@ -99,7 +102,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public static class Factory {
 
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
+			try (Stream<Statement> stream = Iterations
+					.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
 				return stream.map(Statement::getSubject).flatMap(shapeId -> {
 
 					List<NodeShape> propertyShapes = new ArrayList<>(2);
@@ -107,26 +111,35 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
 					if (!shaclProperties.targetClass.isEmpty()) {
-						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetClass));
+						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetClass));
 					}
 					if (!shaclProperties.targetNode.isEmpty()) {
-						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode));
+						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetNode));
 					}
 					if (!shaclProperties.targetSubjectsOf.isEmpty()) {
-						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetSubjectsOf));
+						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetSubjectsOf));
 					}
 					if (!shaclProperties.targetObjectsOf.isEmpty()) {
-						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetObjectsOf));
+						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetObjectsOf));
 					}
 
 					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
-						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target class nodeShapes are the only supported nodeShapes
+						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target
+																												// class
+																												// nodeShapes
+																												// are
+																												// the
+																												// only
+																												// supported
+																												// nodeShapes
 					}
 
 					return propertyShapes.stream();
-				})
-					.filter(Objects::nonNull)
-					.collect(Collectors.toList());
+				}).filter(Objects::nonNull).collect(Collectors.toList());
 			}
 		}
 

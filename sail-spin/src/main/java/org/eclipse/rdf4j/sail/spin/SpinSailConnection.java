@@ -98,9 +98,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	static private final Logger logger = LoggerFactory.getLogger(SpinSailConnection.class);
 
-
-	private static final IRI EXECUTED = SimpleValueFactory.getInstance().createIRI(
-			"http://www.openrdf.org/schema/spin#executed");
+	private static final IRI EXECUTED = SimpleValueFactory.getInstance()
+			.createIRI("http://www.openrdf.org/schema/spin#executed");
 
 	private static final Marker constraintViolationMarker = MarkerFactory.getMarker("ConstraintViolation");
 

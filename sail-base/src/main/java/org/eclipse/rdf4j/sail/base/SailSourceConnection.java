@@ -61,8 +61,7 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
-		implements InferencerConnection, FederatedServiceResolverClient
-{
+		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 

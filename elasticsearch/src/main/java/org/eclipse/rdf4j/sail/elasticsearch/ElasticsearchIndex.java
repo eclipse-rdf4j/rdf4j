@@ -217,10 +217,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			TransportAddress addr;
 			if (addrStr.startsWith("local[")) {
 				String id = addrStr.substring("local[".length(), addrStr.length() - 1);
-				//addr = new LocalTransportAddress(id);
+				// addr = new LocalTransportAddress(id);
 				throw new UnsupportedOperationException("Local Transport Address no longer supported");
-			}
-			else {
+			} else {
 				String host;
 				int port;
 				String[] hostPort = addrStr.split(":");
@@ -300,41 +299,51 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return mappings.sourceAsMap();
 	}
 
-	private void createIndex()
-		throws IOException
-	{
-		try (XContentBuilder xContentBuilder = XContentFactory
-			.jsonBuilder()
-			.startObject()
-			.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
-			.startObject("analysis")
-			.startObject("analyzer")
-			.startObject("default")
-			.field("type", analyzer)
-			.endObject()
-			.endObject()
-			.endObject()
-			.endObject()) {
+	private void createIndex() throws IOException {
+		try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+				.startObject()
+				.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
+				.startObject("analysis")
+				.startObject("analyzer")
+				.startObject("default")
+				.field("type", analyzer)
+				.endObject()
+				.endObject()
+				.endObject()
+				.endObject()) {
 
-			doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName)
-				.setSettings(Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
+			doAcknowledgedRequest(client.admin()
+					.indices()
+					.prepareCreate(indexName)
+					.setSettings(
+							Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
 		}
-
 
 		// use _source instead of explicit stored = true
 		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
 		typeMapping.startObject().startObject(documentType).startObject("properties");
-		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME).field("type", "keyword").field("index",
-				true).field("copy_to", "_all").endObject();
-		typeMapping.startObject(SearchFields.URI_FIELD_NAME).field("type", "keyword").field("index",
-				true).field("copy_to", "_all").endObject();
-		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME).field("type", "text").field("index",
-				true).field("copy_to", "_all").endObject();
+		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
+		typeMapping.startObject(SearchFields.URI_FIELD_NAME)
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
+		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
+				.field("type", "text")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
 		for (String wktField : wktFields) {
 			typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
 			if (supportsShapes(wktField)) {
-				typeMapping.startObject(toGeoShapeFieldName(wktField)).field("type",
-						"geo_shape").field("copy_to", "_all").endObject();
+				typeMapping.startObject(toGeoShapeFieldName(wktField))
+						.field("type", "geo_shape")
+						.field("copy_to", "_all")
+						.endObject();
 			}
 		}
 		typeMapping.endObject().endObject().endObject();
@@ -618,9 +627,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
 		QueryBuilder qb = QueryBuilders.functionScoreQuery(
-			QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
-			ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon), new DistanceUnit.Distance(unitDist, unit).toString())
-		);
+				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
+				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
+						new DistanceUnit.Distance(unitDist, unit).toString()));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource) contextVar.getValue());
 		}
@@ -628,12 +637,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, qb);
 		final GeoPoint srcPoint = new GeoPoint(lat, lon);
-		return Iterables.transform(
-			hits,
-			(Function<SearchHit, DocumentDistance>) hit -> {
-				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);
-			}
-		);
+		return Iterables.transform(hits, (Function<SearchHit, DocumentDistance>) hit -> {
+			return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);
+		});
 	}
 
 	private QueryBuilder addContextTerm(QueryBuilder qb, Resource ctx) {

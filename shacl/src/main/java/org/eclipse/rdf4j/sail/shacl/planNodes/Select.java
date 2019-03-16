@@ -37,9 +37,9 @@ public class Select implements PlanNode {
 	private final String query;
 	private boolean printed = false;
 
-	public Select(SailConnection connection, String query, String ... variables) {
+	public Select(SailConnection connection, String query, String... variables) {
 		this.connection = connection;
-		this.query = "select "+String.join(" ", variables)+" where { " + query + "} order by ?a";
+		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
 	}
 
 	@Override
