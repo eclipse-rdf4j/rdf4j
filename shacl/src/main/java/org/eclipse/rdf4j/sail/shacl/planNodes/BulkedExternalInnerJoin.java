@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,15 +34,14 @@ import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad
- * <p>
- * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
- * The right iterator is allowed to contain duplicates.
- * <p>
- * External means that this plan node can join the iterator from a plan node with an external
- * source (Repository or SailConnection) based on a query or a predicate.
+ *         <p>
+ *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
+ *         value at index 0. The right iterator is allowed to contain duplicates.
+ *         <p>
+ *         External means that this plan node can join the iterator from a plan node with an external source (Repository
+ *         or SailConnection) based on a query or a predicate.
  */
 public class BulkedExternalInnerJoin implements PlanNode {
-
 
 	private final SailConnection connection;
 	private final PlanNode leftNode;
@@ -51,11 +49,12 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	private final boolean skipBasedOnPreviousConnection;
 	private boolean printed = false;
 
-
-	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query, boolean skipBasedOnPreviousConnection) {
+	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
+			boolean skipBasedOnPreviousConnection) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
-		parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+		parsedQuery = queryParserFactory.getParser()
+				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -72,47 +71,43 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
-
 			private void calculateNext() {
-
 
 				boolean empty = !connection.hasStatement((Resource) null, (IRI) null, null, true);
 				if (empty) {
 					return;
 				}
 
-
 				if (!left.isEmpty()) {
 					return;
 				}
 
-
 				while (left.size() < 200 && leftNodeIterator.hasNext()) {
 					left.addFirst(leftNodeIterator.next());
 				}
-
 
 				if (left.isEmpty()) {
 					return;
 				}
 
 				List<BindingSet> newBindindingset = left.stream()
-					.map(tuple -> tuple.line.get(0))
-					.map(v -> (Resource) v)
-					.filter(r -> {
-						if(!skipBasedOnPreviousConnection) return true;
+						.map(tuple -> tuple.line.get(0))
+						.map(v -> (Resource) v)
+						.filter(r -> {
+							if (!skipBasedOnPreviousConnection)
+								return true;
 
-						if(connection instanceof ShaclSailConnection){
-							return ((ShaclSailConnection) connection).getPreviousStateConnection().hasStatement(r, null,null, true);
-						}
-						return true;
+							if (connection instanceof ShaclSailConnection) {
+								return ((ShaclSailConnection) connection).getPreviousStateConnection()
+										.hasStatement(r, null, null, true);
+							}
+							return true;
 
-					})
-					.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-					.collect(Collectors.toList());
+						})
+						.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+						.collect(Collectors.toList());
 
-
-				if(!newBindindingset.isEmpty()) {
+				if (!newBindindingset.isEmpty()) {
 
 					try {
 						parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
@@ -125,7 +120,9 @@ public class BulkedExternalInnerJoin implements PlanNode {
 						throw new RuntimeException(e);
 					}
 
-					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
+							.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(),
+									true)) {
 						while (evaluate.hasNext()) {
 							BindingSet next = evaluate.next();
 							right.addFirst(new Tuple(next));
@@ -146,11 +143,9 @@ public class BulkedExternalInnerJoin implements PlanNode {
 				return !left.isEmpty() && !right.isEmpty();
 			}
 
-
 			@Override
 			public Tuple next() throws SailException {
 				calculateNext();
-
 
 				Tuple joined = null;
 
@@ -158,11 +153,11 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 					Tuple leftPeek = left.peekLast();
 
-
 					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
 
-						if (rightPeek.line.get(0) == leftPeek.line.get(0) || rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+						if (rightPeek.line.get(0) == leftPeek.line.get(0)
+								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
 							// we have a join !
 							joined = TupleHelper.join(leftPeek, rightPeek);
 							right.removeLast();
@@ -175,7 +170,9 @@ public class BulkedExternalInnerJoin implements PlanNode {
 								left.removeLast();
 							}
 						} else {
-							int compare = rightPeek.line.get(0).stringValue().compareTo(leftPeek.line.get(0).stringValue());
+							int compare = rightPeek.line.get(0)
+									.stringValue()
+									.compareTo(leftPeek.line.get(0).stringValue());
 
 							if (compare < 0) {
 								if (right.isEmpty()) {
@@ -198,7 +195,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 				return joined;
 
-
 			}
 
 			@Override
@@ -215,15 +211,19 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"right\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+					+ getId() + " [label=\"right\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
+					.append("\n");
 		}
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
@@ -231,9 +231,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" +
-			"parsedQuery=" + parsedQuery.getSourceString() +
-			'}';
+		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
 	}
 
 	@Override

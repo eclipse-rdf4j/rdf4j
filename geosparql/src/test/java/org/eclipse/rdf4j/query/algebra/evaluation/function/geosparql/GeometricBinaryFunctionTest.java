@@ -24,13 +24,12 @@ public abstract class GeometricBinaryFunctionTest {
 	Literal brussels = SimpleValueFactory.getInstance().createLiteral("POINT(4.35 50.85)", GEO.WKT_LITERAL);
 
 	protected abstract GeometricBinaryFunction testedFunction();
-	
+
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testRelationExceptionHandling() {
 		GeometricBinaryFunction testedFunction = Mockito.spy(testedFunction());
 		Mockito.doThrow(new RuntimeException("forsooth!")).when(testedFunction).operation(Mockito.any(), Mockito.any());
 		testedFunction.evaluate(SimpleValueFactory.getInstance(), amsterdam, brussels);
 	}
-
 
 }

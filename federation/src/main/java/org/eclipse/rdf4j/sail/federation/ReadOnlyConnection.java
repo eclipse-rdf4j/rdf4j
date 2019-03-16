@@ -29,65 +29,47 @@ class ReadOnlyConnection extends AbstractFederationConnection {
 	}
 
 	@Override
-	public void setNamespaceInternal(String prefix, String name)
-		throws SailException
-	{
+	public void setNamespaceInternal(String prefix, String name) throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	public void clearNamespacesInternal()
-		throws SailException
-	{
+	public void clearNamespacesInternal() throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	public void removeNamespaceInternal(String prefix)
-		throws SailException
-	{
+	public void removeNamespaceInternal(String prefix) throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+	public void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	public void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... context)
-		throws SailException
-	{
+	public void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... context) throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	protected void clearInternal(Resource... contexts)
-		throws SailException
-	{
+	protected void clearInternal(Resource... contexts) throws SailException {
 		throw new SailReadOnlyException("");
 	}
 
 	@Override
-	protected void commitInternal()
-		throws SailException
-	{
+	protected void commitInternal() throws SailException {
 		// no-op
 	}
 
 	@Override
-	protected void rollbackInternal()
-		throws SailException
-	{
+	protected void rollbackInternal() throws SailException {
 		// no-op
 	}
 
 	@Override
-	protected void startTransactionInternal()
-		throws SailException
-	{
+	protected void startTransactionInternal() throws SailException {
 		// no-op
 	}
 

@@ -51,7 +51,6 @@ public class TempTest {
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay"));
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay2"));
 
-
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
@@ -67,11 +66,9 @@ public class TempTest {
 			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 
-
 			connection.commit();
 
 		}
-
 
 	}
 
@@ -99,14 +96,11 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 
-
 			connection.commit();
 
 		}
 
-
 	}
-
 
 	@Test(expected = RepositoryException.class)
 	public void maxCount() throws Exception {
@@ -130,7 +124,6 @@ public class TempTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
-
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
@@ -138,14 +131,11 @@ public class TempTest {
 
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 
-
 			connection.commit();
 
 		}
 
-
 	}
-
 
 	@Test
 	public void minCount() throws Exception {
@@ -169,14 +159,11 @@ public class TempTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
-
 			connection.commit();
 
 		}
 
-
 	}
-
 
 	@Test
 	public void leftOuterJoin() throws Exception {
@@ -206,15 +193,12 @@ public class TempTest {
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay"));
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay2"));
 
-
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
 			connection.commit();
 
-
 		}
-
 
 	}
 
@@ -237,9 +221,7 @@ public class TempTest {
 
 		}
 
-
 	}
-
 
 	@Test(expected = RepositoryException.class)
 	public void testShapeWithoutTargetClassAdd() throws Exception {
@@ -260,7 +242,6 @@ public class TempTest {
 
 		}
 
-
 	}
 
 	@Test
@@ -268,7 +249,7 @@ public class TempTest {
 
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
 
-		((ShaclSail)shaclRepository.getSail()).setUndefinedTargetValidatesAllSubjects(true);
+		((ShaclSail) shaclRepository.getSail()).setUndefinedTargetValidatesAllSubjects(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -288,9 +269,7 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
 			connection.commit();
 
-
 		}
-
 
 	}
 
@@ -317,9 +296,7 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
 			connection.commit();
 
-
 		}
-
 
 	}
 
@@ -328,15 +305,13 @@ public class TempTest {
 	public void doc() throws IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
-		//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
-		//root.setLevel(Level.INFO);
-
+		// Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+		// root.setLevel(Level.INFO);
 
 		shaclSail.setLogValidationPlans(false);
 		shaclSail.setGlobalLogValidationExecution(false);
 		shaclSail.setLogValidationViolations(false);
 		shaclSail.setParallelValidation(false);
-
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
@@ -345,46 +320,32 @@ public class TempTest {
 
 			connection.begin();
 
-			StringReader shaclRules = new StringReader(
-				String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			StringReader shaclRules = new StringReader(String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"ex:PersonShape\n" +
-						"        a sh:NodeShape  ;\n" +
-						"        sh:targetClass ex:Person ;\n" +
-						"        sh:property [\n" +
-						"                sh:path ex:age ;\n" +
-						"                sh:datatype xsd:integer ;\n" +
-						"        ] ."
-				));
+					"ex:PersonShape\n" + "        a sh:NodeShape  ;\n" + "        sh:targetClass ex:Person ;\n"
+							+ "        sh:property [\n" + "                sh:path ex:age ;\n"
+							+ "                sh:datatype xsd:integer ;\n" + "        ] ."));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
-			add(connection, String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
-				"ex:pete a ex:Person ."
+					"ex:pete a ex:Person ."
 
 			));
-
 
 			shaclSail.setLogValidationPlans(true);
 			shaclSail.setGlobalLogValidationExecution(true);
 			shaclSail.setLogValidationViolations(true);
 
+			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
-			add(connection, String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-
-				"ex:pete ex:age \"eighteen\" ."
+					"ex:pete ex:age \"eighteen\" ."
 
 			));
 
@@ -393,7 +354,6 @@ public class TempTest {
 
 	private void add(SailRepositoryConnection connection, String data) throws IOException {
 		connection.begin();
-
 
 		StringReader invalidSampleData = new StringReader(data);
 

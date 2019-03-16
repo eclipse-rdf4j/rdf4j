@@ -16,16 +16,16 @@ import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file
- * is deleted upon calling {@link #discard()}.
+ * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file is
+ * deleted upon calling {@link #discard()}.
  * 
  * @author Arjohn Kampman
  */
 final class SequentialRecordCache extends RecordCache {
 
 	/**
-	 * Magic number "Sequential Record Cache" to detect whether the file is actually a sequential record cache
-	 * file. The first three bytes of the file should be equal to this magic number.
+	 * Magic number "Sequential Record Cache" to detect whether the file is actually a sequential record cache file. The
+	 * first three bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 's', 'r', 'c' };
 
@@ -48,15 +48,11 @@ final class SequentialRecordCache extends RecordCache {
 	 * Constructors *
 	 *--------------*/
 
-	public SequentialRecordCache(File cacheDir, int recordSize)
-		throws IOException
-	{
+	public SequentialRecordCache(File cacheDir, int recordSize) throws IOException {
 		this(cacheDir, recordSize, Long.MAX_VALUE);
 	}
 
-	public SequentialRecordCache(File cacheDir, int recordSize, long maxRecords)
-		throws IOException
-	{
+	public SequentialRecordCache(File cacheDir, int recordSize, long maxRecords) throws IOException {
 		super(maxRecords);
 		this.recordSize = recordSize;
 
@@ -73,23 +69,17 @@ final class SequentialRecordCache extends RecordCache {
 	 *---------*/
 
 	@Override
-	public void discard()
-		throws IOException
-	{
+	public void discard() throws IOException {
 		nioFile.delete();
 	}
 
 	@Override
-	protected void clearInternal()
-		throws IOException
-	{
+	protected void clearInternal() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 	}
 
 	@Override
-	protected void storeRecordInternal(byte[] data)
-		throws IOException
-	{
+	protected void storeRecordInternal(byte[] data) throws IOException {
 		nioFile.writeBytes(data, nioFile.size());
 	}
 
@@ -107,9 +97,7 @@ final class SequentialRecordCache extends RecordCache {
 		private long position = HEADER_LENGTH;
 
 		@Override
-		public byte[] next()
-			throws IOException
-		{
+		public byte[] next() throws IOException {
 			if (position + recordSize <= nioFile.size()) {
 				byte[] data = new byte[recordSize];
 				ByteBuffer buf = ByteBuffer.wrap(data);
@@ -129,18 +117,14 @@ final class SequentialRecordCache extends RecordCache {
 		}
 
 		@Override
-		public void set(byte[] value)
-			throws IOException
-		{
+		public void set(byte[] value) throws IOException {
 			if (position >= HEADER_LENGTH + recordSize && position <= nioFile.size()) {
 				nioFile.writeBytes(value, position - recordSize);
 			}
 		}
 
 		@Override
-		public void close()
-			throws IOException
-		{
+		public void close() throws IOException {
 		}
 	}
 }

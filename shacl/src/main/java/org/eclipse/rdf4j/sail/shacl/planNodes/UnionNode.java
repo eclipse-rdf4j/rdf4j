@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -25,7 +24,6 @@ public class UnionNode implements PlanNode {
 	private PlanNode[] nodes;
 	private boolean printed = false;
 
-
 	public UnionNode(PlanNode... nodes) {
 		this.nodes = nodes;
 	}
@@ -34,7 +32,9 @@ public class UnionNode implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			List<CloseableIteration<Tuple, SailException>> iterators = Arrays.stream(nodes).map(PlanNode::iterator).collect(Collectors.toList());
+			List<CloseableIteration<Tuple, SailException>> iterators = Arrays.stream(nodes)
+					.map(PlanNode::iterator)
+					.collect(Collectors.toList());
 
 			Tuple[] peekList = new Tuple[nodes.length];
 
@@ -82,7 +82,6 @@ public class UnionNode implements PlanNode {
 				next = sortedFirst;
 			}
 
-
 			@Override
 			public void close() throws SailException {
 				iterators.forEach(CloseableIteration::close);
@@ -93,7 +92,6 @@ public class UnionNode implements PlanNode {
 				calculateNext();
 				return next != null;
 			}
-
 
 			@Override
 			public Tuple next() throws SailException {
@@ -119,11 +117,13 @@ public class UnionNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		for (PlanNode node : nodes) {
-			stringBuilder.append(node.getId()+" -> "+getId()).append("\n");
+			stringBuilder.append(node.getId() + " -> " + getId()).append("\n");
 			node.getPlanAsGraphvizDot(stringBuilder);
 
 		}
@@ -136,15 +136,20 @@ public class UnionNode implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		List<IteratorData> collect = Arrays.stream(nodes).map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
-		if(collect.size() == 1) return collect.get(0);
+		List<IteratorData> collect = Arrays.stream(nodes)
+				.map(PlanNode::getIteratorDataType)
+				.distinct()
+				.collect(Collectors.toList());
+		if (collect.size() == 1)
+			return collect.get(0);
 
-		throw new IllegalStateException("Not implemented support for when union node operates on nodes with different iterator data types");
+		throw new IllegalStateException(
+				"Not implemented support for when union node operates on nodes with different iterator data types");
 
 	}
 }

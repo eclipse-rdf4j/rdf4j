@@ -29,9 +29,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public class MathUtil {
 
 	/**
-	 * The default expansion scale used in division operations resulting in a decimal value with
-	 * non-terminating decimal expansion. The OpenRDF default is 24 digits, a value used in various other
-	 * SPARQL implementations, to make comparison between these systems easy.
+	 * The default expansion scale used in division operations resulting in a decimal value with non-terminating decimal
+	 * expansion. The OpenRDF default is 24 digits, a value used in various other SPARQL implementations, to make
+	 * comparison between these systems easy.
 	 */
 	public static final int DEFAULT_DECIMAL_EXPANSION_SCALE = 24;
 
@@ -40,20 +40,14 @@ public class MathUtil {
 	/**
 	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
 	 * 
-	 * @param leftLit
-	 *        a numeric datatype literal
-	 * @param rightLit
-	 *        a numeric datatype literal
-	 * @param op
-	 *        a mathematical operator, as definied by MathExpr.MathOp.
-	 * @return a numeric datatype literal containing the result of the operation. The result will be datatype
-	 *         according to the most specific data type the two operands have in common per the SPARQL/XPath
-	 *         spec.
+	 * @param leftLit  a numeric datatype literal
+	 * @param rightLit a numeric datatype literal
+	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
+	 * @return a numeric datatype literal containing the result of the operation. The result will be datatype according
+	 *         to the most specific data type the two operands have in common per the SPARQL/XPath spec.
 	 * @throws ValueExprEvaluationException
 	 */
-	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op)
-		throws ValueExprEvaluationException
-	{
+	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
 		final ValueFactory vf = SimpleValueFactory.getInstance();
 
 		IRI leftDatatype = leftLit.getDatatype();
@@ -74,20 +68,16 @@ public class MathUtil {
 
 		if (leftDatatype.equals(XMLSchema.DOUBLE) || rightDatatype.equals(XMLSchema.DOUBLE)) {
 			commonDatatype = XMLSchema.DOUBLE;
-		}
-		else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
+		} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
 			commonDatatype = XMLSchema.FLOAT;
-		}
-		else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
+		} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
 			commonDatatype = XMLSchema.DECIMAL;
-		}
-		else if (op == MathOp.DIVIDE) {
+		} else if (op == MathOp.DIVIDE) {
 			// Result of integer divide is decimal and requires the arguments to
 			// be handled as such, see for details:
 			// http://www.w3.org/TR/xpath-functions/#func-numeric-divide
 			commonDatatype = XMLSchema.DECIMAL;
-		}
-		else {
+		} else {
 			commonDatatype = XMLSchema.INTEGER;
 		}
 
@@ -102,95 +92,88 @@ public class MathUtil {
 				double right = rightLit.doubleValue();
 
 				switch (op) {
-					case PLUS:
-						return vf.createLiteral(left + right);
-					case MINUS:
-						return vf.createLiteral(left - right);
-					case MULTIPLY:
-						return vf.createLiteral(left * right);
-					case DIVIDE:
-						return vf.createLiteral(left / right);
-					default:
-						throw new IllegalArgumentException("Unknown operator: " + op);
+				case PLUS:
+					return vf.createLiteral(left + right);
+				case MINUS:
+					return vf.createLiteral(left - right);
+				case MULTIPLY:
+					return vf.createLiteral(left * right);
+				case DIVIDE:
+					return vf.createLiteral(left / right);
+				default:
+					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
-			}
-			else if (commonDatatype.equals(XMLSchema.FLOAT)) {
+			} else if (commonDatatype.equals(XMLSchema.FLOAT)) {
 				float left = leftLit.floatValue();
 				float right = rightLit.floatValue();
 
 				switch (op) {
-					case PLUS:
-						return vf.createLiteral(left + right);
-					case MINUS:
-						return vf.createLiteral(left - right);
-					case MULTIPLY:
-						return vf.createLiteral(left * right);
-					case DIVIDE:
-						return vf.createLiteral(left / right);
-					default:
-						throw new IllegalArgumentException("Unknown operator: " + op);
+				case PLUS:
+					return vf.createLiteral(left + right);
+				case MINUS:
+					return vf.createLiteral(left - right);
+				case MULTIPLY:
+					return vf.createLiteral(left * right);
+				case DIVIDE:
+					return vf.createLiteral(left / right);
+				default:
+					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
-			}
-			else if (commonDatatype.equals(XMLSchema.DECIMAL)) {
+			} else if (commonDatatype.equals(XMLSchema.DECIMAL)) {
 				BigDecimal left = leftLit.decimalValue();
 				BigDecimal right = rightLit.decimalValue();
 
 				switch (op) {
-					case PLUS:
-						return vf.createLiteral(left.add(right));
-					case MINUS:
-						return vf.createLiteral(left.subtract(right));
-					case MULTIPLY:
-						return vf.createLiteral(left.multiply(right));
-					case DIVIDE:
-						// Divide by zero handled through NumberFormatException
-						BigDecimal result = null;
-						try {
-							// try to return the exact quotient if possible.
-							result = left.divide(right, MathContext.UNLIMITED);
-						}
-						catch (ArithmeticException e) {
-							// non-terminating decimal expansion in quotient, using
-							// scaling and rounding.
-							result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP).divide(
-									right, RoundingMode.HALF_UP);
-						}
+				case PLUS:
+					return vf.createLiteral(left.add(right));
+				case MINUS:
+					return vf.createLiteral(left.subtract(right));
+				case MULTIPLY:
+					return vf.createLiteral(left.multiply(right));
+				case DIVIDE:
+					// Divide by zero handled through NumberFormatException
+					BigDecimal result = null;
+					try {
+						// try to return the exact quotient if possible.
+						result = left.divide(right, MathContext.UNLIMITED);
+					} catch (ArithmeticException e) {
+						// non-terminating decimal expansion in quotient, using
+						// scaling and rounding.
+						result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)
+								.divide(right, RoundingMode.HALF_UP);
+					}
 
-						return vf.createLiteral(result);
-					default:
-						throw new IllegalArgumentException("Unknown operator: " + op);
+					return vf.createLiteral(result);
+				default:
+					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
-			}
-			else { // XMLSchema.INTEGER
+			} else { // XMLSchema.INTEGER
 				BigInteger left = leftLit.integerValue();
 				BigInteger right = rightLit.integerValue();
 
 				switch (op) {
-					case PLUS:
-						return vf.createLiteral(left.add(right));
-					case MINUS:
-						return vf.createLiteral(left.subtract(right));
-					case MULTIPLY:
-						return vf.createLiteral(left.multiply(right));
-					case DIVIDE:
-						throw new RuntimeException(
-								"Integer divisions should be processed as decimal divisions");
-					default:
-						throw new IllegalArgumentException("Unknown operator: " + op);
+				case PLUS:
+					return vf.createLiteral(left.add(right));
+				case MINUS:
+					return vf.createLiteral(left.subtract(right));
+				case MULTIPLY:
+					return vf.createLiteral(left.multiply(right));
+				case DIVIDE:
+					throw new RuntimeException("Integer divisions should be processed as decimal divisions");
+				default:
+					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
 			}
-		}
-		catch (NumberFormatException e) {
+		} catch (NumberFormatException e) {
 			throw new ValueExprEvaluationException(e);
-		}
-		catch (ArithmeticException e) {
+		} catch (ArithmeticException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}
 
 	/**
-	 * Returns the decimal expansion scale used in division operations resulting in a decimal value with
-	 * non-terminating decimal expansion. By default, this value is set to 24.
+	 * Returns the decimal expansion scale used in division operations resulting in a decimal value with non-terminating
+	 * decimal expansion. By default, this value is set to 24.
 	 * 
 	 * @return The decimal expansion scale.
 	 */
@@ -199,12 +182,11 @@ public class MathUtil {
 	}
 
 	/**
-	 * Sets the decimal expansion scale used in divisions resulting in a decimal value with non-terminating
-	 * decimal expansion.
+	 * Sets the decimal expansion scale used in divisions resulting in a decimal value with non-terminating decimal
+	 * expansion.
 	 * 
-	 * @param decimalExpansionScale
-	 *        The decimal expansion scale to set. Note that a mimimum of 18 is required to stay compliant with
-	 *        the XPath specification of xsd:decimal operations.
+	 * @param decimalExpansionScale The decimal expansion scale to set. Note that a mimimum of 18 is required to stay
+	 *                              compliant with the XPath specification of xsd:decimal operations.
 	 */
 	public static void setDecimalExpansionScale(int decimalExpansionScale) {
 		MathUtil.decimalExpansionScale = decimalExpansionScale;

@@ -32,15 +32,13 @@ public class UpperCase implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("UCASE requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
+			Literal literal = (Literal) args[0];
 
 			// UpperCase function accepts only string literal
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
@@ -49,19 +47,15 @@ public class UpperCase implements Function {
 
 				if (language.isPresent()) {
 					return valueFactory.createLiteral(lexicalValue, language.get());
-				}
-				else if (XMLSchema.STRING.equals(literal.getDatatype())) {
+				} else if (XMLSchema.STRING.equals(literal.getDatatype())) {
 					return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);
-				}
-				else {
+				} else {
 					return valueFactory.createLiteral(lexicalValue);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 

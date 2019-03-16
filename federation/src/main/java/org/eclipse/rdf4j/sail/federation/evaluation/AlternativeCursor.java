@@ -25,34 +25,27 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 	private final CloseableIteration<? extends E, QueryEvaluationException> alternative;
 
 	public AlternativeCursor(CloseableIteration<? extends E, QueryEvaluationException> primary,
-			CloseableIteration<? extends E, QueryEvaluationException> alternative)
-	{
+			CloseableIteration<? extends E, QueryEvaluationException> alternative) {
 		super();
 		this.alternative = alternative;
 		this.primary = primary;
 	}
 
 	@Override
-	public void handleClose()
-		throws QueryEvaluationException
-	{
+	public void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				primary.close();
-			}
-			finally {
+			} finally {
 				alternative.close();
 			}
 		}
 	}
 
 	@Override
-	public E getNextElement()
-		throws QueryEvaluationException
-	{
+	public E getNextElement() throws QueryEvaluationException {
 		if (delegate == null) {
 			delegate = primary.hasNext() ? primary : alternative;
 		}

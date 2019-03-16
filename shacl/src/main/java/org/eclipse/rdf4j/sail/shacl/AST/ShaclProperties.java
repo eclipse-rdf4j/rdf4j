@@ -148,11 +148,9 @@ public class ShaclProperties {
 						break;
 				}
 
-
 			});
 		}
 
 	}
-
 
 }

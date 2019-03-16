@@ -40,9 +40,9 @@ import org.slf4j.LoggerFactory;
  * A QueryInterpreter creates a set of QuerySpecs based on Lucene-related StatementPatterns that it finds in a
  * TupleExpr.
  * <p>
- * QuerySpecs will only be created when the set of StatementPatterns is complete (i.e. contains at least a
- * matches and a query statement connected properly) and correct (query pattern has a literal object, matches
- * a resource subject, etc.).
+ * QuerySpecs will only be created when the set of StatementPatterns is complete (i.e. contains at least a matches and a
+ * query statement connected properly) and correct (query pattern has a literal object, matches a resource subject,
+ * etc.).
  */
 public class QuerySpecBuilder implements SearchQueryInterpreter {
 
@@ -53,36 +53,32 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	/**
 	 * Initialize a new QuerySpecBuilder
 	 * 
-	 * @param incompleteQueryFails
-	 *        see {@link LuceneSail#isIncompleteQueryFails()}
+	 * @param incompleteQueryFails see {@link LuceneSail#isIncompleteQueryFails()}
 	 */
 	public QuerySpecBuilder(boolean incompleteQueryFails) {
 		this.incompleteQueryFails = incompleteQueryFails;
 	}
 
 	/**
-	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in
-	 * a TupleExpr. To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection
+	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
+	 * TupleExpr. To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection
 	 * <SearchQueryEvaluator> result)}.
 	 */
 	@SuppressWarnings("unchecked")
 	@Deprecated
-	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings)
-		throws SailException
-	{
+	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings) throws SailException {
 		HashSet<QuerySpec> result = new HashSet<>();
-		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>)(Collection<?>)result);
+		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>) (Collection<?>) result);
 		return result;
 	}
 
 	/**
-	 * Appends a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in
-	 * a TupleExpr.
+	 * Appends a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
+	 * TupleExpr.
 	 */
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result)
-		throws SailException
-	{
+			throws SailException {
 		// find Lucene-related StatementPatterns
 		PatternFilter filter = new PatternFilter();
 		tupleExpr.visit(filter);
@@ -100,7 +96,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				continue;
 			}
 
-			Resource subject = (Resource)subjectValue;
+			Resource subject = (Resource) subjectValue;
 
 			// the matches var should have no value
 			Var matchesVar = matchesPattern.getObjectVar();
@@ -118,8 +114,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				propertyPattern = getPattern(matchesVar, filter.propertyPatterns);
 				scorePattern = getPattern(matchesVar, filter.scorePatterns);
 				snippetPattern = getPattern(matchesVar, filter.snippetPatterns);
-			}
-			catch (IllegalArgumentException e) {
+			} catch (IllegalArgumentException e) {
 				failOrWarn(e);
 				continue;
 			}
@@ -129,11 +124,10 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 			if (queryPattern != null) {
 				Var queryVar = queryPattern.getObjectVar();
-				Value queryValue = queryVar.hasValue() ? queryVar.getValue()
-						: bindings.getValue(queryVar.getName());
+				Value queryValue = queryVar.hasValue() ? queryVar.getValue() : bindings.getValue(queryVar.getName());
 
 				if (queryValue instanceof Literal) {
-					queryString = ((Literal)queryValue).getLabel();
+					queryString = ((Literal) queryValue).getLabel();
 				}
 			}
 
@@ -146,7 +140,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 				// if property is a restriction, it should be an URI
 				if (propertyValue instanceof IRI) {
-					propertyURI = (IRI)propertyValue;
+					propertyURI = (IRI) propertyValue;
 				}
 				// otherwise, it should be a variable
 				else if (propertyValue != null) {
@@ -181,16 +175,14 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			if (querySpec.isEvaluable()) {
 				// constant optimizer
 				result.add(querySpec);
-			}
-			else {
+			} else {
 				// evaluate later
 				TupleFunctionCall funcCall = new TupleFunctionCall();
 				funcCall.setURI(LuceneSailSchema.SEARCH.toString());
 				funcCall.addArg(queryPattern.getObjectVar());
 				if (subject != null) {
 					funcCall.addArg(matchesPattern.getSubjectVar());
-				}
-				else {
+				} else {
 					funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
 					funcCall.addResultVar(matchesPattern.getSubjectVar());
 				}
@@ -198,8 +190,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 					funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
 					if (propertyURI != null) {
 						funcCall.addArg(propertyPattern.getObjectVar());
-					}
-					else {
+					} else {
 						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
 						funcCall.addResultVar(propertyPattern.getObjectVar());
 					}
@@ -224,46 +215,36 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		// fail on superflous typePattern, query, score, or snippet patterns.
 	}
 
-	private void failOrWarn(Exception exception)
-		throws SailException
-	{
+	private void failOrWarn(Exception exception) throws SailException {
 		if (incompleteQueryFails) {
-			throw exception instanceof SailException ? (SailException)exception
-					: new SailException(exception);
-		}
-		else {
+			throw exception instanceof SailException ? (SailException) exception : new SailException(exception);
+		} else {
 			logger.warn(exception.getMessage(), exception);
 		}
 	}
 
-	private void failOrWarn(String message)
-		throws SailException
-	{
+	private void failOrWarn(String message) throws SailException {
 		if (incompleteQueryFails) {
 			throw new SailException("Invalid Text Query: " + message);
-		}
-		else {
+		} else {
 			logger.warn(message);
 		}
 	}
 
 	/**
-	 * Returns the StatementPattern, if any, from the specified Collection that has the specified subject var.
-	 * If multiple StatementPatterns exist with this subject var, an IllegalArgumentException is thrown. It
-	 * also removes the patter from the arraylist, to be able to check if some patterns are added without a
-	 * MATCHES property.
+	 * Returns the StatementPattern, if any, from the specified Collection that has the specified subject var. If
+	 * multiple StatementPatterns exist with this subject var, an IllegalArgumentException is thrown. It also removes
+	 * the patter from the arraylist, to be able to check if some patterns are added without a MATCHES property.
 	 */
 	private StatementPattern getPattern(Var subjectVar, ArrayList<StatementPattern> patterns)
-		throws IllegalArgumentException
-	{
+			throws IllegalArgumentException {
 		StatementPattern result = null;
 
 		for (StatementPattern pattern : patterns) {
 			if (pattern.getSubjectVar().equals(subjectVar)) {
 				if (result == null) {
 					result = pattern;
-				}
-				else {
+				} else {
 					throw new IllegalArgumentException(
 							"multiple StatementPatterns with the same subject: " + result + ", " + pattern);
 				}
@@ -290,8 +271,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		public ArrayList<StatementPattern> snippetPatterns = new ArrayList<>();
 
 		/**
-		 * Method implementing the visitor pattern that gathers all statements using a predicate from the
-		 * LuceneSail's namespace.
+		 * Method implementing the visitor pattern that gathers all statements using a predicate from the LuceneSail's
+		 * namespace.
 		 */
 		@Override
 		public void meet(StatementPattern node) {
@@ -299,20 +280,15 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 			if (MATCHES.equals(predicate)) {
 				matchesPatterns.add(node);
-			}
-			else if (QUERY.equals(predicate)) {
+			} else if (QUERY.equals(predicate)) {
 				queryPatterns.add(node);
-			}
-			else if (PROPERTY.equals(predicate)) {
+			} else if (PROPERTY.equals(predicate)) {
 				propertyPatterns.add(node);
-			}
-			else if (SCORE.equals(predicate)) {
+			} else if (SCORE.equals(predicate)) {
 				scorePatterns.add(node);
-			}
-			else if (SNIPPET.equals(predicate)) {
+			} else if (SNIPPET.equals(predicate)) {
 				snippetPatterns.add(node);
-			}
-			else if (TYPE.equals(predicate)) {
+			} else if (TYPE.equals(predicate)) {
 				Value object = node.getObjectVar().getValue();
 				if (LUCENE_QUERY.equals(object)) {
 					typePatterns.add(node);

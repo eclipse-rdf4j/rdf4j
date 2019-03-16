@@ -21,9 +21,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class GenerateFullAxioms {
 
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		MemoryStore baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
 		SchemaCachingRDFSInferencer rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);

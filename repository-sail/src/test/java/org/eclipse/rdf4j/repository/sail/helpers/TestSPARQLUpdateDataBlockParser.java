@@ -24,12 +24,9 @@ public class TestSPARQLUpdateDataBlockParser {
 	 * SPARQLUpdateDataBlockParser.parseGraph(), an Exception is throws and test fails.
 	 */
 	@Test
-	public void testParseGraph()
-		throws RDFParseException, RDFHandlerException, IOException
-	{
+	public void testParseGraph() throws RDFParseException, RDFHandlerException, IOException {
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
-		String blocksToCheck[] = new String[] {
-				"graph <u:g1> {<u:1> <p:1> 1 } . <u:2> <p:2> 2.",
+		String blocksToCheck[] = new String[] { "graph <u:g1> {<u:1> <p:1> 1 } . <u:2> <p:2> 2.",
 				"graph <u:g1> {<u:1> <p:1> 1 .} . <u:2> <p:2> 2." };
 		for (String block : blocksToCheck) {
 			parser.parse(new StringReader(block), "http://base.org");

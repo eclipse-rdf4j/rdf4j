@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -42,8 +41,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		Literal(SHACL.LITERAL),
 		BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
 		BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL),
-		IRIOrLiteral(SHACL.IRI_OR_LITERAL),
-		;
+		IRIOrLiteral(SHACL.IRI_OR_LITERAL),;
 
 		IRI iri;
 
@@ -61,7 +59,6 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 			throw new IllegalStateException("Unknown nodeKind: " + resource);
 		}
 	}
-
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {

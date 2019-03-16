@@ -17,7 +17,7 @@ import org.locationtech.spatial4j.shape.Shape;
 import org.locationtech.spatial4j.shape.ShapeCollection;
 
 final class DefaultWktWriter implements WktWriter {
-	
+
 	private final ShapeWriter wktWriter;
 
 	public DefaultWktWriter(SpatialContext context) {
@@ -25,14 +25,11 @@ final class DefaultWktWriter implements WktWriter {
 	}
 
 	@Override
-	public String toWkt(Shape shape)
-		throws IOException
-	{
+	public String toWkt(Shape shape) throws IOException {
 		if (shape.isEmpty()) {
 			if (shape instanceof Point) {
 				return "POINT EMPTY";
-			}
-			else if (shape instanceof ShapeCollection) {
+			} else if (shape instanceof ShapeCollection) {
 				return "GEOMETRYCOLLECTION EMPTY";
 			}
 		}

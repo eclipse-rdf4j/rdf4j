@@ -44,12 +44,11 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MaxCountBenchmarkEmpty {
-
 
 	private List<List<Statement>> allStatements;
 
@@ -60,7 +59,6 @@ public class MaxCountBenchmarkEmpty {
 
 		allStatements = new ArrayList<>(10);
 
-
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (int j = 0; j < 10; j++) {
@@ -68,11 +66,9 @@ public class MaxCountBenchmarkEmpty {
 			allStatements.add(statements);
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
-				);
-				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL, vf.createLiteral("label" + i))
-				);
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
+						vf.createLiteral("label" + i)));
 			}
 		}
 		System.gc();
@@ -84,12 +80,10 @@ public class MaxCountBenchmarkEmpty {
 		allStatements.clear();
 	}
 
-
 	@Benchmark
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.ttl"));
-
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -105,7 +99,6 @@ public class MaxCountBenchmarkEmpty {
 		}
 
 	}
-
 
 	@Benchmark
 	public void noShacl() {
@@ -128,7 +121,6 @@ public class MaxCountBenchmarkEmpty {
 
 	}
 
-
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
 
@@ -144,7 +136,8 @@ public class MaxCountBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <"
+						+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -168,7 +161,10 @@ public class MaxCountBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c} group by ?a having(?count > 1)").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection
+						.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <"
+								+ RDFS.LABEL + "> ?c} group by ?a having(?count > 1)")
+						.evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -176,7 +172,5 @@ public class MaxCountBenchmarkEmpty {
 		}
 
 	}
-
-
 
 }

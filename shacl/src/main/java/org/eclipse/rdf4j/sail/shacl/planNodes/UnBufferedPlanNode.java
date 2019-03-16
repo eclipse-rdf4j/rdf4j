@@ -48,9 +48,10 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 			}
 
 			private void calculateNext() {
-				while(next == null){
+				while (next == null) {
 					boolean success = parent.incrementIterator();
-					if(!success) break;
+					if (!success)
+						break;
 				}
 			}
 
@@ -82,13 +83,15 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 		printed = true;
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 	}
 
 	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
+
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();

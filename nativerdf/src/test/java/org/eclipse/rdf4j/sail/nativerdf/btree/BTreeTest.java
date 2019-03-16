@@ -33,7 +33,7 @@ public class BTreeTest {
 	static {
 		for (int i = 0; i < 256; i++) {
 			byte[] value = new byte[1];
-			value[0] = (byte)i;
+			value[0] = (byte) i;
 			TEST_VALUES.add(value);
 		}
 
@@ -54,52 +54,40 @@ public class BTreeTest {
 	 *---------*/
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		dir = FileUtil.createTempDir("btree");
 		btree = new BTree(dir, "test", 85, 1);
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		btree.delete();
 		FileUtil.deleteDir(dir);
 	}
 
 	@Test
-	public void testAddAscending()
-		throws Exception
-	{
+	public void testAddAscending() throws Exception {
 		for (byte[] value : TEST_VALUES) {
 			btree.insert(value);
 		}
 	}
 
 	@Test
-	public void testAddDescending()
-		throws Exception
-	{
+	public void testAddDescending() throws Exception {
 		for (int i = TEST_VALUES.size() - 1; i >= 0; i--) {
 			btree.insert(TEST_VALUES.get(i));
 		}
 	}
 
 	@Test
-	public void testAddRandom()
-		throws Exception
-	{
+	public void testAddRandom() throws Exception {
 		for (byte[] value : RANDOMIZED_TEST_VALUES) {
 			btree.insert(value);
 		}
 	}
 
 	@Test
-	public void testRemoveAscending()
-		throws Exception
-	{
+	public void testRemoveAscending() throws Exception {
 		testAddRandom();
 
 		for (byte[] value : TEST_VALUES) {
@@ -108,9 +96,7 @@ public class BTreeTest {
 	}
 
 	@Test
-	public void testRemoveDescending()
-		throws Exception
-	{
+	public void testRemoveDescending() throws Exception {
 		testAddRandom();
 
 		for (int i = TEST_VALUES.size() - 1; i >= 0; i--) {
@@ -119,9 +105,7 @@ public class BTreeTest {
 	}
 
 	@Test
-	public void testRemoveRandom()
-		throws Exception
-	{
+	public void testRemoveRandom() throws Exception {
 		testAddAscending();
 
 		for (byte[] value : RANDOMIZED_TEST_VALUES) {
@@ -130,9 +114,7 @@ public class BTreeTest {
 	}
 
 	@Test
-	public void testConcurrentAccess()
-		throws Exception
-	{
+	public void testConcurrentAccess() throws Exception {
 		int meanIdx = TEST_VALUES.size() / 2;
 		btree.insert(TEST_VALUES.get(meanIdx - 1));
 		btree.insert(TEST_VALUES.get(meanIdx));
@@ -140,32 +122,30 @@ public class BTreeTest {
 
 		try (RecordIterator iter1 = btree.iterateAll()) {
 			iter1.next();
-			
+
 			RecordIterator iter2 = btree.iterateAll();
 			iter2.next();
 			iter2.next();
 			iter2.next();
-			
+
 			for (byte[] value : TEST_VALUES) {
 				btree.insert(value);
 			}
-			
+
 			iter2.close();
 		}
 	}
 
 	@Test
-	public void testNewAndClear()
-		throws Exception
-	{
+	public void testNewAndClear() throws Exception {
 		btree.clear();
 	}
 
 	/*
-	 * Test for SES-527 public void testRootNodeSplit() throws Exception { // Fill the root node for (int i =
-	 * 0; i < 15; i++) { btree.insert(TEST_VALUES.get(i)); } // Fire up an iterator RecordIterator iter =
-	 * btree.iterateAll(); iter.next(); // Force the root node to split btree.insert(TEST_VALUES.get(15)); //
-	 * Verify that the iterator returns all 15 elements int count = 0; while (iter.next() != null) { count++;
-	 * } iter.close(); assertEquals(15, count); }
+	 * Test for SES-527 public void testRootNodeSplit() throws Exception { // Fill the root node for (int i = 0; i < 15;
+	 * i++) { btree.insert(TEST_VALUES.get(i)); } // Fire up an iterator RecordIterator iter = btree.iterateAll();
+	 * iter.next(); // Force the root node to split btree.insert(TEST_VALUES.get(15)); // Verify that the iterator
+	 * returns all 15 elements int count = 0; while (iter.next() != null) { count++; } iter.close(); assertEquals(15,
+	 * count); }
 	 */
 }

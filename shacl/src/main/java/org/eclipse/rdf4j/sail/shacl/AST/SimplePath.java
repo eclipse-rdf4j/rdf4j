@@ -21,7 +21,8 @@ import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no support for complex paths.
+ * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
+ * support for complex paths.
  *
  * @author Heshan Jayasinghe
  */
@@ -33,7 +34,10 @@ public class SimplePath extends Path {
 		super(id);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATH, null, true))) {
-			path = stream.map(Statement::getObject).map(v -> (IRI) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:path on " + id));
+			path = stream.map(Statement::getObject)
+					.map(v -> (IRI) v)
+					.findAny()
+					.orElseThrow(() -> new RuntimeException("Expected to find sh:path on " + id));
 		}
 
 	}
@@ -52,7 +56,8 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return subjectVariable + " <" + path + "> " + objectVariable + " . \n";
 
@@ -61,7 +66,6 @@ public class SimplePath extends Path {
 	public IRI getPath() {
 		return path;
 	}
-
 
 	@Override
 	public boolean equals(Object o) {

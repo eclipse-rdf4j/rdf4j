@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
- * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used in cases where interleaved
- * iteration joining is not appropriate (e.g. when the join arguments are subselects).
+ * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used in cases where interleaved iteration
+ * joining is not appropriate (e.g. when the join arguments are subselects).
  * 
  * @author jeen
  * @deprecated replaced by HashJoinIteration
@@ -58,8 +58,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 *--------------*/
 
 	public BottomUpJoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 		rightIter = strategy.evaluate(join.getRightArg(), bindings);
 
@@ -74,9 +73,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (hashTable == null) {
 			setupHashTable();
 		}
@@ -84,12 +81,10 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		while (currentScanElem == null) {
 			if (scanList.size() > 0) {
 				currentScanElem = removeFirstElement(scanList);
-			}
-			else {
+			} else {
 				if (restIter.hasNext()) {
 					currentScanElem = restIter.next();
-				}
-				else {
+				} else {
 					// no more elements available
 					return null;
 				}
@@ -102,14 +97,12 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 				for (Map.Entry<BindingSet, List<BindingSet>> key : hashTable.entrySet()) {
 					addAll(hashTableValues, key.getValue());
 				}
-			}
-			else {
+			} else {
 				BindingSet key = calcKey(currentScanElem, joinAttributes);
 
 				if (hashTable.containsKey(key)) {
 					hashTableValues = makeList(hashTable.get(key));
-				}
-				else {
+				} else {
 					currentScanElem = null;
 					hashTableValues = null;
 				}
@@ -137,24 +130,19 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				leftIter.close();
-			}
-			finally {
+			} finally {
 				try {
 					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}
-				}
-				finally {
+				} finally {
 					hashTable = null;
 					hashTableValues = null;
 					scanList = null;
@@ -183,9 +171,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		return q;
 	}
 
-	private void setupHashTable()
-		throws QueryEvaluationException
-	{
+	private void setupHashTable() throws QueryEvaluationException {
 
 		hashTable = makeMap();
 
@@ -203,8 +189,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 			smallestResult = rightArgResults;
 			scanList = leftArgResults;
 			restIter = leftIter;
-		}
-		else { // rightArg is the greater relation (or they are equal)
+		} else { // rightArg is the greater relation (or they are equal)
 			smallestResult = leftArgResults;
 			scanList = rightArgResults;
 			restIter = rightIter;
@@ -217,8 +202,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 			List<BindingSet> hashValue = null;
 			if (hashTable.containsKey(hashKey)) {
 				hashValue = hashTable.get(hashKey);
-			}
-			else {
+			} else {
 				hashValue = makeList();
 			}
 			add(hashValue, b);
@@ -227,22 +211,16 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	}
 
-	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey,
-			List<BindingSet> hashValue)
-		throws QueryEvaluationException
-	{
+	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue)
+			throws QueryEvaluationException {
 		hashTable.put(hashKey, hashValue);
 	}
 
-	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values)
-		throws QueryEvaluationException
-	{
+	protected void addAll(List<BindingSet> hashTableValues, List<BindingSet> values) throws QueryEvaluationException {
 		hashTableValues.addAll(values);
 	}
 
-	protected void add(List<BindingSet> leftArgResults, BindingSet b)
-		throws QueryEvaluationException
-	{
+	protected void add(List<BindingSet> leftArgResults, BindingSet b) throws QueryEvaluationException {
 		leftArgResults.add(b);
 	}
 
@@ -276,13 +254,10 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	/**
 	 * Remove the first (0 index) element from a BindingSet list.
 	 * 
-	 * @param list
-	 *        which is worked on.
+	 * @param list which is worked on.
 	 * @return the removed BindingSet
 	 */
-	protected BindingSet removeFirstElement(List<BindingSet> list)
-		throws QueryEvaluationException
-	{
+	protected BindingSet removeFirstElement(List<BindingSet> list) throws QueryEvaluationException {
 		return list.remove(0);
 	}
 }

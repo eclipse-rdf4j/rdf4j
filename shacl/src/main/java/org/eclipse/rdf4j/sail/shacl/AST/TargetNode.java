@@ -63,12 +63,14 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return targetNodeSet.stream()
-			.map(r -> "{{ select * where {BIND(<" + r + "> as " + subjectVariable + "). " + subjectVariable + " ?b1 " + objectVariable + " .}}}")
-			.reduce((a, b) -> a + " UNION " + b)
-			.get();
+				.map(r -> "{{ select * where {BIND(<" + r + "> as " + subjectVariable + "). " + subjectVariable
+						+ " ?b1 " + objectVariable + " .}}}")
+				.reduce((a, b) -> a + " UNION " + b)
+				.get();
 
 	}
 

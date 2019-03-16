@@ -19,22 +19,17 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
-			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, false);
+			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
+				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
+						false);
 			}
 
-			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
-					boolean checkOrder)
-			{
+			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
 						// test case incompatible with RDF 1.1 - see
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
@@ -51,16 +46,13 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 		}, true, true, false, "service");
 	}
 
-	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataSet, boolean laxCardinality, String... ignoredTests)
-	{
+	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
+			Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
 		this(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, false, ignoredTests);
 	}
 
-	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder,
-			String... ignoredTests)
-	{
+	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

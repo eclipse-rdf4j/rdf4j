@@ -90,11 +90,10 @@ public class NativeLiteral extends SimpleLiteral implements NativeValue {
 		}
 
 		if (o instanceof NativeLiteral && internalID != NativeValue.UNKNOWN_ID) {
-			NativeLiteral otherNativeLiteral = (NativeLiteral)o;
+			NativeLiteral otherNativeLiteral = (NativeLiteral) o;
 
 			if (otherNativeLiteral.internalID != NativeValue.UNKNOWN_ID
-					&& revision.equals(otherNativeLiteral.revision))
-			{
+					&& revision.equals(otherNativeLiteral.revision)) {
 				// NativeLiteral's from the same revision of the same native store,
 				// with both ID's set
 				return internalID == otherNativeLiteral.internalID;

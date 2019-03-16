@@ -31,8 +31,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	private final LeftJoin join;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
-	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are (only)
+	 * included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 
@@ -45,8 +45,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *--------------*/
 
 	public LeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.join = join;
 		this.scopeBindingNames = join.getBindingNames();
@@ -62,9 +61,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
 			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 			while (nextRightIter.hasNext() || leftIter.hasNext()) {
@@ -84,8 +81,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 					try {
 						if (join.getCondition() == null) {
 							return rightBindings;
-						}
-						else {
+						} else {
 							// Limit the bindings to the ones that are in scope for
 							// this filter
 							QueryBindingSet scopeBindings = new QueryBindingSet(rightBindings);
@@ -95,8 +91,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 								return rightBindings;
 							}
 						}
-					}
-					catch (ValueExprEvaluationException e) {
+					} catch (ValueExprEvaluationException e) {
 						// Ignore, condition not evaluated successfully
 					}
 				}
@@ -106,8 +101,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 					return leftBindings;
 				}
 			}
-		}
-		catch (NoSuchElementException ignore) {
+		} catch (NoSuchElementException ignore) {
 			// probably, one of the iterations has been closed concurrently in
 			// handleClose()
 		}
@@ -116,17 +110,13 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				leftIter.close();
-			}
-			finally {
+			} finally {
 				rightIter.close();
 			}
 		}

@@ -84,7 +84,7 @@ public class GeoRelationQuerySpec implements SearchQueryEvaluator {
 	}
 
 	public IRI getGeoProperty() {
-		return (IRI)geoStatement.getPredicateVar().getValue();
+		return (IRI) geoStatement.getPredicateVar().getValue();
 	}
 
 	public String getGeoVar() {
@@ -111,18 +111,16 @@ public class GeoRelationQuerySpec implements SearchQueryEvaluator {
 
 		if (hasResult) {
 			filter.replaceWith(filter.getArg());
-		}
-		else {
+		} else {
 			filter.replaceWith(new EmptySet());
 		}
 
 		if (functionParent instanceof ExtensionElem) {
-			Extension extension = (Extension)functionParent.getParentNode();
+			Extension extension = (Extension) functionParent.getParentNode();
 			List<ExtensionElem> elements = extension.getElements();
 			if (elements.size() > 1) {
 				elements.remove(functionParent);
-			}
-			else {
+			} else {
 				extension.replaceWith(extension.getArg());
 			}
 		}

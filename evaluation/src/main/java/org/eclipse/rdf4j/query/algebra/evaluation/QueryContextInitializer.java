@@ -7,7 +7,6 @@
  */
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-
 /**
  * Callback for configuring/customising a {@see QueryContext}.
  */

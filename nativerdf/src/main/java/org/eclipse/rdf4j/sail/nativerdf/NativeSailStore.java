@@ -61,24 +61,21 @@ class NativeSailStore implements SailStore {
 	final NamespaceStore namespaceStore;
 
 	/**
-	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and
-	 * NamespaceStore. Each sink method that directly accesses one of these store obtains the lock and
-	 * releases it immediately when done.
+	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and NamespaceStore.
+	 * Each sink method that directly accesses one of these store obtains the lock and releases it immediately when
+	 * done.
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
 
 	/**
-	 * Boolean indicating whether any {@link NativeSailSink} has started a transaction on the
-	 * {@link TripleStore}.
+	 * Boolean indicating whether any {@link NativeSailSink} has started a transaction on the {@link TripleStore}.
 	 */
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 
 	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
 	 */
-	public NativeSailStore(File dataDir, String tripleIndexes)
-		throws IOException, SailException
-	{
+	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
 				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
 	}
@@ -87,18 +84,15 @@ class NativeSailStore implements SailStore {
 	 * Creates a new {@link NativeSailStore}.
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize)
-		throws IOException, SailException
-	{
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
-					namespaceCacheSize, namespaceIDCacheSize);
+			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
+					namespaceIDCacheSize);
 			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
 			initialized = true;
-		}
-		finally {
+		} finally {
 			if (!initialized) {
 				close();
 			}
@@ -111,29 +105,24 @@ class NativeSailStore implements SailStore {
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		try {
 			try {
 				if (namespaceStore != null) {
 					namespaceStore.close();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					if (valueStore != null) {
 						valueStore.close();
 					}
-				}
-				finally {
+				} finally {
 					if (tripleStore != null) {
 						tripleStore.close();
 					}
 				}
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.warn("Failed to close store", e);
 			throw new SailException(e);
 		}
@@ -154,9 +143,7 @@ class NativeSailStore implements SailStore {
 		return new NativeSailSource(false);
 	}
 
-	List<Integer> getContextIDs(Resource... contexts)
-		throws IOException
-	{
+	List<Integer> getContextIDs(Resource... contexts) throws IOException {
 		assert contexts.length > 0 : "contexts must not be empty";
 
 		// Filter duplicates
@@ -168,8 +155,7 @@ class NativeSailStore implements SailStore {
 		for (Resource context : contextSet) {
 			if (context == null) {
 				contextIDs.add(0);
-			}
-			else {
+			} else {
 				int contextID = valueStore.getID(context);
 				if (contextID != NativeValue.UNKNOWN_ID) {
 					contextIDs.add(contextID);
@@ -183,22 +169,15 @@ class NativeSailStore implements SailStore {
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
 	 * 
-	 * @param subj
-	 *        The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param pred
-	 *        The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param obj
-	 *        The object of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param contexts
-	 *        The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
-	 *        no contexts are supplied the method operates on the entire repository.
-	 * @return A StatementIterator that can be used to iterate over the statements that match the specified
-	 *         pattern.
+	 * @param subj     The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param pred     The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param obj      The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param contexts The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
+	 *                 no contexts are supplied the method operates on the entire repository.
+	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred,
-			Value obj, boolean explicit, Resource... contexts)
-		throws IOException
-	{
+	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
+			boolean explicit, Resource... contexts) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);
@@ -226,13 +205,11 @@ class NativeSailStore implements SailStore {
 		List<Integer> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(NativeValue.UNKNOWN_ID);
-		}
-		else {
+		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0);
-				}
-				else {
+				} else {
 					int contextID = valueStore.getID(context);
 
 					if (contextID != NativeValue.UNKNOWN_ID) {
@@ -242,27 +219,22 @@ class NativeSailStore implements SailStore {
 			}
 		}
 
-		ArrayList<NativeStatementIterator> perContextIterList = new ArrayList<>(
-				contextIDList.size());
+		ArrayList<NativeStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (int contextID : contextIDList) {
-			RecordIterator btreeIter = tripleStore.getTriples(subjID, predID, objID, contextID, explicit,
-					false);
+			RecordIterator btreeIter = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
 
 			perContextIterList.add(new NativeStatementIterator(btreeIter, valueStore));
 		}
 
 		if (perContextIterList.size() == 1) {
 			return perContextIterList.get(0);
-		}
-		else {
+		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
 	}
 
-	double cardinality(Resource subj, IRI pred, Value obj, Resource context)
-		throws IOException
-	{
+	double cardinality(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);
@@ -312,16 +284,12 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public SailSink sink(IsolationLevel level)
-			throws SailException
-		{
+		public SailSink sink(IsolationLevel level) throws SailException {
 			return new NativeSailSink(explicit);
 		}
 
 		@Override
-		public NativeSailDataset dataset(IsolationLevel level)
-			throws SailException
-		{
+		public NativeSailDataset dataset(IsolationLevel level) throws SailException {
 			return new NativeSailDataset(explicit);
 		}
 
@@ -331,9 +299,7 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		public NativeSailSink(boolean explicit)
-			throws SailException
-		{
+		public NativeSailSink(boolean explicit) throws SailException {
 			this.explicit = explicit;
 		}
 
@@ -343,26 +309,20 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void prepare()
-			throws SailException
-		{
+		public void prepare() throws SailException {
 			// serializable is not supported at this level
 		}
 
 		@Override
-		public synchronized void flush()
-			throws SailException
-		{
+		public synchronized void flush() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
 				try {
 					valueStore.sync();
-				}
-				finally {
+				} finally {
 					try {
 						namespaceStore.sync();
-					}
-					finally {
+					} finally {
 						if (storeTxnStarted.get()) {
 							tripleStore.commit();
 							// do not set flag to false until _after_ commit is succesfully completed.
@@ -370,115 +330,89 @@ class NativeSailStore implements SailStore {
 						}
 					}
 				}
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
-			}
-			catch (RuntimeException e) {
+			} catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 		}
 
 		@Override
-		public void setNamespace(String prefix, String name)
-			throws SailException
-		{
+		public void setNamespace(String prefix, String name) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
 				namespaceStore.setNamespace(prefix, name);
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 		}
 
 		@Override
-		public void removeNamespace(String prefix)
-			throws SailException
-		{
+		public void removeNamespace(String prefix) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
 				namespaceStore.removeNamespace(prefix);
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 		}
 
 		@Override
-		public void clearNamespaces()
-			throws SailException
-		{
+		public void clearNamespaces() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
 				namespaceStore.clear();
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 		}
 
 		@Override
-		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException
-		{
+		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 			// serializable is not supported at this level
 		}
 
 		@Override
-		public void clear(Resource... contexts)
-			throws SailException
-		{
+		public void clear(Resource... contexts) throws SailException {
 			removeStatements(null, null, null, explicit, contexts);
 		}
 
 		@Override
-		public void approve(Resource subj, IRI pred, Value obj, Resource ctx)
-			throws SailException
-		{
+		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			addStatement(subj, pred, obj, explicit, ctx);
 		}
 
 		@Override
-		public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx)
-			throws SailException
-		{
+		public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			removeStatements(subj, pred, obj, explicit, ctx);
 		}
 
 		/**
 		 * Starts a transaction on the triplestore, if necessary.
 		 * 
-		 * @throws SailException
-		 *         if a transaction could not be started.
+		 * @throws SailException if a transaction could not be started.
 		 */
-		private synchronized void startTriplestoreTransaction()
-			throws SailException
-		{
+		private synchronized void startTriplestoreTransaction() throws SailException {
 
 			if (storeTxnStarted.compareAndSet(false, true)) {
 				try {
 					tripleStore.startTransaction();
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					storeTxnStarted.set(false);
 					throw new SailException(e);
 				}
 			}
 		}
 
-		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit,
-				Resource... contexts)
-			throws SailException
-		{
+		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
+				throws SailException {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			boolean result = false;
 			sinkStoreAccessLock.lock();
@@ -501,25 +435,20 @@ class NativeSailStore implements SailStore {
 					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
 					result |= wasNew;
 				}
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new SailException(e);
-			}
-			catch (RuntimeException e) {
+			} catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 
 			return result;
 		}
 
-		private int removeStatements(Resource subj, IRI pred, Value obj, boolean explicit,
-				Resource... contexts)
-			throws SailException
-		{
+		private int removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
+				throws SailException {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
 			sinkStoreAccessLock.lock();
@@ -550,13 +479,11 @@ class NativeSailStore implements SailStore {
 				List<Integer> contextIDList = new ArrayList<>(contexts.length);
 				if (contexts.length == 0) {
 					contextIDList.add(NativeValue.UNKNOWN_ID);
-				}
-				else {
+				} else {
 					for (Resource context : contexts) {
 						if (context == null) {
 							contextIDList.add(0);
-						}
-						else {
+						} else {
 							int contextID = valueStore.getID(context);
 							if (contextID != NativeValue.UNKNOWN_ID) {
 								contextIDList.add(contextID);
@@ -574,15 +501,12 @@ class NativeSailStore implements SailStore {
 				}
 
 				return removeCount;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new SailException(e);
-			}
-			catch (RuntimeException e) {
+			} catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
-			}
-			finally {
+			} finally {
 				sinkStoreAccessLock.unlock();
 			}
 		}
@@ -595,9 +519,7 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		public NativeSailDataset(boolean explicit)
-			throws SailException
-		{
+		public NativeSailDataset(boolean explicit) throws SailException {
 			this.explicit = explicit;
 		}
 
@@ -607,9 +529,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public String getNamespace(String prefix)
-			throws SailException
-		{
+		public String getNamespace(String prefix) throws SailException {
 			return namespaceStore.getNamespace(prefix);
 		}
 
@@ -619,9 +539,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<? extends Resource, SailException> getContextIDs()
-			throws SailException
-		{
+		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
 			RecordIterator btreeIter = null;
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
 			CloseableIteration<? extends Statement, SailException> stIter2 = null;
@@ -636,8 +554,7 @@ class NativeSailStore implements SailStore {
 				if (btreeIter == null) {
 					// Iterator over all statements
 					stIter1 = createStatementIterator(null, null, null, explicit);
-				}
-				else {
+				} else {
 					stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 				}
 				// Filter statements without context resource
@@ -659,8 +576,7 @@ class NativeSailStore implements SailStore {
 				if (btreeIter == null) {
 					// Filtering any duplicates
 					ctxIter2 = new DistinctIteration<>(ctxIter1);
-				}
-				else {
+				} else {
 					// Filtering sorted duplicates
 					ctxIter2 = new ReducedIteration<>(ctxIter1);
 				}
@@ -671,61 +587,50 @@ class NativeSailStore implements SailStore {
 					protected SailException convert(Exception e) {
 						if (e instanceof IOException) {
 							return new SailException(e);
-						}
-						else if (e instanceof RuntimeException) {
-							throw (RuntimeException)e;
-						}
-						else if (e == null) {
+						} else if (e instanceof RuntimeException) {
+							throw (RuntimeException) e;
+						} else if (e == null) {
 							throw new IllegalArgumentException("e must not be null");
-						}
-						else {
+						} else {
 							throw new IllegalArgumentException("Unexpected exception type: " + e.getClass());
 						}
 					}
 				};
 				allGood = true;
 				return result;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new SailException(e);
-			}
-			finally {
+			} finally {
 				if (!allGood) {
 					try {
 						if (result != null) {
 							result.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (ctxIter2 != null) {
 								ctxIter2.close();
 							}
-						}
-						finally {
+						} finally {
 							try {
 								if (ctxIter1 != null) {
 									ctxIter1.close();
 								}
-							}
-							finally {
+							} finally {
 								try {
 									if (stIter2 != null) {
 										stIter2.close();
 									}
-								}
-								finally {
+								} finally {
 									try {
 										if (stIter1 != null) {
 											stIter1.close();
 										}
-									}
-									finally {
+									} finally {
 										if (btreeIter != null) {
 											try {
 												btreeIter.close();
-											}
-											catch (IOException e) {
+											} catch (IOException e) {
 												throw new SailException(e);
 											}
 										}
@@ -740,14 +645,11 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-				Value obj, Resource... contexts)
-			throws SailException
-		{
+		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws SailException {
 			try {
 				return createStatementIterator(subj, pred, obj, explicit, contexts);
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new SailException("Unable to get statements", e);
 			}
 		}

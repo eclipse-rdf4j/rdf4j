@@ -11,7 +11,7 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-public class EqualsJoin implements PlanNode{
+public class EqualsJoin implements PlanNode {
 	private PlanNode left;
 	private PlanNode right;
 	private boolean useAsFilter;
@@ -43,7 +43,6 @@ public class EqualsJoin implements PlanNode{
 					nextLeft = leftIterator.next();
 				}
 
-
 				if (nextRight == null && rightIterator.hasNext()) {
 					nextRight = rightIterator.next();
 				}
@@ -62,21 +61,19 @@ public class EqualsJoin implements PlanNode{
 					return;
 				}
 
-
 				while (next == null) {
 					if (nextRight != null) {
 
 						if (nextLeft.line == nextRight.line || nextLeft.line.equals(nextRight.line)) {
-							if(useAsFilter){
+							if (useAsFilter) {
 								next = nextLeft;
 								next.addAllCausedByPropertyShape(nextRight.getCausedByPropertyShapes());
 								next.addHistory(nextRight);
-							}else{
+							} else {
 								next = TupleHelper.join(nextLeft, nextRight);
 							}
 							nextRight = null;
 						} else {
-
 
 							int compareTo = nextLeft.compareTo(nextRight);
 
@@ -107,7 +104,6 @@ public class EqualsJoin implements PlanNode{
 						return;
 					}
 				}
-
 
 			}
 
@@ -146,13 +142,15 @@ public class EqualsJoin implements PlanNode{
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
-		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
+		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 		// if this plan node implements discardedRight/Left, then this is the code to print the plan.
@@ -178,7 +176,8 @@ public class EqualsJoin implements PlanNode{
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		if(left.getIteratorDataType() == right.getIteratorDataType()) return left.getIteratorDataType();
+		if (left.getIteratorDataType() == right.getIteratorDataType())
+			return left.getIteratorDataType();
 
 		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
 
@@ -186,8 +185,6 @@ public class EqualsJoin implements PlanNode{
 
 	@Override
 	public String toString() {
-		return "EqualsJoin{" +
-			"useAsFilter=" + useAsFilter +
-			'}';
+		return "EqualsJoin{" + "useAsFilter=" + useAsFilter + '}';
 	}
 }

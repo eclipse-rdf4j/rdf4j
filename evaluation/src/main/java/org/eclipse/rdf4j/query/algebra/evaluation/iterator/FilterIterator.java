@@ -31,8 +31,8 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	private final EvaluationStrategy strategy;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
-	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are (only)
+	 * included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 
@@ -41,9 +41,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 *--------------*/
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy)
-		throws QueryEvaluationException
-	{
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filter = filter;
 		this.strategy = strategy;
@@ -63,30 +61,26 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		QueryModelNode parent = node.getParentNode();
 		if (parent == null) {
 			return false;
-		}
-		else {
+		} else {
 			return isPartOfSubQuery(parent);
 		}
 	}
 
 	@Override
-	protected boolean accept(BindingSet bindings)
-		throws QueryEvaluationException
-	{
+	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
 		try {
 			// Limit the bindings to the ones that are in scope for this filter
 			QueryBindingSet scopeBindings = new QueryBindingSet(bindings);
 
 			// FIXME J1 scopeBindingNames should include bindings from superquery if the filter
-			// is part of a subquery. This is a workaround: we should fix the settings of scopeBindingNames, 
+			// is part of a subquery. This is a workaround: we should fix the settings of scopeBindingNames,
 			// rather than skipping the limiting of bindings.
 			if (!isPartOfSubQuery(filter)) {
 				scopeBindings.retainAll(scopeBindingNames);
 			}
 
 			return strategy.isTrue(filter.getCondition(), scopeBindings);
-		}
-		catch (ValueExprEvaluationException e) {
+		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
 			return false;
 		}

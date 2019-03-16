@@ -15,14 +15,13 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * A function that can return a tuple of {@link Value}s. This can be used to implement "property functions" or
- * "magic properties".
+ * A function that can return a tuple of {@link Value}s. This can be used to implement "property functions" or "magic
+ * properties".
  */
 public interface TupleFunction {
 
 	public String getURI();
 
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException;
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException;
 }

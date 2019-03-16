@@ -70,7 +70,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 				// we further only index statements where the Literal's datatype is
 				// accepted
-				Literal literal = (Literal)statement.getObject();
+				Literal literal = (Literal) statement.getObject();
 				if (luceneIndex.accept(literal))
 					buffer.add(statement);
 			}
@@ -88,7 +88,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				}
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
-				Literal literal = (Literal)statement.getObject();
+				Literal literal = (Literal) statement.getObject();
 				if (luceneIndex.accept(literal))
 					buffer.remove(statement);
 			}
@@ -101,8 +101,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	public LuceneSpinSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex,
-			LuceneSpinSail sail)
-	{
+			LuceneSpinSail sail) {
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
 		this.sail = sail;
@@ -116,15 +115,12 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		super.addStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		if (closed.compareAndSet(false, true)) {
 			super.close();
 		}
@@ -133,9 +129,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to indexing
 
 	@Override
-	public synchronized void clear(Resource... resources)
-		throws SailException
-	{
+	public synchronized void clear(Resource... resources) throws SailException {
 		// remove the connection listener, this is safe as the changing methods
 		// are synchronized
 		// during the clear(), no other operation can be invoked
@@ -143,30 +137,24 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		try {
 			super.clear(resources);
 			buffer.clear(resources);
-		}
-		finally {
+		} finally {
 			getWrappedConnection().addConnectionListener(connectionListener);
 		}
 	}
 
 	@Override
-	public void begin()
-		throws SailException
-	{
+	public void begin() throws SailException {
 		super.begin();
 		buffer.reset();
 		try {
 			luceneIndex.begin();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new SailException(e);
 		}
 	}
 
 	@Override
-	public void commit()
-		throws SailException
-	{
+	public void commit() throws SailException {
 		super.commit();
 
 		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
@@ -178,62 +166,50 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 			for (Iterator<Operation> i = buffer.operations().iterator(); i.hasNext();) {
 				Operation op = i.next();
 				if (op instanceof LuceneSailBuffer.AddRemoveOperation) {
-					AddRemoveOperation addremove = (AddRemoveOperation)op;
+					AddRemoveOperation addremove = (AddRemoveOperation) op;
 					// add/remove in one call
 					addRemoveStatements(addremove.getAdded(), addremove.getRemoved());
-				}
-				else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
+				} else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
 					// clear context
-					clearContexts(((ClearContextOperation)op).getContexts());
-				}
-				else if (op instanceof LuceneSailBuffer.ClearOperation) {
+					clearContexts(((ClearContextOperation) op).getContexts());
+				} else if (op instanceof LuceneSailBuffer.ClearOperation) {
 					logger.debug("clearing index...");
 					luceneIndex.clear();
-				}
-				else {
-					throw new SailException(
-							"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+				} else {
+					throw new SailException("Cannot interpret operation " + op + " of type " + op.getClass().getName());
 				}
 				i.remove();
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			logger.error("Committing operations in lucenesail, encountered exception " + e
 					+ ". Only some operations were stored, " + buffer.operations().size()
 					+ " operations are discarded. Lucene Index is now corrupt.", e);
 			throw new SailException(e);
-		}
-		finally {
+		} finally {
 			buffer.reset();
 		}
 	}
 
-	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove)
-		throws IOException
-	{
+	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove) throws IOException {
 		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
 		luceneIndex.begin();
 		try {
 			luceneIndex.addRemoveStatements(toAdd, toRemove);
 			luceneIndex.commit();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.error("Rolling back", e);
 			luceneIndex.rollback();
 			throw e;
 		}
 	}
 
-	private void clearContexts(Resource... contexts)
-		throws IOException
-	{
+	private void clearContexts(Resource... contexts) throws IOException {
 		logger.debug("clearing contexts...");
 		luceneIndex.begin();
 		try {
 			luceneIndex.clearContexts(contexts);
 			luceneIndex.commit();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.error("Rolling back", e);
 			luceneIndex.rollback();
 			throw e;
@@ -245,21 +221,17 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	 */
 	@Override
 	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		super.removeStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void rollback()
-		throws SailException
-	{
+	public void rollback() throws SailException {
 		super.rollback();
 		buffer.reset();
 		try {
 			luceneIndex.rollback();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new SailException(e);
 		}
 	}

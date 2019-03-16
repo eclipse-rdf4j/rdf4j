@@ -29,14 +29,12 @@ public class Mod extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be numeric literals");
 		}
-		Literal leftLit = (Literal)arg1;
-		Literal rightLit = (Literal)arg2;
+		Literal leftLit = (Literal) arg1;
+		Literal rightLit = (Literal) arg2;
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
@@ -55,32 +53,26 @@ public class Mod extends BinaryFunction {
 
 		if (leftDatatype.equals(XMLSchema.DOUBLE) || rightDatatype.equals(XMLSchema.DOUBLE)) {
 			commonDatatype = XMLSchema.DOUBLE;
-		}
-		else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
+		} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
 			commonDatatype = XMLSchema.FLOAT;
-		}
-		else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
+		} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
 			commonDatatype = XMLSchema.DECIMAL;
-		}
-		else {
+		} else {
 			commonDatatype = XMLSchema.INTEGER;
 		}
 		if (XMLSchema.DOUBLE.equals(commonDatatype)) {
 			double left = leftLit.doubleValue();
 			double right = rightLit.doubleValue();
 			return valueFactory.createLiteral(left % right);
-		}
-		else if (XMLSchema.FLOAT.equals(commonDatatype)) {
+		} else if (XMLSchema.FLOAT.equals(commonDatatype)) {
 			float left = leftLit.floatValue();
 			float right = rightLit.floatValue();
 			return valueFactory.createLiteral(left % right);
-		}
-		else if (XMLSchema.DECIMAL.equals(commonDatatype)) {
+		} else if (XMLSchema.DECIMAL.equals(commonDatatype)) {
 			BigDecimal left = leftLit.decimalValue();
 			BigDecimal right = rightLit.decimalValue();
 			return valueFactory.createLiteral(left.remainder(right, MathContext.UNLIMITED));
-		}
-		else {
+		} else {
 			BigInteger left = leftLit.integerValue();
 			BigInteger right = rightLit.integerValue();
 			return valueFactory.createLiteral(left.remainder(right));

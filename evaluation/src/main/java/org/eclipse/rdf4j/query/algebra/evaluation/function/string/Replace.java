@@ -33,21 +33,18 @@ public class Replace implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 3 || args.length > 4) {
-			throw new ValueExprEvaluationException(
-					"Incorrect number of arguments for REPLACE: " + args.length);
+			throw new ValueExprEvaluationException("Incorrect number of arguments for REPLACE: " + args.length);
 		}
 
 		try {
-			Literal arg = (Literal)args[0];
-			Literal pattern = (Literal)args[1];
-			Literal replacement = (Literal)args[2];
+			Literal arg = (Literal) args[0];
+			Literal pattern = (Literal) args[1];
+			Literal replacement = (Literal) args[2];
 			Literal flags = null;
 			if (args.length == 4) {
-				flags = (Literal)args[3];
+				flags = (Literal) args[3];
 			}
 
 			if (!QueryEvaluationUtil.isStringLiteral(arg)) {
@@ -78,26 +75,26 @@ public class Replace implements Function {
 			if (flagString != null) {
 				for (char c : flagString.toCharArray()) {
 					switch (c) {
-						case 's':
-							f |= Pattern.DOTALL;
-							break;
-						case 'm':
-							f |= Pattern.MULTILINE;
-							break;
-						case 'i':
-							f |= Pattern.CASE_INSENSITIVE;
-							break;
-						case 'x':
-							f |= Pattern.COMMENTS;
-							break;
-						case 'd':
-							f |= Pattern.UNIX_LINES;
-							break;
-						case 'u':
-							f |= Pattern.UNICODE_CASE;
-							break;
-						default:
-							throw new ValueExprEvaluationException(flagString);
+					case 's':
+						f |= Pattern.DOTALL;
+						break;
+					case 'm':
+						f |= Pattern.MULTILINE;
+						break;
+					case 'i':
+						f |= Pattern.CASE_INSENSITIVE;
+						break;
+					case 'x':
+						f |= Pattern.COMMENTS;
+						break;
+					case 'd':
+						f |= Pattern.UNIX_LINES;
+						break;
+					case 'u':
+						f |= Pattern.UNICODE_CASE;
+						break;
+					default:
+						throw new ValueExprEvaluationException(flagString);
 					}
 				}
 			}
@@ -110,15 +107,12 @@ public class Replace implements Function {
 
 			if (lang.isPresent()) {
 				return valueFactory.createLiteral(result, lang.get());
-			}
-			else if (dt != null) {
+			} else if (dt != null) {
 				return valueFactory.createLiteral(result, dt);
-			}
-			else {
+			} else {
 				return valueFactory.createLiteral(result);
 			}
-		}
-		catch (ClassCastException e) {
+		} catch (ClassCastException e) {
 			throw new ValueExprEvaluationException("literal operands expected", e);
 		}
 

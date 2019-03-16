@@ -44,8 +44,8 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 
 	@Override
 	public Shape union(Shape s1, Shape s2) {
-		return shapeFactory.makeShapeFromGeometry(
-				shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
+		return shapeFactory
+				.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
 	}
 
 	@Override
@@ -109,11 +109,9 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 		int d2 = g2.getDimension();
 		if ((d1 == 0 && d2 == 1) || (d1 == 0 && d2 == 2) || (d1 == 1 && d2 == 2)) {
 			return g1.relate(g2, "T*T***T**");
-		}
-		else if (d1 == 1 && d2 == 1) {
+		} else if (d1 == 1 && d2 == 1) {
 			return g1.relate(g2, "0*T***T**");
-		}
-		else {
+		} else {
 			return false;
 		}
 	}
@@ -136,11 +134,9 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 		int d2 = g2.getDimension();
 		if ((d1 == 2 && d2 == 2) || (d1 == 0 && d2 == 0)) {
 			return g1.relate(g2, "T*T***T**");
-		}
-		else if (d1 == 1 && d2 == 1) {
+		} else if (d1 == 1 && d2 == 1) {
 			return g1.relate(g2, "1*T***T**");
-		}
-		else {
+		} else {
 			return false;
 		}
 	}

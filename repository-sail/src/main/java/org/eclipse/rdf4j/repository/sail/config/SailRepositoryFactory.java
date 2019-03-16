@@ -56,17 +56,14 @@ public class SailRepositoryFactory implements RepositoryFactory {
 	}
 
 	@Override
-	public Repository getRepository(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
 		if (config instanceof SailRepositoryConfig) {
-			SailRepositoryConfig sailRepConfig = (SailRepositoryConfig)config;
+			SailRepositoryConfig sailRepConfig = (SailRepositoryConfig) config;
 
 			try {
 				Sail sail = createSailStack(sailRepConfig.getSailImplConfig());
 				return new SailRepository(sail);
-			}
-			catch (SailConfigException e) {
+			} catch (SailConfigException e) {
 				throw new RepositoryConfigException(e.getMessage(), e);
 			}
 		}
@@ -74,13 +71,11 @@ public class SailRepositoryFactory implements RepositoryFactory {
 		throw new RepositoryConfigException("Invalid configuration class: " + config.getClass());
 	}
 
-	private Sail createSailStack(SailImplConfig config)
-		throws RepositoryConfigException, SailConfigException
-	{
+	private Sail createSailStack(SailImplConfig config) throws RepositoryConfigException, SailConfigException {
 		Sail sail = createSail(config);
 
 		if (config instanceof DelegatingSailImplConfig) {
-			SailImplConfig delegateConfig = ((DelegatingSailImplConfig)config).getDelegate();
+			SailImplConfig delegateConfig = ((DelegatingSailImplConfig) config).getDelegate();
 			if (delegateConfig != null) {
 				addDelegate(delegateConfig, sail);
 			}
@@ -89,23 +84,19 @@ public class SailRepositoryFactory implements RepositoryFactory {
 		return sail;
 	}
 
-	private Sail createSail(SailImplConfig config)
-		throws RepositoryConfigException, SailConfigException
-	{
-		SailFactory sailFactory = SailRegistry.getInstance().get(config.getType()).orElseThrow(
-				() -> new RepositoryConfigException("Unsupported Sail type: " + config.getType()));
+	private Sail createSail(SailImplConfig config) throws RepositoryConfigException, SailConfigException {
+		SailFactory sailFactory = SailRegistry.getInstance()
+				.get(config.getType())
+				.orElseThrow(() -> new RepositoryConfigException("Unsupported Sail type: " + config.getType()));
 		return sailFactory.getSail(config);
 	}
 
-	private void addDelegate(SailImplConfig config, Sail sail)
-		throws RepositoryConfigException, SailConfigException
-	{
+	private void addDelegate(SailImplConfig config, Sail sail) throws RepositoryConfigException, SailConfigException {
 		Sail delegateSail = createSailStack(config);
 
 		try {
-			((StackableSail)sail).setBaseSail(delegateSail);
-		}
-		catch (ClassCastException e) {
+			((StackableSail) sail).setBaseSail(delegateSail);
+		} catch (ClassCastException e) {
 			throw new RepositoryConfigException(
 					"Delegate configured but " + sail.getClass() + " is not a StackableSail");
 		}

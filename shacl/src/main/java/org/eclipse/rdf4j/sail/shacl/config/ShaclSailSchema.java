@@ -26,8 +26,7 @@ public class ShaclSailSchema {
 	public final static IRI PARALLEL_VALIDATION = create("parallelValidation");
 
 	/** <code>http://rdf4j.org/config/sail/shacl#undefinedTargetValidatesAllSubjects</code> */
-	public final static IRI UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS = create(
-			"undefinedTargetValidatesAllSubjects");
+	public final static IRI UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS = create("undefinedTargetValidatesAllSubjects");
 
 	/** <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code> */
 	public final static IRI LOG_VALIDATION_PLANS = create("logValidationPlans");
@@ -49,7 +48,6 @@ public class ShaclSailSchema {
 
 	/** <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code> */
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
-
 
 	private static final IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);

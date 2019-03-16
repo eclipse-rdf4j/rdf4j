@@ -97,7 +97,8 @@ abstract public class AbstractShaclTest {
 	final ExpectedResult expectedResult;
 	final IsolationLevel isolationLevel;
 
-	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -110,7 +111,6 @@ abstract public class AbstractShaclTest {
 
 		return getTestsToRun();
 	}
-
 
 	private static List<String> findTestCases(String testCase, String baseCase) {
 
@@ -151,7 +151,8 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel) throws Exception {
+	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";

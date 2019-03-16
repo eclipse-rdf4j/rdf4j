@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 
 /**
- * An extension of {@link TriGParser} that processes data in the format specified in the SPARQL 1.1 grammar
- * for Quad data (assuming no variables, as is the case for INSERT DATA and DELETE DATA operations). This
- * format is almost completely compatible with TriG, except for three differences:
+ * An extension of {@link TriGParser} that processes data in the format specified in the SPARQL 1.1 grammar for Quad
+ * data (assuming no variables, as is the case for INSERT DATA and DELETE DATA operations). This format is almost
+ * completely compatible with TriG, except for three differences:
  * <ul>
  * <li>it introduces the 'GRAPH' keyword in front of each named graph identifier
  * <li>it does not allow the occurrence of blank nodes.
@@ -28,10 +28,8 @@ import org.eclipse.rdf4j.rio.trig.TriGParser;
  * </ul>
  * 
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/TR/sparql11-query/#rInsertData">SPARQL 1.1 Grammar production for INSERT
- *      DATA</a>
- * @see <a href="http://www.w3.org/TR/sparql11-query/#rDeleteData">SPARQL 1.1 Grammar production for DELETE
- *      DATA</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#rInsertData">SPARQL 1.1 Grammar production for INSERT DATA</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#rDeleteData">SPARQL 1.1 Grammar production for DELETE DATA</a>
  */
 public class SPARQLUpdateDataBlockParser extends TriGParser {
 
@@ -52,8 +50,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	/**
 	 * Creates a new parser that will use the supplied ValueFactory to create RDF model objects.
 	 * 
-	 * @param valueFactory
-	 *        A ValueFactory.
+	 * @param valueFactory A ValueFactory.
 	 */
 	public SPARQLUpdateDataBlockParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -71,33 +68,25 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	}
 
 	@Override
-	protected void parseGraph()
-		throws RDFParseException, RDFHandlerException, IOException
-	{
+	protected void parseGraph() throws RDFParseException, RDFHandlerException, IOException {
 		super.parseGraph();
 		skipOptionalPeriod();
 	}
 
 	@Override
-	protected Resource parseImplicitBlank()
-		throws IOException, RDFParseException, RDFHandlerException
-	{
+	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
 		if (isAllowBlankNodes()) {
 			return super.parseImplicitBlank();
-		}
-		else {
+		} else {
 			throw new RDFParseException("blank nodes not allowed in data block");
 		}
 	}
 
 	@Override
-	protected Resource parseNodeID()
-		throws IOException, RDFParseException
-	{
+	protected Resource parseNodeID() throws IOException, RDFParseException {
 		if (isAllowBlankNodes()) {
 			return super.parseNodeID();
-		}
-		else {
+		} else {
 			throw new RDFParseException("blank nodes not allowed in data block");
 		}
 	}
@@ -110,8 +99,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	}
 
 	/**
-	 * @param allowBlankNodes
-	 *        The allowBlankNodes to set.
+	 * @param allowBlankNodes The allowBlankNodes to set.
 	 */
 	public void setAllowBlankNodes(boolean allowBlankNodes) {
 		this.allowBlankNodes = allowBlankNodes;
@@ -119,12 +107,10 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 
 	@Override
 	protected int getLineNumber() {
-		return super.getLineNumber() - this.lineNumberOffset; 
+		return super.getLineNumber() - this.lineNumberOffset;
 	}
-	
-	private void skipOptionalPeriod()
-		throws RDFHandlerException, IOException
-	{
+
+	private void skipOptionalPeriod() throws RDFHandlerException, IOException {
 		skipWSC();
 		int c = peekCodePoint();
 		if (c == '.') {
@@ -136,6 +122,6 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	 * @param lineNumberOffset
 	 */
 	public void setLineNumberOffset(int lineNumberOffset) {
-			this.lineNumberOffset = lineNumberOffset;
+		this.lineNumberOffset = lineNumberOffset;
 	}
 }

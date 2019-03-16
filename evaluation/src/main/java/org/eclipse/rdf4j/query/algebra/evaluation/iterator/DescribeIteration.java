@@ -31,8 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * statements).
  * 
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description -
- *      alternatives</a>
+ * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */
 public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -63,9 +62,8 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
 
-	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
-			EvaluationStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings)
-	{
+	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
+			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
 		this.describeExprNames = new ArrayList<>(describeExprNames);
@@ -78,15 +76,12 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private BindingSet parentBindings;
 
-	private void resetCurrentDescribeExprIter()
-		throws QueryEvaluationException
-	{
+	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
 		while (currentDescribeExprIter == null) {
 			if (currentBindings == null && startValue == null) {
 				if (sourceIter.hasNext()) {
 					currentBindings = sourceIter.next();
-				}
-				else {
+				} else {
 					// no more bindings, therefore no more results to return.
 					return;
 				}
@@ -107,33 +102,31 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			}
 
 			switch (currentMode) {
-				case OUTGOING_LINKS:
-					currentDescribeExprIter = createNextIteration(startValue, null);
-					if (!currentDescribeExprIter.hasNext()) {
-						// start value has no outgoing links.
-						currentDescribeExprIter.close();
-						currentDescribeExprIter = null;
-						currentMode = Mode.INCOMING_LINKS;
-					}
-					break;
-				case INCOMING_LINKS:
-					currentDescribeExprIter = createNextIteration(null, startValue);
-					if (!currentDescribeExprIter.hasNext()) {
-						// no incoming links for this start value.
-						currentDescribeExprIter.close();
-						currentDescribeExprIter = null;
-						startValue = null;
-						currentMode = Mode.OUTGOING_LINKS;
-					}
-					break;
+			case OUTGOING_LINKS:
+				currentDescribeExprIter = createNextIteration(startValue, null);
+				if (!currentDescribeExprIter.hasNext()) {
+					// start value has no outgoing links.
+					currentDescribeExprIter.close();
+					currentDescribeExprIter = null;
+					currentMode = Mode.INCOMING_LINKS;
+				}
+				break;
+			case INCOMING_LINKS:
+				currentDescribeExprIter = createNextIteration(null, startValue);
+				if (!currentDescribeExprIter.hasNext()) {
+					// no incoming links for this start value.
+					currentDescribeExprIter.close();
+					currentDescribeExprIter = null;
+					startValue = null;
+					currentMode = Mode.OUTGOING_LINKS;
+				}
+				break;
 			}
 		} // end while
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		resetCurrentDescribeExprIter();
 		if (currentDescribeExprIter == null) {
 			return null;
@@ -144,12 +137,12 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			BNode nextNode = nodeQueue.poll();
 			currentDescribeExprIter.close();
 			switch (currentMode) {
-				case OUTGOING_LINKS:
-					currentDescribeExprIter = createNextIteration(nextNode, null);
-					break;
-				case INCOMING_LINKS:
-					currentDescribeExprIter = createNextIteration(null, nextNode);
-					break;
+			case OUTGOING_LINKS:
+				currentDescribeExprIter = createNextIteration(nextNode, null);
+				break;
+			case INCOMING_LINKS:
+				currentDescribeExprIter = createNextIteration(null, nextNode);
+				break;
 
 			}
 			processedNodes.add(nextNode);
@@ -162,8 +155,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 				if (currentMode == Mode.OUTGOING_LINKS) {
 					currentMode = Mode.INCOMING_LINKS;
-				}
-				else {
+				} else {
 					// done with this valueExpr, reset to initialize next in value
 					// expression queue.
 					currentMode = Mode.OUTGOING_LINKS;
@@ -186,7 +178,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			Value v = bs.getValue(varname);
 			if (v instanceof BNode) {
 				if (!processedNodes.contains(v)) { // duplicate/cycle detection
-					nodeQueue.add((BNode)v);
+					nodeQueue.add((BNode) v);
 				}
 			}
 
@@ -196,8 +188,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 				if (currentMode == Mode.OUTGOING_LINKS) {
 					currentMode = Mode.INCOMING_LINKS;
-				}
-				else {
+				} else {
 					// done with this valueExpr, reset to initialize next in value
 					// expression queue.
 					currentMode = Mode.OUTGOING_LINKS;
@@ -211,10 +202,8 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject,
-			Value object)
-		throws QueryEvaluationException
-	{
+	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
 		}

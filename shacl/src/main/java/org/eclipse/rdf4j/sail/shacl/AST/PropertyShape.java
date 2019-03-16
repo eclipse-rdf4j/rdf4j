@@ -28,7 +28,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should be extended by other nodes.
+ * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should
+ * be extended by other nodes.
  *
  * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
  */
@@ -47,7 +48,8 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -75,29 +77,36 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
-
 	public String getPlanAsGraphvizDot(PlanNode planNode, ShaclSailConnection shaclSailConnection) {
 
 		StringBuilder stringBuilder = new StringBuilder("Graphviz DOT output:\n\n");
 
 		stringBuilder.append("digraph  {").append("\n");
-		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";").append("\n");
+		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
+				.append("\n");
 
-		stringBuilder.append(System.identityHashCode(shaclSailConnection) + " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-
+		stringBuilder.append(System.identityHashCode(shaclSailConnection)
+				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder
+				.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection())
+						+ " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		MemoryStore addedStatements = ((MemoryStoreConnection) shaclSailConnection.getAddedStatements()).getSail();
 		MemoryStore removedStatements = ((MemoryStoreConnection) shaclSailConnection.getRemovedStatements()).getSail();
 
-		stringBuilder.append(System.identityHashCode(addedStatements) + " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(removedStatements) + " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-
+		stringBuilder
+				.append(System.identityHashCode(addedStatements)
+						+ " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
+		stringBuilder
+				.append(System.identityHashCode(removedStatements)
+						+ " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		planNode.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append("}").append("\n");
-
 
 		return stringBuilder.append("\n\n").toString();
 
@@ -117,9 +126,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 		}
 
-
 		return ret;
-
 
 	}
 
@@ -137,24 +144,26 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	static class Factory {
 
-		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {
+		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
+				NodeShape nodeShape) {
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
+			try (Stream<Statement> stream = Iterations
+					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream
-					.map(Statement::getObject)
-					.map(v -> (Resource) v)
-					.flatMap(propertyShapeId -> {
-						List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);
-
-						return propertyShapes.stream();
-
-					})
-					.collect(Collectors.toList());
+						.map(Statement::getObject)
+						.map(v -> (Resource) v)
+						.flatMap(propertyShapeId -> {
+							List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
+									propertyShapeId);
+							return propertyShapes.stream();
+						})
+						.collect(Collectors.toList());
 			}
 
 		}
 
-		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape, Resource propertyShapeId) {
+		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
+				Resource propertyShapeId) {
 			List<PropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
@@ -212,6 +221,3 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		}
 	}
 }
-
-
-

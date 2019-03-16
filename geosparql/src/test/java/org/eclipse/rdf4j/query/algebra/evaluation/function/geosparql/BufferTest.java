@@ -54,10 +54,10 @@ public class BufferTest {
 
 	@Test
 	public void resultIsPolygonWKT() {
-		Literal result = (Literal)buffer.evaluate(f, point, f.createLiteral(1), unit);
+		Literal result = (Literal) buffer.evaluate(f, point, f.createLiteral(1), unit);
 		assertNotNull(result);
 		assertThat(result.getDatatype()).isEqualTo(GEO.WKT_LITERAL);
-		assertThat(result.getLabel()).startsWith( "POLYGON ((23.708505");
+		assertThat(result.getLabel()).startsWith("POLYGON ((23.708505");
 	}
 
 	@Test(expected = ValueExprEvaluationException.class)

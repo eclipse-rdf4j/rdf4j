@@ -24,11 +24,9 @@ public class Add extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (arg1 instanceof Literal && arg2 instanceof Literal) {
-			return MathUtil.compute((Literal)arg1, (Literal)arg2, MathOp.PLUS);
+			return MathUtil.compute((Literal) arg1, (Literal) arg2, MathOp.PLUS);
 		}
 
 		throw new ValueExprEvaluationException("Both arguments must be numeric literals");

@@ -33,19 +33,19 @@ import static junit.framework.TestCase.assertTrue;
 @RunWith(Parameterized.class)
 public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShaclTest {
 
-
 	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 
-	public ShaclSailSupportedPredicatesDocumentationTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public ShaclSailSupportedPredicatesDocumentationTest(String testCasePath, String path,
+			ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 
 	@AfterClass
 	public static void afterClass() {
 
-		assertTrue("No test uses the following predicate that the ShaclSail announces as supported: " + Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
+		assertTrue("No test uses the following predicate that the ShaclSail announces as supported: "
+				+ Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
 	}
-
 
 	@Test
 	public void testShaclSailSupportedPredicatesDocumentation() throws IOException {
@@ -54,25 +54,25 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 
 		Model parse = getShacl();
 
-
-		Set<IRI> predicatesInUseInTest = parse.predicates().stream().filter(p -> p.getNamespace().equals(SHACL.NAMESPACE)).collect(Collectors.toSet());
+		Set<IRI> predicatesInUseInTest = parse.predicates()
+				.stream()
+				.filter(p -> p.getNamespace().equals(SHACL.NAMESPACE))
+				.collect(Collectors.toSet());
 
 		for (IRI predicate : predicatesInUseInTest) {
-			assertTrue("Predicate used in test but not listed in ShaclSail: " + predicate, shaclPredicates.contains(predicate));
+			assertTrue("Predicate used in test but not listed in ShaclSail: " + predicate,
+					shaclPredicates.contains(predicate));
 			staticShaclPredicates.remove(predicate);
 		}
 
-
 	}
-
 
 	private Model getShacl() throws IOException {
 		String shaclFile = getShaclPath();
 
-		return Rio.parse(ShaclSailSupportedPredicatesDocumentationTest.class.getClassLoader().getResourceAsStream(shaclFile), "", RDFFormat.TURTLE);
+		return Rio.parse(
+				ShaclSailSupportedPredicatesDocumentationTest.class.getClassLoader().getResourceAsStream(shaclFile), "",
+				RDFFormat.TURTLE);
 	}
-
-
-
 
 }

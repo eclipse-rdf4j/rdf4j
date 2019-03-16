@@ -17,7 +17,7 @@ public class ParsedTupleTemplate extends ParsedTupleQuery implements ParsedTempl
 	private final BindingSet args;
 
 	public ParsedTupleTemplate(Template template, BindingSet args) {
-		this(template, (ParsedTupleQuery)template.getParsedOperation(), args);
+		this(template, (ParsedTupleQuery) template.getParsedOperation(), args);
 	}
 
 	private ParsedTupleTemplate(Template template, ParsedTupleQuery query, BindingSet args) {

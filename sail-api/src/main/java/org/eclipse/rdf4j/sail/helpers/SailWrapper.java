@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.StackableSail;
 
 /**
- * An implementation of the StackableSail interface that wraps another Sail object and forwards any relevant
- * calls to the wrapped Sail.
+ * An implementation of the StackableSail interface that wraps another Sail object and forwards any relevant calls to
+ * the wrapped Sail.
  * 
  * @author Arjohn Kampman
  */
@@ -41,8 +41,7 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	 *--------------*/
 
 	/**
-	 * Creates a new SailWrapper. The base Sail for the created SailWrapper can be set later using
-	 * {@link #setBaseSail}.
+	 * Creates a new SailWrapper. The base Sail for the created SailWrapper can be set later using {@link #setBaseSail}.
 	 */
 	public SailWrapper() {
 	}
@@ -77,7 +76,7 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		if (baseSail instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)baseSail).setFederatedServiceResolver(resolver);
+			((FederatedServiceResolverClient) baseSail).setFederatedServiceResolver(resolver);
 		}
 	}
 
@@ -92,33 +91,25 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	}
 
 	@Override
-	public void initialize()
-		throws SailException
-	{
+	public void initialize() throws SailException {
 		verifyBaseSailSet();
 		baseSail.initialize();
 	}
 
 	@Override
-	public void shutDown()
-		throws SailException
-	{
+	public void shutDown() throws SailException {
 		verifyBaseSailSet();
 		baseSail.shutDown();
 	}
 
 	@Override
-	public boolean isWritable()
-		throws SailException
-	{
+	public boolean isWritable() throws SailException {
 		verifyBaseSailSet();
 		return baseSail.isWritable();
 	}
 
 	@Override
-	public SailConnection getConnection()
-		throws SailException
-	{
+	public SailConnection getConnection() throws SailException {
 		verifyBaseSailSet();
 		return baseSail.getConnection();
 	}

@@ -34,16 +34,14 @@ public class Minutes implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("MINUTES requires 1 argument, got " + args.length);
 		}
 
 		Value argValue = args[0];
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
 			IRI datatype = literal.getDatatype();
 
@@ -54,21 +52,16 @@ public class Minutes implements Function {
 					int minutes = calValue.getMinute();
 					if (DatatypeConstants.FIELD_UNDEFINED != minutes) {
 						return valueFactory.createLiteral(String.valueOf(minutes), XMLSchema.INTEGER);
+					} else {
+						throw new ValueExprEvaluationException("can not determine minutes from value: " + argValue);
 					}
-					else {
-						throw new ValueExprEvaluationException(
-								"can not determine minutes from value: " + argValue);
-					}
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + argValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 	}

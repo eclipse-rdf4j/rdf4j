@@ -33,8 +33,8 @@ public class HashFile implements Closeable {
 	private static final int ITEM_SIZE = 8;
 
 	/**
-	 * Magic number "Native Hash File" to detect whether the file is actually a hash file. The first three
-	 * bytes of the file should be equal to this magic number.
+	 * Magic number "Native Hash File" to detect whether the file is actually a hash file. The first three bytes of the
+	 * file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'h', 'f' };
 
@@ -44,9 +44,8 @@ public class HashFile implements Closeable {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	/**
-	 * The size of the file header in bytes. The file header contains the following data: magic number (3
-	 * bytes) file format version (1 byte), number of buckets (4 bytes), bucket size (4 bytes) and number of
-	 * stored items (4 bytes).
+	 * The size of the file header in bytes. The file header contains the following data: magic number (3 bytes) file
+	 * format version (1 byte), number of buckets (4 bytes), bucket size (4 bytes) and number of stored items (4 bytes).
 	 */
 	private static final long HEADER_LENGTH = 16;
 
@@ -78,8 +77,8 @@ public class HashFile implements Closeable {
 	private final int recordSize;
 
 	/**
-	 * A read/write lock that is used to prevent structural changes to the hash file while readers are active
-	 * in order to prevent concurrency issues.
+	 * A read/write lock that is used to prevent structural changes to the hash file while readers are active in order
+	 * to prevent concurrency issues.
 	 */
 	private final ReentrantReadWriteLock structureLock = new ReentrantReadWriteLock();
 
@@ -87,15 +86,11 @@ public class HashFile implements Closeable {
 	 * Constructors *
 	 *--------------*/
 
-	public HashFile(File file)
-		throws IOException
-	{
+	public HashFile(File file) throws IOException {
 		this(file, false);
 	}
 
-	public HashFile(File file, boolean forceSync)
-		throws IOException
-	{
+	public HashFile(File file, boolean forceSync) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
 
@@ -112,10 +107,9 @@ public class HashFile implements Closeable {
 				writeEmptyBuckets(HEADER_LENGTH, bucketCount);
 
 				sync();
-			}
-			else {
+			} else {
 				// Read bucket count, bucket size and item count from the file
-				ByteBuffer buf = ByteBuffer.allocate((int)HEADER_LENGTH);
+				ByteBuffer buf = ByteBuffer.allocate((int) HEADER_LENGTH);
 				nioFile.read(buf, 0L);
 				buf.rewind();
 
@@ -136,16 +130,13 @@ public class HashFile implements Closeable {
 
 				if (version > FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read hash file; it uses a newer file format");
-				}
-				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException(
-							"Unable to read hash file; invalid file format version: " + version);
+				} else if (version != FILE_FORMAT_VERSION) {
+					throw new IOException("Unable to read hash file; invalid file format version: " + version);
 				}
 
 				recordSize = ITEM_SIZE * bucketSize + 4;
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			this.nioFile.close();
 			throw e;
 		}
@@ -166,25 +157,20 @@ public class HashFile implements Closeable {
 	/**
 	 * Gets an iterator that iterates over the IDs with hash codes that match the specified hash code.
 	 */
-	public IDIterator getIDIterator(int hash)
-		throws IOException
-	{
+	public IDIterator getIDIterator(int hash) throws IOException {
 		return new IDIterator(hash);
 	}
 
 	/**
 	 * Stores ID under the specified hash code in this hash file.
 	 */
-	public void storeID(int hash, int id)
-		throws IOException
-	{
+	public void storeID(int hash, int id) throws IOException {
 		structureLock.readLock().lock();
 		try {
 			// Calculate bucket offset for initial bucket
 			long bucketOffset = getBucketOffset(hash);
 			storeID(bucketOffset, hash, id);
-		}
-		finally {
+		} finally {
 			structureLock.readLock().unlock();
 		}
 
@@ -192,16 +178,13 @@ public class HashFile implements Closeable {
 			structureLock.writeLock().lock();
 			try {
 				increaseHashTable();
-			}
-			finally {
+			} finally {
 				structureLock.writeLock().unlock();
 			}
 		}
 	}
 
-	private void storeID(long bucketOffset, int hash, int id)
-		throws IOException
-	{
+	private void storeID(long bucketOffset, int hash, int id) throws IOException {
 		boolean idStored = false;
 		ByteBuffer bucket = ByteBuffer.allocate(recordSize);
 
@@ -218,8 +201,7 @@ public class HashFile implements Closeable {
 				bucket.rewind();
 				nioFile.write(bucket, bucketOffset);
 				idStored = true;
-			}
-			else {
+			} else {
 				// No empty slot found, check if bucket has an overflow bucket
 				int overflowID = bucket.getInt(ITEM_SIZE * bucketSize);
 
@@ -240,20 +222,17 @@ public class HashFile implements Closeable {
 		}
 	}
 
-	public void clear()
-		throws IOException
-	{
+	public void clear() throws IOException {
 		structureLock.writeLock().lock();
 		try {
 			// Truncate the file to remove any overflow buffers
-			nioFile.truncate(HEADER_LENGTH + (long)bucketCount * recordSize);
+			nioFile.truncate(HEADER_LENGTH + (long) bucketCount * recordSize);
 
 			// Overwrite normal buckets with empty ones
 			writeEmptyBuckets(HEADER_LENGTH, bucketCount);
 
 			itemCount = 0;
-		}
-		finally {
+		} finally {
 			structureLock.writeLock().unlock();
 		}
 	}
@@ -261,15 +240,12 @@ public class HashFile implements Closeable {
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync()
-		throws IOException
-	{
+	public void sync() throws IOException {
 		structureLock.readLock().lock();
 		try {
 			// Update the file header
 			writeFileHeader();
-		}
-		finally {
+		} finally {
 			structureLock.readLock().unlock();
 		}
 
@@ -279,9 +255,7 @@ public class HashFile implements Closeable {
 	}
 
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		nioFile.close();
 	}
 
@@ -289,9 +263,7 @@ public class HashFile implements Closeable {
 	 * Utility methods *
 	 *-----------------*/
 
-	private RandomAccessFile createEmptyFile(File file)
-		throws IOException
-	{
+	private RandomAccessFile createEmptyFile(File file) throws IOException {
 		// Make sure the file exists
 		if (!file.exists()) {
 			boolean created = file.createNewFile();
@@ -310,10 +282,8 @@ public class HashFile implements Closeable {
 	/**
 	 * Writes the bucket count, bucket size and item count to the file header.
 	 */
-	private void writeFileHeader()
-		throws IOException
-	{
-		ByteBuffer buf = ByteBuffer.allocate((int)HEADER_LENGTH);
+	private void writeFileHeader() throws IOException {
+		ByteBuffer buf = ByteBuffer.allocate((int) HEADER_LENGTH);
 		buf.put(MAGIC_NUMBER);
 		buf.put(FILE_FORMAT_VERSION);
 		buf.putInt(bucketCount);
@@ -332,34 +302,30 @@ public class HashFile implements Closeable {
 		if (bucketNo < 0) {
 			bucketNo += bucketCount;
 		}
-		return HEADER_LENGTH + (long)bucketNo * recordSize;
+		return HEADER_LENGTH + (long) bucketNo * recordSize;
 	}
 
 	/**
 	 * Returns the offset of the overflow bucket with the specified ID.
 	 */
 	private long getOverflowBucketOffset(int bucketID) {
-		return HEADER_LENGTH + ((long)bucketCount + (long)bucketID - 1L) * recordSize;
+		return HEADER_LENGTH + ((long) bucketCount + (long) bucketID - 1L) * recordSize;
 	}
 
 	/**
 	 * Creates a new overflow bucket and returns its ID.
 	 */
-	private int createOverflowBucket()
-		throws IOException
-	{
+	private int createOverflowBucket() throws IOException {
 		long offset = nioFile.size();
 		writeEmptyBuckets(offset, 1);
-		return (int)((offset - HEADER_LENGTH) / recordSize) - bucketCount + 1;
+		return (int) ((offset - HEADER_LENGTH) / recordSize) - bucketCount + 1;
 	}
 
-	private void writeEmptyBuckets(long fileOffset, int bucketCount)
-		throws IOException
-	{
+	private void writeEmptyBuckets(long fileOffset, int bucketCount) throws IOException {
 		ByteBuffer emptyBucket = ByteBuffer.allocate(recordSize);
 
 		for (int i = 0; i < bucketCount; i++) {
-			nioFile.write(emptyBucket, fileOffset + i * (long)recordSize);
+			nioFile.write(emptyBucket, fileOffset + i * (long) recordSize);
 			emptyBucket.rewind();
 		}
 	}
@@ -378,11 +344,9 @@ public class HashFile implements Closeable {
 	/**
 	 * Double the number of buckets in the hash file and rehashes the stored items.
 	 */
-	private void increaseHashTable()
-		throws IOException
-	{
-		long oldTableSize = HEADER_LENGTH + (long)bucketCount * recordSize;
-		long newTableSize = HEADER_LENGTH + (long)bucketCount * recordSize * 2;
+	private void increaseHashTable() throws IOException {
+		long oldTableSize = HEADER_LENGTH + (long) bucketCount * recordSize;
+		long newTableSize = HEADER_LENGTH + (long) bucketCount * recordSize * 2;
 		long oldFileSize = nioFile.size(); // includes overflow buckets
 
 		// Move any overflow buckets out of the way to a temporary file
@@ -404,39 +368,39 @@ public class HashFile implements Closeable {
 			// new location, but none of them will trigger the creation of new overflow
 			// buckets. Any (now deprecated) references to overflow buckets are
 			// removed too.
-			
+
 			// All items that are moved to a new location end up in one and the same
 			// new and empty bucket. All items are divided between the old and the
 			// new bucket and the changes to the buckets are written to disk only once.
 			for (long bucketOffset = HEADER_LENGTH; bucketOffset < oldTableSize; bucketOffset += recordSize) {
 				nioFile.read(bucket, bucketOffset);
-				
+
 				boolean bucketChanged = false;
 				long newBucketOffset = 0L;
-				
+
 				for (int slotNo = 0; slotNo < bucketSize; slotNo++) {
 					int id = bucket.getInt(ITEM_SIZE * slotNo + 4);
-					
+
 					if (id != 0) {
 						// Slot is not empty
 						int hash = bucket.getInt(ITEM_SIZE * slotNo);
 						long newOffset = getBucketOffset(hash);
-						
+
 						if (newOffset != bucketOffset) {
 							// Move this item to new bucket...
 							newBucket.putInt(hash);
 							newBucket.putInt(id);
-							
+
 							// ...and remove it from the current bucket
 							bucket.putInt(ITEM_SIZE * slotNo, 0);
 							bucket.putInt(ITEM_SIZE * slotNo + 4, 0);
-							
+
 							bucketChanged = true;
 							newBucketOffset = newOffset;
 						}
 					}
 				}
-				
+
 				if (bucketChanged) {
 					// Some of the items were moved to the new bucket, write it to
 					// the file
@@ -444,41 +408,41 @@ public class HashFile implements Closeable {
 					nioFile.write(newBucket, newBucketOffset);
 					newBucket.clear();
 				}
-				
+
 				// Reset overflow ID in the old bucket to 0 if necessary
 				if (bucket.getInt(ITEM_SIZE * bucketSize) != 0) {
 					bucket.putInt(ITEM_SIZE * bucketSize, 0);
 					bucketChanged = true;
 				}
-				
+
 				if (bucketChanged) {
 					// Some of the items were moved to the new bucket or the
 					// overflow ID has been reset; write the bucket back to the file
 					bucket.rewind();
 					nioFile.write(bucket, bucketOffset);
 				}
-				
+
 				bucket.clear();
-			}	// Rehash items in overflow buckets. This might trigger the creation of
-			// new overflow buckets so we can't optimize this in the same way as we
-			// rehash the normal buckets.
+			} // Rehash items in overflow buckets. This might trigger the creation of
+				// new overflow buckets so we can't optimize this in the same way as we
+				// rehash the normal buckets.
 			long tmpFileSize = tmpChannel.size();
 			for (long bucketOffset = 0L; bucketOffset < tmpFileSize; bucketOffset += recordSize) {
 				tmpChannel.read(bucket, bucketOffset);
-				
+
 				for (int slotNo = 0; slotNo < bucketSize; slotNo++) {
 					int id = bucket.getInt(ITEM_SIZE * slotNo + 4);
-					
+
 					if (id != 0) {
 						// Slot is not empty
 						int hash = bucket.getInt(ITEM_SIZE * slotNo);
 						long newBucketOffset = getBucketOffset(hash);
-						
+
 						// Copy this item to its new location
 						storeID(newBucketOffset, hash, id);
 					}
 				}
-				
+
 				bucket.clear();
 			}
 			// Discard the temp file
@@ -498,9 +462,7 @@ public class HashFile implements Closeable {
 
 		private int slotNo;
 
-		private IDIterator(int hash)
-			throws IOException
-		{
+		private IDIterator(int hash) throws IOException {
 			queryHash = hash;
 			bucketBuffer = ByteBuffer.allocate(recordSize);
 
@@ -511,12 +473,10 @@ public class HashFile implements Closeable {
 				nioFile.read(bucketBuffer, bucketOffset);
 
 				slotNo = -1;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				structureLock.readLock().unlock();
 				throw e;
-			}
-			catch (RuntimeException e) {
+			} catch (RuntimeException e) {
 				structureLock.readLock().unlock();
 				throw e;
 			}
@@ -528,12 +488,10 @@ public class HashFile implements Closeable {
 		}
 
 		/**
-		 * Returns the next ID that has been mapped to the specified hash code, or <tt>-1</tt> if no more IDs
-		 * were found.
+		 * Returns the next ID that has been mapped to the specified hash code, or <tt>-1</tt> if no more IDs were
+		 * found.
 		 */
-		public int next()
-			throws IOException
-		{
+		public int next() throws IOException {
 			while (bucketBuffer != null) {
 				// Search in current bucket
 				while (++slotNo < bucketSize) {
@@ -549,8 +507,7 @@ public class HashFile implements Closeable {
 					// No overflow bucket, end the search
 					bucketBuffer = null;
 					break;
-				}
-				else {
+				} else {
 					// Continue with overflow bucket
 					bucketBuffer.clear();
 					long bucketOffset = getOverflowBucketOffset(overflowID);

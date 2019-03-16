@@ -38,16 +38,13 @@ public class LuceneDocument implements SearchDocument {
 		this(new Document(), geoStrategyMapper);
 	}
 
-	public LuceneDocument(Document doc,
-			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
-	{
+	public LuceneDocument(Document doc, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this.doc = doc;
 		this.geoStrategyMapper = geoStrategyMapper;
 	}
 
 	public LuceneDocument(String id, String resourceId, String context,
-			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
-	{
+			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this(geoStrategyMapper);
 		setId(id);
 		setResource(resourceId);
@@ -103,11 +100,10 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	/**
-	 * Stores and indexes a property in a Document. We don't have to recalculate the concatenated text: just
-	 * add another TEXT field and Lucene will take care of this. Additional advantage: Lucene may be able to
-	 * handle the invididual strings in a way that may affect e.g. phrase and proximity searches
-	 * (concatenation basically means loss of information). NOTE: The TEXT_FIELD_NAME has to be stored, see in
-	 * LuceneSail
+	 * Stores and indexes a property in a Document. We don't have to recalculate the concatenated text: just add another
+	 * TEXT field and Lucene will take care of this. Additional advantage: Lucene may be able to handle the invididual
+	 * strings in a way that may affect e.g. phrase and proximity searches (concatenation basically means loss of
+	 * information). NOTE: The TEXT_FIELD_NAME has to be stored, see in LuceneSail
 	 * 
 	 * @see LuceneSail
 	 */
@@ -148,8 +144,7 @@ public class LuceneDocument implements SearchDocument {
 			for (IndexableField f : geoStrategy.createIndexableFields(shape)) {
 				doc.add(f);
 			}
-		}
-		catch (ParseException e) {
+		} catch (ParseException e) {
 			// ignore
 		}
 	}

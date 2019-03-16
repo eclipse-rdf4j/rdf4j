@@ -15,7 +15,7 @@ public class ElasticsearchTestUtils {
 	 * Counter used to uniquely name test indexes without using UUID's that may be causing path length issues.
 	 */
 	private static final AtomicLong TEST_COUNTER = new AtomicLong(0);
-	
+
 	public static String getNextTestIndexName() {
 		return "rdf4j-es-testindex-" + TEST_COUNTER.incrementAndGet();
 	}

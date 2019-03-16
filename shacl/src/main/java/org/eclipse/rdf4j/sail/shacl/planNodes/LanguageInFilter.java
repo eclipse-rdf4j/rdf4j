@@ -6,9 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-
 package org.eclipse.rdf4j.sail.shacl.planNodes;
-
 
 import org.eclipse.rdf4j.model.Literal;
 
@@ -30,18 +28,16 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if(! (t.line.get(1) instanceof Literal)) return false;
+		if (!(t.line.get(1) instanceof Literal))
+			return false;
 
 		Optional<String> language = ((Literal) t.line.get(1)).getLanguage();
 		return language.filter(languageIn::contains).isPresent();
 
 	}
 
-
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" +
-			"languageIn=" + Arrays.toString(languageIn.toArray()) +
-			'}';
+		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
 	}
 }

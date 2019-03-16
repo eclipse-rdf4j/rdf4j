@@ -70,9 +70,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded
- * Jetty server running RDF4J Server, which functions as the SPARQL endpoint to test against. The test is configured
- * to execute the W3C service tests located in rdf4j-sparql-testsuite/src/main/resources/testcases-service
+ * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded Jetty
+ * server running RDF4J Server, which functions as the SPARQL endpoint to test against. The test is configured to
+ * execute the W3C service tests located in rdf4j-sparql-testsuite/src/main/resources/testcases-service
  * 
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -100,9 +100,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		// set up the server: the maximal number of endpoints must be known
 		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++)
@@ -111,8 +109,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
@@ -129,11 +126,9 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Get the repository url, initialized repositories are called endpoint1 endpoint2 ..
-	 * endpoint%MAX_ENDPOINTS%
+	 * Get the repository url, initialized repositories are called endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
 	 * 
-	 * @param i
-	 *        the index of the repository, starting with 1
+	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
 	protected String getRepositoryUrl(int i) {
@@ -143,8 +138,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	/**
 	 * Get the repository, initialized repositories are called endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
 	 * 
-	 * @param i
-	 *        the index of the repository, starting with 1
+	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
 	public HTTPRepository getRepository(int i) {
@@ -152,23 +146,18 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Prepare a particular test, and load the specified data. Note: the repositories are cleared before
-	 * loading data
+	 * Prepare a particular test, and load the specified data. Note: the repositories are cleared before loading data
 	 * 
-	 * @param localData
-	 *        a local data file that is added to local repository, use null if there is no local data
-	 * @param endpointData
-	 *        a list of endpoint data files, dataFile at index is loaded to endpoint%i%, use empty list for no
-	 *        remote data
+	 * @param localData    a local data file that is added to local repository, use null if there is no local data
+	 * @param endpointData a list of endpoint data files, dataFile at index is loaded to endpoint%i%, use empty list for
+	 *                     no remote data
 	 * @throws Exception
 	 */
-	protected void prepareTest(String localData, List<String> endpointData)
-		throws Exception
-	{
+	protected void prepareTest(String localData, List<String> endpointData) throws Exception {
 
 		if (endpointData.size() > MAX_ENDPOINTS)
-			throw new RuntimeException("MAX_ENDPOINTs to low, " + endpointData.size()
-					+ " repositories needed. Adjust configuration");
+			throw new RuntimeException(
+					"MAX_ENDPOINTs to low, " + endpointData.size() + " repositories needed. Adjust configuration");
 
 		if (localData != null) {
 			loadDataSet(localRepository, localData);
@@ -191,8 +180,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws IOException
 	 */
 	protected void loadDataSet(Repository rep, String datasetFile)
-		throws RDFParseException, RepositoryException, IOException
-	{
+			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset...");
 		InputStream dataset = SPARQLServiceEvaluationTest.class.getResourceAsStream(datasetFile);
 
@@ -202,10 +190,9 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		RepositoryConnection con = rep.getConnection();
 		try {
 			con.clear();
-			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
-					Rio.unsupportedFormat(datasetFile)));
-		}
-		finally {
+			con.add(dataset, "",
+					Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
+		} finally {
 			dataset.close();
 			con.close();
 		}
@@ -216,27 +203,22 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		try {
 			localRepository.shutDown();
-		}
-		finally {
+		} finally {
 			server.stop();
 		}
 	}
 
 	/**
 	 * Verify that BIND clause alias from the SERVICE clause gets added to the result set.
+	 * 
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
 	 */
 	@Test
-	public void testValuesBindClauseHandling()
-		throws Exception
-	{
-		String query = "select * { service <" + getRepositoryUrl(1)
-				+ "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
+	public void testValuesBindClauseHandling() throws Exception {
+		String query = "select * { service <" + getRepositoryUrl(1) + "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
 
 		try (RepositoryConnection conn = localRepository.getConnection()) {
 			TupleQuery tq = conn.prepareTupleQuery(query);
@@ -258,16 +240,14 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Verify that all relevant variable names from the SERVICE clause get added to the result set when
-	 * a BIND clause is present.
+	 * Verify that all relevant variable names from the SERVICE clause get added to the result set when a BIND clause is
+	 * present.
+	 * 
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/703">#703</a>
 	 */
 	@Test
-	public void testVariableNameHandling()
-			throws Exception
-	{
-		String query = "select * { service <" + getRepositoryUrl(1)
-				+ "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
+	public void testVariableNameHandling() throws Exception {
+		String query = "select * { service <" + getRepositoryUrl(1) + "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
 
 		// add some data to the remote endpoint (we don't care about the exact contents)
 		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
@@ -290,9 +270,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	@Test
-	public void testSimpleServiceQuery()
-		throws RepositoryException
-	{
+	public void testSimpleServiceQuery() throws RepositoryException {
 		// test setup
 		String EX_NS = "http://example.org/";
 		ValueFactory f = localRepository.getValueFactory();
@@ -302,10 +280,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 		// clears the repository and adds new data
 		try {
-			prepareTest("/testcases-service/simple-default-graph.ttl",
-					Arrays.asList("/testcases-service/simple.ttl"));
-		}
-		catch (Exception e1) {
+			prepareTest("/testcases-service/simple-default-graph.ttl", Arrays.asList("/testcases-service/simple.ttl"));
+		} catch (Exception e1) {
 			fail(e1.getMessage());
 		}
 
@@ -340,117 +316,91 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 				assertTrue(bob.equals(x) || alice.equals(x));
 				if (bob.equals(x)) {
 					f.createLiteral("Bob").equals(y);
-				}
-				else if (alice.equals(x)) {
+				} else if (alice.equals(x)) {
 					f.createLiteral("Alice").equals(y);
 				}
 			}
 
 			assertEquals(2, count);
 
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			fail(e.getMessage());
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			fail(e.getMessage());
-		}
-		finally {
+		} finally {
 			conn.close();
 		}
 	}
 
 	@Test
-	public void test1()
-		throws Exception
-	{
+	public void test1() throws Exception {
 		prepareTest("/testcases-service/data01.ttl", Arrays.asList("/testcases-service/data01endpoint.ttl"));
 		execute("/testcases-service/service01.rq", "/testcases-service/service01.srx", false);
 	}
 
 	@Test
-	public void test2()
-		throws Exception
-	{
-		prepareTest(null, Arrays.asList("/testcases-service/data02endpoint1.ttl",
-				"/testcases-service/data02endpoint2.ttl"));
+	public void test2() throws Exception {
+		prepareTest(null,
+				Arrays.asList("/testcases-service/data02endpoint1.ttl", "/testcases-service/data02endpoint2.ttl"));
 		execute("/testcases-service/service02.rq", "/testcases-service/service02.srx", false);
 	}
 
 	@Test
-	public void test3()
-		throws Exception
-	{
-		prepareTest(null, Arrays.asList("/testcases-service/data03endpoint1.ttl",
-				"/testcases-service/data03endpoint2.ttl"));
+	public void test3() throws Exception {
+		prepareTest(null,
+				Arrays.asList("/testcases-service/data03endpoint1.ttl", "/testcases-service/data03endpoint2.ttl"));
 		execute("/testcases-service/service03.rq", "/testcases-service/service03.srx", false);
 	}
 
 	@Test
-	public void test4()
-		throws Exception
-	{
+	public void test4() throws Exception {
 		prepareTest("/testcases-service/data04.ttl", Arrays.asList("/testcases-service/data04endpoint.ttl"));
 		execute("/testcases-service/service04.rq", "/testcases-service/service04.srx", false);
 	}
 
 	@Test
-	public void test5()
-		throws Exception
-	{
-		prepareTest("/testcases-service/data05.ttl", Arrays.asList("/testcases-service/data05endpoint1.ttl",
-				"/testcases-service/data05endpoint2.ttl"));
+	public void test5() throws Exception {
+		prepareTest("/testcases-service/data05.ttl",
+				Arrays.asList("/testcases-service/data05endpoint1.ttl", "/testcases-service/data05endpoint2.ttl"));
 		execute("/testcases-service/service05.rq", "/testcases-service/service05.srx", false);
 	}
 
 	@Test
-	public void test6()
-		throws Exception
-	{
+	public void test6() throws Exception {
 		prepareTest(null, Arrays.asList("/testcases-service/data06endpoint1.ttl"));
 		execute("/testcases-service/service06.rq", "/testcases-service/service06.srx", false);
 	}
 
 	@Test
-	public void test7()
-		throws Exception
-	{
+	public void test7() throws Exception {
 		// clears the repository and adds new data + execute
-		prepareTest("/testcases-service/data07.ttl", Collections.<String> emptyList());
+		prepareTest("/testcases-service/data07.ttl", Collections.<String>emptyList());
 		execute("/testcases-service/service07.rq", "/testcases-service/service07.srx", false);
 	}
 
 	@Test
-	public void test8()
-		throws Exception
-	{
+	public void test8() throws Exception {
 		/* test where the SERVICE expression is to be evaluated as ASK request */
 		prepareTest("/testcases-service/data08.ttl", Arrays.asList("/testcases-service/data08endpoint.ttl"));
 		execute("/testcases-service/service08.rq", "/testcases-service/service08.srx", false);
 	}
 
 	@Test
-	public void test9()
-		throws Exception
-	{
+	public void test9() throws Exception {
 		/* test where the service endpoint is bound at runtime through BIND */
 		prepareTest(null, Arrays.asList("/testcases-service/data09endpoint.ttl"));
 		execute("/testcases-service/service09.rq", "/testcases-service/service09.srx", false);
 	}
 
 	@Test
-	public void test10()
-		throws Exception
-	{
+	public void test10() throws Exception {
 		/* test how we deal with blank node */
 		prepareTest("/testcases-service/data10.ttl", Arrays.asList("/testcases-service/data10endpoint.ttl"));
 		execute("/testcases-service/service10.rq", "/testcases-service/service10.srx", false);
 	}
 
 	@Test
-	public void test11()
-		throws Exception
-	{
+	public void test11() throws Exception {
 		/* test vectored join with more intermediate results */
 		// clears the repository and adds new data + execute
 		prepareTest("/testcases-service/data11.ttl", Arrays.asList("/testcases-service/data11endpoint.ttl"));
@@ -476,36 +426,28 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	// }
 
 	@Test
-	public void test13()
-		throws Exception
-	{
+	public void test13() throws Exception {
 		/* test for bug SES-899: cross product is required */
 		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service13.rq", "/testcases-service/service13.srx", false);
 	}
 
 	@Test
-	public void testEmptyServiceBlock()
-		throws Exception
-	{
+	public void testEmptyServiceBlock() throws Exception {
 		/* test for bug SES-900: nullpointer for empty service block */
 		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service14.rq", "/testcases-service/service14.srx", false);
 	}
 
 	@Test
-	public void testNotProjectedCount()
-		throws Exception
-	{
+	public void testNotProjectedCount() throws Exception {
 		/* test projection of subqueries - SES-1000 */
 		prepareTest(null, Arrays.asList("/testcases-service/data17endpoint1.ttl"));
 		execute("/testcases-service/service17.rq", "/testcases-service/service17.srx", false);
 	}
 
 	@Test
-	public void testNonAsciiCharHandling()
-		throws Exception
-	{
+	public void testNonAsciiCharHandling() throws Exception {
 		/* SES-1056 */
 		prepareTest(null, Arrays.asList("/testcases-service/data18endpoint1.rdf"));
 		execute("/testcases-service/service18.rq", "/testcases-service/service18.srx", false);
@@ -519,9 +461,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @param checkOrder
 	 * @throws Exception
 	 */
-	private void execute(String queryFile, String expectedResultFile, boolean checkOrder)
-		throws Exception
-	{
+	private void execute(String queryFile, String expectedResultFile, boolean checkOrder) throws Exception {
 		RepositoryConnection conn = localRepository.getConnection();
 		String queryString = readQueryString(queryFile);
 
@@ -529,31 +469,27 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			Query query = conn.prepareQuery(QueryLanguage.SPARQL, queryString);
 
 			if (query instanceof TupleQuery) {
-				TupleQueryResult queryResult = ((TupleQuery)query).evaluate();
+				TupleQueryResult queryResult = ((TupleQuery) query).evaluate();
 
 				TupleQueryResult expectedResult = readExpectedTupleQueryResult(expectedResultFile);
 
 				compareTupleQueryResults(queryResult, expectedResult, checkOrder);
 
-			}
-			else if (query instanceof GraphQuery) {
-				GraphQueryResult gqr = ((GraphQuery)query).evaluate();
+			} else if (query instanceof GraphQuery) {
+				GraphQueryResult gqr = ((GraphQuery) query).evaluate();
 				Set<Statement> queryResult = Iterations.asSet(gqr);
 
 				Set<Statement> expectedResult = readExpectedGraphQueryResult(expectedResultFile);
 
 				compareGraphs(queryResult, expectedResult);
 
-			}
-			else if (query instanceof BooleanQuery) {
+			} else if (query instanceof BooleanQuery) {
 				// TODO implement if needed
 				throw new RuntimeException("Not yet supported " + query.getClass());
-			}
-			else {
+			} else {
 				throw new RuntimeException("Unexpected query type: " + query.getClass());
 			}
-		}
-		finally {
+		} finally {
 			conn.close();
 		}
 	}
@@ -566,14 +502,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws RepositoryException
 	 * @throws IOException
 	 */
-	private String readQueryString(String queryResource)
-		throws RepositoryException, IOException
-	{
+	private String readQueryString(String queryResource) throws RepositoryException, IOException {
 		InputStream stream = SPARQLServiceEvaluationTest.class.getResourceAsStream(queryResource);
 		try {
 			return IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
-		}
-		finally {
+		} finally {
 			stream.close();
 		}
 	}
@@ -586,9 +519,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws RepositoryException
 	 * @throws IOException
 	 */
-	private TupleQueryResult readExpectedTupleQueryResult(String resultFile)
-		throws Exception
-	{
+	private TupleQueryResult readExpectedTupleQueryResult(String resultFile) throws Exception {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile);
 
 		if (tqrFormat.isPresent()) {
@@ -602,12 +533,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			}
-			finally {
+			} finally {
 				in.close();
 			}
-		}
-		else {
+		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);
 			return DAWGTestResultSetUtil.toTupleQueryResult(resultGraph);
 		}
@@ -620,11 +549,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @return
 	 * @throws Exception
 	 */
-	private Set<Statement> readExpectedGraphQueryResult(String resultFile)
-		throws Exception
-	{
-		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile).orElseThrow(
-				Rio.unsupportedFormat(resultFile));
+	private Set<Statement> readExpectedGraphQueryResult(String resultFile) throws Exception {
+		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile).orElseThrow(Rio.unsupportedFormat(resultFile));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
@@ -637,8 +563,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
 		try {
 			parser.parse(in, null); // TODO check
-		}
-		finally {
+		} finally {
 			in.close();
 		}
 
@@ -654,9 +579,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws Exception
 	 */
 	private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult,
-			boolean checkOrder)
-		throws Exception
-	{
+			boolean checkOrder) throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -690,12 +613,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			 * StringBuilder message = new StringBuilder(128); message.append("\n============ ");
 			 * message.append(getName()); message.append(" =======================\n"); message.append(
 			 * "Expected result: \n"); while (expectedResultTable.hasNext()) {
-			 * message.append(expectedResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
-			 * message.append("========================\n"); message.append("Query result: \n"); while
-			 * (queryResultTable.hasNext()) { message.append(queryResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
-			 * message.append("========================\n");
+			 * message.append(expectedResultTable.next()); message.append("\n"); } message.append("=============");
+			 * StringUtil.appendN('=', getName().length(), message); message.append("========================\n");
+			 * message.append("Query result: \n"); while (queryResultTable.hasNext()) {
+			 * message.append(queryResultTable.next()); message.append("\n"); } message.append("=============");
+			 * StringUtil.appendN('=', getName().length(), message); message.append("========================\n");
 			 */
 
 			List<BindingSet> queryBindings = Iterations.asList(queryResultTable);
@@ -761,12 +683,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			fail(message.toString());
 		}
 		/*
-		 * debugging only: print out result when test succeeds else { queryResultTable.beforeFirst();
-		 * List<BindingSet> queryBindings = Iterations.asList(queryResultTable); StringBuilder message = new
-		 * StringBuilder(128); message.append("\n============ "); message.append(getName()); message.append(
-		 * " =======================\n"); message.append(" =======================\n"); message.append(
-		 * "query result: \n"); for (BindingSet bs: queryBindings) { message.append(bs); message.append("\n");
-		 * } System.out.print(message.toString()); }
+		 * debugging only: print out result when test succeeds else { queryResultTable.beforeFirst(); List<BindingSet>
+		 * queryBindings = Iterations.asList(queryResultTable); StringBuilder message = new StringBuilder(128);
+		 * message.append("\n============ "); message.append(getName()); message.append( " =======================\n");
+		 * message.append(" =======================\n"); message.append( "query result: \n"); for (BindingSet bs:
+		 * queryBindings) { message.append(bs); message.append("\n"); } System.out.print(message.toString()); }
 		 */
 	}
 
@@ -777,25 +698,22 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @param expectedResult
 	 * @throws Exception
 	 */
-	private void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult)
-		throws Exception
-	{
+	private void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) throws Exception {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*
 			 * Collection<? extends Statement> unexpectedStatements = RepositoryUtil.difference(queryResult,
 			 * expectedResult); Collection<? extends Statement> missingStatements =
-			 * RepositoryUtil.difference(expectedResult, queryResult); StringBuilder message = new
-			 * StringBuilder(128); message.append("\n=======Diff: "); message.append(getName());
+			 * RepositoryUtil.difference(expectedResult, queryResult); StringBuilder message = new StringBuilder(128);
+			 * message.append("\n=======Diff: "); message.append(getName());
 			 * message.append("========================\n"); if (!unexpectedStatements.isEmpty()) {
-			 * message.append("Unexpected statements in result: \n"); for (Statement st :
-			 * unexpectedStatements) { message.append(st.toString()); message.append("\n"); }
-			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
-			 * message.append("="); } message.append("========================\n"); } if
-			 * (!missingStatements.isEmpty()) { message.append("Statements missing in result: \n"); for
-			 * (Statement st : missingStatements) { message.append(st.toString()); message.append("\n"); }
-			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
-			 * message.append("="); } message.append("========================\n"); }
+			 * message.append("Unexpected statements in result: \n"); for (Statement st : unexpectedStatements) {
+			 * message.append(st.toString()); message.append("\n"); } message.append("============="); for (int i = 0; i
+			 * < getName().length(); i++) { message.append("="); } message.append("========================\n"); } if
+			 * (!missingStatements.isEmpty()) { message.append("Statements missing in result: \n"); for (Statement st :
+			 * missingStatements) { message.append(st.toString()); message.append("\n"); }
+			 * message.append("============="); for (int i = 0; i < getName().length(); i++) { message.append("="); }
+			 * message.append("========================\n"); }
 			 */
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");

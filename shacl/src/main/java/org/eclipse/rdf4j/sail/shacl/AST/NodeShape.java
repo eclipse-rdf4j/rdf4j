@@ -32,7 +32,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property nodeShapes, which are the restrictions for everything that matches the NodeShape.
+ * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
+ * nodeShapes, which are the restrictions for everything that matches the NodeShape.
  *
  * @author Heshan Jayasinghe
  */
@@ -50,7 +51,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -71,11 +73,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		throw new IllegalStateException();
 	}
 
-	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
+	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			boolean printPlans) {
 		return propertyShapes.stream()
-			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
-			.collect(Collectors.toList());
+				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
+						shaclSailConnection.getRemovedStatements()))
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+				.collect(Collectors.toList());
 	}
 
 	@Override
@@ -91,7 +95,6 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public Resource getId() {
 		return id;
 	}
-
 
 	public static class Factory {
 

@@ -42,9 +42,7 @@ public class MemoryStoreFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config)
-		throws SailConfigException
-	{
+	public Sail getSail(SailImplConfig config) throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
@@ -52,7 +50,7 @@ public class MemoryStoreFactory implements SailFactory {
 		MemoryStore memoryStore = new MemoryStore();
 
 		if (config instanceof MemoryStoreConfig) {
-			MemoryStoreConfig memConfig = (MemoryStoreConfig)config;
+			MemoryStoreConfig memConfig = (MemoryStoreConfig) config;
 
 			memoryStore.setPersist(memConfig.getPersist());
 			memoryStore.setSyncDelay(memConfig.getSyncDelay());

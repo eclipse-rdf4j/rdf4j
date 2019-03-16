@@ -46,15 +46,14 @@ public class ShaclSailFactory implements SailFactory {
 		ShaclSail sail = new ShaclSail();
 
 		if (config instanceof ShaclSailConfig) {
-			ShaclSailConfig shaclSailConfig = (ShaclSailConfig)config;
+			ShaclSailConfig shaclSailConfig = (ShaclSailConfig) config;
 
 			if (shaclSailConfig.isValidationEnabled()) {
 				sail.enableValidation();
-			}
-			else {
+			} else {
 				sail.disableValidation();
 			}
-			
+
 			sail.setCacheSelectNodes(shaclSailConfig.isCacheSelectNodes());
 			sail.setUndefinedTargetValidatesAllSubjects(shaclSailConfig.isUndefinedTargetValidatesAllSubjects());
 			sail.setIgnoreNoShapesLoadedException(shaclSailConfig.isIgnoreNoShapesLoadedException());

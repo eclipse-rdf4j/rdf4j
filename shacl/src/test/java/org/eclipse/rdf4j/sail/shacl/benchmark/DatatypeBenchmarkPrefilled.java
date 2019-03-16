@@ -46,12 +46,11 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatatypeBenchmarkPrefilled {
-
 
 	private List<List<Statement>> allStatements;
 
@@ -59,16 +58,17 @@ public class DatatypeBenchmarkPrefilled {
 	private SailRepository memoryStoreRepo;
 	private SailRepository sparqlQueryMemoryStoreRepo;
 
-
 	@Setup(Level.Invocation)
 	public void setUp() throws Exception {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		if(shaclRepo != null) shaclRepo.shutDown();
-		if(memoryStoreRepo != null) memoryStoreRepo.shutDown();
-		if(sparqlQueryMemoryStoreRepo != null) sparqlQueryMemoryStoreRepo.shutDown();
-
+		if (shaclRepo != null)
+			shaclRepo.shutDown();
+		if (memoryStoreRepo != null)
+			memoryStoreRepo.shutDown();
+		if (sparqlQueryMemoryStoreRepo != null)
+			sparqlQueryMemoryStoreRepo.shutDown();
 
 		allStatements = new ArrayList<>(10);
 
@@ -79,11 +79,9 @@ public class DatatypeBenchmarkPrefilled {
 			allStatements.add(statements);
 			for (int i = 0; i < 100; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
-				);
-				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE, vf.createLiteral(i))
-				);
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+						vf.createLiteral(i)));
 			}
 		}
 
@@ -91,13 +89,10 @@ public class DatatypeBenchmarkPrefilled {
 
 		for (int i = 0; i < 100000; i++) {
 			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE)
-			);
-			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), FOAF.AGE, vf.createLiteral( i))
-			);
+					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
+			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), FOAF.AGE,
+					vf.createLiteral(i)));
 		}
-
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
@@ -105,10 +100,8 @@ public class DatatypeBenchmarkPrefilled {
 		memoryStoreRepo = new SailRepository(new MemoryStore());
 		memoryStoreRepo.init();
 
-
 		sparqlQueryMemoryStoreRepo = new SailRepository(new MemoryStore());
 		sparqlQueryMemoryStoreRepo.init();
-
 
 		shaclRepo.disableValidation();
 		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
@@ -131,10 +124,8 @@ public class DatatypeBenchmarkPrefilled {
 		allStatements.clear();
 	}
 
-
 	@Benchmark
 	public void shacl() {
-
 
 		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
 			connection.begin();
@@ -150,12 +141,10 @@ public class DatatypeBenchmarkPrefilled {
 		}
 
 	}
-
 
 	@Benchmark
 	public void noShacl() {
 
-
 		try (SailRepositoryConnection connection = memoryStoreRepo.getConnection()) {
 			connection.begin();
 			connection.commit();
@@ -170,10 +159,8 @@ public class DatatypeBenchmarkPrefilled {
 
 	}
 
-
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
-
 
 		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
 			connection.begin();
@@ -183,7 +170,10 @@ public class DatatypeBenchmarkPrefilled {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <"+FOAF.AGE+"> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection
+						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
+								+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
+						.evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -191,6 +181,5 @@ public class DatatypeBenchmarkPrefilled {
 		}
 
 	}
-
 
 }
