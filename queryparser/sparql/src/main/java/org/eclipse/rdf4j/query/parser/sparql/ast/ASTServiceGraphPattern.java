@@ -39,9 +39,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 
 	/** Accept the visitor. **/
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -59,7 +57,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	public String getPatternString() {
 
 		if (patternString == null) {
-			ASTOperationContainer parentContainer = (ASTOperationContainer)getParentContainer(this);
+			ASTOperationContainer parentContainer = (ASTOperationContainer) getParentContainer(this);
 
 			String sourceString = parentContainer.getSourceString();
 
@@ -95,8 +93,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param prefixDeclarations
-	 *        The prefixDeclarations to set.
+	 * @param prefixDeclarations The prefixDeclarations to set.
 	 */
 	public void setPrefixDeclarations(Map<String, String> prefixDeclarations) {
 		this.prefixDeclarations = prefixDeclarations;
@@ -110,8 +107,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param baseURI
-	 *        The baseURI to set.
+	 * @param baseURI The baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;
@@ -125,8 +121,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param endTokenColumnPos
-	 *        The endTokenColumnPos to set.
+	 * @param endTokenColumnPos The endTokenColumnPos to set.
 	 */
 	public void setEndTokenColumnPos(int endTokenColumnPos) {
 		this.endTokenColumnPos = endTokenColumnPos;
@@ -140,8 +135,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param endTokenLinePos
-	 *        The endTokenLinePos to set.
+	 * @param endTokenLinePos The endTokenLinePos to set.
 	 */
 	public void setEndTokenLinePos(int endTokenLinePos) {
 		this.endTokenLinePos = endTokenLinePos;
@@ -155,8 +149,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param beginTokenColumnPos
-	 *        The beginTokenColumnPos to set.
+	 * @param beginTokenColumnPos The beginTokenColumnPos to set.
 	 */
 	public void setBeginTokenColumnPos(int beginTokenColumnPos) {
 		this.beginTokenColumnPos = beginTokenColumnPos;
@@ -170,8 +163,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	}
 
 	/**
-	 * @param beginTokenLinePos
-	 *        The beginTokenLinePos to set.
+	 * @param beginTokenLinePos The beginTokenLinePos to set.
 	 */
 	public void setBeginTokenLinePos(int beginTokenLinePos) {
 		this.beginTokenLinePos = beginTokenLinePos;

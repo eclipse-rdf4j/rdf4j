@@ -54,9 +54,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public String render(final TupleExpr theExpr)
-		throws Exception
-	{
+	public String render(final TupleExpr theExpr) throws Exception {
 		mContexts = ContextCollector.collectContexts(theExpr);
 
 		theExpr.visit(this);
@@ -76,9 +74,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	protected String renderValueExpr(final ValueExpr theExpr)
-		throws Exception
-	{
+	protected String renderValueExpr(final ValueExpr theExpr) throws Exception {
 		return new SparqlValueExprRenderer().render(theExpr);
 	}
 
@@ -89,8 +85,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			mJoinBuffer.append(indent()).append("GRAPH ");
 			if (aContext.hasValue()) {
 				mJoinBuffer.append(RenderUtils.getSPARQLQueryString(aContext.getValue()));
-			}
-			else {
+			} else {
 				mJoinBuffer.append("?").append(aContext.getName());
 			}
 			mJoinBuffer.append(" {\n");
@@ -111,9 +106,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Join theJoin)
-		throws Exception
-	{
+	public void meet(Join theJoin) throws Exception {
 		ctxOpen(theJoin);
 
 		theJoin.getLeftArg().visit(this);
@@ -127,9 +120,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LeftJoin theJoin)
-		throws Exception
-	{
+	public void meet(LeftJoin theJoin) throws Exception {
 		ctxOpen(theJoin);
 
 		// try and reverse engineer the original scoping intent of the query
@@ -148,8 +139,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		theJoin.getRightArg().visit(this);
 
 		if (theJoin.getCondition() != null) {
-			mJoinBuffer.append(indent()).append("filter").append(
-					renderValueExpr(theJoin.getCondition())).append("\n");
+			mJoinBuffer.append(indent()).append("filter").append(renderValueExpr(theJoin.getCondition())).append("\n");
 		}
 
 		mIndent -= 2;
@@ -164,18 +154,14 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than
-	 * reusing this one.
+	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than reusing this
+	 * one.
 	 * 
-	 * @param theExpr
-	 *        the expr to render
+	 * @param theExpr the expr to render
 	 * @return the rendered expression
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	private String renderTupleExpr(TupleExpr theExpr)
-		throws Exception
-	{
+	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
 		SparqlTupleExprRenderer aRenderer = new SparqlTupleExprRenderer();
 
 		// aRenderer.mProjection = new ArrayList<ProjectionElemList>(mProjection);
@@ -196,9 +182,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Union theOp)
-		throws Exception
-	{
+	public void meet(Union theOp) throws Exception {
 		ctxOpen(theOp);
 
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
@@ -211,9 +195,20 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			aRight = aRight.substring(0, aRight.length() - 1);
 		}
 
-		mJoinBuffer.append(indent()).append("{\n").append(aLeft).append("\n").append(indent()).append(
-				"}\n").append(indent()).append("union\n").append(indent()).append("{\n").append(
-						aRight).append("\n").append(indent()).append("}.\n");
+		mJoinBuffer.append(indent())
+				.append("{\n")
+				.append(aLeft)
+				.append("\n")
+				.append(indent())
+				.append("}\n")
+				.append(indent())
+				.append("union\n")
+				.append(indent())
+				.append("{\n")
+				.append(aRight)
+				.append("\n")
+				.append(indent())
+				.append("}.\n");
 
 		ctxClose(theOp);
 	}
@@ -222,37 +217,41 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Difference theOp)
-		throws Exception
-	{
+	public void meet(Difference theOp) throws Exception {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n{").append(aLeft).append("}").append("\nminus\n").append("{").append(
-				aRight).append("}.\n");
+		mJoinBuffer.append("\n{")
+				.append(aLeft)
+				.append("}")
+				.append("\nminus\n")
+				.append("{")
+				.append(aRight)
+				.append("}.\n");
 	}
 
 	/**
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Intersection theOp)
-		throws Exception
-	{
+	public void meet(Intersection theOp) throws Exception {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n").append(aLeft).append("}").append("\nintersection\n").append("{").append(
-				aRight).append("}.\n");
+		mJoinBuffer.append("\n")
+				.append(aLeft)
+				.append("}")
+				.append("\nintersection\n")
+				.append("{")
+				.append(aRight)
+				.append("}.\n");
 	}
 
 	/**
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(final Filter theFilter)
-		throws Exception
-	{
+	public void meet(final Filter theFilter) throws Exception {
 		ctxOpen(theFilter);
 
 		if (theFilter.getArg() != null) {
@@ -261,8 +260,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 		// try and reverse engineer the original scoping intent of the query
 		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-				&& (theFilter.getParentNode() instanceof Join
-						|| theFilter.getParentNode() instanceof LeftJoin);
+				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
 
 		String aFilter = renderValueExpr(theFilter.getCondition());
 		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {
@@ -295,9 +293,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(StatementPattern thePattern)
-		throws Exception
-	{
+	public void meet(StatementPattern thePattern) throws Exception {
 		ctxOpen(thePattern);
 
 		mJoinBuffer.append(indent()).append(renderPattern(thePattern));
@@ -305,12 +301,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		ctxClose(thePattern);
 	}
 
-	String renderPattern(StatementPattern thePattern)
-		throws Exception
-	{
-		return renderValueExpr(thePattern.getSubjectVar()) + " "
-				+ renderValueExpr(thePattern.getPredicateVar()) + " " + ""
-				+ renderValueExpr(thePattern.getObjectVar()) + ".\n";
+	String renderPattern(StatementPattern thePattern) throws Exception {
+		return renderValueExpr(thePattern.getSubjectVar()) + " " + renderValueExpr(thePattern.getPredicateVar()) + " "
+				+ "" + renderValueExpr(thePattern.getObjectVar()) + ".\n";
 
 	}
 }

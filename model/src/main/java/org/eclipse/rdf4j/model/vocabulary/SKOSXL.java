@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * Vocabulary constants for the <a href="https://www.w3.org/TR/skos-reference/#xl">SKOS eXtension for Labels
  * (SKOS-XL)</a>.
  * 
- * @see <a href="https://www.w3.org/TR/skos-reference/#xl">Appendix B of SKOS Simple Knowledge Organization
- *      System Reference</a>
+ * @see <a href="https://www.w3.org/TR/skos-reference/#xl">Appendix B of SKOS Simple Knowledge Organization System
+ *      Reference</a>
  * @author Manuel Fiorelli
  */
 public class SKOSXL {
@@ -61,24 +61,21 @@ public class SKOSXL {
 	/**
 	 * The skosxl:prefLabel property.
 	 * 
-	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden
-	 *      skosxl:Labels</a>
+	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI PREF_LABEL;
 
 	/**
 	 * The skosxl:altLabel property.
 	 * 
-	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden
-	 *      skosxl:Labels</a>
+	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI ALT_LABEL;
 
 	/**
 	 * The skosxl:hiddenLabel property.
 	 * 
-	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden
-	 *      skosxl:Labels</a>
+	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI HIDDEN_LABEL;
 

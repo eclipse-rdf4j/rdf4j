@@ -27,8 +27,7 @@ public class VirtuosoGeometryPointDatatypeHandlerTest extends AbstractDatatypeHa
 
 	@Override
 	protected IRI getRecognisedDatatypeUri() {
-		return SimpleValueFactory.getInstance().createIRI("http://www.openlinksw.com/schemas/virtrdf#",
-				"Geometry");
+		return SimpleValueFactory.getInstance().createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry");
 	}
 
 	@Override
@@ -43,9 +42,9 @@ public class VirtuosoGeometryPointDatatypeHandlerTest extends AbstractDatatypeHa
 
 	@Override
 	protected Literal getNormalisedLiteralForRecognisedDatatypeAndValue() {
-		return SimpleValueFactory.getInstance().createLiteral("POINT(123.0000 143.000)",
-				SimpleValueFactory.getInstance().createIRI("http://www.openlinksw.com/schemas/virtrdf#",
-						"Geometry"));
+		return SimpleValueFactory.getInstance()
+				.createLiteral("POINT(123.0000 143.000)", SimpleValueFactory.getInstance()
+						.createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry"));
 	}
 
 	// -------------------------------------

@@ -15,8 +15,7 @@ import java.util.Set;
 public interface TupleExpr extends QueryModelNode {
 
 	/**
-	 * Gets the names of the bindings that are, or can be, returned by this tuple expression when it is
-	 * evaluated.
+	 * Gets the names of the bindings that are, or can be, returned by this tuple expression when it is evaluated.
 	 * 
 	 * @return A set of binding names.
 	 */

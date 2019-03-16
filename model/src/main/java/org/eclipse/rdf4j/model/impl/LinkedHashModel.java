@@ -31,17 +31,17 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
 /**
  * Hash table based implementation of the <tt>{@link Model}</tt> interface.
  * <p>
- * This implementation provides constant-time performance for filters using a single term, assuming the hash
- * function disperses the elements properly among the buckets. Each term is indexed using a {@link HashMap}.
- * When multiple terms are provided in a filter the index, of the term that reduces the possible
- * {@link Statement}s the most, is used and a sequential scan is used to filter additional terms.
+ * This implementation provides constant-time performance for filters using a single term, assuming the hash function
+ * disperses the elements properly among the buckets. Each term is indexed using a {@link HashMap}. When multiple terms
+ * are provided in a filter the index, of the term that reduces the possible {@link Statement}s the most, is used and a
+ * sequential scan is used to filter additional terms.
  * <p>
- * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently,
- * and at least one of the threads modifies the model, it must be synchronized externally. This is typically
- * accomplished by synchronizing on some object that naturally encapsulates the model. If no such object
- * exists, the set should be "wrapped" using the Collections.synchronizedSet method. This is best done at
- * creation time, to prevent accidental unsynchronized access to the LinkedHashModel instance (though the
- * synchronization guarantee is only when accessing via the Set interface methods):
+ * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently, and at
+ * least one of the threads modifies the model, it must be synchronized externally. This is typically accomplished by
+ * synchronizing on some object that naturally encapsulates the model. If no such object exists, the set should be
+ * "wrapped" using the Collections.synchronizedSet method. This is best done at creation time, to prevent accidental
+ * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
+ * via the Set interface methods):
  * </p>
  * 
  * <pre>
@@ -154,7 +154,7 @@ public class LinkedHashModel extends AbstractModel {
 			ModelNode<Resource> s = asNode(subj);
 			ModelNode<IRI> p = asNode(pred);
 			ModelNode<Value> o = asNode(obj);
-			ModelNode<Resource> c = asNode((Resource)ctx);
+			ModelNode<Resource> c = asNode((Resource) ctx);
 			ModelStatement st = new ModelStatement(s, p, o, c);
 			changed |= addModelStatement(st);
 		}
@@ -170,7 +170,7 @@ public class LinkedHashModel extends AbstractModel {
 	@Override
 	public boolean remove(Object o) {
 		if (o instanceof Statement) {
-			Iterator iter = find((Statement)o);
+			Iterator iter = find((Statement) o);
 			if (iter.hasNext()) {
 				iter.next();
 				iter.remove();
@@ -183,7 +183,7 @@ public class LinkedHashModel extends AbstractModel {
 	@Override
 	public boolean contains(Object o) {
 		if (o instanceof Statement) {
-			return find((Statement)o).hasNext();
+			return find((Statement) o).hasNext();
 		}
 		return false;
 	}
@@ -223,19 +223,16 @@ public class LinkedHashModel extends AbstractModel {
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
-					Value obj, Resource... contexts)
-			{
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
 				LinkedHashModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
 	}
 
 	@Override
-	public void removeTermIteration(Iterator iterator, Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-	{
-		Set<ModelStatement> owner = ((ModelIterator)iterator).getOwner();
+	public void removeTermIteration(Iterator iterator, Resource subj, IRI pred, Value obj, Resource... contexts) {
+		Set<ModelStatement> owner = ((ModelIterator) iterator).getOwner();
 		Set<ModelStatement> chosen = choose(subj, pred, obj, contexts);
 		Iterator<ModelStatement> iter = chosen.iterator();
 		iter = new PatternIterator(iter, subj, pred, obj, contexts);
@@ -244,36 +241,31 @@ public class LinkedHashModel extends AbstractModel {
 			if (statements == owner) {
 				statements = new LinkedHashSet<>(statements);
 				statements.remove(last);
-			}
-			else if (statements != chosen) {
+			} else if (statements != chosen) {
 				statements.remove(last);
 			}
 			if (last.subj.subjects == owner) {
 				last.subj.subjects = new LinkedHashSet<>(last.subj.subjects);
 				last.subj.subjects.remove(last);
-			}
-			else if (last.subj.subjects != chosen) {
+			} else if (last.subj.subjects != chosen) {
 				last.subj.subjects.remove(last);
 			}
 			if (last.pred.predicates == owner) {
 				last.pred.predicates = new LinkedHashSet<>(statements);
 				last.pred.predicates.remove(last);
-			}
-			else if (last.pred.predicates != chosen) {
+			} else if (last.pred.predicates != chosen) {
 				last.pred.predicates.remove(last);
 			}
 			if (last.obj.objects == owner) {
 				last.obj.objects = new LinkedHashSet<>(statements);
 				last.obj.objects.remove(last);
-			}
-			else if (last.obj.objects != chosen) {
+			} else if (last.obj.objects != chosen) {
 				last.obj.objects.remove(last);
 			}
 			if (last.ctx.contexts == owner) {
 				last.ctx.contexts = new LinkedHashSet<>(statements);
 				last.ctx.contexts.remove(last);
-			}
-			else if (last.ctx.contexts != chosen) {
+			} else if (last.ctx.contexts != chosen) {
 				last.ctx.contexts.remove(last);
 			}
 			if (owner != chosen) {
@@ -365,8 +357,7 @@ public class LinkedHashModel extends AbstractModel {
 		ModelNode<Resource> ctx;
 
 		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
-				ModelNode<Resource> ctx)
-		{
+				ModelNode<Resource> ctx) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			assert subj != null;
 			assert pred != null;
@@ -405,14 +396,12 @@ public class LinkedHashModel extends AbstractModel {
 			if (!super.equals(other))
 				return false;
 			if (getContext() == null)
-				return ((Statement)other).getContext() == null;
-			return getContext().equals(((Statement)other).getContext());
+				return ((Statement) other).getContext() == null;
+			return getContext().equals(((Statement) other).getContext());
 		}
 	}
 
-	private void writeObject(ObjectOutputStream s)
-		throws IOException
-	{
+	private void writeObject(ObjectOutputStream s) throws IOException {
 		// Write out any hidden serialization magic
 		s.defaultWriteObject();
 		// Write in size
@@ -427,9 +416,7 @@ public class LinkedHashModel extends AbstractModel {
 		}
 	}
 
-	private void readObject(ObjectInputStream s)
-		throws IOException, ClassNotFoundException
-	{
+	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
 		// Read in any hidden serialization magic
 		s.defaultReadObject();
 		// Read in size
@@ -438,7 +425,7 @@ public class LinkedHashModel extends AbstractModel {
 		statements = new LinkedHashSet<>(size);
 		// Read in all elements
 		for (int i = 0; i < size; i++) {
-			Statement st = (Statement)s.readObject();
+			Statement st = (Statement) s.readObject();
 			add(st);
 		}
 	}
@@ -476,8 +463,7 @@ public class LinkedHashModel extends AbstractModel {
 				return Collections.emptySet();
 			Set<ModelStatement> c = values.get(contexts[0]).contexts;
 			return smallest(statements, s, p, o, c);
-		}
-		else {
+		} else {
 			return smallest(statements, s, p, o);
 		}
 	}

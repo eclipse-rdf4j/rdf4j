@@ -42,15 +42,11 @@ public class RepositoryConnectionListenerAdapter implements RepositoryConnection
 	}
 
 	@Override
-	public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-	{
+	public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 	}
 
 	@Override
-	public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-	{
+	public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 	}
 
 	@Override
@@ -70,8 +66,6 @@ public class RepositoryConnectionListenerAdapter implements RepositoryConnection
 	}
 
 	@Override
-	public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-			Update operation)
-	{
+	public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI, Update operation) {
 	}
 }

@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * A SPARQL LOAD Query
  * 
- * @see <a href="https://www.w3.org/TR/sparql11-update/#load">
- * 		SPARQL LOAD Query</a>
+ * @see <a href="https://www.w3.org/TR/sparql11-update/#load"> SPARQL LOAD Query</a>
  */
 public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	private static final String LOAD = "LOAD";
@@ -26,7 +25,8 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	private Iri from;
 	private Optional<Iri> to = Optional.empty();
 
-	LoadQuery() { }
+	LoadQuery() {
+	}
 
 	/**
 	 * Specify which graph to load form

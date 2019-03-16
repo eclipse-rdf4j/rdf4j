@@ -55,16 +55,12 @@ public class ParsedIRITest {
 	}
 
 	@Test(expected = URISyntaxException.class)
-	public void testIncorrectIPv4()
-		throws URISyntaxException
-	{
+	public void testIncorrectIPv4() throws URISyntaxException {
 		ParsedIRI iri = new ParsedIRI("http://127.0.0.256/");
 	}
 
 	@Test
-	public void absoluteHttpUriIsDescribedCorrectly()
-		throws URISyntaxException
-	{
+	public void absoluteHttpUriIsDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://example.test/");
 		assertTrue(uri.isAbsolute());
 		assertEquals("http", uri.getScheme());
@@ -72,9 +68,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void absoluteHttpUriWithHashIsDescribedCorrectly()
-		throws URISyntaxException
-	{
+	public void absoluteHttpUriWithHashIsDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://example.test#");
 		assertTrue(uri.isAbsolute());
 		assertEquals("http", uri.getScheme());
@@ -82,9 +76,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void absoluteIpAddrDescribedCorrectly()
-		throws URISyntaxException
-	{
+	public void absoluteIpAddrDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1/path");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "127.0.0.1");
@@ -93,9 +85,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void absoluteIpAddrNoPath()
-		throws URISyntaxException
-	{
+	public void absoluteIpAddrNoPath() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://178.62.246.130");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "178.62.246.130");
@@ -104,9 +94,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-    public void absoluteIpAddrWithPortDescribedCorrectly() 
-        throws URISyntaxException 
-    {
+	public void absoluteIpAddrWithPortDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1:3333/path");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "127.0.0.1");
@@ -115,9 +103,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void uriReferenceIsDescribedCorrectly()
-		throws URISyntaxException
-	{
+	public void uriReferenceIsDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("/path");
 		assertFalse(uri.isAbsolute());
 		assertNull(uri.getScheme());
@@ -125,9 +111,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void jarUrisAppearAsAbsoluteAndHierarchical()
-		throws URISyntaxException
-	{
+	public void jarUrisAppearAsAbsoluteAndHierarchical() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:http://example.test/bar/baz.jar!/COM/foo/Quux.class");
 		assertTrue(uri.isAbsolute());
 		assertFalse(uri.isOpaque());
@@ -136,82 +120,59 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void osgiBundleUri()
-		throws URISyntaxException
-	{
+	public void osgiBundleUri() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("bundle://159.0:1/org/eclipse/rdf4j/repository/config/system.ttl");
 		assertTrue(uri.isAbsolute());
 		assertEquals("bundle", uri.getScheme());
 	}
 
 	@Test
-	public void jarUriWithHttpStringifiesToOriginalForm()
-		throws URISyntaxException
-	{
+	public void jarUriWithHttpStringifiesToOriginalForm() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:http://example.test/bar/baz.jar!/COM/foo/Quux.class");
 		assertEquals("jar:http://example.test/bar/baz.jar!/COM/foo/Quux.class", uri.toString());
 	}
 
 	@Test
-	public void jarUriWithFileStringifiesToOriginalForm()
-		throws URISyntaxException
-	{
+	public void jarUriWithFileStringifiesToOriginalForm() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/another-file");
 		assertEquals("jar:file:///some-file.jar!/another-file", uri.toString());
 	}
 
 	@Test
-	public void resolvesAnAbsoluteUriRelativeToABaseJarUri()
-		throws URISyntaxException
-	{
+	public void resolvesAnAbsoluteUriRelativeToABaseJarUri() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/some-nested-file");
 		assertEquals("http://example.test/", uri.resolve("http://example.test/").toString());
 	}
 
 	@Test
-	public void resolvesAPathRelativeUriRelativeToABaseJarUri()
-		throws URISyntaxException
-	{
+	public void resolvesAPathRelativeUriRelativeToABaseJarUri() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/some-nested-file");
 		assertEquals("jar:file:///some-file.jar!/another-file", uri.resolve("another-file").toString());
 	}
 
 	@Test
-	public void testDotSegments()
-		throws URISyntaxException
-	{
+	public void testDotSegments() throws URISyntaxException {
 		assertEquals("http://example.org/up", new ParsedIRI("http://example.org/").resolve("../up"));
 	}
 
 	@Test
-	public void testFileScheme()
-		throws URISyntaxException
-	{
+	public void testFileScheme() throws URISyntaxException {
 		assertEquals("file:/file.txt", new ParsedIRI("file:///file.txt").normalize().toString());
 		assertEquals("file:/file.txt", new ParsedIRI("file://localhost/file.txt").normalize().toString());
 		assertEquals("file:/file.txt", new ParsedIRI("file:/file.txt").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				new ParsedIRI("file:///c:/path/to/file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", new ParsedIRI("file:///c:/path/to/file").normalize().toString());
 		assertEquals("file:/c:/path/to/file", new ParsedIRI("file:/c:/path/to/file").normalize().toString());
 		assertEquals("file:/c:/path/to/file", new ParsedIRI("file:c:/path/to/file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:///c|/path/to/file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:/c|/path/to/file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:c|/path/to/file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:///c:\\path\\to\\file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:/c:\\path\\to\\file").normalize().toString());
-		assertEquals("file:/c:/path/to/file",
-				ParsedIRI.create("file:c:\\path\\to\\file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:///c|/path/to/file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:/c|/path/to/file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:c|/path/to/file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:///c:\\path\\to\\file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:/c:\\path\\to\\file").normalize().toString());
+		assertEquals("file:/c:/path/to/file", ParsedIRI.create("file:c:\\path\\to\\file").normalize().toString());
 	}
 
 	@Test
-	public void testURN()
-		throws URISyntaxException
-	{
+	public void testURN() throws URISyntaxException {
 		assertEquals("urn:test:foo", new ParsedIRI("urn:test:foo").toString());
 		assertEquals("urn", new ParsedIRI("urn:test:foo").getScheme());
 		assertEquals("test:foo", new ParsedIRI("urn:test:foo").getPath());
@@ -219,218 +180,156 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testRoundTripQueryString()
-		throws Exception
-	{
+	public void testRoundTripQueryString() throws Exception {
 		assertRoundTrip(
 				"http://localhost:8080/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
 	}
 
-	private void assertRoundTrip(String uri)
-		throws URISyntaxException
-	{
+	private void assertRoundTrip(String uri) throws URISyntaxException {
 		assertResolves(uri, "http://example.com/", uri);
 	}
 
 	@Test
-	public void testParentFile()
-		throws URISyntaxException
-	{
+	public void testParentFile() throws URISyntaxException {
 		assertResolves("../dir", "http://example.com/dir/dir/file", "http://example.com/dir/dir");
 	}
 
 	@Test
-	public void testRootFile()
-		throws URISyntaxException
-	{
+	public void testRootFile() throws URISyntaxException {
 		assertResolves("/dir", "http://example.com/dir/dir", "http://example.com/dir");
 	}
 
 	@Test
-	public void testFrag()
-		throws URISyntaxException
-	{
-		assertResolves("#frag", "http://example.com/dir/dir/file?qs#frag",
-				"http://example.com/dir/dir/file?qs#frag");
+	public void testFrag() throws URISyntaxException {
+		assertResolves("#frag", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testIdentity()
-		throws URISyntaxException
-	{
+	public void testIdentity() throws URISyntaxException {
 		assertResolves("", "http://example.com/dir/dir/file?qs", "http://example.com/dir/dir/file?qs");
 	}
 
 	@Test
-	public void testOpaque()
-		throws URISyntaxException
-	{
+	public void testOpaque() throws URISyntaxException {
 		assertResolves("urn:test", "http://example.com/dir/dir/file?qs#frag", "urn:test");
 	}
 
 	@Test
-	public void testFragment()
-		throws URISyntaxException
-	{
-		assertResolves("#frag2", "http://example.com/dir/dir/file?qs#frag",
-				"http://example.com/dir/dir/file?qs#frag2");
+	public void testFragment() throws URISyntaxException {
+		assertResolves("#frag2", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag2");
 	}
 
 	@Test
-	public void testFragment2()
-		throws URISyntaxException
-	{
+	public void testFragment2() throws URISyntaxException {
 		assertResolves("#example", "http://example.com#", "http://example.com#example");
 	}
 
 	@Test
-	public void testQueryString()
-		throws URISyntaxException
-	{
+	public void testQueryString() throws URISyntaxException {
 		assertResolves("?qs2#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/file?qs2#frag");
 	}
 
 	@Test
-	public void testDirectory()
-		throws URISyntaxException
-	{
+	public void testDirectory() throws URISyntaxException {
 		assertResolves(".", "http://example.com/dir/dir/file?qs#frag", "http://example.com/dir/dir/");
 	}
 
 	@Test
-	public void testSameDirectory()
-		throws URISyntaxException
-	{
+	public void testSameDirectory() throws URISyntaxException {
 		assertResolves("file2?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/file2?qs#frag");
 	}
 
 	@Test
-	public void testNestedDirectory()
-		throws URISyntaxException
-	{
+	public void testNestedDirectory() throws URISyntaxException {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
-	public void testParentDirectory()
-		throws URISyntaxException
-	{
+	public void testParentDirectory() throws URISyntaxException {
 		assertResolves("../file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testOtherDirectory()
-		throws URISyntaxException
-	{
+	public void testOtherDirectory() throws URISyntaxException {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
-	public void testSameAuthority()
-		throws URISyntaxException
-	{
+	public void testSameAuthority() throws URISyntaxException {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testIdentityDir()
-		throws URISyntaxException
-	{
+	public void testIdentityDir() throws URISyntaxException {
 		assertResolves("", "http://example.com/dir/dir/", "http://example.com/dir/dir/");
 	}
 
 	@Test
-	public void testOpaqueDir()
-		throws URISyntaxException
-	{
+	public void testOpaqueDir() throws URISyntaxException {
 		assertResolves("urn:test", "http://example.com/dir/dir/", "urn:test");
 	}
 
 	@Test
-	public void testFragmentDir()
-		throws URISyntaxException
-	{
+	public void testFragmentDir() throws URISyntaxException {
 		assertResolves("#frag2", "http://example.com/dir/dir/", "http://example.com/dir/dir/#frag2");
 	}
 
 	@Test
-	public void testQueryStringDir()
-		throws URISyntaxException
-	{
+	public void testQueryStringDir() throws URISyntaxException {
 		assertResolves("?qs2", "http://example.com/dir/dir/", "http://example.com/dir/dir/?qs2");
 	}
 
 	@Test
-	public void testDirectoryDir()
-		throws URISyntaxException
-	{
+	public void testDirectoryDir() throws URISyntaxException {
 		assertResolves("file", "http://example.com/dir/dir/", "http://example.com/dir/dir/file");
 	}
 
 	@Test
-	public void testSameDirectoryDir()
-		throws URISyntaxException
-	{
-		assertResolves("file2?qs#frag", "http://example.com/dir/dir/",
-				"http://example.com/dir/dir/file2?qs#frag");
+	public void testSameDirectoryDir() throws URISyntaxException {
+		assertResolves("file2?qs#frag", "http://example.com/dir/dir/", "http://example.com/dir/dir/file2?qs#frag");
 	}
 
 	@Test
-	public void testNestedDirectoryDir()
-		throws URISyntaxException
-	{
+	public void testNestedDirectoryDir() throws URISyntaxException {
 		assertResolves("nested/", "http://example.com/dir/dir/", "http://example.com/dir/dir/nested/");
 	}
 
 	@Test
-	public void testNestedDirectoryFileDir()
-		throws URISyntaxException
-	{
+	public void testNestedDirectoryFileDir() throws URISyntaxException {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
-	public void testParentDirectoryDir()
-		throws URISyntaxException
-	{
-		assertResolves("../file?qs#frag", "http://example.com/dir/dir/",
-				"http://example.com/dir/file?qs#frag");
+	public void testParentDirectoryDir() throws URISyntaxException {
+		assertResolves("../file?qs#frag", "http://example.com/dir/dir/", "http://example.com/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testOtherDirectoryDir()
-		throws URISyntaxException
-	{
+	public void testOtherDirectoryDir() throws URISyntaxException {
 		assertResolves("../dir2/", "http://example.com/dir/dir/", "http://example.com/dir/dir2/");
 	}
 
 	@Test
-	public void testOtherDirectoryFileDir()
-		throws URISyntaxException
-	{
+	public void testOtherDirectoryFileDir() throws URISyntaxException {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
-	public void testSameAuthorityDir()
-		throws URISyntaxException
-	{
+	public void testSameAuthorityDir() throws URISyntaxException {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/",
 				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
 	@Test
-	public void testNormalExamples()
-		throws URISyntaxException
-	{
+	public void testNormalExamples() throws URISyntaxException {
 		String base = "http://a/b/c/d;p?q";
 		assertResolves("g:h", base, "g:h");
 		assertResolves("g", base, "http://a/b/c/g");
@@ -458,9 +357,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testAbnormalExamples()
-		throws URISyntaxException
-	{
+	public void testAbnormalExamples() throws URISyntaxException {
 		String base = "http://a/b/c/d;p?q";
 		assertResolves("../../../g", base, "http://a/g");
 		assertResolves("../../../../g", base, "http://a/g");
@@ -484,9 +381,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testResolveOpaque()
-		throws URISyntaxException
-	{
+	public void testResolveOpaque() throws URISyntaxException {
 		assertResolves("", "urn:test:foo#bar", "urn:test:foo");
 		assertResolves("", "urn:test:foo", "urn:test:foo");
 		assertResolves("#bar", "urn:test:foo", "urn:test:foo#bar");
@@ -494,22 +389,16 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testDoubleSlash()
-		throws URISyntaxException
-	{
+	public void testDoubleSlash() throws URISyntaxException {
 		assertResolves("../xyz", "http://ab//de//ghi", "http://ab//de/xyz");
 	}
 
-	private void assertResolves(String relative, String base, String absolute)
-		throws URISyntaxException
-	{
+	private void assertResolves(String relative, String base, String absolute) throws URISyntaxException {
 		assertEquals(absolute, new ParsedIRI(base).resolve(relative).toString());
 	}
 
 	@Test
-	public void testUnreservedInPath()
-		throws Exception
-	{
+	public void testUnreservedInPath() throws Exception {
 		for (char g : UNRESERVED.toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + g, new ParsedIRI(BASE + encode(g)).normalize().toString());
@@ -518,9 +407,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testDigitInPath()
-		throws Exception
-	{
+	public void testDigitInPath() throws Exception {
 		for (char g : DIGIT.toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + g, new ParsedIRI(BASE + encode(g)).normalize().toString());
@@ -529,9 +416,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testUpperInPath()
-		throws Exception
-	{
+	public void testUpperInPath() throws Exception {
 		for (char g : UPPER.toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + g, new ParsedIRI(BASE + encode(g)).normalize().toString());
@@ -540,9 +425,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testLowerInPath()
-		throws Exception
-	{
+	public void testLowerInPath() throws Exception {
 		for (char g : LOWER.toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + g, new ParsedIRI(BASE + encode(g)).normalize().toString());
@@ -551,48 +434,37 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testGenDelimInPath()
-		throws Exception
-	{
+	public void testGenDelimInPath() throws Exception {
 		for (char g : ":/@".toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + encode(g), new ParsedIRI(BASE + encode(g)).normalize().toString());
-			assertEquals(BASE + encode(g),
-					new ParsedIRI(BASE + encode(g).toLowerCase()).normalize().toString());
+			assertEquals(BASE + encode(g), new ParsedIRI(BASE + encode(g).toLowerCase()).normalize().toString());
 		}
 	}
 
 	@Test
-	public void testSubDelimInPath()
-		throws Exception
-	{
+	public void testSubDelimInPath() throws Exception {
 		for (char g : SUB.toCharArray()) {
 			assertEquals(BASE + g, new ParsedIRI(BASE + g).normalize().toString());
 			assertEquals(BASE + encode(g), new ParsedIRI(BASE + encode(g)).normalize().toString());
-			assertEquals(BASE + encode(g),
-					new ParsedIRI(BASE + encode(g).toLowerCase()).normalize().toString());
+			assertEquals(BASE + encode(g), new ParsedIRI(BASE + encode(g).toLowerCase()).normalize().toString());
 		}
 	}
 
 	@Test
-	public void testIllegalInPath()
-		throws Exception
-	{
+	public void testIllegalInPath() throws Exception {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(BASE + g);
 
-			}
-			catch (URISyntaxException e) {
+			} catch (URISyntaxException e) {
 				assertEquals(BASE.length(), e.getIndex());
 			}
 		}
 	}
 
 	@Test
-	public void testGenDelimsInQuery()
-		throws Exception
-	{
+	public void testGenDelimsInQuery() throws Exception {
 		for (char g : ":/?@".toCharArray()) {
 			assertEquals(QUERY + g, new ParsedIRI(QUERY + g).normalize().toString());
 			assertEquals(QUERY + encode(g), new ParsedIRI(QUERY + encode(g)).normalize().toString());
@@ -600,9 +472,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testSubDelimsInQuery()
-		throws Exception
-	{
+	public void testSubDelimsInQuery() throws Exception {
 		for (char g : SUB.toCharArray()) {
 			assertEquals(QUERY + g, new ParsedIRI(QUERY + g).normalize().toString());
 			assertEquals(QUERY + encode(g), new ParsedIRI(QUERY + encode(g)).normalize().toString());
@@ -610,24 +480,19 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testIllegalInQuery()
-		throws Exception
-	{
+	public void testIllegalInQuery() throws Exception {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(QUERY + g);
 
-			}
-			catch (URISyntaxException e) {
+			} catch (URISyntaxException e) {
 				assertEquals(QUERY.length(), e.getIndex());
 			}
 		}
 	}
 
 	@Test
-	public void testGenDelimsInFragment()
-		throws Exception
-	{
+	public void testGenDelimsInFragment() throws Exception {
 		for (char g : ":/?@".toCharArray()) {
 			assertEquals(FRAGMENT + g, new ParsedIRI(FRAGMENT + g).normalize().toString());
 			assertEquals(FRAGMENT + encode(g), new ParsedIRI(FRAGMENT + encode(g)).normalize().toString());
@@ -635,9 +500,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testSubDelimsInFragment()
-		throws Exception
-	{
+	public void testSubDelimsInFragment() throws Exception {
 		for (char g : SUB.toCharArray()) {
 			assertEquals(FRAGMENT + g, new ParsedIRI(FRAGMENT + g).normalize().toString());
 			assertEquals(FRAGMENT + encode(g), new ParsedIRI(FRAGMENT + encode(g)).normalize().toString());
@@ -645,23 +508,18 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testIllegalInFragment()
-		throws Exception
-	{
+	public void testIllegalInFragment() throws Exception {
 		for (char g : ILLEGAL.toCharArray()) {
 			try {
 				new ParsedIRI(FRAGMENT + g);
 
-			}
-			catch (URISyntaxException e) {
+			} catch (URISyntaxException e) {
 				assertEquals(FRAGMENT.length(), e.getIndex());
 			}
 		}
 	}
 
-	private String encode(Character chr)
-		throws UnsupportedEncodingException
-	{
+	private String encode(Character chr) throws UnsupportedEncodingException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		byte[] source = Character.toString(chr).getBytes(StandardCharsets.UTF_8);
 		for (byte c : source) {
@@ -675,21 +533,14 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testPercentEncoding()
-		throws URISyntaxException
-	{
-		assertEquals("http://example.org/~user",
-				new ParsedIRI("http://example.org/~user").normalize().toString());
-		assertEquals("http://example.org/~user",
-				new ParsedIRI("http://example.org/%7euser").normalize().toString());
-		assertEquals("http://example.org/~user",
-				new ParsedIRI("http://example.org/%7Euser").normalize().toString());
+	public void testPercentEncoding() throws URISyntaxException {
+		assertEquals("http://example.org/~user", new ParsedIRI("http://example.org/~user").normalize().toString());
+		assertEquals("http://example.org/~user", new ParsedIRI("http://example.org/%7euser").normalize().toString());
+		assertEquals("http://example.org/~user", new ParsedIRI("http://example.org/%7Euser").normalize().toString());
 	}
 
 	@Test
-	public void testPortNormalization()
-		throws URISyntaxException
-	{
+	public void testPortNormalization() throws URISyntaxException {
 		assertEquals("http://example.org/", new ParsedIRI("http://example.org").normalize().toString());
 		assertEquals("http://example.org/", new ParsedIRI("http://example.org/").normalize().toString());
 		assertEquals("http://example.org/", new ParsedIRI("http://example.org:/").normalize().toString());
@@ -697,9 +548,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testToASCII()
-		throws URISyntaxException
-	{
+	public void testToASCII() throws URISyntaxException {
 		assertEquals("http://r\u00E9sum\u00E9.example.org/",
 				new ParsedIRI("http://r\u00E9sum\u00E9.example.org/").toString());
 		assertEquals("http://xn--rsum-bpad.example.org/",
@@ -715,20 +564,16 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testToASCIIQuery()
-		throws URISyntaxException
-	{
+	public void testToASCIIQuery() throws URISyntaxException {
 		assertEquals("http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org",
-				new ParsedIRI(
-						"http://validator.w3.org/check?uri=http%3A%2F%2Frésumé.example.org").toASCIIString());
-		assertEquals("uri=http%3A%2F%2Fr\u00E9sum\u00E9.example.org", new ParsedIRI(
-				"http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org").normalize().getQuery());
+				new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Frésumé.example.org").toASCIIString());
+		assertEquals("uri=http%3A%2F%2Fr\u00E9sum\u00E9.example.org",
+				new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org").normalize()
+						.getQuery());
 	}
 
 	@Test
-	public void testVietnam()
-		throws URISyntaxException
-	{
+	public void testVietnam() throws URISyntaxException {
 		String correct = "/Vi\u1EC7t%20Nam";
 		String incorrect = "/Vi\u00EA\u0323t%20Nam"; // containing a LATIN SMALL LETTER E WITH CIRCUMFLEX AND DOT BELOW
 		assertFalse(correct.equals(incorrect));
@@ -736,22 +581,18 @@ public class ParsedIRITest {
 				new ParsedIRI("http://example.org" + incorrect).normalize().toString());
 		assertEquals("http://example.org/Vi%E1%BB%87t%20Nam",
 				new ParsedIRI("http://example.org" + incorrect).normalize().toASCIIString());
-		assertEquals(correct, new ParsedIRI(
-				new ParsedIRI("http://example.org" + incorrect).toASCIIString()).normalize().getPath());
+		assertEquals(correct,
+				new ParsedIRI(new ParsedIRI("http://example.org" + incorrect).toASCIIString()).normalize().getPath());
 	}
 
 	@Test
-	public void testRedRose()
-		throws URISyntaxException
-	{
+	public void testRedRose() throws URISyntaxException {
 		assertEquals("http://www.example.org/red%09ros%C3%A9#red",
 				new ParsedIRI("http://www.example.org/red%09ros\u00E9#red").toASCIIString());
 	}
 
 	@Test
-	public void testWrongEacute()
-		throws URISyntaxException
-	{
+	public void testWrongEacute() throws URISyntaxException {
 		assertEquals("http://www.example.org/r%E9sum%E9.html",
 				new ParsedIRI("http://www.example.org/r%E9sum%E9.html").toString());
 		assertEquals("http://www.example.org/r%E9sum%E9.html",
@@ -763,34 +604,25 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testDurst()
-		throws URISyntaxException
-	{
+	public void testDurst() throws URISyntaxException {
 		assertURI2IRI("http://www.example.org/D%C3%BCrst", "http://www.example.org/D\u00FCrst");
 		assertURI2IRI("http://www.example.org/D%FCrst", "http://www.example.org/D%FCrst");
 	}
 
 	@Test
-	public void testDeseret()
-		throws URISyntaxException
-	{
-		assertURI2IRI("http://www.example.org/U+10400/%F0%90%90%80",
-				"http://www.example.org/U+10400/\uD801\uDC00");
+	public void testDeseret() throws URISyntaxException {
+		assertURI2IRI("http://www.example.org/U+10400/%F0%90%90%80", "http://www.example.org/U+10400/\uD801\uDC00");
 	}
 
 	@Test
-	public void testPunycodeEncoding()
-		throws URISyntaxException
-	{
+	public void testPunycodeEncoding() throws URISyntaxException {
 		assertEquals("http://xn--99zt52a.example.org/%E2%80%AE",
 				new ParsedIRI("http://xn--99zt52a.example.org/%e2%80%ae").normalize().toASCIIString());
 		assertEquals("http://\u7D0D\u8C46.example.org/\u202E",
 				new ParsedIRI("http://\u7D0D\u8C46.example.org/%e2%80%ae").normalize().toString());
 	}
 
-	private void assertURI2IRI(String uri, String iri)
-		throws URISyntaxException
-	{
+	private void assertURI2IRI(String uri, String iri) throws URISyntaxException {
 		assertEquals(uri, new ParsedIRI(iri).toASCIIString());
 		assertEquals(iri, new ParsedIRI(uri).normalize().toString());
 	}
@@ -808,8 +640,7 @@ public class ParsedIRITest {
 		try {
 			assertEquals("http://example.org:-80/", ParsedIRI.create("http://example.org:-80/").toString());
 			fail();
-		}
-		catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException e) {
 		}
 	}
 }

@@ -35,8 +35,8 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * A {@link TupleQueryResultHandler} that converts query results to an RDF graph using the Data Access Working
- * Group Test Result Set RDF Vocabulary (http://www.w3.org/2001/sw/DataAccess/tests/result-set#).
+ * A {@link TupleQueryResultHandler} that converts query results to an RDF graph using the Data Access Working Group
+ * Test Result Set RDF Vocabulary (http://www.w3.org/2001/sw/DataAccess/tests/result-set#).
  */
 public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 
@@ -77,9 +77,7 @@ public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 	 *---------*/
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		try {
 			rdfHandler.startRDF();
 
@@ -92,30 +90,24 @@ public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 				Literal bindingNameLit = vf.createLiteral(bindingName);
 				reportStatement(resultSetNode, RESULTVARIABLE, bindingNameLit);
 			}
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		resultSetNode = null;
 
 		try {
 			rdfHandler.endRDF();
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			BNode solutionNode = vf.createBNode();
 
@@ -136,7 +128,7 @@ public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 
 					if (mappedBNode == null) {
 						mappedBNode = vf.createBNode();
-						bnodeMap.put((BNode)value, mappedBNode);
+						bnodeMap.put((BNode) value, mappedBNode);
 					}
 
 					value = mappedBNode;
@@ -144,29 +136,22 @@ public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 
 				reportStatement(bindingNode, VALUE, value);
 			}
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
-	private void reportStatement(Resource subject, IRI predicate, Value object)
-		throws RDFHandlerException
-	{
+	private void reportStatement(Resource subject, IRI predicate, Value object) throws RDFHandlerException {
 		rdfHandler.handleStatement(vf.createStatement(subject, predicate, object));
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle boolean results");
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		// We do not support links, so do nothing
 	}
 }

@@ -36,9 +36,7 @@ public class DBPediaDatatypeHandler implements DatatypeHandler {
 	}
 
 	@Override
-	public boolean verifyDatatype(String literalValue, IRI datatypeUri)
-		throws LiteralUtilException
-	{
+	public boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");
@@ -53,8 +51,7 @@ public class DBPediaDatatypeHandler implements DatatypeHandler {
 
 	@Override
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-		throws LiteralUtilException
-	{
+			throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");

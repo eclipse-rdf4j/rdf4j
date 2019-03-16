@@ -33,8 +33,8 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	 *-----------*/
 
 	/**
-	 * The contexts to add the statements to. If this variable is a non-empty array, statements will be added
-	 * to the corresponding contexts.
+	 * The contexts to add the statements to. If this variable is a non-empty array, statements will be added to the
+	 * corresponding contexts.
 	 */
 	protected Resource[] contexts = new Resource[0];
 
@@ -44,14 +44,14 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	private boolean preserveBNodeIDs;
 
 	/**
-	 * Map that stores namespaces that are reported during the evaluation of the query. Key is the namespace
-	 * prefix, value is the namespace name.
+	 * Map that stores namespaces that are reported during the evaluation of the query. Key is the namespace prefix,
+	 * value is the namespace name.
 	 */
 	private final Map<String, String> namespaceMap;
 
 	/**
-	 * Map used to keep track of which blank node IDs have been mapped to which BNode object in case
-	 * preserveBNodeIDs is false.
+	 * Map used to keep track of which blank node IDs have been mapped to which BNode object in case preserveBNodeIDs is
+	 * false.
 	 */
 	private final Map<String, BNode> bNodesMap;
 
@@ -65,8 +65,8 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon
-	 * statements that are reported to it.
+	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon statements
+	 * that are reported to it.
 	 */
 	protected AbstractRDFInserter(ValueFactory vf) {
 		preserveBNodeIDs = true;
@@ -82,8 +82,7 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	/**
 	 * Sets whether this RDFInserter should preserve blank node IDs.
 	 * 
-	 * @param preserveBNodeIDs
-	 *        The new value for this flag.
+	 * @param preserveBNodeIDs The new value for this flag.
 	 */
 	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
 		this.preserveBNodeIDs = preserveBNodeIDs;
@@ -99,9 +98,7 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	/**
 	 * Enforces the supplied contexts upon all statements that are reported to this RDFInserter.
 	 * 
-	 * @param contexts
-	 *        the contexts to use. Use an empty array (not null!) to indicate no context(s) should be
-	 *        enforced.
+	 * @param contexts the contexts to use. Use an empty array (not null!) to indicate no context(s) should be enforced.
 	 */
 	public void enforceContext(Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -127,24 +124,19 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 		return Arrays.copyOf(contexts, contexts.length);
 	}
 
-	protected abstract void addNamespace(String prefix, String name)
-		throws RDF4JException;
+	protected abstract void addNamespace(String prefix, String name) throws RDF4JException;
 
-	protected abstract void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
-		throws RDF4JException;
+	protected abstract void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException;
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		for (Map.Entry<String, String> entry : namespaceMap.entrySet()) {
 			String prefix = entry.getKey();
 			String name = entry.getValue();
 
 			try {
 				addNamespace(prefix, name);
-			}
-			catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				throw new RDFHandlerException(e);
 			}
 		}
@@ -164,9 +156,7 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -174,29 +164,28 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 
 		if (!preserveBNodeIDs) {
 			if (subj instanceof BNode) {
-				subj = mapBNode((BNode)subj);
+				subj = mapBNode((BNode) subj);
 			}
 
 			if (obj instanceof BNode) {
-				obj = mapBNode((BNode)obj);
+				obj = mapBNode((BNode) obj);
 			}
 
 			if (!enforcesContext() && ctxt instanceof BNode) {
-				ctxt = mapBNode((BNode)ctxt);
+				ctxt = mapBNode((BNode) ctxt);
 			}
 		}
 
 		try {
 			addStatement(subj, pred, obj, ctxt);
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	/**
-	 * Maps the supplied BNode, which comes from the data, to a new BNode object. Consecutive calls with equal
-	 * BNode objects returns the same object everytime.
+	 * Maps the supplied BNode, which comes from the data, to a new BNode object. Consecutive calls with equal BNode
+	 * objects returns the same object everytime.
 	 * 
 	 * @throws RepositoryException
 	 */

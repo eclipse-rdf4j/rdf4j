@@ -32,8 +32,7 @@ public final class RenderUtils {
 	/**
 	 * Return the query string rendering of the {@link org.eclipse.rdf4j.model.Value}
 	 * 
-	 * @param theValue
-	 *        the value to render
+	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 * @deprecated Use {@link #toSPARQL(Value)} instead.
 	 */
@@ -45,8 +44,7 @@ public final class RenderUtils {
 	/**
 	 * Return the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value}
 	 * 
-	 * @param theValue
-	 *        the value to render
+	 * @param theValue the value to render
 	 * @return the value rendered in its SPARQL query string representation
 	 */
 	public static String toSPARQL(Value theValue) {
@@ -58,29 +56,24 @@ public final class RenderUtils {
 	 * Append the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value} to the supplied
 	 * {@link StringBuilder}.
 	 * 
-	 * @param value
-	 *        the value to render
-	 * @param builder
-	 *        the {@link StringBuilder} to append to
+	 * @param value   the value to render
+	 * @param builder the {@link StringBuilder} to append to
 	 * @return the original {@link StringBuilder} with the value appended.
 	 */
 	public static StringBuilder toSPARQL(Value value, StringBuilder builder) {
 		if (value instanceof IRI) {
-			IRI aURI = (IRI)value;
+			IRI aURI = (IRI) value;
 			builder.append("<").append(aURI.toString()).append(">");
-		}
-		else if (value instanceof BNode) {
-			builder.append("_:").append(((BNode)value).getID());
-		}
-		else if (value instanceof Literal) {
-			Literal aLit = (Literal)value;
+		} else if (value instanceof BNode) {
+			builder.append("_:").append(((BNode) value).getID());
+		} else if (value instanceof Literal) {
+			Literal aLit = (Literal) value;
 
 			builder.append("\"\"\"").append(escape(aLit.getLabel())).append("\"\"\"");
 
 			if (Literals.isLanguageLiteral(aLit)) {
 				aLit.getLanguage().ifPresent(lang -> builder.append("@").append(lang));
-			}
-			else {
+			} else {
 				builder.append("^^<").append(aLit.getDatatype().toString()).append(">");
 			}
 		}
@@ -91,8 +84,7 @@ public final class RenderUtils {
 	/**
 	 * Return the query string rendering of the {@link Value}
 	 * 
-	 * @param theValue
-	 *        the value to render
+	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 * @deprecated Use {{@link #toSeRQL(Value)} instead.
 	 */
@@ -104,29 +96,25 @@ public final class RenderUtils {
 	/**
 	 * Return the query string rendering of the {@link Value}
 	 * 
-	 * @param theValue
-	 *        the value to render
+	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 */
 	public static String toSeRQL(Value theValue) {
 		StringBuilder aBuffer = new StringBuilder();
 
 		if (theValue instanceof IRI) {
-			IRI aURI = (IRI)theValue;
+			IRI aURI = (IRI) theValue;
 			aBuffer.append("<").append(aURI.toString()).append(">");
-		}
-		else if (theValue instanceof BNode) {
-			aBuffer.append("_:").append(((BNode)theValue).getID());
-		}
-		else if (theValue instanceof Literal) {
-			Literal aLit = (Literal)theValue;
+		} else if (theValue instanceof BNode) {
+			aBuffer.append("_:").append(((BNode) theValue).getID());
+		} else if (theValue instanceof Literal) {
+			Literal aLit = (Literal) theValue;
 
 			aBuffer.append("\"").append(escape(aLit.getLabel())).append("\"");
 
 			if (Literals.isLanguageLiteral(aLit)) {
 				aBuffer.append("@").append(aLit.getLanguage());
-			}
-			else {
+			} else {
 				aBuffer.append("^^<").append(aLit.getDatatype().toString()).append(">");
 			}
 		}
@@ -135,12 +123,11 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Properly escape out any special characters in the query string. Replaces unescaped double quotes with
-	 * \" and replaces slashes '\' which are not a valid escape sequence such as \t or \n with a double slash
-	 * '\\' so they are unescaped correctly by a SPARQL parser.
+	 * Properly escape out any special characters in the query string. Replaces unescaped double quotes with \" and
+	 * replaces slashes '\' which are not a valid escape sequence such as \t or \n with a double slash '\\' so they are
+	 * unescaped correctly by a SPARQL parser.
 	 * 
-	 * @param theString
-	 *        the query string to escape chars in
+	 * @param theString the query string to escape chars in
 	 * @return the escaped query string
 	 */
 	public static String escape(String theString) {

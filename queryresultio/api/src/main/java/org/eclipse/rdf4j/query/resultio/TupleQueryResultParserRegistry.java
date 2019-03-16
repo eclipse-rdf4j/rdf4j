@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
  * @author Arjohn Kampman
  */
 public class TupleQueryResultParserRegistry
-		extends FileFormatServiceRegistry<QueryResultFormat, TupleQueryResultParserFactory>
-{
+		extends FileFormatServiceRegistry<QueryResultFormat, TupleQueryResultParserFactory> {
 
 	/**
 	 * Internal helper class to avoid continuous synchronized checking.

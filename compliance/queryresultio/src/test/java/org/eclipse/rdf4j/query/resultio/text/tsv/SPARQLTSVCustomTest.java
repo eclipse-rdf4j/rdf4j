@@ -37,16 +37,14 @@ public class SPARQLTSVCustomTest {
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
 	 * <p>
-	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XMLSchema#STRING} is implied and hence
-	 * is not generally represented.
+	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XMLSchema#STRING} is implied and hence is not
+	 * generally represented.
 	 * 
 	 * @throws Exception
 	 */
 	@Ignore("This test does not work with RDF-1.1")
 	@Test
-	public void testSES2126QuotedLiteralIntegerAsStringExplicitType()
-		throws Exception
-	{
+	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
 		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
 				Arrays.asList(new ListBindingSet(bindingNames,
@@ -61,19 +59,16 @@ public class SPARQLTSVCustomTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testSES2126QuotedLiteralIntegerAsStringImplicitType()
-		throws Exception
-	{
+	public void testSES2126QuotedLiteralIntegerAsStringImplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
-		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames, Arrays.asList(
-				new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"\n", result);
 	}
 
 	private String writeTupleResult(TupleQueryResult tqr)
-		throws IOException, TupleQueryResultHandlerException, QueryEvaluationException
-	{
+			throws IOException, TupleQueryResultHandlerException, QueryEvaluationException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		QueryResultIO.writeTuple(tqr, TupleQueryResultFormat.TSV, output);
 		String result = new String(output.toByteArray(), StandardCharsets.UTF_8);

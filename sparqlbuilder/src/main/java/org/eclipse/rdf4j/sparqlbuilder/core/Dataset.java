@@ -13,16 +13,13 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 /**
  * A SPARQL dataset specification
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset">
- *      RDF Datasets</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset"> RDF Datasets</a>
  */
 public class Dataset extends StandardQueryElementCollection<From> {
 	/**
 	 * Add graph references to this dataset
 	 * 
-	 * @param graphs
-	 *            the datasets to add
+	 * @param graphs the datasets to add
 	 * @return this object
 	 */
 	public Dataset from(From... graphs) {

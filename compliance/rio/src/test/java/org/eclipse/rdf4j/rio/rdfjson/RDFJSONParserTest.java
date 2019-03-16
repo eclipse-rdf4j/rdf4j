@@ -16,9 +16,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
  */
 public class RDFJSONParserTest extends RDFJSONParserTestCase {
 
-	public static junit.framework.Test suite()
-		throws Exception
-	{
+	public static junit.framework.Test suite() throws Exception {
 		return new RDFJSONParserTest().createTestSuite();
 	}
 

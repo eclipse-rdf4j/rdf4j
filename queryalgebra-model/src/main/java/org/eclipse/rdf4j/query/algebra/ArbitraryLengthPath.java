@@ -13,8 +13,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
 /**
- * A tuple expression that matches a path of arbitrary length against an RDF graph. They can can be targeted
- * at one of three context scopes: all contexts, null context only, or named contexts only.
+ * A tuple expression that matches a path of arbitrary length against an RDF graph. They can can be targeted at one of
+ * three context scopes: all contexts, null context only, or named contexts only.
  */
 public class ArbitraryLengthPath extends AbstractQueryModelNode implements TupleExpr {
 
@@ -42,40 +42,35 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	}
 
 	/**
-	 * Creates a arbitrary-length path that matches a subject-, predicate- and object variable against
-	 * statements from all contexts.
+	 * Creates a arbitrary-length path that matches a subject-, predicate- and object variable against statements from
+	 * all contexts.
 	 */
 	public ArbitraryLengthPath(Var subject, TupleExpr pathExpression, Var object, long minLength) {
 		this(Scope.DEFAULT_CONTEXTS, subject, pathExpression, object, minLength);
 	}
 
 	/**
-	 * Creates a arbitrary-length path that matches a subject-, predicate- and object variable against
-	 * statements from the specified context scope.
+	 * Creates a arbitrary-length path that matches a subject-, predicate- and object variable against statements from
+	 * the specified context scope.
 	 */
-	public ArbitraryLengthPath(Scope scope, Var subject, TupleExpr pathExpression, Var object,
-			long minLength)
-	{
+	public ArbitraryLengthPath(Scope scope, Var subject, TupleExpr pathExpression, Var object, long minLength) {
 		this(scope, subject, pathExpression, object, null, minLength);
 	}
 
 	/**
-	 * Creates a arbitrary-length path that matches a subject-, predicate-, object- and context variable
-	 * against statements from all contexts.
+	 * Creates a arbitrary-length path that matches a subject-, predicate-, object- and context variable against
+	 * statements from all contexts.
 	 */
-	public ArbitraryLengthPath(Var subject, TupleExpr pathExpression, Var object, Var context,
-			long minLength)
-	{
+	public ArbitraryLengthPath(Var subject, TupleExpr pathExpression, Var object, Var context, long minLength) {
 		this(Scope.DEFAULT_CONTEXTS, subject, pathExpression, object, context, minLength);
 	}
 
 	/**
-	 * Creates a arbitrary-length path that matches a subject-, predicate-, object- and context variable
-	 * against statements from the specified context scope.
+	 * Creates a arbitrary-length path that matches a subject-, predicate-, object- and context variable against
+	 * statements from the specified context scope.
 	 */
 	public ArbitraryLengthPath(Scope scope, Var subjVar, TupleExpr pathExpression, Var objVar, Var conVar,
-			long minLength)
-	{
+			long minLength) {
 		setScope(scope);
 		setSubjectVar(subjVar);
 		setPathExpression(pathExpression);
@@ -180,16 +175,12 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (subjectVar != null) {
 			subjectVar.visit(visitor);
 		}
@@ -209,18 +200,14 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subjectVar == current) {
-			setSubjectVar((Var)replacement);
-		}
-		else if (pathExpression == current) {
-			setPathExpression((TupleExpr)replacement);
-		}
-		else if (objectVar == current) {
-			setObjectVar((Var)replacement);
-		}
-		else if (contextVar == current) {
-			setContextVar((Var)replacement);
-		}
-		else {
+			setSubjectVar((Var) replacement);
+		} else if (pathExpression == current) {
+			setPathExpression((TupleExpr) replacement);
+		} else if (objectVar == current) {
+			setObjectVar((Var) replacement);
+		} else if (contextVar == current) {
+			setContextVar((Var) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -241,7 +228,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ArbitraryLengthPath) {
-			ArbitraryLengthPath o = (ArbitraryLengthPath)other;
+			ArbitraryLengthPath o = (ArbitraryLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && pathExpression.equals(o.getPathExpression())
 					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
 					&& scope.equals(o.getScope());
@@ -265,7 +252,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 
 	@Override
 	public ArbitraryLengthPath clone() {
-		ArbitraryLengthPath clone = (ArbitraryLengthPath)super.clone();
+		ArbitraryLengthPath clone = (ArbitraryLengthPath) super.clone();
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPathExpression(getPathExpression().clone());
 		clone.setObjectVar(getObjectVar().clone());

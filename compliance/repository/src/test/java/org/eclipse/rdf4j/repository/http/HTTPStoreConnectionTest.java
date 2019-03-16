@@ -35,23 +35,18 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 	}
 
@@ -61,9 +56,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Test
-	public void testContextInTransactionAdd()
-		throws Exception
-	{
+	public void testContextInTransactionAdd() throws Exception {
 		StringReader stringReader = new StringReader("<urn:1> <urn:1> <urn:1>.");
 		testCon.begin();
 		IRI CONTEXT = testCon.getValueFactory().createIRI("urn:context");
@@ -75,9 +68,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Test
-	public void testUpdateExecution()
-		throws Exception
-	{
+	public void testUpdateExecution() throws Exception {
 
 		IRI foobar = vf.createIRI("foo:bar");
 
@@ -103,14 +94,11 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Test
 	@Override
-	public void testAddMalformedLiteralsDefaultConfig()
-		throws Exception
-	{
+	public void testAddMalformedLiteralsDefaultConfig() throws Exception {
 		try {
-			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(
-					TEST_DIR_PREFIX + "malformed-literals.ttl"), "", RDFFormat.TURTLE);
-		}
-		catch (RDF4JException e) {
+			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
+					"", RDFFormat.TURTLE);
+		} catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}
 	}
@@ -118,11 +106,8 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	@Test
 	@Override
 	@Ignore("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig()
-		throws Exception
-	{
-		System.err.println(
-				"SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
+	public void testAddMalformedLiteralsStrictConfig() throws Exception {
+		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 
 }

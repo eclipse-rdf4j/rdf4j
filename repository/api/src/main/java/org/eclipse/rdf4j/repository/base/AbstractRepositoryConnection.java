@@ -46,12 +46,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Abstract class implementing most 'convenience' methods in the {@link RepositoryConnection} interface by
- * transforming parameters and mapping the methods to the basic (abstractly declared) methods.
+ * Abstract class implementing most 'convenience' methods in the {@link RepositoryConnection} interface by transforming
+ * parameters and mapping the methods to the basic (abstractly declared) methods.
  * <p>
- * Open connections are automatically closed when being garbage collected. A warning message will be logged
- * when the system property <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt>
- * value.
+ * Open connections are automatically closed when being garbage collected. A warning message will be logged when the
+ * system property <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt> value.
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -95,32 +94,26 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-		throws RepositoryException
-	{
+	public void begin(IsolationLevel level) throws RepositoryException {
 		setIsolationLevel(level);
 		begin();
 	}
 
 	@Override
-	public void setIsolationLevel(IsolationLevel level)
-		throws IllegalStateException
-	{
+	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException {
 		try {
 			if (isActive()) {
 				throw new IllegalStateException(
 						"Transaction isolation level can not be modified while transaction is active");
 			}
 			this.isolationLevel = level;
-		}
-		catch (UnknownTransactionStateException e) {
+		} catch (UnknownTransactionStateException e) {
 			throw new IllegalStateException(
 					"Transaction isolation level can not be modified while transaction state is unknown", e);
 
-		}
-		catch (RepositoryException e) {
-			throw new IllegalStateException(
-					"Transaction isolation level can not be modified due to repository error", e);
+		} catch (RepositoryException e) {
+			throw new IllegalStateException("Transaction isolation level can not be modified due to repository error",
+					e);
 		}
 	}
 
@@ -130,59 +123,46 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public boolean isOpen()
-		throws RepositoryException
-	{
+	public boolean isOpen() throws RepositoryException {
 		return isOpen.get();
 	}
 
 	@Override
-	public void close()
-		throws RepositoryException
-	{
+	public void close() throws RepositoryException {
 		isOpen.set(false);
 	}
 
 	@Override
-	public Query prepareQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException
-	{
+	public Query prepareQuery(QueryLanguage ql, String query) throws MalformedQueryException, RepositoryException {
 		return prepareQuery(ql, query, null);
 	}
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return prepareTupleQuery(ql, query, null);
 	}
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return prepareGraphQuery(ql, query, null);
 	}
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return prepareBooleanQuery(ql, query, null);
 	}
 
 	@Override
-	public Update prepareUpdate(QueryLanguage ql, String update)
-		throws MalformedQueryException, RepositoryException
-	{
+	public Update prepareUpdate(QueryLanguage ql, String update) throws MalformedQueryException, RepositoryException {
 		return prepareUpdate(ql, update, null);
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts)
-		throws RepositoryException
-	{
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws RepositoryException {
 		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);) {
 			return stIter.hasNext();
 		}
@@ -190,22 +170,17 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		return hasStatement(st.getSubject(), st.getPredicate(), st.getObject(), includeInferred, contexts);
 	}
 
 	@Override
-	public boolean isEmpty()
-		throws RepositoryException
-	{
+	public boolean isEmpty() throws RepositoryException {
 		return size() == 0;
 	}
 
 	@Override
-	public void export(RDFHandler handler, Resource... contexts)
-		throws RepositoryException, RDFHandlerException
-	{
+	public void export(RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException {
 		exportStatements(null, null, null, false, handler, contexts);
 	}
 
@@ -214,16 +189,13 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 */
 	@Deprecated
 	@Override
-	public void setAutoCommit(boolean autoCommit)
-		throws RepositoryException
-	{
+	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
 		if (isActive()) {
 			if (autoCommit) {
 				// we are switching to autocommit mode from an active transaction.
 				commit();
 			}
-		}
-		else if (!autoCommit) {
+		} else if (!autoCommit) {
 			// begin a transaction
 			begin();
 		}
@@ -234,16 +206,13 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 */
 	@Deprecated
 	@Override
-	public boolean isAutoCommit()
-		throws RepositoryException
-	{
+	public boolean isAutoCommit() throws RepositoryException {
 		return !isActive();
 	}
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -256,22 +225,18 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			loader.load(file, baseURI, dataFormat, rdfInserter);
 
 			conditionalCommit(localTransaction);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			conditionalRollback(localTransaction);
 
 			// RDFInserter only throws wrapped RepositoryExceptions
-			throw (RepositoryException)e.getCause();
-		}
-		catch (RDFParseException e) {
+			throw (RepositoryException) e.getCause();
+		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -279,8 +244,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -293,22 +257,18 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			loader.load(url, baseURI, dataFormat, rdfInserter);
 
 			conditionalCommit(localTransaction);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			conditionalRollback(localTransaction);
 
 			// RDFInserter only throws wrapped RepositoryExceptions
-			throw (RepositoryException)e.getCause();
-		}
-		catch (RDFParseException e) {
+			throw (RepositoryException) e.getCause();
+		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -316,8 +276,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -330,22 +289,18 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			loader.load(in, baseURI, dataFormat, rdfInserter);
 
 			conditionalCommit(localTransaction);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			conditionalRollback(localTransaction);
 
 			// RDFInserter only throws wrapped RepositoryExceptions
-			throw (RepositoryException)e.getCause();
-		}
-		catch (RDFParseException e) {
+			throw (RepositoryException) e.getCause();
+		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -354,13 +309,11 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	/**
 	 * Starts a new transaction if one is not already active.
 	 * 
-	 * @return <code>true</code> if a new transaction was started, <code>false</code> if a transaction was
-	 *         already active.
+	 * @return <code>true</code> if a new transaction was started, <code>false</code> if a transaction was already
+	 *         active.
 	 * @throws RepositoryException
 	 */
-	protected final boolean startLocalTransaction()
-		throws RepositoryException
-	{
+	protected final boolean startLocalTransaction() throws RepositoryException {
 		if (!isActive()) {
 			begin();
 			return true;
@@ -371,13 +324,10 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	/**
 	 * Invokes {@link #commit()} if supplied boolean condition is <code>true</code>.
 	 * 
-	 * @param condition
-	 *        a boolean condition.
+	 * @param condition a boolean condition.
 	 * @throws RepositoryException
 	 */
-	protected final void conditionalCommit(boolean condition)
-		throws RepositoryException
-	{
+	protected final void conditionalCommit(boolean condition) throws RepositoryException {
 		if (condition) {
 			commit();
 		}
@@ -386,13 +336,10 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	/**
 	 * Invokes {@link #rollback()} if supplied boolean condition is <code>true</code>.
 	 * 
-	 * @param condition
-	 *        a boolean condition.
+	 * @param condition a boolean condition.
 	 * @throws RepositoryException
 	 */
-	protected final void conditionalRollback(boolean condition)
-		throws RepositoryException
-	{
+	protected final void conditionalRollback(boolean condition) throws RepositoryException {
 		if (condition) {
 			rollback();
 		}
@@ -400,8 +347,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -414,31 +360,25 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			loader.load(reader, baseURI, dataFormat, rdfInserter);
 
 			conditionalCommit(localTransaction);
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			conditionalRollback(localTransaction);
 
 			// RDFInserter only throws wrapped RepositoryExceptions
-			throw (RepositoryException)e.getCause();
-		}
-		catch (RDFParseException e) {
+			throw (RepositoryException) e.getCause();
+		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
 	}
 
 	@Override
-	public void add(Iterable<? extends Statement> statements, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		boolean localTransaction = startLocalTransaction();
@@ -447,12 +387,10 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				addWithoutCommit(st, contexts);
 			}
 			conditionalCommit(localTransaction);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -460,8 +398,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-		throws RepositoryException, E
-	{
+			throws RepositoryException, E {
 		try {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
@@ -473,25 +410,20 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				}
 
 				conditionalCommit(localTransaction);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
+				conditionalRollback(localTransaction);
+				throw e;
+			} catch (RuntimeException e) {
 				conditionalRollback(localTransaction);
 				throw e;
 			}
-			catch (RuntimeException e) {
-				conditionalRollback(localTransaction);
-				throw e;
-			}
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(statements);
 		}
 	}
 
 	@Override
-	public void add(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Statement st, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
 
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -501,9 +433,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void add(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
 
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -513,9 +443,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void remove(Iterable<? extends Statement> statements, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		boolean localTransaction = startLocalTransaction();
@@ -526,22 +454,18 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			}
 
 			conditionalCommit(localTransaction);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements,
-			Resource... contexts)
-		throws RepositoryException, E
-	{
+	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
+			throws RepositoryException, E {
 		try {
 			boolean localTransaction = startLocalTransaction();
 
@@ -551,25 +475,20 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				}
 
 				conditionalCommit(localTransaction);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
+				conditionalRollback(localTransaction);
+				throw e;
+			} catch (RuntimeException e) {
 				conditionalRollback(localTransaction);
 				throw e;
 			}
-			catch (RuntimeException e) {
-				conditionalRollback(localTransaction);
-				throw e;
-			}
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(statements);
 		}
 	}
 
 	@Override
-	public void remove(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Statement st, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
 
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -579,9 +498,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
 
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -591,15 +508,11 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void clear(Resource... contexts)
-		throws RepositoryException
-	{
+	public void clear(Resource... contexts) throws RepositoryException {
 		remove(null, null, null, contexts);
 	}
 
-	protected void addWithoutCommit(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	protected void addWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
 		if (contexts.length == 0 && st.getContext() != null) {
 			contexts = new Resource[] { st.getContext() };
 		}
@@ -607,13 +520,10 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		addWithoutCommit(st.getSubject(), st.getPredicate(), st.getObject(), contexts);
 	}
 
-	protected abstract void addWithoutCommit(Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-		throws RepositoryException;
+	protected abstract void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+			throws RepositoryException;
 
-	protected void removeWithoutCommit(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	protected void removeWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
 		if (contexts.length == 0 && st.getContext() != null) {
 			contexts = new Resource[] { st.getContext() };
 		}
@@ -621,7 +531,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		removeWithoutCommit(st.getSubject(), st.getPredicate(), st.getObject(), contexts);
 	}
 
-	protected abstract void removeWithoutCommit(Resource subject, IRI predicate, Value object,
-			Resource... contexts)
-		throws RepositoryException;
+	protected abstract void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+			throws RepositoryException;
 }

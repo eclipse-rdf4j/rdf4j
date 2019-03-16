@@ -63,8 +63,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TriXWriter that will write to the supplied OutputStream.
 	 * 
-	 * @param out
-	 *        The OutputStream to write the RDF/XML document to.
+	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public TriXWriter(OutputStream out) {
 		this(new XMLWriter(out));
@@ -73,8 +72,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TriXWriter that will write to the supplied Writer.
 	 * 
-	 * @param writer
-	 *        The Writer to write the RDF/XML document to.
+	 * @param writer The Writer to write the RDF/XML document to.
 	 */
 	public TriXWriter(Writer writer) {
 		this(new XMLWriter(writer));
@@ -99,9 +97,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		if (writingStarted) {
 			throw new RDFHandlerException("Document writing has already started");
 		}
@@ -114,19 +110,15 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 			xmlWriter.setAttribute("xmlns", NAMESPACE);
 			xmlWriter.startTag(ROOT_TAG);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		}
-		finally {
+		} finally {
 			writingStarted = true;
 		}
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not yet started");
 		}
@@ -139,11 +131,9 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			}
 			xmlWriter.endTag(ROOT_TAG);
 			xmlWriter.endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		}
-		finally {
+		} finally {
 			writingStarted = false;
 		}
 	}
@@ -154,9 +144,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not yet been started");
 		}
@@ -189,20 +177,16 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			writeValue(st.getObject());
 
 			xmlWriter.endTag(TRIPLE_TAG);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		try {
 			xmlWriter.comment(comment);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -210,31 +194,25 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Writes out the XML-representation for the supplied value.
 	 */
-	private void writeValue(Value value)
-		throws IOException, RDFHandlerException
-	{
+	private void writeValue(Value value) throws IOException, RDFHandlerException {
 		if (value instanceof IRI) {
-			IRI uri = (IRI)value;
+			IRI uri = (IRI) value;
 			xmlWriter.textElement(URI_TAG, uri.toString());
-		}
-		else if (value instanceof BNode) {
-			BNode bNode = (BNode)value;
+		} else if (value instanceof BNode) {
+			BNode bNode = (BNode) value;
 			xmlWriter.textElement(BNODE_TAG, bNode.getID());
-		}
-		else if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+		} else if (value instanceof Literal) {
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
 				xmlWriter.setAttribute(LANGUAGE_ATT, literal.getLanguage().get());
 				xmlWriter.textElement(PLAIN_LITERAL_TAG, literal.getLabel());
-			}
-			else {
+			} else {
 				xmlWriter.setAttribute(DATATYPE_ATT, datatype.toString());
 				xmlWriter.textElement(TYPED_LITERAL_TAG, literal.getLabel());
 			}
-		}
-		else {
+		} else {
 			throw new RDFHandlerException("Unknown value type: " + value.getClass());
 		}
 	}
@@ -242,8 +220,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	private static final boolean contextsEquals(Resource context1, Resource context2) {
 		if (context1 == null) {
 			return context2 == null;
-		}
-		else {
+		} else {
 			return context1.equals(context2);
 		}
 	}

@@ -22,110 +22,106 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * This serves as a base class for mapping strategies for character separated
- * inputs.
- * Specifically, it is meant for
- * {@link org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVMappingStrategy}
- * and {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVMappingStrategy}.
+ * This serves as a base class for mapping strategies for character separated inputs. Specifically, it is meant for
+ * {@link org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVMappingStrategy} and
+ * {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVMappingStrategy}.
  *
  * @author Andrew Rucker Jones
  */
 abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy<BindingSet> {
 
-    protected List<String> bindingNames = null;
-    protected final ValueFactory valueFactory;
-    protected static final Pattern numberPattern = Pattern.compile("^[-+]?[\\d.].*");
-    private static final String WRITING_UNSUPPORTED = "This mapping strategy does not write.";
+	protected List<String> bindingNames = null;
+	protected final ValueFactory valueFactory;
+	protected static final Pattern numberPattern = Pattern.compile("^[-+]?[\\d.].*");
+	private static final String WRITING_UNSUPPORTED = "This mapping strategy does not write.";
 
-    public SPARQLResultsXSVMappingStrategy(ValueFactory valueFactory) {
-        this.valueFactory = valueFactory;
-    }
+	public SPARQLResultsXSVMappingStrategy(ValueFactory valueFactory) {
+		this.valueFactory = valueFactory;
+	}
 
-    public List<String> getBindingNames() {
-        return bindingNames;
-    }
+	public List<String> getBindingNames() {
+		return bindingNames;
+	}
 
-    @Deprecated
-    public PropertyDescriptor findDescriptor(int col) {
-        return null;
-    }
+	@Deprecated
+	public PropertyDescriptor findDescriptor(int col) {
+		return null;
+	}
 
-    @Deprecated
-    public BeanField<BindingSet> findField(int col) {
-        return null;
-    }
+	@Deprecated
+	public BeanField<BindingSet> findField(int col) {
+		return null;
+	}
 
-    @Deprecated
-    public int findMaxFieldIndex() {
-        return 0;
-    }
+	@Deprecated
+	public int findMaxFieldIndex() {
+		return 0;
+	}
 
-    @Deprecated
-    public BindingSet createBean() {
-        return null;
-    }
+	@Deprecated
+	public BindingSet createBean() {
+		return null;
+	}
 
-    public String[] generateHeader(BindingSet bean) {
-        throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
-    }
+	public String[] generateHeader(BindingSet bean) {
+		throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
+	}
 
-    @Deprecated
-    public Integer getColumnIndex(String name) {
-        return null;
-    }
+	@Deprecated
+	public Integer getColumnIndex(String name) {
+		return null;
+	}
 
-    public boolean isAnnotationDriven() {
-        // This is a bald-faced lie, but it determines whether populateNewBean()
-        // or populateNewBeanWithIntrospection() is used.
-        return true;
-    }
+	public boolean isAnnotationDriven() {
+		// This is a bald-faced lie, but it determines whether populateNewBean()
+		// or populateNewBeanWithIntrospection() is used.
+		return true;
+	}
 
-    /**
-     * This method parses a number as matched by {@link #numberPattern} into
-     * a {@link Value}.
-     *
-     * @param valueString The string to be parsed into a number
-     * @return The parsed value
-     */
-    protected Value parseNumberPatternMatch(String valueString) {
-        IRI dataType = null;
+	/**
+	 * This method parses a number as matched by {@link #numberPattern} into a {@link Value}.
+	 *
+	 * @param valueString The string to be parsed into a number
+	 * @return The parsed value
+	 */
+	protected Value parseNumberPatternMatch(String valueString) {
+		IRI dataType = null;
 
-        if (XMLDatatypeUtil.isValidInteger(valueString)) {
-            if (XMLDatatypeUtil.isValidNegativeInteger(valueString)) {
-                dataType = XMLSchema.NEGATIVE_INTEGER;
-            } else {
-                dataType = XMLSchema.INTEGER;
-            }
-        } else if (XMLDatatypeUtil.isValidDecimal(valueString)) {
-            dataType = XMLSchema.DECIMAL;
-        } else if (XMLDatatypeUtil.isValidDouble(valueString)) {
-            dataType = XMLSchema.DOUBLE;
-        }
+		if (XMLDatatypeUtil.isValidInteger(valueString)) {
+			if (XMLDatatypeUtil.isValidNegativeInteger(valueString)) {
+				dataType = XMLSchema.NEGATIVE_INTEGER;
+			} else {
+				dataType = XMLSchema.INTEGER;
+			}
+		} else if (XMLDatatypeUtil.isValidDecimal(valueString)) {
+			dataType = XMLSchema.DECIMAL;
+		} else if (XMLDatatypeUtil.isValidDouble(valueString)) {
+			dataType = XMLSchema.DOUBLE;
+		}
 
-        return dataType != null ?
-                valueFactory.createLiteral(valueString, dataType) :
-                valueFactory.createLiteral(valueString);
-    }
+		return dataType != null ? valueFactory.createLiteral(valueString, dataType)
+				: valueFactory.createLiteral(valueString);
+	}
 
-    @Deprecated
-    public BindingSet populateNewBeanWithIntrospection(String[] line) {
-        throw new UnsupportedOperationException("Please use populateNewBean() instead.");
-    }
+	@Deprecated
+	public BindingSet populateNewBeanWithIntrospection(String[] line) {
+		throw new UnsupportedOperationException("Please use populateNewBean() instead.");
+	}
 
-    @Deprecated
-    public void verifyLineLength(int numberOfFields) {
-    }
+	@Deprecated
+	public void verifyLineLength(int numberOfFields) {
+	}
 
-    @Override
-    public void setErrorLocale(Locale errorLocale) {
-    }
+	@Override
+	public void setErrorLocale(Locale errorLocale) {
+	}
 
-    @Override
-    public void setType(Class<? extends BindingSet> type) {
-    }
+	@Override
+	public void setType(Class<? extends BindingSet> type) {
+	}
 
-    @Override
-    public String[] transmuteBean(BindingSet bean) {
-        throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
-    }
+	@Override
+	public String[] transmuteBean(BindingSet bean) {
+		throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
+	}
 }

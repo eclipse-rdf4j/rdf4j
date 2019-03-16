@@ -52,17 +52,13 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	}
 
 	@Override
-	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
-		UnsupportedQueryResultFormatException
-	{
+	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
+			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		return QueryResultIO.parseTupleBackground(in, format);
 	}
 
 	@Test
-	public void testBindings1()
-		throws Exception
-	{
+	public void testBindings1() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -82,8 +78,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 		assertEquals(7, handler.getBindingSets().size());
 
 		// Results are ordered, so first should be book6
-		assertEquals("http://example.org/book/book6",
-				handler.getBindingSets().get(0).getValue("book").stringValue());
+		assertEquals("http://example.org/book/book6", handler.getBindingSets().get(0).getValue("book").stringValue());
 
 		for (BindingSet b : handler.getBindingSets()) {
 			assertNotNull(b.getValue("book"));
@@ -91,29 +86,22 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 			assertTrue(b.getValue("book") instanceof IRI);
 			assertTrue(b.getValue("title") instanceof Literal);
 
-			IRI book = (IRI)b.getValue("book");
+			IRI book = (IRI) b.getValue("book");
 			if (book.stringValue().equals("http://example.org/book/book6")) {
 				assertEquals("Harry Potter and the Half-Blood Prince", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book7")) {
+			} else if (book.stringValue().equals("http://example.org/book/book7")) {
 				assertEquals("Harry Potter and the Deathly Hallows", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book5")) {
+			} else if (book.stringValue().equals("http://example.org/book/book5")) {
 				assertEquals("Harry Potter and the Order of the Phoenix", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book4")) {
+			} else if (book.stringValue().equals("http://example.org/book/book4")) {
 				assertEquals("Harry Potter and the Goblet of Fire", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book2")) {
+			} else if (book.stringValue().equals("http://example.org/book/book2")) {
 				assertEquals("Harry Potter and the Chamber of Secrets", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book3")) {
+			} else if (book.stringValue().equals("http://example.org/book/book3")) {
 				assertEquals("Harry Potter and the Prisoner Of Azkaban", b.getValue("title").stringValue());
-			}
-			else if (book.stringValue().equals("http://example.org/book/book1")) {
+			} else if (book.stringValue().equals("http://example.org/book/book1")) {
 				assertEquals("Harry Potter and the Philosopher's Stone", b.getValue("title").stringValue());
-			}
-			else {
+			} else {
 				fail("Found unexpected binding set in result: " + b.toString());
 			}
 		}
@@ -121,9 +109,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	}
 
 	@Test
-	public void testBindings2()
-		throws Exception
-	{
+	public void testBindings2() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -148,8 +134,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 		assertEquals(2, handler.getBindingSets().size());
 
 		// Results are ordered, so first should be alice
-		assertEquals("http://work.example.org/alice/",
-				handler.getBindingSets().get(0).getValue("hpage").stringValue());
+		assertEquals("http://work.example.org/alice/", handler.getBindingSets().get(0).getValue("hpage").stringValue());
 
 		for (BindingSet b : handler.getBindingSets()) {
 
@@ -164,7 +149,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 			assertTrue(b.getValue("name") instanceof Literal);
 			assertTrue(b.getValue("friend") instanceof BNode);
 
-			BNode value = (BNode)b.getValue("x");
+			BNode value = (BNode) b.getValue("x");
 
 			if (value.getID().equals("r1")) {
 				assertNotNull(b.getValue("blurb"));
@@ -174,37 +159,35 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 
 				assertEquals("http://work.example.org/alice/", b.getValue("hpage").stringValue());
 
-				Literal name = (Literal)b.getValue("name");
+				Literal name = (Literal) b.getValue("name");
 				assertEquals("Alice", name.stringValue());
 				assertFalse(name.getLanguage().isPresent());
 				assertEquals(XMLSchema.STRING, name.getDatatype());
 
-				Literal mbox = (Literal)b.getValue("mbox");
+				Literal mbox = (Literal) b.getValue("mbox");
 				assertEquals("", mbox.stringValue());
 				assertFalse(mbox.getLanguage().isPresent());
 				assertEquals(XMLSchema.STRING, mbox.getDatatype());
 
-				Literal blurb = (Literal)b.getValue("blurb");
+				Literal blurb = (Literal) b.getValue("blurb");
 				assertEquals("<p xmlns=\"http://www.w3.org/1999/xhtml\">My name is <b>alice</b></p>",
 						blurb.stringValue());
 				assertFalse(blurb.getLanguage().isPresent());
 				assertEquals(RDF.XMLLITERAL, blurb.getDatatype());
-			}
-			else if (value.getID().equals("r2")) {
+			} else if (value.getID().equals("r2")) {
 				assertNull(b.getValue("blurb"));
 
 				assertTrue(b.getValue("mbox") instanceof IRI);
 
 				assertEquals("http://work.example.org/bob/", b.getValue("hpage").stringValue());
 
-				Literal name = (Literal)b.getValue("name");
+				Literal name = (Literal) b.getValue("name");
 				assertEquals("Bob", name.stringValue());
 				assertEquals("en", name.getLanguage().orElse(null));
 				assertEquals(RDF.LANGSTRING, name.getDatatype());
 
 				assertEquals("mailto:bob@work.example.org", b.getValue("mbox").stringValue());
-			}
-			else {
+			} else {
 				fail("Found unexpected binding set in result: " + b.toString());
 			}
 		}
@@ -216,9 +199,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	}
 
 	@Test
-	public void testNonStandardDistinct()
-		throws Exception
-	{
+	public void testNonStandardDistinct() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -238,9 +219,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	}
 
 	@Test
-	public void testNonStandardOrdered()
-		throws Exception
-	{
+	public void testNonStandardOrdered() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
@@ -260,15 +239,12 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	}
 
 	@Test
-	public void testNonStandardDistinctOrdered()
-		throws Exception
-	{
+	public void testNonStandardDistinctOrdered() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
 		parser.setQueryResultHandler(handler);
 
-		InputStream stream = this.getClass().getResourceAsStream(
-				"/sparqljson/non-standard-distinct-ordered.srj");
+		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/non-standard-distinct-ordered.srj");
 		assertNotNull("Could not find test resource", stream);
 		parser.parseQueryResult(stream);
 

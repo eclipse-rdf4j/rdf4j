@@ -70,15 +70,11 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	/**
 	 * Return the rendering of the ValueExpr object
 	 * 
-	 * @param theExpr
-	 *        the expression to render
+	 * @param theExpr the expression to render
 	 * @return the rendering
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	public String render(ValueExpr theExpr)
-		throws Exception
-	{
+	public String render(ValueExpr theExpr) throws Exception {
 		theExpr.visit(this);
 
 		return mBuffer.toString();
@@ -88,9 +84,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Bound theOp)
-		throws Exception
-	{
+	public void meet(Bound theOp) throws Exception {
 		mBuffer.append(" bound(");
 		theOp.getArg().visit(this);
 		mBuffer.append(")");
@@ -100,16 +94,12 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Var theVar)
-		throws Exception
-	{
+	public void meet(Var theVar) throws Exception {
 		if (theVar.isAnonymous() && !theVar.hasValue()) {
 			mBuffer.append("?").append(BaseTupleExprRenderer.scrubVarName(theVar.getName()));
-		}
-		else if (theVar.hasValue()) {
+		} else if (theVar.hasValue()) {
 			mBuffer.append(RenderUtils.getSPARQLQueryString(theVar.getValue()));
-		}
-		else {
+		} else {
 			mBuffer.append("?").append(theVar.getName());
 		}
 	}
@@ -118,9 +108,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(BNodeGenerator theGen)
-		throws Exception
-	{
+	public void meet(BNodeGenerator theGen) throws Exception {
 		mBuffer.append(theGen.getSignature());
 	}
 
@@ -128,9 +116,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(MathExpr theOp)
-		throws Exception
-	{
+	public void meet(MathExpr theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" ");
@@ -142,9 +128,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Compare theOp)
-		throws Exception
-	{
+	public void meet(Compare theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" ");
@@ -156,9 +140,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Exists theOp)
-		throws Exception
-	{
+	public void meet(Exists theOp) throws Exception {
 		mBuffer.append(" exists(");
 		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));
 		mBuffer.append(")");
@@ -168,9 +150,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(In theOp)
-		throws Exception
-	{
+	public void meet(In theOp) throws Exception {
 		theOp.getArg().visit(this);
 		mBuffer.append(" in ");
 		mBuffer.append("(");
@@ -181,15 +161,11 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	/**
 	 * Renders the tuple expression as a query string.
 	 * 
-	 * @param theExpr
-	 *        the expr to render
+	 * @param theExpr the expr to render
 	 * @return the rendered expression
-	 * @throws Exception
-	 *         if there is an error while rendering
+	 * @throws Exception if there is an error while rendering
 	 */
-	private String renderTupleExpr(TupleExpr theExpr)
-		throws Exception
-	{
+	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
 		SparqlTupleExprRenderer aRenderer = new SparqlTupleExprRenderer();
 		return aRenderer.render(theExpr);
 	}
@@ -198,9 +174,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(CompareAll theOp)
-		throws Exception
-	{
+	public void meet(CompareAll theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" all ");
@@ -214,9 +188,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(ValueConstant theVal)
-		throws Exception
-	{
+	public void meet(ValueConstant theVal) throws Exception {
 		mBuffer.append(RenderUtils.getSPARQLQueryString(theVal.getValue()));
 	}
 
@@ -224,16 +196,13 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(FunctionCall theOp)
-		throws Exception
-	{
+	public void meet(FunctionCall theOp) throws Exception {
 		mBuffer.append("<").append(theOp.getURI()).append(">(");
 		boolean aFirst = true;
 		for (ValueExpr aArg : theOp.getArgs()) {
 			if (!aFirst) {
 				mBuffer.append(", ");
-			}
-			else {
+			} else {
 				aFirst = false;
 			}
 
@@ -246,9 +215,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(CompareAny theOp)
-		throws Exception
-	{
+	public void meet(CompareAny theOp) throws Exception {
 		mBuffer.append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(" ").append(theOp.getOperator().getSymbol()).append(" any ");
@@ -262,9 +229,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Regex theOp)
-		throws Exception
-	{
+	public void meet(Regex theOp) throws Exception {
 		mBuffer.append(" regex(");
 		theOp.getArg().visit(this);
 		mBuffer.append(", ");
@@ -280,9 +245,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LangMatches theOp)
-		throws Exception
-	{
+	public void meet(LangMatches theOp) throws Exception {
 		mBuffer.append(" langMatches(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(", ");
@@ -294,9 +257,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(SameTerm theOp)
-		throws Exception
-	{
+	public void meet(SameTerm theOp) throws Exception {
 		mBuffer.append(" sameTerm(");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(", ");
@@ -308,9 +269,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(And theAnd)
-		throws Exception
-	{
+	public void meet(And theAnd) throws Exception {
 		binaryMeet("&&", theAnd);
 	}
 
@@ -318,9 +277,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Or theOr)
-		throws Exception
-	{
+	public void meet(Or theOr) throws Exception {
 		binaryMeet("||", theOr);
 	}
 
@@ -328,9 +285,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Not theNot)
-		throws Exception
-	{
+	public void meet(Not theNot) throws Exception {
 		mBuffer.append("(");
 		unaryMeet("!", theNot);
 		mBuffer.append(")");
@@ -340,9 +295,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Count theOp)
-		throws Exception
-	{
+	public void meet(Count theOp) throws Exception {
 		unaryMeet("count", theOp);
 	}
 
@@ -350,9 +303,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Datatype theOp)
-		throws Exception
-	{
+	public void meet(Datatype theOp) throws Exception {
 		unaryMeet("datatype", theOp);
 	}
 
@@ -360,9 +311,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsBNode theOp)
-		throws Exception
-	{
+	public void meet(IsBNode theOp) throws Exception {
 		unaryMeet("isBlank", theOp);
 	}
 
@@ -370,9 +319,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsLiteral theOp)
-		throws Exception
-	{
+	public void meet(IsLiteral theOp) throws Exception {
 		unaryMeet("isLiteral", theOp);
 	}
 
@@ -380,9 +327,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsResource theOp)
-		throws Exception
-	{
+	public void meet(IsResource theOp) throws Exception {
 		// there's no isResource method in SPARQL, so lets serialize this as not
 		// isLiteral -- if something is not a literal
 		// then its probably a resource, tho it might be just not bound so this
@@ -395,9 +340,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(IsURI theOp)
-		throws Exception
-	{
+	public void meet(IsURI theOp) throws Exception {
 		unaryMeet("isURI", theOp);
 	}
 
@@ -405,9 +348,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Label theOp)
-		throws Exception
-	{
+	public void meet(Label theOp) throws Exception {
 		unaryMeet("label", theOp);
 	}
 
@@ -415,9 +356,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Lang theOp)
-		throws Exception
-	{
+	public void meet(Lang theOp) throws Exception {
 		unaryMeet("lang", theOp);
 	}
 
@@ -425,9 +364,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Like theOp)
-		throws Exception
-	{
+	public void meet(Like theOp) throws Exception {
 		theOp.getArg().visit(this);
 		mBuffer.append(" like \"").append(theOp.getPattern()).append("\"");
 		if (!theOp.isCaseSensitive()) {
@@ -439,9 +376,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(LocalName theOp)
-		throws Exception
-	{
+	public void meet(LocalName theOp) throws Exception {
 		unaryMeet("localName", theOp);
 	}
 
@@ -449,9 +384,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Min theOp)
-		throws Exception
-	{
+	public void meet(Min theOp) throws Exception {
 		unaryMeet("min", theOp);
 	}
 
@@ -459,9 +392,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Max theOp)
-		throws Exception
-	{
+	public void meet(Max theOp) throws Exception {
 		unaryMeet("max", theOp);
 	}
 
@@ -469,9 +400,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Namespace theOp)
-		throws Exception
-	{
+	public void meet(Namespace theOp) throws Exception {
 		unaryMeet("namespace", theOp);
 	}
 
@@ -479,15 +408,11 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Str theOp)
-		throws Exception
-	{
+	public void meet(Str theOp) throws Exception {
 		unaryMeet("str", theOp);
 	}
 
-	private void binaryMeet(String theOpStr, BinaryValueOperator theOp)
-		throws Exception
-	{
+	private void binaryMeet(String theOpStr, BinaryValueOperator theOp) throws Exception {
 		mBuffer.append(" (");
 		theOp.getLeftArg().visit(this);
 		mBuffer.append(" ").append(theOpStr).append(" ");
@@ -495,9 +420,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		mBuffer.append(")");
 	}
 
-	private void unaryMeet(String theOpStr, UnaryValueOperator theOp)
-		throws Exception
-	{
+	private void unaryMeet(String theOpStr, UnaryValueOperator theOp) throws Exception {
 		mBuffer.append(" ").append(theOpStr).append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(")");

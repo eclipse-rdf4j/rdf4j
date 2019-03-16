@@ -22,26 +22,23 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public interface RepositoryConnectionInterceptor {
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#close()} operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#close()} operation on.
 	 * @return true if the interceptor has been denied access to the close operation, false otherwise.
 	 */
 	public abstract boolean close(RepositoryConnection conn);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#begin()} or
-	 *        {@link RepositoryConnection#begin(org.eclipse.rdf4j.IsolationLevel)} operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#begin()} or
+	 *             {@link RepositoryConnection#begin(org.eclipse.rdf4j.IsolationLevel)} operation on.
 	 * @return true if the interceptor has been denied access to the begin operation, false otherwise.
 	 */
 	public abstract boolean begin(RepositoryConnection conn);
 
 	/**
 	 * @deprecated since 2.7.0. Use {@link #begin(RepositoryConnection)} instead.
-	 * @param conn
-	 *        the RepositoryConnection to perform the
-	 *        {@link RepositoryConnectionInterceptor#setAutoCommit(RepositoryConnection, boolean) }operation
-	 *        on.
+	 * @param conn       the RepositoryConnection to perform the
+	 *                   {@link RepositoryConnectionInterceptor#setAutoCommit(RepositoryConnection, boolean) }operation
+	 *                   on.
 	 * @param autoCommit
 	 * @return true if the interceptor has been denied access to the setAutoCommit operation, false otherwise.
 	 */
@@ -49,77 +46,63 @@ public interface RepositoryConnectionInterceptor {
 	public abstract boolean setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#commit()} operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#commit()} operation on.
 	 * @return true if the interceptor has been denied access to the commit operation, false otherwise.
 	 */
 	public abstract boolean commit(RepositoryConnection conn);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#rollback()} operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#rollback()} operation on.
 	 * @return true if the interceptor has been denied access to the rollback operation, false otherwise.
 	 */
 	public abstract boolean rollback(RepositoryConnection conn);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the
-	 *        {@link RepositoryConnection#add(Resource, IRI, Value, Resource...)} operation on.
+	 * @param conn the RepositoryConnection to perform the
+	 *             {@link RepositoryConnection#add(Resource, IRI, Value, Resource...)} operation on.
 	 * @return true if the interceptor has been denied access to the add operation, false otherwise.
 	 */
 	public abstract boolean add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 			Resource... contexts);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the
-	 *        {@link RepositoryConnection#remove(Resource, IRI, Value, Resource...)} operation on.
+	 * @param conn the RepositoryConnection to perform the
+	 *             {@link RepositoryConnection#remove(Resource, IRI, Value, Resource...)} operation on.
 	 * @return true if the interceptor has been denied access to the remove operation, false otherwise.
 	 */
 	public abstract boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 			Resource... contexts);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#clear(Resource...)}
-	 *        operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#clear(Resource...)} operation on.
 	 * @return true if the interceptor has been denied access to the clear operation, false otherwise.
 	 */
 	public abstract boolean clear(RepositoryConnection conn, Resource... contexts);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the
-	 *        {@link RepositoryConnection#setNamespace(String, String)} operation on.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#setNamespace(String, String)}
+	 *             operation on.
 	 * @return true if the interceptor has been denied access to the setNamespace operation, false otherwise.
 	 */
 	public abstract boolean setNamespace(RepositoryConnection conn, String prefix, String name);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#removeNamespace(String)}
-	 *        operation on.
-	 * @return true if the interceptor has been denied access to the removeNamespace operation, false
-	 *         otherwise.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#removeNamespace(String)}
+	 *             operation on.
+	 * @return true if the interceptor has been denied access to the removeNamespace operation, false otherwise.
 	 */
 	public abstract boolean removeNamespace(RepositoryConnection conn, String prefix);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the {@link RepositoryConnection#clearNamespaces()} operation
-	 *        on.
-	 * @return true if the interceptor has been denied access to the clearNamespaces operation, false
-	 *         otherwise.
+	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#clearNamespaces()} operation on.
+	 * @return true if the interceptor has been denied access to the clearNamespaces operation, false otherwise.
 	 */
 	public abstract boolean clearNamespaces(RepositoryConnection conn);
 
 	/**
-	 * @param conn
-	 *        the RepositoryConnection to perform the query execution operations on.
-	 * @return true if the interceptor has been denied access to the query execution operations, false
-	 *         otherwise.
+	 * @param conn the RepositoryConnection to perform the query execution operations on.
+	 * @return true if the interceptor has been denied access to the query execution operations, false otherwise.
 	 */
-	public abstract boolean execute(RepositoryConnection conn, QueryLanguage ql, String update,
-			String baseURI, Update operation);
+	public abstract boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
+			Update operation);
 }

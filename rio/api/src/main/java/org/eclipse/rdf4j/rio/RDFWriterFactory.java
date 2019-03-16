@@ -26,46 +26,38 @@ public interface RDFWriterFactory {
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied output stream.
 	 * 
-	 * @param out
-	 *        The OutputStream to write the RDF to.
+	 * @param out The OutputStream to write the RDF to.
 	 */
 	public RDFWriter getWriter(OutputStream out);
 
 	/**
-	 * Returns an RDFWriter instance that will write to the supplied output stream. Using the supplied baseURI
-	 * to relativize IRIs to relative IRIs.
+	 * Returns an RDFWriter instance that will write to the supplied output stream. Using the supplied baseURI to
+	 * relativize IRIs to relative IRIs.
 	 *
-	 * @param out
-	 *        The OutputStream to write the RDF to.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream.
+	 * @param out     The OutputStream to write the RDF to.
+	 * @param baseURI The URI associated with the data in the InputStream.
 	 * @throws URISyntaxException
 	 */
-	public RDFWriter getWriter(OutputStream out, String baseURI)
-		throws URISyntaxException;
+	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException;
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied writer. (Optional operation)
 	 * 
-	 * @param writer
-	 *        The Writer to write the RDF to.
-	 * @throws UnsupportedOperationException
-	 *         if the RDFWriter the specific format does not support writing to a {@link java.io.Writer}
+	 * @param writer The Writer to write the RDF to.
+	 * @throws UnsupportedOperationException if the RDFWriter the specific format does not support writing to a
+	 *                                       {@link java.io.Writer}
 	 */
 	public RDFWriter getWriter(Writer writer);
 
 	/**
-	 * Returns an RDFWriter instance that will write to the supplied writer. Using the supplied baseURI to
-	 * relativize IRIs to relative IRIs. (Optional operation)
+	 * Returns an RDFWriter instance that will write to the supplied writer. Using the supplied baseURI to relativize
+	 * IRIs to relative IRIs. (Optional operation)
 	 *
-	 * @param writer
-	 *        The Writer to write the RDF to.
-	 * @param baseURI
-	 *        The URI associated with the data in the InputStream.
+	 * @param writer  The Writer to write the RDF to.
+	 * @param baseURI The URI associated with the data in the InputStream.
 	 * @throws URISyntaxException
-	 * @throws UnsupportedOperationException
-	 *         if the RDFWriter the specific format does not support writing to a {@link java.io.Writer}
+	 * @throws UnsupportedOperationException if the RDFWriter the specific format does not support writing to a
+	 *                                       {@link java.io.Writer}
 	 */
-	public RDFWriter getWriter(Writer writer, String baseURI)
-		throws URISyntaxException;
+	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException;
 }

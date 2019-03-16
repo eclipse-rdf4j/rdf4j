@@ -52,25 +52,20 @@ public class ExtensionElem extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		expr.visit(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (expr == current) {
-			setExpr((ValueExpr)replacement);
-		}
-		else {
+			setExpr((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -83,7 +78,7 @@ public class ExtensionElem extends AbstractQueryModelNode {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ExtensionElem) {
-			ExtensionElem o = (ExtensionElem)other;
+			ExtensionElem o = (ExtensionElem) other;
 			return name.equals(o.getName()) && expr.equals(o.getExpr());
 		}
 		return false;
@@ -96,7 +91,7 @@ public class ExtensionElem extends AbstractQueryModelNode {
 
 	@Override
 	public ExtensionElem clone() {
-		ExtensionElem clone = (ExtensionElem)super.clone();
+		ExtensionElem clone = (ExtensionElem) super.clone();
 		clone.setExpr(getExpr().clone());
 		return clone;
 	}

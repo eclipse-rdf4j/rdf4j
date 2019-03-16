@@ -15,9 +15,7 @@ package org.eclipse.rdf4j.query.algebra;
 public class ListMemberOperator extends NAryValueOperator {
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -33,6 +31,6 @@ public class ListMemberOperator extends NAryValueOperator {
 
 	@Override
 	public ListMemberOperator clone() {
-		return (ListMemberOperator)super.clone();
+		return (ListMemberOperator) super.clone();
 	}
 }

@@ -243,9 +243,7 @@ public abstract class AbstractModelTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		uri1 = vf.createIRI("urn:test:uri:1");
 		uri2 = vf.createIRI("urn:test:uri:2");
 		uri3 = vf.createIRI("urn:test:uri:3");
@@ -261,9 +259,7 @@ public abstract class AbstractModelTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 	}
 
 	/**
@@ -274,7 +270,7 @@ public abstract class AbstractModelTest {
 		Model model = getNewModelObjectSingleLiteral();
 		Model filter1 = model.filter(null, null, literal1);
 		assertFalse(filter1.isEmpty());
-		Model filter2 = model.filter(null, null, literal1, (Resource)null);
+		Model filter2 = model.filter(null, null, literal1, (Resource) null);
 		assertFalse(filter2.isEmpty());
 	}
 
@@ -285,7 +281,7 @@ public abstract class AbstractModelTest {
 	public final void testContainsSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 		assertTrue(model.contains(null, null, literal1));
-		assertTrue(model.contains(null, null, literal1, (Resource)null));
+		assertTrue(model.contains(null, null, literal1, (Resource) null));
 	}
 
 	/**

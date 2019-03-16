@@ -37,8 +37,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 	/**
 	 * Construct a parser with a specific {@link ValueFactory}.
 	 * 
-	 * @param valueFactory
-	 *        The factory to use to create values.
+	 * @param valueFactory The factory to use to create values.
 	 */
 	public SPARQLResultsJSONParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -62,16 +61,12 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 
 	@Override
 	@Deprecated
-	public void parse(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
-	{
+	public void parse(InputStream in) throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		try {
 			parseQueryResultInternal(in, false, true);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}

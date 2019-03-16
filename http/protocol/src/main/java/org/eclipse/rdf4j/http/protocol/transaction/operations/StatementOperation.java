@@ -57,7 +57,7 @@ public abstract class StatementOperation extends ContextOperation {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof StatementOperation) {
-			StatementOperation o = (StatementOperation)other;
+			StatementOperation o = (StatementOperation) other;
 
 			return ObjectUtil.nullEquals(getSubject(), o.getSubject())
 					&& ObjectUtil.nullEquals(getPredicate(), o.getPredicate())

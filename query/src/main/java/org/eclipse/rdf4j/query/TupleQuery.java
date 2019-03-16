@@ -9,9 +9,8 @@ package org.eclipse.rdf4j.query;
 
 public interface TupleQuery extends Query {
 
-	public TupleQueryResult evaluate()
-		throws QueryEvaluationException;
+	public TupleQueryResult evaluate() throws QueryEvaluationException;
 
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException;
+			throws QueryEvaluationException, TupleQueryResultHandlerException;
 }

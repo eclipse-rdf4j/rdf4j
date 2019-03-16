@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
- * Basic implementation of {@link RioSetting} interface, without support for default override via system
- * properties.
+ * Basic implementation of {@link RioSetting} interface, without support for default override via system properties.
  * 
  * @author Peter Ansell
  * @see StringRioSetting

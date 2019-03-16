@@ -22,9 +22,7 @@ public class ASTLiteral extends ASTValue {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -50,7 +48,7 @@ public class ASTLiteral extends ASTValue {
 
 	public ASTValueExpr getDatatypeNode() {
 		if (children.size() >= 1) {
-			return (ASTValueExpr)children.get(0);
+			return (ASTValueExpr) children.get(0);
 		}
 
 		return null;

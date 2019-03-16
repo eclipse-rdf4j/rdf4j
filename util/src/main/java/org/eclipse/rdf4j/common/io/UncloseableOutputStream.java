@@ -36,7 +36,7 @@ public class UncloseableOutputStream extends FilterOutputStream {
 	/**
 	 * Invoke close on FilterOutputStream parent class.
 	 * 
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public void doClose() throws IOException {
 		super.close();

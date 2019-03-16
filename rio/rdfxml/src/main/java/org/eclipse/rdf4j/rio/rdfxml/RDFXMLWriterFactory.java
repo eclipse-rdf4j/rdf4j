@@ -45,9 +45,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	 * @throws URISyntaxException
 	 */
 	@Override
-	public RDFWriter getWriter(OutputStream out, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
 		return new RDFXMLWriter(out, new ParsedIRI(baseURI));
 	}
 
@@ -65,9 +63,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	 * @throws URISyntaxException
 	 */
 	@Override
-	public RDFWriter getWriter(Writer writer, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
 		return new RDFXMLWriter(writer, new ParsedIRI(baseURI));
 	}
 }

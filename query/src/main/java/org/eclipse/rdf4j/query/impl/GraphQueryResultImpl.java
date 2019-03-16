@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class GraphQueryResultImpl extends IteratingGraphQueryResult {
 
 	public GraphQueryResultImpl(Map<String, String> namespaces,
-			CloseableIteration<? extends Statement, ? extends QueryEvaluationException> statementIter)
-	{
+			CloseableIteration<? extends Statement, ? extends QueryEvaluationException> statementIter) {
 		super(namespaces, statementIter);
 	}
 

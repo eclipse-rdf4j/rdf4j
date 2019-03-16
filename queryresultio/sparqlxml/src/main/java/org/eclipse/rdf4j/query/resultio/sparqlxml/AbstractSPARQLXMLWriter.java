@@ -59,8 +59,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An abstract class to implement the base functionality for both SPARQLBooleanXMLWriter and
- * SPARQLResultsXMLWriter.
+ * An abstract class to implement the base functionality for both SPARQLBooleanXMLWriter and SPARQLResultsXMLWriter.
  * 
  * @author Peter Ansell
  */
@@ -108,10 +107,9 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 *---------*/
 
 	/**
-	 * Enables/disables addition of indentation characters and newlines in the XML document. By default,
-	 * pretty-printing is set to <tt>true</tt>. If set to <tt>false</tt>, no indentation and newlines are
-	 * added to the XML document. This method has to be used before writing starts (that is, before
-	 * {@link #startDocument} is called).
+	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
+	 * is set to <tt>true</tt>. If set to <tt>false</tt>, no indentation and newlines are added to the XML document.
+	 * This method has to be used before writing starts (that is, before {@link #startDocument} is called).
 	 * 
 	 * @deprecated Use {@link #getWriterConfig()} .set(BasicWriterSettings.PRETTY_PRINT, prettyPrint) instead.
 	 */
@@ -121,9 +119,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		xmlWriter.setPrettyPrint(prettyPrint);
 	}
 
-	protected void endDocument()
-		throws IOException
-	{
+	protected void endDocument() throws IOException {
 		xmlWriter.endTag(ROOT_TAG);
 
 		xmlWriter.endDocument();
@@ -135,9 +131,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -157,22 +151,18 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		try {
 			if (value) {
 				xmlWriter.textElement(BOOLEAN_TAG, BOOLEAN_TRUE);
-			}
-			else {
+			} else {
 				xmlWriter.textElement(BOOLEAN_TAG, BOOLEAN_FALSE);
 			}
 
 			endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void startDocument()
-		throws QueryResultHandlerException
-	{
+	public void startDocument() throws QueryResultHandlerException {
 		if (!documentOpen) {
 			documentOpen = true;
 			headerOpen = false;
@@ -197,33 +187,27 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 							namespaceTable.get(nextPrefix));
 					xmlWriter.setAttribute("xmlns:" + namespaceTable.get(nextPrefix), nextPrefix);
 				}
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void handleStylesheet(String url)
-		throws QueryResultHandlerException
-	{
+	public void handleStylesheet(String url) throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
 
 		try {
 			xmlWriter.writeStylesheet(url);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void startHeader()
-		throws QueryResultHandlerException
-	{
+	public void startHeader() throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -235,17 +219,14 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				xmlWriter.startTag(HEAD_TAG);
 
 				headerOpen = true;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -260,16 +241,13 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				xmlWriter.setAttribute(HREF_ATT, name);
 				xmlWriter.emptyElement(LINK_TAG);
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endHeader()
-		throws QueryResultHandlerException
-	{
+	public void endHeader() throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -289,17 +267,14 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				}
 
 				headerComplete = true;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -314,22 +289,17 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				xmlWriter.setAttribute(VAR_NAME_ATT, name);
 				xmlWriter.emptyElement(VAR_TAG);
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -344,28 +314,22 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			}
 
 			if (!tupleVariablesFound) {
-				throw new IllegalStateException(
-						"Could not end query result as startQueryResult was not called first.");
+				throw new IllegalStateException("Could not end query result as startQueryResult was not called first.");
 			}
 
 			xmlWriter.endTag(RESULT_SET_TAG);
 			endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -395,14 +359,11 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			}
 
 			xmlWriter.endTag(RESULT_TAG);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -419,9 +380,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// we only support the addition of prefixes before the document is open
 		// fail silently if namespaces are added after this point
 		if (!documentOpen) {
@@ -432,29 +391,23 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				// NOTE: The keys in the namespace table are the URIs and the values
 				// are the prefixes
 				this.namespaceTable.put(uri, prefix);
-			}
-			else {
+			} else {
 				this.log.debug(
 						"handleNamespace was ignored for either the empty prefix or the sesame qname prefix (q). Attempted to map: <{}> to <{}>",
 						uri, prefix);
 			}
-		}
-		else {
+		} else {
 			this.log.warn("handleNamespace was ignored after startDocument: <{}> to <{}>", uri, prefix);
 		}
 	}
 
-	private void writeValue(Value value)
-		throws IOException
-	{
+	private void writeValue(Value value) throws IOException {
 		if (value instanceof IRI) {
-			writeURI((IRI)value);
-		}
-		else if (value instanceof BNode) {
-			writeBNode((BNode)value);
-		}
-		else if (value instanceof Literal) {
-			writeLiteral((Literal)value);
+			writeURI((IRI) value);
+		} else if (value instanceof BNode) {
+			writeBNode((BNode) value);
+		} else if (value instanceof Literal) {
+			writeLiteral((Literal) value);
 		}
 	}
 
@@ -463,38 +416,30 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	/**
-	 * Write a QName for the given URI if and only if the {@link BasicQueryWriterSettings#ADD_SESAME_QNAME}
-	 * setting has been set to true. By default it is false, to ensure that this implementation stays within
-	 * the specification by default.
+	 * Write a QName for the given URI if and only if the {@link BasicQueryWriterSettings#ADD_SESAME_QNAME} setting has
+	 * been set to true. By default it is false, to ensure that this implementation stays within the specification by
+	 * default.
 	 * 
-	 * @param nextUri
-	 *        The prefixed URI to be written as a sesame qname attribute.
+	 * @param nextUri The prefixed URI to be written as a sesame qname attribute.
 	 */
 	private void writeQName(IRI nextUri) {
 		if (getWriterConfig().get(BasicQueryWriterSettings.ADD_SESAME_QNAME)) {
-			xmlWriter.setAttribute(QNAME,
-					namespaceTable.get(nextUri.getNamespace()) + ":" + nextUri.getLocalName());
+			xmlWriter.setAttribute(QNAME, namespaceTable.get(nextUri.getNamespace()) + ":" + nextUri.getLocalName());
 		}
 	}
 
-	private void writeURI(IRI uri)
-		throws IOException
-	{
+	private void writeURI(IRI uri) throws IOException {
 		if (isQName(uri)) {
 			writeQName(uri);
 		}
 		xmlWriter.textElement(URI_TAG, uri.toString());
 	}
 
-	private void writeBNode(BNode bNode)
-		throws IOException
-	{
+	private void writeBNode(BNode bNode) throws IOException {
 		xmlWriter.textElement(BNODE_TAG, bNode.getID());
 	}
 
-	private void writeLiteral(Literal literal)
-		throws IOException
-	{
+	private void writeLiteral(Literal literal) throws IOException {
 		if (Literals.isLanguageLiteral(literal)) {
 			xmlWriter.setAttribute(LITERAL_LANG_ATT, literal.getLanguage().get());
 		}

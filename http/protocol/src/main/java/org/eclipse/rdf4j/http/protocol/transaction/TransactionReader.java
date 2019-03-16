@@ -21,14 +21,10 @@ public class TransactionReader {
 	/**
 	 * parse the transaction from the serialization
 	 * 
-	 * @throws SAXException
-	 *         If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
-	 * @throws IOException
-	 *         If IO problems during parsing.
+	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
+	 * @throws IOException  If IO problems during parsing.
 	 */
-	public Collection<TransactionOperation> parse(InputStream in)
-		throws SAXException, IOException
-	{
+	public Collection<TransactionOperation> parse(InputStream in) throws SAXException, IOException {
 		SimpleSAXParser saxParser = new SimpleSAXParser();
 		saxParser.setPreserveWhitespace(true);
 
@@ -41,14 +37,10 @@ public class TransactionReader {
 	/**
 	 * parse the transaction from the serialization
 	 * 
-	 * @throws SAXException
-	 *         If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
-	 * @throws IOException
-	 *         If IO problems during parsing.
+	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
+	 * @throws IOException  If IO problems during parsing.
 	 */
-	public Collection<TransactionOperation> parse(Reader in)
-		throws SAXException, IOException
-	{
+	public Collection<TransactionOperation> parse(Reader in) throws SAXException, IOException {
 		SimpleSAXParser saxParser = new SimpleSAXParser();
 		TransactionSAXParser handler = new TransactionSAXParser();
 		saxParser.setPreserveWhitespace(true);

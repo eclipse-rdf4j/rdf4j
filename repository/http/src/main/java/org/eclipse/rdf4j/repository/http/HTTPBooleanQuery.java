@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException
- * subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
+ * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
+ * UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
@@ -29,31 +29,24 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 
 	private final HTTPRepositoryConnection conn;
 
-	public HTTPBooleanQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString,
-			String baseURI)
-	{
+	public HTTPBooleanQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString, String baseURI) {
 		super(conn.getSesameSession(), ql, queryString, baseURI);
 		this.conn = conn;
 	}
 
 	@Override
-	public boolean evaluate()
-		throws QueryEvaluationException
-	{
+	public boolean evaluate() throws QueryEvaluationException {
 		SPARQLProtocolSession client = getHttpClient();
 
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendBooleanQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), getBindingsArray());
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
 	}

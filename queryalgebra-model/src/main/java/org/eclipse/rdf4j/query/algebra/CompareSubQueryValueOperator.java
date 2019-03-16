@@ -42,9 +42,7 @@ public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		arg.visit(visitor);
 		super.visitChildren(visitor);
 	}
@@ -52,9 +50,8 @@ public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
-			setArg((ValueExpr)replacement);
-		}
-		else {
+			setArg((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -62,7 +59,7 @@ public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof CompareSubQueryValueOperator && super.equals(other)) {
-			CompareSubQueryValueOperator o = (CompareSubQueryValueOperator)other;
+			CompareSubQueryValueOperator o = (CompareSubQueryValueOperator) other;
 			return arg.equals(o.getArg());
 		}
 
@@ -76,7 +73,7 @@ public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator
 
 	@Override
 	public CompareSubQueryValueOperator clone() {
-		CompareSubQueryValueOperator clone = (CompareSubQueryValueOperator)super.clone();
+		CompareSubQueryValueOperator clone = (CompareSubQueryValueOperator) super.clone();
 		clone.setArg(getArg().clone());
 		return clone;
 	}

@@ -23,16 +23,12 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (source != null) {
 			source.visit(visitor);
 		}
@@ -45,12 +41,10 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (source == current) {
-			setSource((ValueConstant)current);
-		}
-		else if (graph == current) {
-			setGraph((ValueConstant)current);
-		}
-		else {
+			setSource((ValueConstant) current);
+		} else if (graph == current) {
+			setGraph((ValueConstant) current);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -58,7 +52,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Load) {
-			Load o = (Load)other;
+			Load o = (Load) other;
 			return silent == o.silent && nullEquals(source, o.source) && nullEquals(graph, o.graph);
 		}
 		return false;
@@ -87,8 +81,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param graph
-	 *        The graph to set.
+	 * @param graph The graph to set.
 	 */
 	public void setGraph(ValueConstant graph) {
 		this.graph = graph;
@@ -102,8 +95,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param source
-	 *        The source to set.
+	 * @param source The source to set.
 	 */
 	public void setSource(ValueConstant source) {
 		this.source = source;
@@ -117,8 +109,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param silent
-	 *        The silent to set.
+	 * @param silent The silent to set.
 	 */
 	public void setSilent(boolean silent) {
 		this.silent = silent;

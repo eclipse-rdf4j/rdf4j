@@ -24,8 +24,7 @@ public class ReducedIteration<E, X extends Exception> extends FilterIteration<E,
 	protected boolean accept(E nextObject) {
 		if (nextObject.equals(previousObject)) {
 			return false;
-		}
-		else {
+		} else {
 			previousObject = nextObject;
 			return true;
 		}

@@ -23,16 +23,16 @@ import org.eclipse.rdf4j.model.URI;
 public class URIUtil {
 
 	/**
-	 * Reserved characters: their usage within the URI component is limited to their reserved purpose. If the
-	 * data for a URI component would conflict with the reserved purpose, then the conflicting data must be
-	 * escaped before forming the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
+	 * Reserved characters: their usage within the URI component is limited to their reserved purpose. If the data for a
+	 * URI component would conflict with the reserved purpose, then the conflicting data must be escaped before forming
+	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
 	 */
 	private static final Set<Character> reserved = new HashSet<Character>(
 			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
 
 	/**
-	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur
-	 * in unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
+	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
+	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
 	private static final Set<Character> mark = new HashSet<Character>(
 			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
@@ -41,29 +41,27 @@ public class URIUtil {
 	 * Regular expression pattern for matching unicode control characters.
 	 */
 	private static final Pattern unicodeControlCharPattern = Pattern.compile(".*[\u0000-\u001F\u007F-\u009F].*");
-	
+
 	/**
-	 * Finds the index of the first local name character in an (non-relative) URI. This index is determined by
-	 * the following the following steps:
+	 * Finds the index of the first local name character in an (non-relative) URI. This index is determined by the
+	 * following the following steps:
 	 * <ul>
 	 * <li>Find the <em>first</em> occurrence of the '#' character,
 	 * <li>If this fails, find the <em>last</em> occurrence of the '/' character,
 	 * <li>If this fails, find the <em>last</em> occurrence of the ':' character.
 	 * <li>Add <tt>1<tt> to the found index and return this value.
 	 * </ul>
-	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one ':'
-	 * character to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
+	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one ':' character
+	 * to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
 	 * {@link IllegalArgumentException}.
 	 * 
-	 * @param uri
-	 *        A URI string.
-	 * @return The index of the first local name character in the URI string. Note that this index does not
-	 *         reference an actual character if the algorithm determines that there is not local name. In that
-	 *         case, the return index is equal to the length of the URI string.
-	 * @throws IllegalArgumentException
-	 *         If the supplied URI string doesn't contain any of the separator characters. Every legal
-	 *         (non-relative) URI contains at least one ':' character to seperate the scheme from the rest of
-	 *         the URI.
+	 * @param uri A URI string.
+	 * @return The index of the first local name character in the URI string. Note that this index does not reference an
+	 *         actual character if the algorithm determines that there is not local name. In that case, the return index
+	 *         is equal to the length of the URI string.
+	 * @throws IllegalArgumentException If the supplied URI string doesn't contain any of the separator characters.
+	 *                                  Every legal (non-relative) URI contains at least one ':' character to seperate
+	 *                                  the scheme from the rest of the URI.
 	 */
 	public static int getLocalNameIndex(String uri) {
 		int separatorIdx = uri.indexOf('#');
@@ -84,13 +82,11 @@ public class URIUtil {
 	}
 
 	/**
-	 * Checks whether the URI consisting of the specified namespace and local name has been split correctly
-	 * according to the URI splitting rules specified in {@link URI}.
+	 * Checks whether the URI consisting of the specified namespace and local name has been split correctly according to
+	 * the URI splitting rules specified in {@link URI}.
 	 * 
-	 * @param namespace
-	 *        The URI's namespace, must not be <tt>null</tt>.
-	 * @param localName
-	 *        The URI's local name, must not be <tt>null</tt>.
+	 * @param namespace The URI's namespace, must not be <tt>null</tt>.
+	 * @param localName The URI's local name, must not be <tt>null</tt>.
 	 * @return <tt>true</tt> if the specified URI has been correctly split into a namespace and local name,
 	 *         <tt>false</tt> otherwise.
 	 * @see URI
@@ -110,12 +106,10 @@ public class URIUtil {
 		if (lastNsChar == '#') {
 			// correct split if namespace has no other '#'
 			return namespace.lastIndexOf('#', nsLength - 2) == -1 && localName.indexOf('#') == -1;
-		}
-		else if (lastNsChar == '/') {
+		} else if (lastNsChar == '/') {
 			// correct split if local name has no '/' and URI contains no '#'
 			return localName.indexOf('/') == -1 && localName.indexOf('#') == -1 && namespace.indexOf('#') == -1;
-		}
-		else if (lastNsChar == ':') {
+		} else if (lastNsChar == ':') {
 			// correct split if local name has no ':' and URI contains no '#' or
 			// '/'
 			return localName.indexOf(':') == -1 && localName.indexOf('#') == -1 && localName.indexOf('/') == -1
@@ -127,14 +121,14 @@ public class URIUtil {
 
 	/**
 	 * Verifies that the supplied string is a valid RDF (1.0) URI reference, as defined in
-	 * <a href= "http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref" >section 6.4 of the
-	 * RDF Concepts and Abstract Syntax specification</a> (RDF 1.0 Recommendation of February 10, 2004).
+	 * <a href= "http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref" >section 6.4 of the RDF
+	 * Concepts and Abstract Syntax specification</a> (RDF 1.0 Recommendation of February 10, 2004).
 	 * <p>
 	 * An RDF URI reference is valid if it is a Unicode string that:
 	 * <ul>
 	 * <li>does not contain any control characters ( #x00 - #x1F, #x7F-#x9F)
-	 * <li>and would produce a valid URI character sequence (per RFC2396 , section 2.1) representing an absolute
-	 * URI with optional fragment identifier when subjected to the encoding described below
+	 * <li>and would produce a valid URI character sequence (per RFC2396 , section 2.1) representing an absolute URI
+	 * with optional fragment identifier when subjected to the encoding described below
 	 * </ul>
 	 * The encoding consists of:
 	 * <ol>
@@ -142,12 +136,11 @@ public class URIUtil {
 	 * <li>%-escaping octets that do not correspond to permitted US-ASCII characters.
 	 * </ol>
 	 * 
-	 * @param uriRef
-	 *        a string representing an RDF URI reference.
-	 * @return <code>true</code> iff the supplied string is a syntactically valid RDF URI reference,
-	 *         <code>false</code> otherwise.
-	 * @see <a href="http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref">section 6.4 of
-	 *      the RDF Concepts and Abstract Syntax specification</a>
+	 * @param uriRef a string representing an RDF URI reference.
+	 * @return <code>true</code> iff the supplied string is a syntactically valid RDF URI reference, <code>false</code>
+	 *         otherwise.
+	 * @see <a href="http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref">section 6.4 of the RDF
+	 *      Concepts and Abstract Syntax specification</a>
 	 * @see <a href="http://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a>
 	 * @see <a href="http://www.ietf.org/rfc/rfc2396.txt">RFC 2396</a>
 	 */
@@ -160,15 +153,13 @@ public class URIUtil {
 			final String escaped = escapeExcludedChars(uriRef);
 			try {
 				/*
-				 * NOTE we use java.net.URI parsing to check compliance to the RFC, which is almost, but not
-				 * completely, in alignment with RFC 2396, and has not been updated for compatibility with RFC 3986.
-				 * See the java.net.URI javadoc ( https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for
-				 * details."
+				 * NOTE we use java.net.URI parsing to check compliance to the RFC, which is almost, but not completely,
+				 * in alignment with RFC 2396, and has not been updated for compatibility with RFC 3986. See the
+				 * java.net.URI javadoc ( https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for details."
 				 */
 				final java.net.URI uri = new java.net.URI(escaped);
 				valid = uri.isAbsolute();
-			}
-			catch (URISyntaxException e) {
+			} catch (URISyntaxException e) {
 				valid = false;
 			}
 		}
@@ -177,13 +168,11 @@ public class URIUtil {
 	}
 
 	/**
-	 * Escapes any character that is not either reserved or in the legal range of unreserved characters,
-	 * according to RFC 2396.
+	 * Escapes any character that is not either reserved or in the legal range of unreserved characters, according to
+	 * RFC 2396.
 	 * 
-	 * @param unescaped
-	 *        a (relative or absolute) uri reference.
-	 * @return a (relative or absolute) uri reference with all characters that can not appear as-is in a URI
-	 *         %-escaped.
+	 * @param unescaped a (relative or absolute) uri reference.
+	 * @return a (relative or absolute) uri reference with all characters that can not appear as-is in a URI %-escaped.
 	 * @see <a href="http://www.ietf.org/rfc/rfc2396.txt">RFC 2396</a>
 	 */
 	private static String escapeExcludedChars(String unescaped) {
@@ -191,9 +180,8 @@ public class URIUtil {
 		for (int i = 0; i < unescaped.length(); i++) {
 			char c = unescaped.charAt(i);
 			if (!isUnreserved(c) && !reserved.contains(c)) {
-				escaped.append("%" + Integer.toHexString((int)c));
-			}
-			else {
+				escaped.append("%" + Integer.toHexString((int) c));
+			} else {
 				escaped.append(c);
 			}
 		}
@@ -201,11 +189,10 @@ public class URIUtil {
 	}
 
 	/**
-	 * A character is unreserved according to RFC 2396 if it is either an alphanumeric char or a punctuation
-	 * mark.
+	 * A character is unreserved according to RFC 2396 if it is either an alphanumeric char or a punctuation mark.
 	 */
 	private static boolean isUnreserved(char c) {
-		final int n = (int)c;
+		final int n = (int) c;
 		// check if alphanumeric
 		boolean unreserved = (47 < n && n < 58) || (96 < n && n < 123) || (64 < n && n < 91);
 		if (!unreserved) {

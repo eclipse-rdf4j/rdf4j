@@ -17,22 +17,22 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class SP {
 
 	/**
-	 * http://spinrdf.org/sp An RDF Schema to syntactically represent SPARQL queries (including SPARQL UPDATE)
-	 * as RDF triples.
+	 * http://spinrdf.org/sp An RDF Schema to syntactically represent SPARQL queries (including SPARQL UPDATE) as RDF
+	 * triples.
 	 */
 	public static final String NAMESPACE = "http://spinrdf.org/sp#";
 
 	public static final String PREFIX = "sp";
 
 	/**
-	 * http://spinrdf.org/sp#Path The base class of SPARQL property path expressions. Paths are used by
-	 * sp:TriplePath triple paths.
+	 * http://spinrdf.org/sp#Path The base class of SPARQL property path expressions. Paths are used by sp:TriplePath
+	 * triple paths.
 	 */
 	public static final IRI PATH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#SystemClass An "artificial" root class that groups all SP classes. This makes
-	 * them look much less overwhelming in UI tools. Typical end users don't need to see those classes anyway.
+	 * http://spinrdf.org/sp#SystemClass An "artificial" root class that groups all SP classes. This makes them look
+	 * much less overwhelming in UI tools. Typical end users don't need to see those classes anyway.
 	 */
 	public static final IRI SYSTEM_CLASS;
 
@@ -42,9 +42,8 @@ public class SP {
 	public static final IRI ASC_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#OrderByCondition An abstract base class for ascending or descending order
-	 * conditions. Instances of this class (typically bnodes) must have a value for expression to point to the
-	 * actual values.
+	 * http://spinrdf.org/sp#OrderByCondition An abstract base class for ascending or descending order conditions.
+	 * Instances of this class (typically bnodes) must have a value for expression to point to the actual values.
 	 */
 	public static final IRI ORDER_BY_CONDITION_CLASS;
 
@@ -54,8 +53,8 @@ public class SP {
 	public static final IRI SUM_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Aggregation Base class of aggregation types (not part of the SPARQL 1.0 standard
-	 * but supported by ARQ and other engines).
+	 * http://spinrdf.org/sp#Aggregation Base class of aggregation types (not part of the SPARQL 1.0 standard but
+	 * supported by ARQ and other engines).
 	 */
 	public static final IRI AGGREGATION_CLASS;
 
@@ -80,14 +79,14 @@ public class SP {
 	public static final IRI ELEMENT_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Triple A base class for TriplePattern and TripleTemplate. This basically
-	 * specifies that subject, predicate and object must be present.
+	 * http://spinrdf.org/sp#Triple A base class for TriplePattern and TripleTemplate. This basically specifies that
+	 * subject, predicate and object must be present.
 	 */
 	public static final IRI TRIPLE_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Load A LOAD Update operation. The document to load is specified using
-	 * sp:document, and the (optional) target graph using sp:into.
+	 * http://spinrdf.org/sp#Load A LOAD Update operation. The document to load is specified using sp:document, and the
+	 * (optional) target graph using sp:into.
 	 */
 	public static final IRI LOAD_CLASS;
 
@@ -108,8 +107,8 @@ public class SP {
 	public static final IRI DESC_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#TripleTemplate A prototypical triple used as template in the head of a Construct
-	 * query. May contain variables.
+	 * http://spinrdf.org/sp#TripleTemplate A prototypical triple used as template in the head of a Construct query. May
+	 * contain variables.
 	 */
 	public static final IRI TRIPLE_TEMPLATE_CLASS;
 
@@ -119,24 +118,24 @@ public class SP {
 	public static final IRI MAX_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of
-	 * SPARQL UPDATE language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are
-	 * stored in sp:insertPattern. The WHERE clause is represented using sp:where.
+	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of SPARQL UPDATE
+	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+	 * sp:insertPattern. The WHERE clause is represented using sp:where.
 	 */
 	@Deprecated
 	public static final IRI INSERT_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Modify Represents a MODIFY (part of SPARQL UPDATE language). The graph IRIs are
-	 * stored in sp:graphIRI. The template patterns are stored in sp:deletePattern and sp:insertPattern. The
-	 * WHERE clause is represented using sp:where.
+	 * http://spinrdf.org/sp#Modify Represents a MODIFY (part of SPARQL UPDATE language). The graph IRIs are stored in
+	 * sp:graphIRI. The template patterns are stored in sp:deletePattern and sp:insertPattern. The WHERE clause is
+	 * represented using sp:where.
 	 */
 	public static final IRI MODIFY_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of
-	 * SPARQL UPDATE language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are
-	 * stored in sp:insertPattern. The WHERE clause is represented using sp:where.
+	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of SPARQL UPDATE
+	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+	 * sp:insertPattern. The WHERE clause is represented using sp:where.
 	 */
 	@Deprecated
 	public static final IRI Insert;
@@ -147,9 +146,8 @@ public class SP {
 	public static final IRI AVG_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#TriplePath Similar to a TriplePattern, but with a path expression as its
-	 * predicate. For example, this can be used to express transitive sub-class relationships (?subClass
-	 * rdfs:subClassOf* ?superClass).
+	 * http://spinrdf.org/sp#TriplePath Similar to a TriplePattern, but with a path expression as its predicate. For
+	 * example, this can be used to express transitive sub-class relationships (?subClass rdfs:subClassOf* ?superClass).
 	 */
 	public static final IRI TRIPLE_PATH_CLASS;
 
@@ -178,29 +176,28 @@ public class SP {
 	public static final IRI Let;
 
 	/**
-	 * http://spinrdf.org/sp#ElementList A list of Elements. This class is never instantiated directly as SPIN
-	 * will use plain rdf:Lists to store element lists.
+	 * http://spinrdf.org/sp#ElementList A list of Elements. This class is never instantiated directly as SPIN will use
+	 * plain rdf:Lists to store element lists.
 	 */
 	public static final IRI ELEMENT_LIST_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#SubQuery A nested SELECT query inside of an element list. The query is stored in
-	 * sp:query.
+	 * http://spinrdf.org/sp#SubQuery A nested SELECT query inside of an element list. The query is stored in sp:query.
 	 */
 	public static final IRI SUB_QUERY_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of
-	 * SPARQL UPDATE language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are
-	 * stored in sp:deletePattern. The WHERE clause is represented using sp:where.
+	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of SPARQL UPDATE
+	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+	 * sp:deletePattern. The WHERE clause is represented using sp:where.
 	 */
 	@Deprecated
 	public static final IRI DELETE_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of
-	 * SPARQL UPDATE language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are
-	 * stored in sp:deletePattern. The WHERE clause is represented using sp:where.
+	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of SPARQL UPDATE
+	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+	 * sp:deletePattern. The WHERE clause is represented using sp:where.
 	 */
 	@Deprecated
 	public static final IRI Delete;
@@ -221,8 +218,8 @@ public class SP {
 	public static final IRI ALT_PATH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Count Counts the number of times a variable is used. The variable is stored in
-	 * the variable property. This might be left blank to indicate COUNT(*).
+	 * http://spinrdf.org/sp#Count Counts the number of times a variable is used. The variable is stored in the variable
+	 * property. This might be left blank to indicate COUNT(*).
 	 */
 	public static final IRI COUNT_CLASS;
 
@@ -232,28 +229,27 @@ public class SP {
 	public static final IRI REVERSE_PATH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Construct A CONSTRUCT-type query that can be used to construct new triples from
-	 * template triples (head) that use variable bindings from the match patterns (body).
+	 * http://spinrdf.org/sp#Construct A CONSTRUCT-type query that can be used to construct new triples from template
+	 * triples (head) that use variable bindings from the match patterns (body).
 	 */
 	public static final IRI CONSTRUCT_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Query Abstract base class of the various types of supported queries. Common to
-	 * all types of queries is that they can have a body ("WHERE clause").
+	 * http://spinrdf.org/sp#Query Abstract base class of the various types of supported queries. Common to all types of
+	 * queries is that they can have a body ("WHERE clause").
 	 */
 	public static final IRI QUERY_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Variable A variable mentioned in a Triple or expression. Variables are often
-	 * blank nodes with the variable name stored in ts:name. Variables can also be supplied with a IRI in
-	 * which case the system will attempt to reuse the same variable instance across multiple query
-	 * definitions.
+	 * http://spinrdf.org/sp#Variable A variable mentioned in a Triple or expression. Variables are often blank nodes
+	 * with the variable name stored in ts:name. Variables can also be supplied with a IRI in which case the system will
+	 * attempt to reuse the same variable instance across multiple query definitions.
 	 */
 	public static final IRI VARIABLE_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Ask An ASK query that returns true if the condition in the body is met by at
-	 * least one result set.
+	 * http://spinrdf.org/sp#Ask An ASK query that returns true if the condition in the body is met by at least one
+	 * result set.
 	 */
 	public static final IRI ASK_CLASS;
 
@@ -263,8 +259,8 @@ public class SP {
 	public static final IRI MOD_PATH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Create An Update operation that creates a new empty graph with a name specified
-	 * by sp:graphIRI. May have sp:silent set to true.
+	 * http://spinrdf.org/sp#Create An Update operation that creates a new empty graph with a name specified by
+	 * sp:graphIRI. May have sp:silent set to true.
 	 */
 	public static final IRI CREATE_CLASS;
 
@@ -274,8 +270,8 @@ public class SP {
 	public static final IRI NAMED_GRAPH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Command A shared superclass for sp:Query and sp:Update that can be used to
-	 * specify that the range of property can be either one.
+	 * http://spinrdf.org/sp#Command A shared superclass for sp:Query and sp:Update that can be used to specify that the
+	 * range of property can be either one.
 	 */
 	public static final IRI COMMAND_CLASS;
 
@@ -287,9 +283,9 @@ public class SP {
 	public static final IRI NOT_EXISTS_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Drop An Update operation that removes a specified graph from the Graph Store.
-	 * Must specify the graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag,
-	 * encoded using sp:silent.
+	 * http://spinrdf.org/sp#Drop An Update operation that removes a specified graph from the Graph Store. Must specify
+	 * the graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag, encoded using
+	 * sp:silent.
 	 */
 	public static final IRI DROP_CLASS;
 
@@ -300,14 +296,14 @@ public class SP {
 	public static final IRI INSERT_DATA_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#DeleteWhere An Update operation where the triples matched by the WHERE clause
-	 * (sp:where) will be the triples deleted.
+	 * http://spinrdf.org/sp#DeleteWhere An Update operation where the triples matched by the WHERE clause (sp:where)
+	 * will be the triples deleted.
 	 */
 	public static final IRI DELETE_WHERE_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Service A SERVICE call that matches a nested sub-pattern against a SPARQL end
-	 * point specified by a IRI.
+	 * http://spinrdf.org/sp#Service A SERVICE call that matches a nested sub-pattern against a SPARQL end point
+	 * specified by a IRI.
 	 */
 	public static final IRI SERVICE_CLASS;
 
@@ -327,9 +323,8 @@ public class SP {
 	public static final IRI MINUS_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#Clear An Update operation that removes all triples from a specified graph. Must
-	 * specify the graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag,
-	 * encoded using sp:silent.
+	 * http://spinrdf.org/sp#Clear An Update operation that removes all triples from a specified graph. Must specify the
+	 * graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag, encoded using sp:silent.
 	 */
 	public static final IRI CLEAR_CLASS;
 
@@ -344,8 +339,8 @@ public class SP {
 	public static final IRI SEQ_PATH_CLASS;
 
 	/**
-	 * http://spinrdf.org/sp#arg5 The fifth argument of a function call. Further arguments are not common in
-	 * SPARQL, therefore no sp:arg6, etc are defined here. However, they can be created if needed.
+	 * http://spinrdf.org/sp#arg5 The fifth argument of a function call. Further arguments are not common in SPARQL,
+	 * therefore no sp:arg6, etc are defined here. However, they can be created if needed.
 	 */
 	public static final IRI ARG5_PROPERTY;
 
@@ -360,8 +355,8 @@ public class SP {
 	public static final IRI PATH1_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#systemProperty An abstract base proprerty that groups together the SP system
-	 * properties. Users typically don't need to see them anyway.
+	 * http://spinrdf.org/sp#systemProperty An abstract base proprerty that groups together the SP system properties.
+	 * Users typically don't need to see them anyway.
 	 */
 	public static final IRI SYSTEM_PROPERTY;
 
@@ -402,21 +397,19 @@ public class SP {
 	public static final IRI AS_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#distinct A marker property to indicate that a Select query is of type SELECT
-	 * DISTINCT.
+	 * http://spinrdf.org/sp#distinct A marker property to indicate that a Select query is of type SELECT DISTINCT.
 	 */
 	public static final IRI DISTINCT_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#path2 The second child path of a property path. Used by sp:AltPath and
-	 * sp:SeqPath.
+	 * http://spinrdf.org/sp#path2 The second child path of a property path. Used by sp:AltPath and sp:SeqPath.
 	 */
 	public static final IRI PATH2_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#orderBy Links a query with an ORDER BY clause where the values are rdf:List
-	 * containing OrderByConditions or expressions. While the domain of this property is sp:Query, only
-	 * Describe and Select queries can have values of it.
+	 * http://spinrdf.org/sp#orderBy Links a query with an ORDER BY clause where the values are rdf:List containing
+	 * OrderByConditions or expressions. While the domain of this property is sp:Query, only Describe and Select queries
+	 * can have values of it.
 	 */
 	public static final IRI ORDER_BY_PROPERTY;
 
@@ -460,14 +453,12 @@ public class SP {
 	public static final IRI USING_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#templates Points to a list of TripleTemplates that form the head of a Construct
-	 * query.
+	 * http://spinrdf.org/sp#templates Points to a list of TripleTemplates that form the head of a Construct query.
 	 */
 	public static final IRI TEMPLATES_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#resultNodes Contains the result nodes (IRI resources or Variables) of a Describe
-	 * query.
+	 * http://spinrdf.org/sp#resultNodes Contains the result nodes (IRI resources or Variables) of a Describe query.
 	 */
 	public static final IRI RESULT_NODES_PROPERTY;
 
@@ -486,8 +477,8 @@ public class SP {
 	public static final IRI REDUCED_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#subPath The child path of a property path expression. This is used by ReversePath
-	 * and ModPath.
+	 * http://spinrdf.org/sp#subPath The child path of a property path expression. This is used by ReversePath and
+	 * ModPath.
 	 */
 	public static final IRI SUB_PATH_PROPERTY;
 
@@ -499,8 +490,8 @@ public class SP {
 	public static final IRI WITH_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#serviceURI Used by sp:Service to specify the IRI of the SPARQL end point to
-	 * invoke. Must point to a IRI node.
+	 * http://spinrdf.org/sp#serviceURI Used by sp:Service to specify the IRI of the SPARQL end point to invoke. Must
+	 * point to a IRI node.
 	 */
 	public static final IRI SERVICE_URI_PROPERTY;
 
@@ -520,8 +511,8 @@ public class SP {
 	public static final IRI RESULT_VARIABLES_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#text Can be attached to sp:Queries to store a textual representation of the
-	 * query. This can be useful for tools that do not have a complete SPIN Syntax parser available.
+	 * http://spinrdf.org/sp#text Can be attached to sp:Queries to store a textual representation of the query. This can
+	 * be useful for tools that do not have a complete SPIN Syntax parser available.
 	 */
 	public static final IRI TEXT_PROPERTY;
 
@@ -545,8 +536,8 @@ public class SP {
 	public static final IRI NODE_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#fromNamed Specifies a named RDF Dataset used by a Query (FROM NAMED syntax in
-	 * SPARQL). Values of this property must be IRI resources.
+	 * http://spinrdf.org/sp#fromNamed Specifies a named RDF Dataset used by a Query (FROM NAMED syntax in SPARQL).
+	 * Values of this property must be IRI resources.
 	 */
 	public static final IRI FROM_NAMED_PROPERTY;
 
@@ -566,8 +557,8 @@ public class SP {
 	public static final IRI EXPRESSION_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#deletePattern Points to a list of sp:TripleTemplates and sp:NamedGraphs in a
-	 * modify operation.
+	 * http://spinrdf.org/sp#deletePattern Points to a list of sp:TripleTemplates and sp:NamedGraphs in a modify
+	 * operation.
 	 */
 	public static final IRI DELETE_PATTERN_PROPERTY;
 
@@ -582,16 +573,15 @@ public class SP {
 	public static final IRI OFFSET_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#from Specifies an RDF Dataset used by a Query (FROM syntax in SPARQL). Values of
-	 * this property must be IRI resources.
+	 * http://spinrdf.org/sp#from Specifies an RDF Dataset used by a Query (FROM syntax in SPARQL). Values of this
+	 * property must be IRI resources.
 	 */
 	public static final IRI FROM_PROPERTY;
 
 	public static final IRI MOD_MIN_PROPERTY;
 
 	/**
-	 * http://spinrdf.org/sp#insertPattern Points to a list of sp:TripleTemplates or sp:NamedGraphs in a
-	 * modify command.
+	 * http://spinrdf.org/sp#insertPattern Points to a list of sp:TripleTemplates or sp:NamedGraphs in a modify command.
 	 */
 	public static final IRI INSERT_PATTERN_PROPERTY;
 

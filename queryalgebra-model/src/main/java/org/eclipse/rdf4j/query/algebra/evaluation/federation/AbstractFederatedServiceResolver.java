@@ -52,8 +52,7 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 		if (service != null && service.isInitialized()) {
 			try {
 				service.shutdown();
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				// TODO issue a warning, otherwise ignore
 			}
 		}
@@ -63,15 +62,12 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there is no service registered for
 	 * serviceUrl, a new {@link FederatedService} is created and registered.
 	 * 
-	 * @param serviceUrl
-	 *        locator for the federation service
+	 * @param serviceUrl locator for the federation service
 	 * @return the {@link FederatedService}, created fresh if necessary
 	 * @throws RepositoryException
 	 */
 	@Override
-	public FederatedService getService(String serviceUrl)
-		throws QueryEvaluationException
-	{
+	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 		FederatedService service;
 		synchronized (endpointToService) {
 			service = endpointToService.get(serviceUrl);
@@ -89,8 +85,7 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	/**
 	 * Verify if a registered {@link FederatedService} exists for the given serviceUrul.
 	 * 
-	 * @param serviceUrl
-	 *        locator for the federation service.
+	 * @param serviceUrl locator for the federation service.
 	 * @return {@code true} iff the FederatedService has been registered, {@code false} otherwise.
 	 */
 	public boolean hasService(String serviceUrl) {
@@ -103,21 +98,18 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	 * Create a new {@link FederatedService} for the given serviceUrl. This method is invoked, if no
 	 * {@link FederatedService} has been created yet for the serviceUrl.
 	 * 
-	 * @param serviceUrl
-	 *        the service IRI
+	 * @param serviceUrl the service IRI
 	 * @return a non-null {@link FederatedService}
 	 * @throws QueryEvaluationException
 	 */
-	protected abstract FederatedService createService(String serviceUrl)
-		throws QueryEvaluationException;
+	protected abstract FederatedService createService(String serviceUrl) throws QueryEvaluationException;
 
 	public void unregisterAll() {
 		synchronized (endpointToService) {
 			for (FederatedService service : endpointToService.values()) {
 				try {
 					service.shutdown();
-				}
-				catch (QueryEvaluationException e) {
+				} catch (QueryEvaluationException e) {
 					// TODO issue a warning, otherwise ignore
 				}
 			}

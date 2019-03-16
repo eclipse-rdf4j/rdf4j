@@ -24,8 +24,7 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
 	 * 
-	 * @param capacity
-	 *        the capacity of this queue
+	 * @param capacity the capacity of this queue
 	 */
 	public QueueCursor(int capacity) {
 		this(capacity, false);
@@ -34,11 +33,9 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
 	 * 
-	 * @param capacity
-	 *        the capacity of this queue
-	 * @param fair
-	 *        if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
-	 *        in FIFO order; if <tt>false</tt> the access order is unspecified.
+	 * @param capacity the capacity of this queue
+	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
+	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
 	public QueueCursor(int capacity, boolean fair) {
 		super(capacity, fair);
@@ -46,12 +43,11 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given {@link BlockingQueue} as its backing queue.<br>
-	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This
-	 * method only enables the default {@link ArrayBlockingQueue} to be overridden.
+	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
+	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
 	 * 
-	 * @param queue
-	 *        A BlockingQueue that is not used in other locations, but will be used as the backing Queue
-	 *        implementation for this cursor.
+	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+	 *              implementation for this cursor.
 	 */
 	public QueueCursor(BlockingQueue<E> queue) {
 		super(queue);

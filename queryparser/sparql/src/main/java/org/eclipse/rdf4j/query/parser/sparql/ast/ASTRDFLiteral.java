@@ -22,9 +22,7 @@ public class ASTRDFLiteral extends ASTRDFValue {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -37,12 +35,12 @@ public class ASTRDFLiteral extends ASTRDFValue {
 	}
 
 	public ASTString getLabel() {
-		return (ASTString)children.get(0);
+		return (ASTString) children.get(0);
 	}
 
 	public ASTIRI getDatatype() {
 		if (children.size() >= 2) {
-			return (ASTIRI)children.get(1);
+			return (ASTIRI) children.get(1);
 		}
 		return null;
 	}

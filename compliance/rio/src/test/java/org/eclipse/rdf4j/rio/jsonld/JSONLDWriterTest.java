@@ -59,15 +59,11 @@ public class JSONLDWriterTest extends RDFWriterTest {
 	@Test
 	@Override
 	@Ignore("TODO: Determine why this test is breaking")
-	public void testIllegalPrefix()
-		throws RDFHandlerException, RDFParseException, IOException
-	{
+	public void testIllegalPrefix() throws RDFHandlerException, RDFParseException, IOException {
 	}
 
 	@Test
-	public void testRoundTripNamespaces()
-		throws Exception
-	{
+	public void testRoundTripNamespaces() throws Exception {
 		String exNs = "http://example.org/";
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");

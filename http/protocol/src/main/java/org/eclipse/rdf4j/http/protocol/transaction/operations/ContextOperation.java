@@ -39,7 +39,7 @@ public abstract class ContextOperation implements TransactionOperation {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ContextOperation) {
-			ContextOperation o = (ContextOperation)other;
+			ContextOperation o = (ContextOperation) other;
 			return Arrays.deepEquals(getContexts(), o.getContexts());
 		}
 

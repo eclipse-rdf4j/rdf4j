@@ -31,9 +31,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	 */
 	@Before
 	@Override
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		super.setUp();
 	}
 
@@ -42,9 +40,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	 */
 	@After
 	@Override
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		super.tearDown();
 	}
 
@@ -78,8 +74,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(java.lang.String, java.lang.String)}
-	 * .
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(java.lang.String, java.lang.String)} .
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -219,8 +214,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		for (int i = 0; i < COUNT; i++) {
 			// Add many statements with the same object URI
 			model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:" + i % 10000),
-					vf.createIRI("urn:test:uri:predicate:" + (i % 200)),
-					vf.createIRI("urn:test:object:uri:single")));
+					vf.createIRI("urn:test:uri:predicate:" + (i % 200)), vf.createIRI("urn:test:object:uri:single")));
 		}
 
 		long start = System.nanoTime();
@@ -236,21 +230,19 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	@Test
 	public final void testPerfObjectURIMultipleAddedFirst() {
 		Model model = getNewEmptyModel();
-		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"),
-				vf.createIRI("urn:test:uri:predicate:1"), vf.createIRI("urn:test:object:uri:other")));
+		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"), vf.createIRI("urn:test:uri:predicate:1"),
+				vf.createIRI("urn:test:object:uri:other")));
 		for (int i = 0; i < COUNT; i++) {
 			// Add many statements with the same object URI
 			model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:" + i % 10000),
-					vf.createIRI("urn:test:uri:predicate:" + (i % 200)),
-					vf.createIRI("urn:test:object:uri:single")));
+					vf.createIRI("urn:test:uri:predicate:" + (i % 200)), vf.createIRI("urn:test:object:uri:single")));
 		}
 
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
 			model.objectIRI();
-		}
-		finally {
+		} finally {
 			System.out.println("testPerfObjectURIMultipleAddedFirst: " + (System.nanoTime() - start));
 		}
 	}
@@ -264,18 +256,16 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		for (int i = 0; i < COUNT; i++) {
 			// Add many statements with the same object URI
 			model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:" + i % 10000),
-					vf.createIRI("urn:test:uri:predicate:" + (i % 200)),
-					vf.createIRI("urn:test:object:uri:single")));
+					vf.createIRI("urn:test:uri:predicate:" + (i % 200)), vf.createIRI("urn:test:object:uri:single")));
 		}
-		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"),
-				vf.createIRI("urn:test:uri:predicate:1"), vf.createIRI("urn:test:object:uri:other")));
+		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"), vf.createIRI("urn:test:uri:predicate:1"),
+				vf.createIRI("urn:test:object:uri:other")));
 
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
 			model.objectIRI();
-		}
-		finally {
+		} finally {
 			System.out.println("testPerfObjectURIMultipleAddedLast: " + (System.nanoTime() - start));
 		}
 	}
@@ -313,21 +303,19 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	@Test
 	public final void testPerfAnObjectURIMultipleAddedFirst() {
 		Model model = getNewEmptyModel();
-		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"),
-				vf.createIRI("urn:test:uri:predicate:1"), vf.createIRI("urn:test:object:uri:other")));
+		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"), vf.createIRI("urn:test:uri:predicate:1"),
+				vf.createIRI("urn:test:object:uri:other")));
 		for (int i = 0; i < COUNT; i++) {
 			// Add many statements with the same object URI
 			model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:" + i % 10000),
-					vf.createIRI("urn:test:uri:predicate:" + (i % 200)),
-					vf.createIRI("urn:test:object:uri:single")));
+					vf.createIRI("urn:test:uri:predicate:" + (i % 200)), vf.createIRI("urn:test:object:uri:single")));
 		}
 
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
 			model.objectURI();
-		}
-		finally {
+		} finally {
 			System.out.println("testPerfAnObjectURIMultipleAddedFirst: " + (System.nanoTime() - start));
 		}
 	}
@@ -341,18 +329,16 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		for (int i = 0; i < COUNT; i++) {
 			// Add many statements with the same object URI
 			model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:" + i % 10000),
-					vf.createIRI("urn:test:uri:predicate:" + (i % 200)),
-					vf.createIRI("urn:test:object:uri:single")));
+					vf.createIRI("urn:test:uri:predicate:" + (i % 200)), vf.createIRI("urn:test:object:uri:single")));
 		}
-		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"),
-				vf.createIRI("urn:test:uri:predicate:1"), vf.createIRI("urn:test:object:uri:other")));
+		model.add(vf.createStatement(vf.createIRI("urn:test:uri:subject:1"), vf.createIRI("urn:test:uri:predicate:1"),
+				vf.createIRI("urn:test:object:uri:other")));
 
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
 			model.objectURI();
-		}
-		finally {
+		} finally {
 			System.out.println("testPerfAnObjectURIMultipleAddedLast: " + (System.nanoTime() - start));
 		}
 	}

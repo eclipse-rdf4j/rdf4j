@@ -33,44 +33,34 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	@Override
-	public GraphQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			// TODO getQueryString() already inserts bindings, use emptybindingset
 			// as last argument?
-			return client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset,
-					getIncludeInferred(), getMaxExecutionTime(), getBindingsArray());
-		}
-		catch (IOException e) {
+			return client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), getBindingsArray());
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler)
-		throws QueryEvaluationException, RDFHandlerException
-	{
+	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), handler, getBindingsArray());
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}

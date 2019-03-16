@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * A type-safe enumeration for RDF query languages such as {@link #SPARQL} and {@link #SERQL SeRQL}.
- * QueryLanguage objects are identified by their name, which is treated in as case-insensitive way.
+ * A type-safe enumeration for RDF query languages such as {@link #SPARQL} and {@link #SERQL SeRQL}. QueryLanguage
+ * objects are identified by their name, which is treated in as case-insensitive way.
  */
 public class QueryLanguage {
 
@@ -31,16 +31,15 @@ public class QueryLanguage {
 	public static final QueryLanguage SERQL = new QueryLanguage("SeRQL");
 
 	/**
-	 * SPARQL (Simple Protocol and RDF Query Language) is a W3C Recommendation for querying and updating RDF
-	 * data.
+	 * SPARQL (Simple Protocol and RDF Query Language) is a W3C Recommendation for querying and updating RDF data.
 	 * 
 	 * @see <a href="http://www.w3.org/TR/sparql11-overview/">SPARQL 1.1 Overview</a>
 	 */
 	public static final QueryLanguage SPARQL = new QueryLanguage("SPARQL");
 
 	/**
-	 * SeRQO (Sesame RDF Query Language - Objects) is a Sesame-specific query language using a syntax suited
-	 * less for human editing but for easy transfer over the wire.
+	 * SeRQO (Sesame RDF Query Language - Objects) is a Sesame-specific query language using a syntax suited less for
+	 * human editing but for easy transfer over the wire.
 	 * 
 	 * @deprecated since 4.0. This language is no longer actively supported.
 	 */
@@ -80,8 +79,7 @@ public class QueryLanguage {
 	/**
 	 * Registers the specified query language.
 	 * 
-	 * @param name
-	 *        The name of the query language, e.g. "SPARQL".
+	 * @param name The name of the query language, e.g. "SPARQL".
 	 */
 	public static QueryLanguage register(String name) {
 		QueryLanguage ql = new QueryLanguage(name);
@@ -99,10 +97,9 @@ public class QueryLanguage {
 	/**
 	 * Returns the query language whose name matches the specified name.
 	 * 
-	 * @param qlName
-	 *        A query language name.
-	 * @return The query language whose name matches the specified name, or <tt>null</tt> if there is no such
-	 *         query language.
+	 * @param qlName A query language name.
+	 * @return The query language whose name matches the specified name, or <tt>null</tt> if there is no such query
+	 *         language.
 	 */
 	public static QueryLanguage valueOf(String qlName) {
 		for (QueryLanguage ql : QUERY_LANGUAGES) {
@@ -130,8 +127,7 @@ public class QueryLanguage {
 	/**
 	 * Creates a new QueryLanguage object.
 	 * 
-	 * @param name
-	 *        The (case-insensitive) name of the query language, e.g. "SPARQL".
+	 * @param name The (case-insensitive) name of the query language, e.g. "SPARQL".
 	 */
 	public QueryLanguage(String name) {
 		assert name != null : "name must not be null";
@@ -159,7 +155,7 @@ public class QueryLanguage {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof QueryLanguage) {
-			QueryLanguage o = (QueryLanguage)other;
+			QueryLanguage o = (QueryLanguage) other;
 			return this.hasName(o.getName());
 		}
 

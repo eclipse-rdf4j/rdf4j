@@ -26,11 +26,9 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
- * The base class for all SPARQL Queries. Contains elements and methods common
- * to all queries.
+ * The base class for all SPARQL Queries. Contains elements and methods common to all queries.
  * 
- * @param <T>
- *            They type of query. Used to support fluency.
+ * @param <T> They type of query. Used to support fluency.
  */
 @SuppressWarnings("unchecked")
 public abstract class Query<T extends Query<T>> implements QueryElement {
@@ -46,8 +44,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Add graph patterns to this query's query pattern
 	 * 
-	 * @param queryPatterns
-	 *            the patterns to add
+	 * @param queryPatterns the patterns to add
 	 * @return this
 	 * 
 	 * @see QueryPattern
@@ -61,8 +58,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Set the query pattern of this query
 	 * 
-	 * @param where
-	 *            the query pattern to set
+	 * @param where the query pattern to set
 	 * @return this
 	 */
 	public T where(QueryPattern where) {
@@ -74,15 +70,14 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Add grouping specifiers for the query results.
 	 * 
-	 * @param groupables
-	 *            the objects to group on, in order (appended to the end of any
-	 *            existing grouping specifiers)
+	 * @param groupables the objects to group on, in order (appended to the end of any existing grouping specifiers)
 	 * @return this
 	 * 
 	 * @see GroupBy
 	 */
 	public T groupBy(Groupable... groupables) {
-		groupBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(groupBy, SparqlBuilder::groupBy, gb -> gb.by(groupables));
+		groupBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(groupBy, SparqlBuilder::groupBy,
+				gb -> gb.by(groupables));
 
 		return (T) this;
 	}
@@ -90,8 +85,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Set this query's Group By clause
 	 * 
-	 * @param groupBy
-	 *            the {@link GroupBy} clause to set
+	 * @param groupBy the {@link GroupBy} clause to set
 	 * @return this
 	 */
 	public T groupBy(GroupBy groupBy) {
@@ -103,23 +97,22 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Specify orderings for the query results
 	 * 
-	 * @param conditions
-	 *            the objects to order on, in order
+	 * @param conditions the objects to order on, in order
 	 * @return this
 	 * 
 	 * @see OrderBy
 	 */
 	public T orderBy(Orderable... conditions) {
-		orderBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(orderBy, SparqlBuilder::orderBy, ob -> ob.by(conditions));
-		
+		orderBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(orderBy, SparqlBuilder::orderBy,
+				ob -> ob.by(conditions));
+
 		return (T) this;
 	}
 
 	/**
 	 * Set this query's Order By clause
 	 * 
-	 * @param orderBy
-	 *            the {@link OrderBy} clause to set
+	 * @param orderBy the {@link OrderBy} clause to set
 	 * @return this
 	 */
 	public T orderBy(OrderBy orderBy) {
@@ -131,14 +124,14 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Specify constraints for this query's Having clause.
 	 * 
-	 * @param constraints
-	 *            the constraints to add to the clause
+	 * @param constraints the constraints to add to the clause
 	 * @return this
 	 * 
 	 * @see Having
 	 */
 	public T having(Expression<?>... constraints) {
-		having = SparqlBuilderUtils.getOrCreateAndModifyOptional(having, SparqlBuilder::having, h -> h.having(constraints));
+		having = SparqlBuilderUtils.getOrCreateAndModifyOptional(having, SparqlBuilder::having,
+				h -> h.having(constraints));
 
 		return (T) this;
 	}
@@ -146,8 +139,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	/**
 	 * Set this query's Having clause
 	 * 
-	 * @param having
-	 *            the Having clause to set
+	 * @param having the Having clause to set
 	 * @return this
 	 */
 	public T having(Having having) {
@@ -162,9 +154,8 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @param limit
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modResultLimit">
-	 *      Limits in SPARQL Queries</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modResultLimit"> Limits in SPARQL
+	 *      Queries</a>
 	 */
 	public T limit(int limit) {
 		this.limit = limit;
@@ -178,9 +169,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @param offset
 	 * @return this
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOffset">Offsets
-	 *      in SPARQL Queries</a>
+	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOffset">Offsets in SPARQL Queries</a>
 	 */
 	public T offset(int offset) {
 		this.offset = offset;
@@ -189,8 +178,8 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	}
 
 	/**
-	 * A shortcut. Each call to this method returns a new {@link Variable}
-	 * that is unique (i.e., has a unique alias) to this query instance.
+	 * A shortcut. Each call to this method returns a new {@link Variable} that is unique (i.e., has a unique alias) to
+	 * this query instance.
 	 * 
 	 * @return a {@link Variable} object that is unique to this query instance
 	 */
@@ -198,15 +187,15 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 		return SparqlBuilder.var("x" + ++varCount);
 	}
 
-    /**
-     * A shortcut. Each call to this method returns a new {@link RdfBlankNode.LabeledBlankNode}
-     * that is unique (i.e., has a unique alias) to this query instance.
-     *
-     * @return a {@link RdfBlankNode.LabeledBlankNode} object that is unique to this query instance
-     */
+	/**
+	 * A shortcut. Each call to this method returns a new {@link RdfBlankNode.LabeledBlankNode} that is unique (i.e.,
+	 * has a unique alias) to this query instance.
+	 *
+	 * @return a {@link RdfBlankNode.LabeledBlankNode} object that is unique to this query instance
+	 */
 	public RdfBlankNode.LabeledBlankNode bNode() {
-	    return Rdf.bNode("b" + ++bnodeCount);
-    }
+		return Rdf.bNode("b" + ++bnodeCount);
+	}
 
 	protected abstract String getQueryActionString();
 

@@ -18,17 +18,15 @@ public class ASTInList extends ASTBooleanExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTValueExpr getValueExpr() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 
 	public ASTArgList getArgList() {
-		return (ASTArgList)children.get(1);
+		return (ASTArgList) children.get(1);
 	}
 }

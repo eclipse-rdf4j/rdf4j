@@ -57,8 +57,8 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new parser base that, by default, will use the global instance of {@link SimpleValueFactory}
-	 * to create Value objects.
+	 * Creates a new parser base that, by default, will use the global instance of {@link SimpleValueFactory} to create
+	 * Value objects.
 	 */
 	public AbstractQueryResultParser() {
 		this(SimpleValueFactory.getInstance());

@@ -21,9 +21,7 @@ public class Min extends AbstractAggregateOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -39,6 +37,6 @@ public class Min extends AbstractAggregateOperator {
 
 	@Override
 	public Min clone() {
-		return (Min)super.clone();
+		return (Min) super.clone();
 	}
 }

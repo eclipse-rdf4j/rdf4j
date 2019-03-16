@@ -20,9 +20,7 @@ public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -33,7 +31,7 @@ public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof DeleteData) {
-			DeleteData o = (DeleteData)other;
+			DeleteData o = (DeleteData) other;
 			return dataBlock.equals(o.dataBlock);
 		}
 		return false;
@@ -60,7 +58,7 @@ public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 	public int getLineNumberOffset() {
 		return lineNumberOffset;
 	}
-	
+
 	public void setLineNumberOffset(int lineNumberOffset) {
 		this.lineNumberOffset = lineNumberOffset;
 	}

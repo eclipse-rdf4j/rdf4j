@@ -28,30 +28,22 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class BinaryHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
 		return writeBinary(unknownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
-		throws Exception
-	{
+	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
 		return writeBinary(knownDatatypeStatements);
 	}
 
 	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
 		return writeBinary(unknownLanguageStatements);
 	}
 
 	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements)
-		throws Exception
-	{
+	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeBinary(knownLanguageStatements);
 	}
 
@@ -67,9 +59,7 @@ public class BinaryHandlingTest extends AbstractParserHandlingTest {
 	 * @return An {@link InputStream} containing the results.
 	 * @throws RDFHandlerException
 	 */
-	private InputStream writeBinary(Model statements)
-		throws RDFHandlerException
-	{
+	private InputStream writeBinary(Model statements) throws RDFHandlerException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream(8096);
 
 		RDFWriter binaryWriter = new BinaryRDFWriter(output);

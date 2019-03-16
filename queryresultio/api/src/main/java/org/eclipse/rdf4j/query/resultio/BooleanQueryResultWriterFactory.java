@@ -24,8 +24,7 @@ public interface BooleanQueryResultWriterFactory {
 	/**
 	 * Returns a {@link BooleanQueryResultWriter} instance that will write to the supplied output stream.
 	 * 
-	 * @param out
-	 *        The OutputStream to write the result to.
+	 * @param out The OutputStream to write the result to.
 	 */
 	BooleanQueryResultWriter getWriter(OutputStream out);
 }

@@ -33,8 +33,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Creates a new unary tuple operator.
 	 * 
-	 * @param arg
-	 *        The operator's argument, must not be <tt>null</tt>.
+	 * @param arg The operator's argument, must not be <tt>null</tt>.
 	 */
 	public UnaryTupleOperator(TupleExpr arg) {
 		setArg(arg);
@@ -56,8 +55,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Sets the argument of this unary tuple operator.
 	 * 
-	 * @param arg
-	 *        The (new) argument for this operator, must not be <tt>null</tt>.
+	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setArg(TupleExpr arg) {
 		assert arg != null : "arg must not be null";
@@ -77,18 +75,15 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		arg.visit(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
-			setArg((TupleExpr)replacement);
-		}
-		else {
+			setArg((TupleExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -96,7 +91,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof UnaryTupleOperator) {
-			UnaryTupleOperator o = (UnaryTupleOperator)other;
+			UnaryTupleOperator o = (UnaryTupleOperator) other;
 			return arg.equals(o.getArg());
 		}
 
@@ -110,7 +105,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 
 	@Override
 	public UnaryTupleOperator clone() {
-		UnaryTupleOperator clone = (UnaryTupleOperator)super.clone();
+		UnaryTupleOperator clone = (UnaryTupleOperator) super.clone();
 		clone.setArg(getArg().clone());
 		return clone;
 	}

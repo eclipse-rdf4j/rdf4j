@@ -32,9 +32,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in N-Triples format. The N-Triples
- * format is defined in <a href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the RDF
- * Test Cases document.
+ * An implementation of the RDFWriter interface that writes RDF documents in N-Triples format. The N-Triples format is
+ * defined in <a href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the RDF Test Cases document.
  */
 public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
@@ -57,8 +56,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new NTriplesWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the N-Triples document to.
+	 * @param out The OutputStream to write the N-Triples document to.
 	 */
 	public NTriplesWriter(OutputStream out) {
 		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
@@ -67,8 +65,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new NTriplesWriter that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the N-Triples document to.
+	 * @param writer The Writer to write the N-Triples document to.
 	 */
 	public NTriplesWriter(Writer writer) {
 		this.writer = writer;
@@ -85,9 +82,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		if (writingStarted) {
 			throw new RuntimeException("Document writing has already started");
 		}
@@ -98,20 +93,16 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet started");
 		}
 
 		try {
 			writer.flush();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		}
-		finally {
+		} finally {
 			writingStarted = false;
 		}
 	}
@@ -122,9 +113,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
@@ -137,22 +126,18 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 			writeValue(st.getObject());
 
 			writer.write(" .\n");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		try {
 			writer.write("# ");
 			writer.write(comment);
 			writer.write("\n");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -170,44 +155,33 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Writes the N-Triples representation of the given {@link Value}.
 	 *
-	 * @param value
-	 *        The value to write.
+	 * @param value The value to write.
 	 * @throws IOException
 	 */
-	protected void writeValue(Value value)
-		throws IOException
-	{
+	protected void writeValue(Value value) throws IOException {
 		if (value instanceof IRI) {
-			writeIRI((IRI)value);
-		}
-		else if (value instanceof BNode) {
-			writeBNode((BNode)value);
-		}
-		else if (value instanceof Literal) {
-			writeLiteral((Literal)value);
-		}
-		else {
+			writeIRI((IRI) value);
+		} else if (value instanceof BNode) {
+			writeBNode((BNode) value);
+		} else if (value instanceof Literal) {
+			writeLiteral((Literal) value);
+		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
 	}
 
-	private void writeIRI(IRI iri)
-		throws IOException
-	{
+	private void writeIRI(IRI iri) throws IOException {
 		NTriplesUtil.append(iri, writer);
 	}
 
-	private void writeBNode(BNode bNode)
-		throws IOException
-	{
+	private void writeBNode(BNode bNode) throws IOException {
 		String nextId = bNode.getID();
 		writer.append("_:");
 
 		if (nextId.isEmpty()) {
 			writer.append("genid");
 			writer.append(Integer.toHexString(bNode.hashCode()));
-		}
-		else {
+		} else {
 			if (!NTriplesUtil.isLetter(nextId.charAt(0))) {
 				writer.append("genid");
 				writer.append(Integer.toHexString(nextId.charAt(0)));
@@ -216,8 +190,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 			for (int i = 0; i < nextId.length(); i++) {
 				if (NTriplesUtil.isLetterOrNumber(nextId.charAt(i))) {
 					writer.append(nextId.charAt(i));
-				}
-				else {
+				} else {
 					// Append the character as its hex representation
 					writer.append(Integer.toHexString(nextId.charAt(i)));
 				}
@@ -226,16 +199,13 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Write the N-Triples representation of the given {@link Literal}, optionally ignoring the xsd:string
-	 * datatype as it is implied for RDF-1.1.
+	 * Write the N-Triples representation of the given {@link Literal}, optionally ignoring the xsd:string datatype as
+	 * it is implied for RDF-1.1.
 	 *
-	 * @param lit
-	 *        The literal to write.
+	 * @param lit The literal to write.
 	 * @throws IOException
 	 */
-	private void writeLiteral(Literal lit)
-		throws IOException
-	{
+	private void writeLiteral(Literal lit) throws IOException {
 		// Do some character escaping on the label:
 		writer.append("\"");
 		writeString(lit.getLabel());
@@ -245,8 +215,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 			// Append the literal's language
 			writer.append("@");
 			writer.append(lit.getLanguage().get());
-		}
-		else {
+		} else {
 			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
 			// language literals we display the type for backwards compatibility
 			IRI datatype = lit.getDatatype();
@@ -258,16 +227,13 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Writes a Unicode string to an N-Triples compatible character sequence. Any special characters are
-	 * escaped using backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable
-	 * characters are escaped using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the
-	 * writer config is enabled.
+	 * Writes a Unicode string to an N-Triples compatible character sequence. Any special characters are escaped using
+	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped using
+	 * Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the writer config is enabled.
 	 *
 	 * @throws IOException
 	 */
-	private void writeString(String label)
-		throws IOException
-	{
+	private void writeString(String label) throws IOException {
 		NTriplesUtil.escapeString(label, writer, escapeUnicode);
 	}
 }

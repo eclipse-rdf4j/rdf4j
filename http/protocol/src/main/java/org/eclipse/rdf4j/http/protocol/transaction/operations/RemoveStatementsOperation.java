@@ -40,9 +40,7 @@ public class RemoveStatementsOperation extends StatementOperation implements Ser
 	}
 
 	@Override
-	public void execute(RepositoryConnection con)
-		throws RepositoryException
-	{
+	public void execute(RepositoryConnection con) throws RepositoryException {
 		con.remove(getSubject(), getPredicate(), getObject(), getContexts());
 	}
 

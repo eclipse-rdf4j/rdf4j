@@ -33,16 +33,15 @@ public class StatementCollector extends ContextStatementCollector {
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements in the supplied collection and that
-	 * uses a new LinkedHashMap to store the reported namespaces.
+	 * Creates a new StatementCollector that stores reported statements in the supplied collection and that uses a new
+	 * LinkedHashMap to store the reported namespaces.
 	 */
 	public StatementCollector(Collection<Statement> statements) {
 		super(statements, SimpleValueFactory.getInstance());
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied
-	 * containers.
+	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied containers.
 	 */
 	public StatementCollector(Collection<Statement> statements, Map<String, String> namespaces) {
 		super(statements, namespaces, SimpleValueFactory.getInstance());

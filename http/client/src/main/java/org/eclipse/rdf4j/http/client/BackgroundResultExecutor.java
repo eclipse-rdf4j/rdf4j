@@ -49,8 +49,7 @@ public class BackgroundResultExecutor implements AutoCloseable {
 			for (AutoCloseable onclose : executing) {
 				try {
 					onclose.close();
-				}
-				catch (Exception e) {
+				} catch (Exception e) {
 					logger.error(e.toString(), e);
 				}
 			}
@@ -64,8 +63,7 @@ public class BackgroundResultExecutor implements AutoCloseable {
 		executor.execute(() -> {
 			try {
 				runner.run();
-			}
-			finally {
+			} finally {
 				synchronized (executing) {
 					executing.remove(result);
 				}

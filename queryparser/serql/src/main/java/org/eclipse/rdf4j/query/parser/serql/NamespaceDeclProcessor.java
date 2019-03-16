@@ -33,20 +33,15 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 class NamespaceDeclProcessor extends AbstractASTVisitor {
 
 	/**
-	 * Processes prefix declarations in queries. This method collects all prefixes that are declared in the
-	 * supplied query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the
-	 * query with equivalent {@link ASTIRI} nodes.
+	 * Processes prefix declarations in queries. This method collects all prefixes that are declared in the supplied
+	 * query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the query with
+	 * equivalent {@link ASTIRI} nodes.
 	 * 
-	 * @param qc
-	 *        The query that needs to be processed.
-	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map
-	 *         to (value).
-	 * @throws MalformedQueryException
-	 *         If the query contains redefined prefixes or qnames that use undefined prefixes.
+	 * @param qc The query that needs to be processed.
+	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map to (value).
+	 * @throws MalformedQueryException If the query contains redefined prefixes or qnames that use undefined prefixes.
 	 */
-	public static Map<String, String> process(ASTQueryContainer qc)
-		throws MalformedQueryException
-	{
+	public static Map<String, String> process(ASTQueryContainer qc) throws MalformedQueryException {
 		List<ASTNamespaceDecl> nsDeclList = qc.getNamespaceDeclList();
 
 		// Build a prefix --> URI map
@@ -59,13 +54,10 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 				// Prefix already defined
 				if (nsMap.get(prefix).equals(uri)) {
 					// duplicate, ignore
+				} else {
+					throw new MalformedQueryException("Multiple namespace declarations for prefix '" + prefix + "'");
 				}
-				else {
-					throw new MalformedQueryException(
-							"Multiple namespace declarations for prefix '" + prefix + "'");
-				}
-			}
-			else {
+			} else {
 				nsMap.put(prefix, uri);
 			}
 		}
@@ -97,8 +89,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 		QNameProcessor visitor = new QNameProcessor(extendedNsMap);
 		try {
 			qc.jjtAccept(visitor, null);
-		}
-		catch (VisitorException e) {
+		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 
@@ -114,9 +105,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 		}
 
 		@Override
-		public Object visit(ASTQName qnameNode, Object data)
-			throws VisitorException
-		{
+		public Object visit(ASTQName qnameNode, Object data) throws VisitorException {
 			String qname = qnameNode.getValue();
 
 			int colonIdx = qname.indexOf(':');

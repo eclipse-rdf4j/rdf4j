@@ -44,16 +44,11 @@ public class TransactionWriter {
 	/**
 	 * serialize the passed list of operations to the passed writer.
 	 * 
-	 * @param txn
-	 *        the operations
-	 * @param out
-	 *        the output stream to write to
-	 * @throws IllegalArgumentException
-	 *         when one of the parameters is null
+	 * @param txn the operations
+	 * @param out the output stream to write to
+	 * @throws IllegalArgumentException when one of the parameters is null
 	 */
-	public void serialize(Iterable<? extends TransactionOperation> txn, OutputStream out)
-		throws IOException
-	{
+	public void serialize(Iterable<? extends TransactionOperation> txn, OutputStream out) throws IOException {
 		assert txn != null : "operation list must not be null";
 		assert out != null : "output stream must not be null";
 
@@ -74,52 +69,37 @@ public class TransactionWriter {
 	/**
 	 * Serializes the supplied operation.
 	 * 
-	 * @param op
-	 *        The operation to serialize
+	 * @param op The operation to serialize
 	 */
-	protected void serialize(TransactionOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(TransactionOperation op, XMLWriter xmlWriter) throws IOException {
 		if (op instanceof AddStatementOperation) {
-			serialize((AddStatementOperation)op, xmlWriter);
-		}
-		else if (op instanceof RemoveStatementsOperation) {
-			serialize((RemoveStatementsOperation)op, xmlWriter);
-		}
-		else if (op instanceof ClearOperation) {
-			serialize((ClearOperation)op, xmlWriter);
-		}
-		else if (op instanceof SetNamespaceOperation) {
-			serialize((SetNamespaceOperation)op, xmlWriter);
-		}
-		else if (op instanceof RemoveNamespaceOperation) {
-			serialize((RemoveNamespaceOperation)op, xmlWriter);
-		}
-		else if (op instanceof ClearNamespacesOperation) {
-			serialize((ClearNamespacesOperation)op, xmlWriter);
-		}
-		else if (op instanceof SPARQLUpdateOperation) {
-			serialize((SPARQLUpdateOperation)op, xmlWriter);
-		}
-		else if (op == null) {
+			serialize((AddStatementOperation) op, xmlWriter);
+		} else if (op instanceof RemoveStatementsOperation) {
+			serialize((RemoveStatementsOperation) op, xmlWriter);
+		} else if (op instanceof ClearOperation) {
+			serialize((ClearOperation) op, xmlWriter);
+		} else if (op instanceof SetNamespaceOperation) {
+			serialize((SetNamespaceOperation) op, xmlWriter);
+		} else if (op instanceof RemoveNamespaceOperation) {
+			serialize((RemoveNamespaceOperation) op, xmlWriter);
+		} else if (op instanceof ClearNamespacesOperation) {
+			serialize((ClearNamespacesOperation) op, xmlWriter);
+		} else if (op instanceof SPARQLUpdateOperation) {
+			serialize((SPARQLUpdateOperation) op, xmlWriter);
+		} else if (op == null) {
 			// ignore(?)
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("Unknown operation type: " + op.getClass());
 		}
 	}
 
-	protected void serialize(AddStatementOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(AddStatementOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.startTag(TransactionXMLConstants.ADD_STATEMENT_TAG);
-		serialize((StatementOperation)op, xmlWriter);
+		serialize((StatementOperation) op, xmlWriter);
 		xmlWriter.endTag(TransactionXMLConstants.ADD_STATEMENT_TAG);
 	}
 
-	protected void serialize(SPARQLUpdateOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(SPARQLUpdateOperation op, XMLWriter xmlWriter) throws IOException {
 		String baseURI = op.getBaseURI();
 		if (baseURI != null) {
 			xmlWriter.setAttribute(TransactionXMLConstants.BASE_URI_ATT, baseURI);
@@ -166,29 +146,24 @@ public class TransactionWriter {
 
 			for (Binding binding : op.getBindings()) {
 				if (binding.getName() != null && binding.getValue() != null
-						&& binding.getValue().stringValue() != null)
-				{
+						&& binding.getValue().stringValue() != null) {
 					if (binding.getValue() instanceof IRI) {
 						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());
-						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI,
-								binding.getValue().stringValue());
+						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI, binding.getValue().stringValue());
 					}
 
 					if (binding.getValue() instanceof BNode) {
 						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());
-						xmlWriter.textElement(TransactionXMLConstants.BINDING_BNODE,
-								binding.getValue().stringValue());
+						xmlWriter.textElement(TransactionXMLConstants.BINDING_BNODE, binding.getValue().stringValue());
 					}
 
 					if (binding.getValue() instanceof Literal) {
 						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());
 
-						Literal literal = (Literal)binding.getValue();
+						Literal literal = (Literal) binding.getValue();
 						if (Literals.isLanguageLiteral(literal)) {
-							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT,
-									literal.getLanguage().get());
-						}
-						else {
+							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT, literal.getLanguage().get());
+						} else {
 							xmlWriter.setAttribute(TransactionXMLConstants.DATA_TYPE_ATT,
 									literal.getDatatype().stringValue());
 						}
@@ -206,133 +181,98 @@ public class TransactionWriter {
 
 	}
 
-	protected void serialize(RemoveStatementsOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(RemoveStatementsOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.startTag(TransactionXMLConstants.REMOVE_STATEMENTS_TAG);
-		serialize((StatementOperation)op, xmlWriter);
+		serialize((StatementOperation) op, xmlWriter);
 		xmlWriter.endTag(TransactionXMLConstants.REMOVE_STATEMENTS_TAG);
 	}
 
-	protected void serialize(StatementOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(StatementOperation op, XMLWriter xmlWriter) throws IOException {
 		serialize(op.getSubject(), xmlWriter);
 		serialize(op.getPredicate(), xmlWriter);
 		serialize(op.getObject(), xmlWriter);
 		serialize(op.getContexts(), xmlWriter);
 	}
 
-	protected void serialize(ClearOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(ClearOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.startTag(TransactionXMLConstants.CLEAR_TAG);
 		serialize(op.getContexts(), xmlWriter);
 		xmlWriter.endTag(TransactionXMLConstants.CLEAR_TAG);
 	}
 
-	protected void serialize(SetNamespaceOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(SetNamespaceOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.setAttribute(TransactionXMLConstants.PREFIX_ATT, op.getPrefix());
 		xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, op.getName());
 		xmlWriter.emptyElement(TransactionXMLConstants.SET_NAMESPACE_TAG);
 	}
 
-	protected void serialize(RemoveNamespaceOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(RemoveNamespaceOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.setAttribute(TransactionXMLConstants.PREFIX_ATT, op.getPrefix());
 		xmlWriter.emptyElement(TransactionXMLConstants.REMOVE_NAMESPACE_TAG);
 	}
 
-	protected void serialize(ClearNamespacesOperation op, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(ClearNamespacesOperation op, XMLWriter xmlWriter) throws IOException {
 		xmlWriter.emptyElement(TransactionXMLConstants.CLEAR_NAMESPACES_TAG);
 	}
 
-	protected void serialize(Resource[] contexts, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(Resource[] contexts, XMLWriter xmlWriter) throws IOException {
 		if (contexts.length > 0) {
 			xmlWriter.startTag(TransactionXMLConstants.CONTEXTS_TAG);
 			for (Resource context : contexts) {
 				serialize(context, xmlWriter);
 			}
 			xmlWriter.endTag(TransactionXMLConstants.CONTEXTS_TAG);
-		}
-		else {
+		} else {
 			xmlWriter.emptyElement(TransactionXMLConstants.CONTEXTS_TAG);
 		}
 	}
 
-	protected void serialize(Value value, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(Value value, XMLWriter xmlWriter) throws IOException {
 		if (value instanceof Resource) {
-			serialize((Resource)value, xmlWriter);
-		}
-		else if (value instanceof Literal) {
-			serialize((Literal)value, xmlWriter);
-		}
-		else if (value == null) {
+			serialize((Resource) value, xmlWriter);
+		} else if (value instanceof Literal) {
+			serialize((Literal) value, xmlWriter);
+		} else if (value == null) {
 			serializeNull(xmlWriter);
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass().toString());
 		}
 	}
 
-	protected void serialize(Resource resource, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(Resource resource, XMLWriter xmlWriter) throws IOException {
 		if (resource instanceof IRI) {
-			serialize((IRI)resource, xmlWriter);
-		}
-		else if (resource instanceof BNode) {
-			serialize((BNode)resource, xmlWriter);
-		}
-		else if (resource == null) {
+			serialize((IRI) resource, xmlWriter);
+		} else if (resource instanceof BNode) {
+			serialize((BNode) resource, xmlWriter);
+		} else if (resource == null) {
 			serializeNull(xmlWriter);
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass().toString());
 		}
 	}
 
-	protected void serialize(IRI uri, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(IRI uri, XMLWriter xmlWriter) throws IOException {
 		if (uri != null) {
 			xmlWriter.textElement(TransactionXMLConstants.URI_TAG, uri.toString());
-		}
-		else {
+		} else {
 			serializeNull(xmlWriter);
 		}
 	}
 
-	protected void serialize(BNode bnode, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(BNode bnode, XMLWriter xmlWriter) throws IOException {
 		if (bnode != null) {
 			xmlWriter.textElement(TransactionXMLConstants.BNODE_TAG, bnode.getID());
-		}
-		else {
+		} else {
 			serializeNull(xmlWriter);
 		}
 	}
 
-	protected void serialize(Literal literal, XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serialize(Literal literal, XMLWriter xmlWriter) throws IOException {
 		if (literal != null) {
 			if (Literals.isLanguageLiteral(literal)) {
 				xmlWriter.setAttribute(TransactionXMLConstants.LANG_ATT, literal.getLanguage().get());
-			}
-			else {
-				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT,
-						literal.getDatatype().toString());
+			} else {
+				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT, literal.getDatatype().toString());
 			}
 
 			String label = literal.getLabel();
@@ -350,15 +290,12 @@ public class TransactionWriter {
 			}
 
 			xmlWriter.textElement(TransactionXMLConstants.LITERAL_TAG, label);
-		}
-		else {
+		} else {
 			serializeNull(xmlWriter);
 		}
 	}
 
-	protected void serializeNull(XMLWriter xmlWriter)
-		throws IOException
-	{
+	protected void serializeNull(XMLWriter xmlWriter) throws IOException {
 		xmlWriter.emptyElement(TransactionXMLConstants.NULL_TAG);
 	}
 }

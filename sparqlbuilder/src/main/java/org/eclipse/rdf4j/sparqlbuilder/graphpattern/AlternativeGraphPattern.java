@@ -13,12 +13,10 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
 /**
  * A SPARQL Alternative Graph Pattern.
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives">
- *      SPARQL Alternative Graph Patterns</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives"> SPARQL Alternative Graph
+ *      Patterns</a>
  */
-class AlternativeGraphPattern extends QueryElementCollection<GroupGraphPattern>
-		implements GraphPattern {
+class AlternativeGraphPattern extends QueryElementCollection<GroupGraphPattern> implements GraphPattern {
 	private static final String UNION = "UNION";
 	private static final String DELIMETER = " " + UNION + " ";
 
@@ -41,7 +39,7 @@ class AlternativeGraphPattern extends QueryElementCollection<GroupGraphPattern>
 	}
 
 	@Override
-    public AlternativeGraphPattern union(GraphPattern... patterns) {
+	public AlternativeGraphPattern union(GraphPattern... patterns) {
 		addElements(GraphPatterns::extractOrConvertToGGP, patterns);
 
 		return this;

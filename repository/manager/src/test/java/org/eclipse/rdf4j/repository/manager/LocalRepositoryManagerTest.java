@@ -75,8 +75,7 @@ public class LocalRepositoryManagerTest {
 	}
 
 	/**
-	 * @throws IOException
-	 *         if a problem occurs deleting temporary resources
+	 * @throws IOException if a problem occurs deleting temporary resources
 	 */
 	@After
 	public void tearDown() throws IOException {
@@ -87,10 +86,8 @@ public class LocalRepositoryManagerTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.repository.manager.LocalRepositoryManager#getRepository(java.lang.String)} .
 	 *
-	 * @throws RepositoryException
-	 *         if a problem occurs accessing the repository
-	 * @throws RepositoryConfigException
-	 *         if a problem occurs accessing the repository
+	 * @throws RepositoryException       if a problem occurs accessing the repository
+	 * @throws RepositoryConfigException if a problem occurs accessing the repository
 	 */
 	@Test
 	public void testGetRepository() throws RepositoryConfigException, RepositoryException {
@@ -111,8 +108,7 @@ public class LocalRepositoryManagerTest {
 		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
 			assertEquals(1, conn.size());
-		}
-		finally {
+		} finally {
 			rep.shutDown();
 			manager.shutDown();
 		}
@@ -124,8 +120,7 @@ public class LocalRepositoryManagerTest {
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
-		}
-		finally {
+		} finally {
 			rep2.shutDown();
 			manager.shutDown();
 		}
@@ -142,8 +137,7 @@ public class LocalRepositoryManagerTest {
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
 			conn.commit();
 			assertEquals(1, conn.size());
-		}
-		finally {
+		} finally {
 			rep.shutDown();
 			manager.shutDown();
 		}
@@ -155,8 +149,7 @@ public class LocalRepositoryManagerTest {
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
-		}
-		finally {
+		} finally {
 			rep2.shutDown();
 			manager.shutDown();
 		}
@@ -166,10 +159,8 @@ public class LocalRepositoryManagerTest {
 	/**
 	 * Test method for {@link RepositoryManager.isSafeToRemove(String)}.
 	 *
-	 * @throws RepositoryException
-	 *         if a problem occurs during execution
-	 * @throws RepositoryConfigException
-	 *         if a problem occurs during execution
+	 * @throws RepositoryException       if a problem occurs during execution
+	 * @throws RepositoryConfigException if a problem occurs during execution
 	 */
 	@Test
 	public void testIsSafeToRemove() throws RepositoryException, RepositoryConfigException {
@@ -248,8 +239,8 @@ public class LocalRepositoryManagerTest {
 	}
 
 	/**
-	 * Regression test for adding new repositories when legacy SYSTEM repository is still present See also
-	 * GitHub issue 1077
+	 * Regression test for adding new repositories when legacy SYSTEM repository is still present See also GitHub issue
+	 * 1077
 	 */
 	@Test
 	public void testAddWithExistingSysRepository() {
@@ -258,8 +249,7 @@ public class LocalRepositoryManagerTest {
 			RepositoryImplConfig cfg = new SailRepositoryConfig(new MemoryStoreConfig());
 			manager.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
 			manager.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
-		}
-		catch (RepositoryConfigException e) {
+		} catch (RepositoryConfigException e) {
 			fail(e.getMessage());
 		}
 	}

@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  */
 @Deprecated
 public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
-		implements SupportsGroups<UnionBuilder<T, E>>, Group
-{
+		implements SupportsGroups<UnionBuilder<T, E>>, Group {
 
 	/**
 	 * Left operand
@@ -85,13 +84,10 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	public UnionBuilder<T, E> addGroup(final Group theGroup) {
 		if (mLeft == null) {
 			mLeft = theGroup;
-		}
-		else if (mRight == null) {
+		} else if (mRight == null) {
 			mRight = theGroup;
-		}
-		else {
-			throw new IllegalArgumentException(
-					"Cannot set left or right arguments of union, both already set");
+		} else {
+			throw new IllegalArgumentException("Cannot set left or right arguments of union, both already set");
 		}
 
 		return this;
@@ -104,8 +100,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	public UnionBuilder<T, E> removeGroup(final Group theGroup) {
 		if (mLeft != null && mLeft.equals(theGroup)) {
 			mLeft = null;
-		}
-		else if (mRight != null && mRight.equals(theGroup)) {
+		} else if (mRight != null && mRight.equals(theGroup)) {
 			mRight = null;
 		}
 
@@ -127,15 +122,12 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	public TupleExpr expr() {
 		if (mLeft != null && mRight != null) {
 			return new Union(mLeft.expr(), mRight.expr());
-		}
-		else if (mLeft != null && mRight == null) {
+		} else if (mLeft != null && mRight == null) {
 			return mLeft.expr();
 
-		}
-		else if (mRight != null && mLeft == null) {
+		} else if (mRight != null && mLeft == null) {
 			return mRight.expr();
-		}
-		else {
+		} else {
 			return null;
 		}
 	}

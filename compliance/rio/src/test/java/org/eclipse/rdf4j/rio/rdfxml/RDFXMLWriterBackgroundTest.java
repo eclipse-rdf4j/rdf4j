@@ -22,7 +22,7 @@ public class RDFXMLWriterBackgroundTest extends RDFXMLWriterTestCase {
 	public RDFXMLWriterBackgroundTest() {
 		super(new RDFXMLWriterFactory(), new RDFXMLParserFactory());
 	}
-	
+
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
 		config.set(BasicWriterSettings.PRETTY_PRINT, false);
@@ -30,10 +30,9 @@ public class RDFXMLWriterBackgroundTest extends RDFXMLWriterTestCase {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException
-	{
-		return QueryResults.asModel(
-				QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+			throws RDFParseException, RDFHandlerException, IOException {
+		return QueryResults
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
-	
+
 }

@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 
 /**
- * Delegates all calls to the delegate RepositoryConnection. Conditionally processes add/remove/read to common
- * base method to make them easier to override.
+ * Delegates all calls to the delegate RepositoryConnection. Conditionally processes add/remove/read to common base
+ * method to make them easier to override.
  * 
  * @author James Leigh
  * @see #isDelegatingAdd()
@@ -49,8 +49,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
  * @see #isDelegatingRead()
  */
 public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
-		implements DelegatingRepositoryConnection
-{
+		implements DelegatingRepositoryConnection {
 
 	private volatile RepositoryConnection delegate;
 
@@ -75,8 +74,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	/**
-	 * If false then the following add methods will call
-	 * {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
+	 * If false then the following add methods will call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
 	 * 
 	 * @see #add(Iterable, Resource...)
 	 * @see #add(Iteration, Resource...)
@@ -90,9 +88,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
 	 * @throws RepositoryException
 	 */
-	protected boolean isDelegatingAdd()
-		throws RepositoryException
-	{
+	protected boolean isDelegatingAdd() throws RepositoryException {
 		return true;
 	}
 
@@ -108,9 +104,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 *         {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}
 	 * @throws RepositoryException
 	 */
-	protected boolean isDelegatingRead()
-		throws RepositoryException
-	{
+	protected boolean isDelegatingRead() throws RepositoryException {
 		return true;
 	}
 
@@ -127,9 +121,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 *         {@link #removeWithoutCommit(Resource, IRI, Value, Resource...)}
 	 * @throws RepositoryException
 	 */
-	protected boolean isDelegatingRemove()
-		throws RepositoryException
-	{
+	protected boolean isDelegatingRemove() throws RepositoryException {
 		return true;
 	}
 
@@ -143,179 +135,138 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(file, baseURI, dataFormat, contexts);
-		}
-		else {
+		} else {
 			super.add(file, baseURI, dataFormat, contexts);
 		}
 	}
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(in, baseURI, dataFormat, contexts);
-		}
-		else {
+		} else {
 			super.add(in, baseURI, dataFormat, contexts);
 		}
 	}
 
 	@Override
-	public void add(Iterable<? extends Statement> statements, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statements, contexts);
-		}
-		else {
+		} else {
 			super.add(statements, contexts);
 		}
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter,
-			Resource... contexts)
-		throws RepositoryException, E
-	{
+	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+			throws RepositoryException, E {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statementIter, contexts);
-		}
-		else {
+		} else {
 			super.add(statementIter, contexts);
 		}
 	}
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(reader, baseURI, dataFormat, contexts);
-		}
-		else {
+		} else {
 			super.add(reader, baseURI, dataFormat, contexts);
 		}
 	}
 
 	@Override
-	public void add(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(subject, predicate, object, contexts);
-		}
-		else {
+		} else {
 			super.add(subject, predicate, object, contexts);
 		}
 	}
 
 	@Override
-	public void add(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	public void add(Statement st, Resource... contexts) throws RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(st, contexts);
-		}
-		else {
+		} else {
 			super.add(st, contexts);
 		}
 	}
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException
-	{
+			throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(url, baseURI, dataFormat, contexts);
-		}
-		else {
+		} else {
 			super.add(url, baseURI, dataFormat, contexts);
 		}
 	}
 
 	@Override
-	public void clear(Resource... contexts)
-		throws RepositoryException
-	{
+	public void clear(Resource... contexts) throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().clear(contexts);
-		}
-		else {
+		} else {
 			super.clear(contexts);
 		}
 	}
 
 	@Override
-	public void close()
-		throws RepositoryException
-	{
+	public void close() throws RepositoryException {
 		try {
 			super.close();
-		}
-		finally {
+		} finally {
 			getDelegate().close();
 		}
 	}
 
 	@Override
-	public void commit()
-		throws RepositoryException
-	{
+	public void commit() throws RepositoryException {
 		getDelegate().commit();
 	}
 
 	@Override
-	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			RDFHandler handler, Resource... contexts)
-		throws RepositoryException, RDFHandlerException
-	{
+	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+			Resource... contexts) throws RepositoryException, RDFHandlerException {
 		if (isDelegatingRead()) {
 			getDelegate().exportStatements(subj, pred, obj, includeInferred, handler, contexts);
-		}
-		else {
+		} else {
 			exportStatements(getStatements(subj, pred, obj, includeInferred, contexts), handler);
 		}
 	}
 
 	@Override
-	public RepositoryResult<Resource> getContextIDs()
-		throws RepositoryException
-	{
+	public RepositoryResult<Resource> getContextIDs() throws RepositoryException {
 		return getDelegate().getContextIDs();
 	}
 
 	@Override
-	public String getNamespace(String prefix)
-		throws RepositoryException
-	{
+	public String getNamespace(String prefix) throws RepositoryException {
 		return getDelegate().getNamespace(prefix);
 	}
 
 	@Override
-	public RepositoryResult<Namespace> getNamespaces()
-		throws RepositoryException
-	{
+	public RepositoryResult<Namespace> getNamespaces() throws RepositoryException {
 		return getDelegate().getNamespaces();
 	}
 
 	@Override
-	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts)
-		throws RepositoryException
-	{
+	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts) throws RepositoryException {
 		return getDelegate().getStatements(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts)
-		throws RepositoryException
-	{
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws RepositoryException {
 		if (isDelegatingRead()) {
 			return getDelegate().hasStatement(subj, pred, obj, includeInferred, contexts);
 		}
@@ -324,8 +275,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		if (isDelegatingRead()) {
 			return getDelegate().hasStatement(st, includeInferred, contexts);
 		}
@@ -337,23 +287,17 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 */
 	@Override
 	@Deprecated
-	public boolean isAutoCommit()
-		throws RepositoryException
-	{
+	public boolean isAutoCommit() throws RepositoryException {
 		return getDelegate().isAutoCommit();
 	}
 
 	@Override
-	public boolean isActive()
-		throws UnknownTransactionStateException, RepositoryException
-	{
+	public boolean isActive() throws UnknownTransactionStateException, RepositoryException {
 		return getDelegate().isActive();
 	}
 
 	@Override
-	public boolean isEmpty()
-		throws RepositoryException
-	{
+	public boolean isEmpty() throws RepositoryException {
 		if (isDelegatingRead()) {
 			return getDelegate().isEmpty();
 		}
@@ -361,114 +305,89 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public boolean isOpen()
-		throws RepositoryException
-	{
+	public boolean isOpen() throws RepositoryException {
 		return getDelegate().isOpen();
 	}
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareGraphQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareTupleQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareBooleanQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareUpdate(ql, update, baseURI);
 	}
 
 	@Override
-	public void remove(Iterable<? extends Statement> statements, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statements, contexts);
-		}
-		else {
+		} else {
 			super.remove(statements, contexts);
 		}
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter,
-			Resource... contexts)
-		throws RepositoryException, E
-	{
+	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+			throws RepositoryException, E {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statementIter, contexts);
-		}
-		else {
+		} else {
 			super.remove(statementIter, contexts);
 		}
 	}
 
 	@Override
-	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(subject, predicate, object, contexts);
-		}
-		else {
+		} else {
 			super.remove(subject, predicate, object, contexts);
 		}
 	}
 
 	@Override
-	public void remove(Statement st, Resource... contexts)
-		throws RepositoryException
-	{
+	public void remove(Statement st, Resource... contexts) throws RepositoryException {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(st, contexts);
-		}
-		else {
+		} else {
 			super.remove(st, contexts);
 		}
 	}
 
 	@Override
-	public void removeNamespace(String prefix)
-		throws RepositoryException
-	{
+	public void removeNamespace(String prefix) throws RepositoryException {
 		getDelegate().removeNamespace(prefix);
 	}
 
 	@Override
-	public void clearNamespaces()
-		throws RepositoryException
-	{
+	public void clearNamespaces() throws RepositoryException {
 		getDelegate().clearNamespaces();
 	}
 
 	@Override
-	public void rollback()
-		throws RepositoryException
-	{
+	public void rollback() throws RepositoryException {
 		getDelegate().rollback();
 	}
 
@@ -477,52 +396,43 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 */
 	@Deprecated
 	@Override
-	public void setAutoCommit(boolean autoCommit)
-		throws RepositoryException
-	{
+	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
 		super.setAutoCommit(autoCommit);
 		getDelegate().setAutoCommit(autoCommit);
 	}
 
 	@Override
-	public void setNamespace(String prefix, String name)
-		throws RepositoryException
-	{
+	public void setNamespace(String prefix, String name) throws RepositoryException {
 		getDelegate().setNamespace(prefix, name);
 	}
 
 	@Override
-	public long size(Resource... contexts)
-		throws RepositoryException
-	{
+	public long size(Resource... contexts) throws RepositoryException {
 		return getDelegate().size(contexts);
 	}
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		getDelegate().add(subject, predicate, object, contexts);
 	}
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		getDelegate().remove(subject, predicate, object, contexts);
 	}
 
 	/**
-	 * Exports all statements contained in the supplied statement iterator and all relevant namespace
-	 * information to the supplied RDFHandler.
+	 * Exports all statements contained in the supplied statement iterator and all relevant namespace information to the
+	 * supplied RDFHandler.
 	 */
 	protected void exportStatements(RepositoryResult<Statement> stIter, RDFHandler handler)
-		throws RepositoryException, RDFHandlerException
-	{
+			throws RepositoryException, RDFHandlerException {
 		try {
 			handler.startRDF();
 			try ( // Export namespace information
-			    RepositoryResult<Namespace> nsIter = getNamespaces()) {
+					RepositoryResult<Namespace> nsIter = getNamespaces()) {
 				while (nsIter.hasNext()) {
 					Namespace ns = nsIter.next();
 					handler.handleNamespace(ns.getPrefix(), ns.getName());
@@ -533,30 +443,23 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 				handler.handleStatement(stIter.next());
 			}
 			handler.endRDF();
-		}
-		finally {
+		} finally {
 			stIter.close();
 		}
 	}
 
 	@Override
-	public void begin()
-		throws RepositoryException
-	{
+	public void begin() throws RepositoryException {
 		getDelegate().begin();
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-		throws RepositoryException
-	{
+	public void begin(IsolationLevel level) throws RepositoryException {
 		getDelegate().begin(level);
 	}
 
 	@Override
-	public void setIsolationLevel(IsolationLevel level)
-		throws IllegalStateException
-	{
+	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException {
 		getDelegate().setIsolationLevel(level);
 	}
 

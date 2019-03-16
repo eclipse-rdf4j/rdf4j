@@ -23,14 +23,11 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 	private static HTTPMemServer server;
 
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
@@ -39,9 +36,7 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 
 	@Before
 	@Override
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		super.setUp();
 		// overwrite bnode test values as SPARQL endpoints do not generally work
 		// well with bnodes
@@ -52,17 +47,13 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;
 	}
 
 	@Override
-	protected Repository createRepository()
-		throws Exception
-	{
+	protected Repository createRepository() throws Exception {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
 				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 

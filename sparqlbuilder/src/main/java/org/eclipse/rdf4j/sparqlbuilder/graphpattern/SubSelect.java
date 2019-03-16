@@ -17,18 +17,14 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * A SPARQL subquery
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#subqueries">
- *      SPARQL Subquery</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#subqueries"> SPARQL Subquery</a>
  */
 public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	private Projection select = SparqlBuilder.select();
 
 	/*
-	 * If someone has any ideas how I can eliminate the need for repeating the
-	 * following methods from SelectQuery without inheriting the methods that
-	 * don't apply to SubSelect (prologue and dataset stuff), that would be
-	 * awesome.
+	 * If someone has any ideas how I can eliminate the need for repeating the following methods from SelectQuery
+	 * without inheriting the methods that don't apply to SubSelect (prologue and dataset stuff), that would be awesome.
 	 */
 
 	/**
@@ -45,8 +41,7 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	/**
 	 * Specify if the query's projection should be distinct or not
 	 * 
-	 * @param isDistinct
-	 *            if this query's projection should be distinct
+	 * @param isDistinct if this query's projection should be distinct
 	 * @return this
 	 * 
 	 * @see Projection#distinct(boolean)
@@ -58,11 +53,10 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	}
 
 	/**
-	 * Specify that this query's projection should select all in-scope
-	 * expressions
+	 * Specify that this query's projection should select all in-scope expressions
 	 * <p>
-	 * NOTE: setting this takes precedence over any expressions added to the
-	 * projection via {@link #select(Projectable...)} when printing
+	 * NOTE: setting this takes precedence over any expressions added to the projection via
+	 * {@link #select(Projectable...)} when printing
 	 * 
 	 * @return this
 	 * 
@@ -73,15 +67,12 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	}
 
 	/**
-	 * Specify if this query's projection should select all in-scope expressions
-	 * or not.
+	 * Specify if this query's projection should select all in-scope expressions or not.
 	 * <p>
-	 * NOTE: if called with <code>true</code>, this setting will take precedence
-	 * over any expressions added to the projection via
-	 * {@link #select(Projectable...)} when printing
+	 * NOTE: if called with <code>true</code>, this setting will take precedence over any expressions added to the
+	 * projection via {@link #select(Projectable...)} when printing
 	 * 
-	 * @param selectAll
-	 *            if all in-scope expressions should be selected
+	 * @param selectAll if all in-scope expressions should be selected
 	 * @return this
 	 * 
 	 * @see Projection#all(boolean)
@@ -95,13 +86,10 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	/**
 	 * Add expressions to the query's projection
 	 * <p>
-	 * NOTE: if SELECT * has been specified (by {@link #all()} or calling
-	 * {@link #all(boolean)} with <code>true</code>), that will take precedence
-	 * over specified expressions when converting to string via
-	 * {@link #getQueryString()}
+	 * NOTE: if SELECT * has been specified (by {@link #all()} or calling {@link #all(boolean)} with <code>true</code>),
+	 * that will take precedence over specified expressions when converting to string via {@link #getQueryString()}
 	 * 
-	 * @param projectables
-	 *            expressions to add
+	 * @param projectables expressions to add
 	 * @return this
 	 * 
 	 * @see Projection#select(Projectable...)
@@ -115,8 +103,7 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	/**
 	 * Set this query's projection
 	 * 
-	 * @param select
-	 *            the {@link Projection} to set
+	 * @param select the {@link Projection} to set
 	 * @return this
 	 */
 	public SubSelect select(Projection select) {

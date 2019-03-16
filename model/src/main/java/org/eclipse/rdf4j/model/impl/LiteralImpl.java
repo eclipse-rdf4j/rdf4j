@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleLiteral} for extending, and instantiate using a
- *             {@link ValueFactory}.
+ * @deprecated since 4.0. Use {@link SimpleLiteral} for extending, and instantiate using a {@link ValueFactory}.
  */
 @Deprecated
 public class LiteralImpl extends SimpleLiteral {
@@ -40,6 +39,6 @@ public class LiteralImpl extends SimpleLiteral {
 	 */
 	@Deprecated
 	public LiteralImpl(String label, URI datatype) {
-		super(label, (IRI)datatype);
+		super(label, (IRI) datatype);
 	}
 }

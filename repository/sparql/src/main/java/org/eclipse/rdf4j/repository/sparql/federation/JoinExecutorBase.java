@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and
- * thus any implementation of this class is applicable for pipelining when used in a different thread (access
- * to shared variables is synchronized).
+ * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and thus any
+ * implementation of this class is applicable for pipelining when used in a different thread (access to shared variables
+ * is synchronized).
  * 
  * @author Andreas Schwarte
  */
@@ -49,13 +49,10 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	 */
 	protected volatile boolean finished = false;
 
-	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(
-			1024);
+	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(1024);
 
 	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			BindingSet bindings) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightArg = rightArg;
 		this.bindings = bindings;
@@ -65,11 +62,9 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 
 		try {
 			handleBindings();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			toss(e);
-		}
-		finally {
+		} finally {
 			finished = true;
 			rightQueue.done();
 		}
@@ -81,12 +76,10 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	 * while (!closed && leftIter.hasNext()) {
 	 * 		// your code
 	 * }
-	 * </code> and add results to rightQueue. Note that addResult() is implemented synchronized and thus
-	 * thread safe. In case you can guarantee sequential access, it is also possible to directly access
-	 * rightQueue
+	 * </code> and add results to rightQueue. Note that addResult() is implemented synchronized and thus thread safe. In
+	 * case you can guarantee sequential access, it is also possible to directly access rightQueue
 	 */
-	protected abstract void handleBindings()
-		throws Exception;
+	protected abstract void handleBindings() throws Exception;
 
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
 		/* optimization: avoid adding empty results */
@@ -96,8 +89,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 
 		try {
 			rightQueue.put(res);
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException("Error adding element to right queue", e);
 		}
@@ -112,9 +104,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	@Override
-	public T getNextElement()
-		throws QueryEvaluationException
-	{
+	public T getNextElement() throws QueryEvaluationException {
 		// TODO check if we need to protect rightQueue from synchronized access
 		// wasn't done in the original implementation either
 		// if we see any weird behavior check here !!
@@ -127,8 +117,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 			if (nextRightIter != null) {
 				if (nextRightIter.hasNext()) {
 					return nextRightIter.next();
-				}
-				else {
+				} else {
 					rightIter = null;
 					nextRightIter.close();
 				}
@@ -139,26 +128,21 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	@Override
-	public void handleClose()
-		throws QueryEvaluationException
-	{
+	public void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				rightQueue.close();
-			}
-			finally {
+			} finally {
 				try {
 					CloseableIteration<T, QueryEvaluationException> toCloseRightIter = rightIter;
 					rightIter = null;
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}
-				}
-				finally {
+				} finally {
 					CloseableIteration<T, QueryEvaluationException> toCloseLeftIter = leftIter;
 					if (toCloseLeftIter != null) {
 						toCloseLeftIter.close();

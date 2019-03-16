@@ -28,9 +28,7 @@ public class And extends BinaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -46,6 +44,6 @@ public class And extends BinaryValueOperator {
 
 	@Override
 	public And clone() {
-		return (And)super.clone();
+		return (And) super.clone();
 	}
 }

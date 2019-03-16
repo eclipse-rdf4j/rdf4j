@@ -17,15 +17,12 @@ import java.util.Optional;
 /**
  * A SPARQL Group Graph Pattern
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">
- *      SPARQL Group Graph Patterns</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns"> SPARQL Group Graph Patterns</a>
  */
-class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
-		GraphPattern {
+class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements GraphPattern {
 	private static final String OPTIONAL = "OPTIONAL";
 	private static final String GRAPH = "GRAPH ";
-	
+
 	private Optional<GraphName> from = Optional.empty();
 	private Optional<Filter> filter = Optional.empty();
 	protected boolean isOptional = false;
@@ -55,11 +52,11 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 
 	@Override
 	public GroupGraphPattern and(GraphPattern... patterns) {
-		if(isEmpty() && patterns.length == 1 && (isGGP(patterns[0]))) {
-		    copy(GraphPatterns.extractOrConvertToGGP(patterns[0]));
+		if (isEmpty() && patterns.length == 1 && (isGGP(patterns[0]))) {
+			copy(GraphPatterns.extractOrConvertToGGP(patterns[0]));
 		} else {
-		    addElements(patterns);
-        }
+			addElements(patterns);
+		}
 
 		return this;
 	}
@@ -74,7 +71,7 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 	@Override
 	public GroupGraphPattern from(GraphName name) {
 		from = Optional.of(name);
-		
+
 		return this;
 	}
 
@@ -100,14 +97,13 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 		}
 
 		SparqlBuilderUtils.appendQueryElementIfPresent(from, pattern, GRAPH, " ");
-		
+
 		innerPattern.append(super.getQueryString());
 
 		SparqlBuilderUtils.appendQueryElementIfPresent(filter, innerPattern, "\n", null);
 
 		if (bracketInner()) {
-			pattern.append(SparqlBuilderUtils.getBracedString(innerPattern
-					.toString()));
+			pattern.append(SparqlBuilderUtils.getBracedString(innerPattern.toString()));
 		} else {
 			pattern.append(innerPattern.toString());
 		}
@@ -116,21 +112,21 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 	}
 
 	private static boolean isGGP(GraphPattern pattern) {
-        if(pattern instanceof GroupGraphPattern) {
-            return true;
-        }
-        if(pattern instanceof GraphPatternNotTriples) {
-            return ((GraphPatternNotTriples) pattern).gp instanceof GroupGraphPattern;
-        }
+		if (pattern instanceof GroupGraphPattern) {
+			return true;
+		}
+		if (pattern instanceof GraphPatternNotTriples) {
+			return ((GraphPatternNotTriples) pattern).gp instanceof GroupGraphPattern;
+		}
 
-        return false;
-    }
+		return false;
+	}
 
-    // Prevent extra brackets being added in the case of this graph pattern
-    // containing only one group graph pattern. Resulting syntax is
-    // logically equivalent and easier to read (and hopefully parse by query
-    // parsers) or make sure to add them if "modifiers" exist
-    private boolean bracketInner() {
-        return !(elements.size() == 1 && elements.iterator().next() instanceof GroupGraphPattern);
-    }
+	// Prevent extra brackets being added in the case of this graph pattern
+	// containing only one group graph pattern. Resulting syntax is
+	// logically equivalent and easier to read (and hopefully parse by query
+	// parsers) or make sure to add them if "modifiers" exist
+	private boolean bracketInner() {
+		return !(elements.size() == 1 && elements.iterator().next() instanceof GroupGraphPattern);
+	}
 }

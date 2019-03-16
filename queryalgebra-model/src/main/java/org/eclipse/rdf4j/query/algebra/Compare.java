@@ -82,9 +82,7 @@ public class Compare extends BinaryValueOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -96,7 +94,7 @@ public class Compare extends BinaryValueOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Compare && super.equals(other)) {
-			Compare o = (Compare)other;
+			Compare o = (Compare) other;
 			return operator.equals(o.getOperator());
 		}
 		return false;
@@ -109,6 +107,6 @@ public class Compare extends BinaryValueOperator {
 
 	@Override
 	public Compare clone() {
-		return (Compare)super.clone();
+		return (Compare) super.clone();
 	}
 }
