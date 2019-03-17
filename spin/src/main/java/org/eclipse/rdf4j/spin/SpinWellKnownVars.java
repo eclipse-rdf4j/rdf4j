@@ -40,8 +40,7 @@ final class SpinWellKnownVars {
 			try {
 				Integer.parseInt(name.substring("arg".length()));
 				IRI = valueFactory.createIRI(SPIN.NAMESPACE, "_" + name);
-			}
-			catch (NumberFormatException nfe) {
+			} catch (NumberFormatException nfe) {
 				// ignore - not a well-known argN variable
 			}
 		}
@@ -50,15 +49,12 @@ final class SpinWellKnownVars {
 
 	public String getName(IRI IRI) {
 		String name = uriToString.get(IRI);
-		if (name == null && SPIN.NAMESPACE.equals(IRI.getNamespace())
-				&& IRI.getLocalName().startsWith("_arg"))
-		{
+		if (name == null && SPIN.NAMESPACE.equals(IRI.getNamespace()) && IRI.getLocalName().startsWith("_arg")) {
 			String lname = IRI.getLocalName();
 			try {
 				Integer.parseInt(lname.substring("_arg".length()));
 				name = lname.substring(1);
-			}
-			catch (NumberFormatException nfe) {
+			} catch (NumberFormatException nfe) {
 				// ignore - not a well-known argN variable
 			}
 		}

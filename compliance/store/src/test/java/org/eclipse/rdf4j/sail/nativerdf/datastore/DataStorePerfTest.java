@@ -18,9 +18,7 @@ import org.eclipse.rdf4j.common.io.FileUtil;
  */
 public class DataStorePerfTest {
 
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		System.out.println("DataStore performance test");
 		System.out.println("==========================");
 
@@ -50,9 +48,7 @@ public class DataStorePerfTest {
 		}
 	}
 
-	private static long[] runPerformanceTest(int stringCount)
-		throws Exception
-	{
+	private static long[] runPerformanceTest(int stringCount) throws Exception {
 		System.out.println("Running performance test with " + stringCount + " strings...");
 
 		long[] timeData = new long[4];
@@ -65,51 +61,50 @@ public class DataStorePerfTest {
 			try (DataStore dataStore = new DataStore(dataDir, "strings")) {
 				System.out.println("Storing strings...");
 				long startTime = System.nanoTime();
-				
+
 				for (int i = 1; i <= stringCount; i++) {
 					dataStore.storeData(String.valueOf(i).getBytes());
 				}
-				
+
 				dataStore.sync();
 				long endTime = System.nanoTime();
 				timeData[1] = (endTime - startTime) / stringCount;
 				System.out.println("Strings stored in " + (endTime - startTime) / 1E6 + " ms");
-				
+
 				System.out.println("Fetching IDs for all strings...");
 				startTime = System.nanoTime();
-				
+
 				for (int i = 1; i <= stringCount; i++) {
 					int sID = dataStore.getID(String.valueOf(i).getBytes());
 					if (sID == -1) {
 						throw new RuntimeException("Failed to get ID for string \"" + i + "\"");
 					}
 				}
-				
+
 				endTime = System.nanoTime();
 				timeData[2] = (endTime - startTime) / stringCount;
 				System.out.println("All IDs fetched in " + (endTime - startTime) / 1E6 + " ms");
-				
+
 				System.out.println("Fetching data for all IDs...");
 				startTime = System.nanoTime();
-				
+
 				for (int id = 1; id <= stringCount; id++) {
 					String s = new String(dataStore.getData(id));
 					if (s == null) {
 						throw new RuntimeException("Failed to get data for ID " + id);
 					}
 				}
-				
+
 				endTime = System.nanoTime();
 				timeData[3] = (endTime - startTime) / stringCount;
 				System.out.println("All data fetched in " + (endTime - startTime) / 1E6 + " ms");
-				
+
 				System.out.println("Closing DataStore...");
 			}
 			System.out.println("Done.");
 
 			return timeData;
-		}
-		finally {
+		} finally {
 			FileUtil.deleteDir(dataDir);
 		}
 	}

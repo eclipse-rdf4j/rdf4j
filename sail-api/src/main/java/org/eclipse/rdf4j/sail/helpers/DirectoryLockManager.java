@@ -93,19 +93,16 @@ public class DirectoryLockManager implements LockManager {
 				FileLock fileLock = raf.getChannel().lock();
 				lock = createLock(raf, fileLock);
 				sign(infoFile);
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				if (lock != null) {
 					// Also closes raf
 					lock.release();
-				}
-				else {
+				} else {
 					raf.close();
 				}
 				throw e;
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.error(e.toString(), e);
 		}
 
@@ -116,13 +113,10 @@ public class DirectoryLockManager implements LockManager {
 	 * Creates a lock in a directory if it does not yet exist.
 	 * 
 	 * @return a newly acquired lock.
-	 * @throws SailLockedException
-	 *         if the directory is already locked.
+	 * @throws SailLockedException if the directory is already locked.
 	 */
 	@Override
-	public Lock lockOrFail()
-		throws SailLockedException
-	{
+	public Lock lockOrFail() throws SailLockedException {
 		Lock lock = tryLock();
 
 		if (lock != null) {
@@ -172,16 +166,14 @@ public class DirectoryLockManager implements LockManager {
 					fileLock.release();
 					revokeLock = true;
 				}
-			}
-			catch (OverlappingFileLockException exc) {
+			} catch (OverlappingFileLockException exc) {
 				// lock is still valid
 			}
 
 			if (revokeLock) {
 				revokeLock();
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.warn(e.toString(), e);
 		}
 	}
@@ -193,8 +185,7 @@ public class DirectoryLockManager implements LockManager {
 			try (BufferedReader reader = new BufferedReader(new FileReader(infoFile))) {
 				return reader.readLine();
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			logger.warn(e.toString(), e);
 			return null;
 		}
@@ -215,8 +206,7 @@ public class DirectoryLockManager implements LockManager {
 					});
 					Runtime.getRuntime().addShutdownHook(hook);
 					this.hook = hook;
-				}
-				catch (AccessControlException e) {
+				} catch (AccessControlException e) {
 					// okay, just remember to close it yourself
 				}
 			}
@@ -233,11 +223,9 @@ public class DirectoryLockManager implements LockManager {
 						Runtime.getRuntime().removeShutdownHook(hook);
 						hook = null;
 					}
-				}
-				catch (IllegalStateException e) {
+				} catch (IllegalStateException e) {
 					// already shutting down
-				}
-				catch (AccessControlException e) {
+				} catch (AccessControlException e) {
 					logger.warn(e.toString(), e);
 				}
 				delete();
@@ -249,8 +237,7 @@ public class DirectoryLockManager implements LockManager {
 						fileLock.release();
 						raf.close();
 					}
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					logger.warn(e.toString(), e);
 				}
 
@@ -259,9 +246,7 @@ public class DirectoryLockManager implements LockManager {
 		};
 	}
 
-	private void sign(File infoFile)
-		throws IOException
-	{
+	private void sign(File infoFile) throws IOException {
 		try (FileWriter out = new FileWriter(infoFile)) {
 			out.write(getProcessName());
 			out.flush();

@@ -40,7 +40,7 @@ public class DistanceTest {
 		assertNotNull("Binded value is null", value);
 
 		assertTrue("Value is not a literal", value instanceof Literal);
-		Literal l = (Literal)value;
+		Literal l = (Literal) value;
 		assertTrue("Literal not of type double", l.getDatatype().equals(XMLSchema.DOUBLE));
 
 		assertEquals("Distance Amsterdam-Brussels not correct", 173, l.doubleValue() / 1000, 0.5);
@@ -58,10 +58,10 @@ public class DistanceTest {
 		assertNotNull("Bindingset is null", bs);
 
 		Value v1 = bs.getBinding("dist1").getValue();
-		double ambxl = ((Literal)v1).doubleValue();
+		double ambxl = ((Literal) v1).doubleValue();
 
 		Value v2 = bs.getBinding("dist2").getValue();
-		double bxlam = ((Literal)v2).doubleValue();
+		double bxlam = ((Literal) v2).doubleValue();
 
 		assertEquals("Distance Amsterdam-Brussels not correct", ambxl, bxlam, 0.1);
 	}

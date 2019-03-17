@@ -24,9 +24,7 @@ public class SchemaCachingRDFSMemoryStoreConcurrencyTest extends SailConcurrency
 	 *---------*/
 
 	@Override
-	protected Sail createSail()
-		throws SailException
-	{
+	protected Sail createSail() throws SailException {
 		Sail sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
 		return sailStack;
 	}
@@ -34,9 +32,7 @@ public class SchemaCachingRDFSMemoryStoreConcurrencyTest extends SailConcurrency
 	@Ignore
 	@Test
 	@Override
-	public void testConcurrentAddLargeTxnRollback()
-		throws Exception
-	{
+	public void testConcurrentAddLargeTxnRollback() throws Exception {
 		// empty since this test is ignored
 	}
 }

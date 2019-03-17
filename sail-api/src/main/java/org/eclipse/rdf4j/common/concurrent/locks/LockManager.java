@@ -18,16 +18,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Manages a set of active locks. If any active lock is garbage collected it is automatically removed from the
- * set and logged.
+ * Manages a set of active locks. If any active lock is garbage collected it is automatically removed from the set and
+ * logged.
  * 
  * @author James Leigh
  */
 public class LockManager {
 
 	/**
-	 * Number of milliseconds to block thread before the garbage collection should search and collect
-	 * abandoned active locks
+	 * Number of milliseconds to block thread before the garbage collection should search and collect abandoned active
+	 * locks
 	 */
 	private static final int INITIAL_WAIT_TO_COLLECT = 10000;
 
@@ -51,14 +51,14 @@ public class LockManager {
 	private final Logger logger = LoggerFactory.getLogger(LockManager.class);
 
 	/**
-	 * Controls whether the lock manager will keep a stack trace of where each lock was created. Mainly useful
-	 * for debugging.
+	 * Controls whether the lock manager will keep a stack trace of where each lock was created. Mainly useful for
+	 * debugging.
 	 */
 	private final boolean trackLocks;
 
 	/**
-	 * Number of milliseconds to block thread before the garbage collection should search and collect
-	 * abandoned active locks
+	 * Number of milliseconds to block thread before the garbage collection should search and collect abandoned active
+	 * locks
 	 */
 	private int waitToCollect;
 
@@ -77,9 +77,8 @@ public class LockManager {
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
 	 * 
-	 * @param trackLocks
-	 *        Controls whether to keep a stack trace of active locks. Enabling lock tracking will add some
-	 *        overhead, but can be very useful for debugging.
+	 * @param trackLocks Controls whether to keep a stack trace of active locks. Enabling lock tracking will add some
+	 *                   overhead, but can be very useful for debugging.
 	 */
 	public LockManager(boolean trackLocks) {
 		this(trackLocks, INITIAL_WAIT_TO_COLLECT);
@@ -88,12 +87,10 @@ public class LockManager {
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
 	 * 
-	 * @param trackLocks
-	 *        Controls whether to keep a stack trace of active locks. Enabling lock tracking will add some
-	 *        overhead, but can be very useful for debugging.
-	 * @param collectionFrequency
-	 *        Number of milliseconds to block the first thread, waiting for active locks to finish, before
-	 *        running the memory garbage collection, to free abandoned active locks.
+	 * @param trackLocks          Controls whether to keep a stack trace of active locks. Enabling lock tracking will
+	 *                            add some overhead, but can be very useful for debugging.
+	 * @param collectionFrequency Number of milliseconds to block the first thread, waiting for active locks to finish,
+	 *                            before running the memory garbage collection, to free abandoned active locks.
 	 */
 	public LockManager(boolean trackLocks, int collectionFrequency) {
 		this.trackLocks = trackLocks || Properties.lockTrackingEnabled();
@@ -114,14 +111,11 @@ public class LockManager {
 	/**
 	 * Blocks current thread until the number of active locks has reached zero.
 	 * 
-	 * @throws InterruptedException
-	 *         if any thread interrupted the current thread before or while the current thread was waiting for
-	 *         a notification. The interrupted status of the current thread is cleared when this exception is
-	 *         thrown.
+	 * @throws InterruptedException if any thread interrupted the current thread before or while the current thread was
+	 *                              waiting for a notification. The interrupted status of the current thread is cleared
+	 *                              when this exception is thrown.
 	 */
-	public void waitForActiveLocks()
-		throws InterruptedException
-	{
+	public void waitForActiveLocks() throws InterruptedException {
 		long now = -1;
 		while (true) {
 			boolean nochange;
@@ -147,11 +141,10 @@ public class LockManager {
 	}
 
 	/**
-	 * Creates a new active lock. This increases the number of active locks until its {@link Lock#release()}
-	 * method is called, which decreases the number of active locks by the same amount.
+	 * Creates a new active lock. This increases the number of active locks until its {@link Lock#release()} method is
+	 * called, which decreases the number of active locks by the same amount.
 	 * 
-	 * @param alias
-	 *        a short string used to log abandon locks
+	 * @param alias a short string used to log abandon locks
 	 * @return an active lock
 	 */
 	public synchronized Lock createLock(String alias) {
@@ -160,8 +153,7 @@ public class LockManager {
 		weak.acquiredName = Thread.currentThread().getName();
 		weak.acquiredId = Thread.currentThread().getId();
 		if (trackLocks) {
-			weak.stack = new Throwable(
-					alias + " lock " + seq.incrementAndGet() + " acquired in " + weak.acquiredName);
+			weak.stack = new Throwable(alias + " lock " + seq.incrementAndGet() + " acquired in " + weak.acquiredName);
 		}
 		Lock lock = new Lock() {
 
@@ -185,8 +177,7 @@ public class LockManager {
 			public String toString() {
 				if (weak.stack == null) {
 					return weak.alias + " lock acquired in " + weak.acquiredName;
-				}
-				else {
+				} else {
 					return weak.stack.getMessage();
 				}
 			}
@@ -231,8 +222,7 @@ public class LockManager {
 			String msg = lock.alias
 					+ " lock abandoned; lock was acquired in {}; consider setting the {} system property";
 			logger.warn(msg, lock.acquiredName, Properties.TRACK_LOCKS);
-		}
-		else if (logger.isWarnEnabled()) {
+		} else if (logger.isWarnEnabled()) {
 			String msg = lock.alias + " lock abandoned; lock was acquired in " + lock.acquiredName;
 			logger.warn(msg, lock.stack);
 		}
@@ -248,39 +238,33 @@ public class LockManager {
 				if (lock.acquiredId == current.getId()) {
 					if (lock.stack == null) {
 						logger.warn(msg, new Throwable());
-					}
-					else {
+					} else {
 						logger.warn(msg, new Throwable(lock.stack));
 					}
-				}
-				else {
+				} else {
 					if (lock.stack == null) {
 						logger.info(msg);
-					}
-					else {
+					} else {
 						logger.info(msg, new Throwable(lock.stack));
 					}
 				}
 			}
-		}
-		else {
+		} else {
 			String alias = null;
 			boolean warn = false;
 			for (WeakLockReference lock : activeLocks) {
 				warn |= lock.acquiredId == current.getId();
 				if (alias == null) {
 					alias = lock.alias;
-				}
-				else if (!alias.contains(lock.alias)) {
+				} else if (!alias.contains(lock.alias)) {
 					alias = alias + ", " + lock.alias;
 				}
 			}
-			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active "
-					+ alias + " locks";
+			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active " + alias
+					+ " locks";
 			if (warn) {
 				logger.warn(msg);
-			}
-			else {
+			} else {
 				logger.info(msg);
 			}
 		}

@@ -23,9 +23,7 @@ public class Or extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(arg1)
 				|| QueryEvaluationUtil.getEffectiveBooleanValue(arg2));
 	}

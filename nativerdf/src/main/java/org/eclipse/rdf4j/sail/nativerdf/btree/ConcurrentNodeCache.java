@@ -22,15 +22,15 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		if (node.dataChanged()) {
 			try {
 				node.write();
-			}
-			catch (IOException exc) {
+			} catch (IOException exc) {
 				throw new SailException("Error writing B-tree node", exc);
 			}
 		}
 	};
 
 	public ConcurrentNodeCache(Function<Integer, Node> reader) {
-		super(0); //cleanUp, when actually run, will try to completely purge the cache (but retain currently used nodes)
+		super(0); // cleanUp, when actually run, will try to completely purge the cache (but retain currently used
+					// nodes)
 		this.reader = reader;
 	}
 
@@ -38,9 +38,7 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		cache.forEachValue(Long.MAX_VALUE, writeNode);
 	}
 
-	public void put(Node node)
-		throws IOException
-	{
+	public void put(Node node) throws IOException {
 		cache.put(node.getID(), node);
 	}
 
@@ -59,8 +57,7 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 			if (v.getUsageCount() == 0 && v.isEmpty() && v.isLeaf()) {
 				writeNode.accept(v);
 				return null;
-			}
-			else
+			} else
 				return v;
 		});
 		return nn == null;

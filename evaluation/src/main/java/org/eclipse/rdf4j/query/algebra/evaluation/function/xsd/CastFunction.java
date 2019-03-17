@@ -31,16 +31,14 @@ public abstract class CastFunction implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
+			Literal literal = (Literal) args[0];
 			IRI datatype = literal.getDatatype();
 
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
@@ -48,15 +46,13 @@ public abstract class CastFunction implements Function {
 				if (isValidForDatatype(lexicalValue)) {
 					return valueFactory.createLiteral(lexicalValue, getXsdDatatype());
 				}
-			}
-			else if (datatype != null) {
+			} else if (datatype != null) {
 				if (datatype.equals(getXsdDatatype())) {
 					return literal;
 				}
 			}
 			return convert(valueFactory, literal);
-		}
-		else {
+		} else {
 			return convert(valueFactory, args[0]);
 		}
 	}
@@ -64,17 +60,13 @@ public abstract class CastFunction implements Function {
 	/**
 	 * Convert the supplied value to a literal of the function output datatype.
 	 * 
-	 * @param vf
-	 *        the valueFactory to use
-	 * @param v
-	 *        a value that is not a string-typed literal, and not a literal of the same datatype as the function output
-	 *        datatype.
+	 * @param vf the valueFactory to use
+	 * @param v  a value that is not a string-typed literal, and not a literal of the same datatype as the function
+	 *           output datatype.
 	 * @return a literal value of the function output datatype
-	 * @throws ValueExprEvaluationException
-	 *         if an error occurs in conversion.
+	 * @throws ValueExprEvaluationException if an error occurs in conversion.
 	 */
-	protected abstract Literal convert(ValueFactory vf, Value v)
-		throws ValueExprEvaluationException;
+	protected abstract Literal convert(ValueFactory vf, Value v) throws ValueExprEvaluationException;
 
 	/**
 	 * Get the specific XML Schema datatype which this function returns.
@@ -95,8 +87,7 @@ public abstract class CastFunction implements Function {
 	/**
 	 * Verifies that the supplied lexical value is valid for the datatype.
 	 * 
-	 * @param lexicalValue
-	 *        a lexical value
+	 * @param lexicalValue a lexical value
 	 * @return true if the lexical value is valid for the datatype, false otherwise.
 	 */
 	protected abstract boolean isValidForDatatype(String lexicalValue);
@@ -104,14 +95,11 @@ public abstract class CastFunction implements Function {
 	/**
 	 * Creates a {@link ValueExprEvaluationException} that signals a type error.
 	 * 
-	 * @param arg
-	 *        the function argument value.
-	 * @param cause
-	 *        root cause throwable. May be null.
+	 * @param arg   the function argument value.
+	 * @param cause root cause throwable. May be null.
 	 * @return a {@link ValueExprEvaluationException} with a standardized message and wrapped cause.
 	 */
 	protected final ValueExprEvaluationException typeError(Value arg, Throwable cause) {
-		return new ValueExprEvaluationException("Invalid argument for " + getXsdName() + " cast: " + arg,
-				cause);
+		return new ValueExprEvaluationException("Invalid argument for " + getXsdName() + " cast: " + arg, cause);
 	}
 }

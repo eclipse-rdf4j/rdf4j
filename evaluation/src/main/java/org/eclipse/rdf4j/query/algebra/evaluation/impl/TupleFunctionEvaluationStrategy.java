@@ -35,50 +35,41 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver)
-	{
+			FederatedServiceResolver serviceResolver) {
 		this(tripleSource, dataset, serviceResolver, 0);
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold)
-	{
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold) {
 		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance(), iterationCacheSyncThreshold);
 	}
-	
+
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver,
-			TupleFunctionRegistry tupleFuncRegistry, long iterationCacheSyncThreshold)
-	{
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFuncRegistry,
+			long iterationCacheSyncThreshold) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold);
 		this.tupleFuncRegistry = tupleFuncRegistry;
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry)
-	{
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry) {
 		this(tripleSource, dataset, serviceResolver, tupleFunctionRegistry, 0);
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
-			BindingSet bindings)
-		throws QueryEvaluationException
-	{
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+			throws QueryEvaluationException {
 		if (expr instanceof TupleFunctionCall) {
-			return evaluate((TupleFunctionCall)expr, bindings);
-		}
-		else {
+			return evaluate((TupleFunctionCall) expr, bindings);
+		} else {
 			return super.evaluate(expr, bindings);
 		}
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunctionCall expr,
-			BindingSet bindings)
-		throws QueryEvaluationException
-	{
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI()).orElseThrow(
-				() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
+			BindingSet bindings) throws QueryEvaluationException {
+		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
+				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
 
 		List<ValueExpr> args = expr.getArgs();
 
@@ -91,25 +82,20 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	public static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
-			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory,
-			Value... argValues)
-		throws QueryEvaluationException
-	{
-		final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func.evaluate(
-				valueFactory, argValues);
+			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
+			throws QueryEvaluationException {
+		final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func
+				.evaluate(valueFactory, argValues);
 		return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
-			public BindingSet getNextElement()
-				throws QueryEvaluationException
-			{
+			public BindingSet getNextElement() throws QueryEvaluationException {
 				QueryBindingSet resultBindings = null;
 				while (resultBindings == null && iter.hasNext()) {
 					resultBindings = new QueryBindingSet(bindings);
 					List<? extends Value> values = iter.next();
 					if (resultVars.size() != values.size()) {
-						throw new QueryEvaluationException(
-								"Incorrect number of result vars: require " + values.size());
+						throw new QueryEvaluationException("Incorrect number of result vars: require " + values.size());
 					}
 					for (int i = 0; i < values.size(); i++) {
 						Value result = values.get(i);
@@ -118,13 +104,11 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 						String varName = resultVar.getName();
 						Value boundValue = bindings.getValue(varName);
 						if ((varValue == null || result.equals(varValue))
-								&& (boundValue == null || result.equals(boundValue)))
-						{
+								&& (boundValue == null || result.equals(boundValue))) {
 							if (boundValue == null) { // if not already present
 								resultBindings.addBinding(varName, result);
 							}
-						}
-						else {
+						} else {
 							resultBindings = null;
 							break;
 						}
@@ -134,13 +118,10 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 
 			@Override
-			protected void handleClose()
-				throws QueryEvaluationException
-			{
+			protected void handleClose() throws QueryEvaluationException {
 				try {
 					super.handleClose();
-				}
-				finally {
+				} finally {
 					iter.close();
 				}
 			}

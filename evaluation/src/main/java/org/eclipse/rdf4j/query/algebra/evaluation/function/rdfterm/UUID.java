@@ -27,9 +27,7 @@ public class UUID implements Function {
 	}
 
 	@Override
-	public IRI evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public IRI evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length > 0) {
 			throw new ValueExprEvaluationException("UUID requires 0 arguments, got " + args.length);
 		}

@@ -102,25 +102,19 @@ public class LuceneIndexTest {
 	LuceneIndex index;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		directory = new RAMDirectory();
 		analyzer = new StandardAnalyzer();
 		index = new LuceneIndex(directory, analyzer);
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		index.shutDown();
 	}
 
 	@Test
-	public void testAddStatement()
-		throws IOException, ParseException
-	{
+	public void testAddStatement() throws IOException, ParseException {
 		// add a statement to an index
 		index.begin();
 		index.addStatement(statement11);
@@ -220,22 +214,16 @@ public class LuceneIndexTest {
 	 * 
 	 * @throws IOException
 	 */
-	private static PostingsEnum termDocs(IndexReader reader, Term term)
-		throws IOException
-	{
+	private static PostingsEnum termDocs(IndexReader reader, Term term) throws IOException {
 		return MultiFields.getTermDocsEnum(reader, term.field(), term.bytes());
 	}
 
-	private static boolean next(PostingsEnum docs)
-		throws IOException
-	{
+	private static boolean next(PostingsEnum docs) throws IOException {
 		return (docs.nextDoc() != PostingsEnum.NO_MORE_DOCS);
 	}
 
 	@Test
-	public void testAddMultiple()
-		throws Exception
-	{
+	public void testAddMultiple() throws Exception {
 		// add a statement to an index
 		HashSet<Statement> added = new HashSet<>();
 		HashSet<Statement> removed = new HashSet<>();
@@ -248,7 +236,7 @@ public class LuceneIndexTest {
 		index.commit();
 
 		try ( // check that it arrived properly
-			DirectoryReader reader = DirectoryReader.open(directory)) {
+				DirectoryReader reader = DirectoryReader.open(directory)) {
 			assertEquals(2, reader.numDocs());
 		}
 
@@ -297,15 +285,12 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
-	 * sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
 	 * @throws Exception
 	 */
 	@Test
-	public void testContexts()
-		throws Exception
-	{
+	public void testContexts() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -319,8 +304,8 @@ public class LuceneIndexTest {
 		repository.initialize();
 
 		try ( // now add the statements through the repo
-		// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				// add statements with context
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -345,23 +330,19 @@ public class LuceneIndexTest {
 			assertNoStatement(statementContext211);
 			assertStatement(statementContext222);
 			assertStatement(statementContext232);
-		}
-		finally {
+		} finally {
 // close repo
-						repository.shutDown();
+			repository.shutDown();
 		}
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
-	 * sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the sail
 	 *
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2()
-		throws Exception
-	{
+	public void testContextsRemoveContext2() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -375,8 +356,8 @@ public class LuceneIndexTest {
 		repository.initialize();
 
 		try ( // now add the statements through the repo
-		// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				// add statements with context
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -401,10 +382,9 @@ public class LuceneIndexTest {
 			assertStatement(statementContext211);
 			assertNoStatement(statementContext222);
 			assertNoStatement(statementContext232);
-		}
-		finally {
+		} finally {
 // close repo
-						repository.shutDown();
+			repository.shutDown();
 		}
 	}
 
@@ -422,18 +402,14 @@ public class LuceneIndexTest {
 		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
 	}
 
-	private void assertStatement(Statement statement)
-		throws Exception
-	{
+	private void assertStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			fail("Missing document " + statement.getSubject());
 		assertStatement(statement, document);
 	}
 
-	private void assertNoStatement(Statement statement)
-		throws Exception
-	{
+	private void assertNoStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
 		if (document == null)
 			return;
@@ -448,7 +424,7 @@ public class LuceneIndexTest {
 		IndexableField[] fields = document.getFields(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (IndexableField f : fields) {
-			if (((Literal)statement.getObject()).getLabel().equals(f.stringValue()))
+			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue()))
 				return;
 		}
 		fail("Statement not found in document " + statement);
@@ -463,20 +439,19 @@ public class LuceneIndexTest {
 		if (fields == null)
 			return;
 		for (IndexableField f : fields) {
-			if (((Literal)statement.getObject()).getLabel().equals(f.stringValue()))
+			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue()))
 				fail("Statement should not be found in document " + statement);
 		}
 
 	}
 
 	/*
-	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new
-	 * HashSet<String>(texts); Set<String> found = new HashSet<String>(); for(Field field :
-	 * document.getFields(LuceneIndex.TEXT_FIELD_NAME)) { // is the field value expected and not yet been
-	 * found? if(toFind.remove(field.stringValue())) { // add it to the found set // (it was already remove
-	 * from the toFind list in the if clause) found.add(field.stringValue()); } else { assertEquals(
-	 * "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } } for(String
-	 * notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
+	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new HashSet<String>(texts);
+	 * Set<String> found = new HashSet<String>(); for(Field field : document.getFields(LuceneIndex.TEXT_FIELD_NAME)) {
+	 * // is the field value expected and not yet been found? if(toFind.remove(field.stringValue())) { // add it to the
+	 * found set // (it was already remove from the toFind list in the if clause) found.add(field.stringValue()); } else
+	 * { assertEquals( "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } }
+	 * for(String notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
 	 * false); } }
 	 */
 }

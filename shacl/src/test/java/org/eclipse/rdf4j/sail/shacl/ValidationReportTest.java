@@ -40,7 +40,7 @@ public class ValidationReportTest {
 
 			connection.commit();
 
-		} catch (RepositoryException e){
+		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
 			Model actual = cause.validationReportAsModel();
 
@@ -50,38 +50,25 @@ public class ValidationReportTest {
 
 			Rio.write(actual, System.out, RDFFormat.TURTLE);
 
-
-			Model expected = Rio.parse(new StringReader("" +
-				"@prefix ex: <http://example.com/ns#> .\n" +
-				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-				"\n" +
-				"_:node1d1gi0h02x12 a sh:ValidationReport;\n" +
-				"  sh:conforms false;\n" +
-				"  sh:result _:node1d1gi0h02x13 .\n" +
-				"\n" +
-				"_:node1d1gi0h02x13 a sh:ValidationResult;\n" +
-				"  sh:focusNode rdf:subject;\n" +
-				"  sh:resultPath rdfs:label;\n" +
-				"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
-				"  sh:sourceShape ex:PersonShapeProperty .\n" +
-				"\n" +
-				"_:node1d1gi0h02x12 sh:result _:node1d1gi0h02x14 .\n" +
-				"\n" +
-				"_:node1d1gi0h02x14 a sh:ValidationResult;\n" +
-				"  sh:focusNode rdfs:Class;\n" +
-				"  sh:resultPath rdfs:label;\n" +
-				"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
-				"  sh:sourceShape ex:PersonShapeProperty ." +
-				""), "", RDFFormat.TURTLE);
-
+			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n"
+					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+					+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
+					+ "_:node1d1gi0h02x12 a sh:ValidationReport;\n" + "  sh:conforms false;\n"
+					+ "  sh:result _:node1d1gi0h02x13 .\n" + "\n" + "_:node1d1gi0h02x13 a sh:ValidationResult;\n"
+					+ "  sh:focusNode rdf:subject;\n" + "  sh:resultPath rdfs:label;\n"
+					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
+					+ "  sh:sourceShape ex:PersonShapeProperty .\n" + "\n"
+					+ "_:node1d1gi0h02x12 sh:result _:node1d1gi0h02x14 .\n" + "\n"
+					+ "_:node1d1gi0h02x14 a sh:ValidationResult;\n" + "  sh:focusNode rdfs:Class;\n"
+					+ "  sh:resultPath rdfs:label;\n"
+					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
+					+ "  sh:sourceShape ex:PersonShapeProperty ." + ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
 
 		}
 	}
-
 
 	@Test
 	public void nestedLogicalOrSupport() throws IOException {
@@ -91,10 +78,11 @@ public class ValidationReportTest {
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
 			connection.begin();
-			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader().getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), "utf-8")).execute();
+			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader()
+					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), "utf-8")).execute();
 			connection.commit();
 
-		} catch (RepositoryException e){
+		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
 			Model actual = cause.validationReportAsModel();
 
@@ -104,38 +92,22 @@ public class ValidationReportTest {
 
 			Rio.write(actual, System.out, RDFFormat.TURTLE);
 
-
-			Model expected = Rio.parse(new StringReader("" +
-				"@prefix ex: <http://example.com/ns#> .\n" +
-				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-				"\n" +
-				"_:node1d1giv2b9x25 a sh:ValidationReport;\n" +
-				"  sh:conforms false;\n" +
-				"  sh:result _:node1d1giv2b9x26 .\n" +
-				"\n" +
-				"_:node1d1giv2b9x26 a sh:ValidationResult;\n" +
-				"  sh:detail _:node1d1giv2b9x27 .\n" +
-				"\n" +
-				"_:node1d1giv2b9x27 a sh:ValidationResult;\n" +
-				"  sh:detail _:node1d1giv2b9x28 .\n" +
-				"\n" +
-				"_:node1d1giv2b9x28 a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:resultPath ex:age;\n" +
-				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-				"  sh:sourceShape ex:personShapeAgeLong .\n" +
-				"\n" +
-				"_:node1d1giv2b9x27 sh:focusNode ex:validPerson1;\n" +
-				"  sh:resultPath ex:age;\n" +
-				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-				"  sh:sourceShape ex:personShapeAgeInteger .\n" +
-				"\n" +
-				"_:node1d1giv2b9x26 sh:focusNode ex:validPerson1;\n" +
-				"  sh:sourceConstraintComponent sh:OrConstraintComponent;\n" +
-				"  sh:sourceShape ex:personShapeOr ." +
-				""), "", RDFFormat.TURTLE);
-
+			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n"
+					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
+					+ "_:node1d1giv2b9x25 a sh:ValidationReport;\n" + "  sh:conforms false;\n"
+					+ "  sh:result _:node1d1giv2b9x26 .\n" + "\n" + "_:node1d1giv2b9x26 a sh:ValidationResult;\n"
+					+ "  sh:detail _:node1d1giv2b9x27 .\n" + "\n" + "_:node1d1giv2b9x27 a sh:ValidationResult;\n"
+					+ "  sh:detail _:node1d1giv2b9x28 .\n" + "\n" + "_:node1d1giv2b9x28 a sh:ValidationResult;\n"
+					+ "  sh:focusNode ex:validPerson1;\n" + "  sh:resultPath ex:age;\n"
+					+ "  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n"
+					+ "  sh:sourceShape ex:personShapeAgeLong .\n" + "\n"
+					+ "_:node1d1giv2b9x27 sh:focusNode ex:validPerson1;\n" + "  sh:resultPath ex:age;\n"
+					+ "  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n"
+					+ "  sh:sourceShape ex:personShapeAgeInteger .\n" + "\n"
+					+ "_:node1d1giv2b9x26 sh:focusNode ex:validPerson1;\n"
+					+ "  sh:sourceConstraintComponent sh:OrConstraintComponent;\n"
+					+ "  sh:sourceShape ex:personShapeOr ." + ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
 

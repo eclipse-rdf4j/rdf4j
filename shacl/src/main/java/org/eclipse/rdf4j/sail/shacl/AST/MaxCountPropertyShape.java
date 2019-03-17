@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -38,7 +37,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 	private long maxCount;
 
-	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Long maxCount) {
+	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Long maxCount) {
 		super(id, connection, nodeShape, deactivated);
 
 		this.maxCount = maxCount;
@@ -51,16 +51,19 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
+			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 
-			PlanNode directTupleFromFilter = new LoggingNode(new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class), "");
+			PlanNode directTupleFromFilter = new LoggingNode(
+					new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class), "");
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(directTupleFromFilter, shaclSailConnection);
@@ -70,17 +73,18 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			return new EnrichWithShape(new LoggingNode(directTupleFromFilter, ""), this);
 		}
 
+		PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape),
+				"");
 
-		PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
+		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape),
+				"");
 
-		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
-
-		planAddedStatements1 = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1), "");
+		planAddedStatements1 = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1),
+				"");
 
 		PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, planAddedStatements1), "");
 
 		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode), "");
-
 
 		MaxCountFilter maxCountFilter = new MaxCountFilter(groupByCount1, maxCount);
 
@@ -91,13 +95,17 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode unique = new LoggingNode(new Unique(trimmed), "");
 
-		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
+		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(
+				new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), false),
+				"");
 
 		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 
-		PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class);
+		PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
+				.getFalseNode(UnBufferedPlanNode.class);
 
-		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""), new LoggingNode(invalidValues, ""));
+		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""),
+				new LoggingNode(invalidValues, ""));
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(mergeNode1, shaclSailConnection);

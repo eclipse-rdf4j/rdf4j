@@ -14,8 +14,8 @@ import java.util.Collection;
 public abstract class AbstractLuceneIndex extends AbstractSearchIndex {
 
 	/**
-	 * keep a lit of old monitors that are still iterating but not closed (open iterators), will be all closed
-	 * on shutdown items are removed from list by ReaderMnitor.endReading() when closing
+	 * keep a lit of old monitors that are still iterating but not closed (open iterators), will be all closed on
+	 * shutdown items are removed from list by ReaderMnitor.endReading() when closing
 	 */
 	protected final Collection<AbstractReaderMonitor> oldmonitors = new ArrayList<>();
 
@@ -27,9 +27,7 @@ public abstract class AbstractLuceneIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void endReading()
-		throws IOException
-	{
+	public void endReading() throws IOException {
 		getCurrentMonitor().endReading();
 	}
 

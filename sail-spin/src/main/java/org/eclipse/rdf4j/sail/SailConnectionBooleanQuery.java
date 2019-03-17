@@ -26,13 +26,11 @@ public class SailConnectionBooleanQuery extends SailConnectionQuery implements B
 
 	@Override
 	public ParsedBooleanQuery getParsedQuery() {
-		return (ParsedBooleanQuery)super.getParsedQuery();
+		return (ParsedBooleanQuery) super.getParsedQuery();
 	}
 
 	@Override
-	public boolean evaluate()
-		throws QueryEvaluationException
-	{
+	public boolean evaluate() throws QueryEvaluationException {
 		ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
 		TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
 		Dataset dataset = getDataset();
@@ -51,12 +49,10 @@ public class SailConnectionBooleanQuery extends SailConnectionQuery implements B
 
 			try {
 				return bindingsIter.hasNext();
-			}
-			finally {
+			} finally {
 				bindingsIter.close();
 			}
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}

@@ -38,11 +38,9 @@ public class DateTimeCast extends CastFunction {
 	}
 
 	@Override
-	protected Literal convert(ValueFactory vf, Value value)
-		throws ValueExprEvaluationException
-	{
+	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (datatype.equals(XMLSchema.DATE)) {
@@ -60,10 +58,8 @@ public class DateTimeCast extends CastFunction {
 					int day = calValue.getDay();
 					int timezoneOffset = calValue.getTimezone();
 
-					if (DatatypeConstants.FIELD_UNDEFINED != year
-							&& DatatypeConstants.FIELD_UNDEFINED != month
-							&& DatatypeConstants.FIELD_UNDEFINED != day)
-					{
+					if (DatatypeConstants.FIELD_UNDEFINED != year && DatatypeConstants.FIELD_UNDEFINED != month
+							&& DatatypeConstants.FIELD_UNDEFINED != day) {
 						StringBuilder dtBuilder = new StringBuilder();
 						dtBuilder.append(year);
 						dtBuilder.append("-");
@@ -83,8 +79,7 @@ public class DateTimeCast extends CastFunction {
 							minutes = minutes - (hours * 60);
 							if (timezoneOffset > 0) {
 								dtBuilder.append("+");
-							}
-							else {
+							} else {
 								dtBuilder.append("-");
 							}
 							if (hours < 10) {
@@ -99,12 +94,10 @@ public class DateTimeCast extends CastFunction {
 						}
 
 						return vf.createLiteral(dtBuilder.toString(), XMLSchema.DATETIME);
-					}
-					else {
+					} else {
 						throw typeError(literal, null);
 					}
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}
 			}

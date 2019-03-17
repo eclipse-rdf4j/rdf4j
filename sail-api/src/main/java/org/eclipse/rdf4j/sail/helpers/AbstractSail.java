@@ -25,8 +25,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An abstract Sail implementation that takes care of common sail tasks, including proper closing of active
- * connections and a grace period for active connections during shutdown of the store.
+ * An abstract Sail implementation that takes care of common sail tasks, including proper closing of active connections
+ * and a grace period for active connections during shutdown of the store.
  * 
  * @author Herko ter Horst
  * @author jeen
@@ -49,9 +49,9 @@ public abstract class AbstractSail implements Sail {
 	private IsolationLevel defaultIsolationLevel = IsolationLevels.READ_COMMITTED;
 
 	/**
-	 * list of supported isolation levels. By default set to include {@link IsolationLevels#READ_UNCOMMITTED}
-	 * and {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are expected to alter this
-	 * list according to their specific capabilities.
+	 * list of supported isolation levels. By default set to include {@link IsolationLevels#READ_UNCOMMITTED} and
+	 * {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are expected to alter this list according to
+	 * their specific capabilities.
 	 */
 	private List<IsolationLevel> supportedIsolationLevels = new ArrayList<>();
 
@@ -69,8 +69,7 @@ public abstract class AbstractSail implements Sail {
 		try {
 			String value = System.getProperty(DEBUG_PROP);
 			return value != null && !value.equals("false");
-		}
-		catch (SecurityException e) {
+		} catch (SecurityException e) {
 			// Thrown when not allowed to read system properties, for example when
 			// running in applets
 			return false;
@@ -111,8 +110,8 @@ public abstract class AbstractSail implements Sail {
 	private long iterationCacheSyncThreshold = DEFAULT_ITERATION_SYNC_THRESHOLD;
 
 	/**
-	 * Map used to track active connections and where these were acquired. The Throwable value may be null in
-	 * case debugging was disable at the time the connection was acquired.
+	 * Map used to track active connections and where these were acquired. The Throwable value may be null in case
+	 * debugging was disable at the time the connection was acquired.
 	 */
 	private final Map<SailConnection, Throwable> activeConnections = new IdentityHashMap<>();
 
@@ -157,15 +156,14 @@ public abstract class AbstractSail implements Sail {
 	public String toString() {
 		if (dataDir == null) {
 			return super.toString();
-		}
-		else {
+		} else {
 			return dataDir.toString();
 		}
 	}
 
 	/**
-	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize()
-	 * initialization} until {@link #shutDown() shutdown}.
+	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize() initialization}
+	 * until {@link #shutDown() shutdown}.
 	 * 
 	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt> otherwise.
 	 */
@@ -173,17 +171,13 @@ public abstract class AbstractSail implements Sail {
 		return initialized;
 	}
 
-	
 	@Override
-	public void initialize() throws SailException 
-	{
+	public void initialize() throws SailException {
 		init();
 	}
-	
+
 	@Override
-	public void init()
-		throws SailException
-	{
+	public void init() throws SailException {
 		initializationLock.writeLock().lock();
 		try {
 			logger.trace("is initialized: {}", isInitialized());
@@ -195,25 +189,19 @@ public abstract class AbstractSail implements Sail {
 			initializeInternal();
 
 			initialized = true;
-		}
-		finally {
+		} finally {
 			initializationLock.writeLock().unlock();
 		}
 	}
 
 	/**
-	 * Do store-specific operations to initialize the store. The default implementation of this method does
-	 * nothing.
+	 * Do store-specific operations to initialize the store. The default implementation of this method does nothing.
 	 */
-	protected void initializeInternal()
-		throws SailException
-	{
+	protected void initializeInternal() throws SailException {
 	}
 
 	@Override
-	public void shutDown()
-		throws SailException
-	{
+	public void shutDown() throws SailException {
 		initializationLock.writeLock().lock();
 		try {
 			if (!isInitialized()) {
@@ -229,8 +217,7 @@ public abstract class AbstractSail implements Sail {
 					logger.debug("Waiting for active connections to close before shutting down...");
 					try {
 						activeConnections.wait(connectionTimeOut);
-					}
-					catch (InterruptedException e) {
+					} catch (InterruptedException e) {
 						// ignore and continue
 					}
 				}
@@ -247,19 +234,15 @@ public abstract class AbstractSail implements Sail {
 				Throwable stackTrace = entry.getValue();
 
 				if (stackTrace == null) {
-					logger.warn(
-							"Closing active connection due to shut down; consider setting the {} system property",
+					logger.warn("Closing active connection due to shut down; consider setting the {} system property",
 							DEBUG_PROP);
-				}
-				else {
-					logger.warn("Closing active connection due to shut down, connection was acquired in",
-							stackTrace);
+				} else {
+					logger.warn("Closing active connection due to shut down, connection was acquired in", stackTrace);
 				}
 
 				try {
 					con.close();
-				}
-				catch (SailException e) {
+				} catch (SailException e) {
 					logger.error("Failed to close connection", e);
 				}
 			}
@@ -270,8 +253,7 @@ public abstract class AbstractSail implements Sail {
 			}
 
 			shutDownInternal();
-		}
-		finally {
+		} finally {
 			initialized = false;
 			initializationLock.writeLock().unlock();
 		}
@@ -280,13 +262,10 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Do store-specific operations to ensure proper shutdown of the store.
 	 */
-	protected abstract void shutDownInternal()
-		throws SailException;
+	protected abstract void shutDownInternal() throws SailException;
 
 	@Override
-	public SailConnection getConnection()
-		throws SailException
-	{
+	public SailConnection getConnection() throws SailException {
 		initializationLock.readLock().lock();
 		try {
 			if (!isInitialized()) {
@@ -301,8 +280,7 @@ public abstract class AbstractSail implements Sail {
 			}
 
 			return connection;
-		}
-		finally {
+		} finally {
 			initializationLock.readLock().unlock();
 		}
 	}
@@ -312,15 +290,13 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @return A connection to the store.
 	 */
-	protected abstract SailConnection getConnectionInternal()
-		throws SailException;
+	protected abstract SailConnection getConnectionInternal() throws SailException;
 
 	/**
 	 * Signals to the store that the supplied connection has been closed; called by
 	 * {@link AbstractSailConnection#close()}.
 	 * 
-	 * @param connection
-	 *        The connection that has been closed.
+	 * @param connection The connection that has been closed.
 	 */
 	protected void connectionClosed(SailConnection connection) {
 		synchronized (activeConnections) {
@@ -332,8 +308,7 @@ public abstract class AbstractSail implements Sail {
 					// been closed.
 					activeConnections.notifyAll();
 				}
-			}
-			else {
+			} else {
 				logger.warn("tried to remove unknown connection object from store.");
 			}
 		}
@@ -342,19 +317,16 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Appends the provided {@link IsolationLevels} to the SAIL's list of supported isolation levels.
 	 * 
-	 * @param level
-	 *        a supported IsolationLevel.
+	 * @param level a supported IsolationLevel.
 	 */
 	protected void addSupportedIsolationLevel(IsolationLevels level) {
 		this.supportedIsolationLevels.add(level);
 	}
 
 	/**
-	 * Removes all occurrences of the provided {@link IsolationLevels} in the list of supported Isolation
-	 * levels.
+	 * Removes all occurrences of the provided {@link IsolationLevels} in the list of supported Isolation levels.
 	 * 
-	 * @param level
-	 *        the isolation level to remove.
+	 * @param level the isolation level to remove.
 	 */
 	protected void removeSupportedIsolationLevel(IsolationLevel level) {
 		while (this.supportedIsolationLevels.remove(level)) {
@@ -362,22 +334,20 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered
-	 * in increasing complexity.
+	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered in
+	 * increasing complexity.
 	 * 
-	 * @param supportedIsolationLevels
-	 *        a list of supported isolation levels.
+	 * @param supportedIsolationLevels a list of supported isolation levels.
 	 */
 	protected void setSupportedIsolationLevels(List<IsolationLevel> supportedIsolationLevels) {
 		this.supportedIsolationLevels = supportedIsolationLevels;
 	}
 
 	/**
-	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered
-	 * in increasing complexity.
+	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered in
+	 * increasing complexity.
 	 * 
-	 * @param supportedIsolationLevels
-	 *        a list of supported isolation levels.
+	 * @param supportedIsolationLevels a list of supported isolation levels.
 	 */
 	protected void setSupportedIsolationLevels(IsolationLevel... supportedIsolationLevels) {
 		this.supportedIsolationLevels = Arrays.asList(supportedIsolationLevels);
@@ -396,8 +366,7 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Sets the default {@link IsolationLevel} on which transactions in this Sail operate.
 	 * 
-	 * @param defaultIsolationLevel
-	 *        The defaultIsolationLevel to set.
+	 * @param defaultIsolationLevel The defaultIsolationLevel to set.
 	 */
 	public void setDefaultIsolationLevel(IsolationLevel defaultIsolationLevel) {
 		if (defaultIsolationLevel == null) {
@@ -418,8 +387,7 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Set the threshold for syncing query evaluation iteration caches to disk.
 	 * 
-	 * @param iterationCacheSyncThreshold
-	 *        The iterationCacheSyncThreshold to set.
+	 * @param iterationCacheSyncThreshold The iterationCacheSyncThreshold to set.
 	 */
 	public void setIterationCacheSyncThreshold(long iterationCacheSyncThreshold) {
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;

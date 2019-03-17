@@ -68,12 +68,9 @@ public class TupleFunctionFederatedService implements FederatedService {
 	}
 
 	@Override
-	public boolean ask(Service service, BindingSet bindings, String baseUri)
-		throws QueryEvaluationException
-	{
+	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
-				new SingletonIteration<>(bindings), baseUri);)
-		{
+				new SingletonIteration<>(bindings), baseUri);) {
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
 				String firstVar = service.getBindingNames().iterator().next();
@@ -85,12 +82,9 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
-			final Set<String> projectionVars, BindingSet bindings, String baseUri)
-		throws QueryEvaluationException
-	{
+			final Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
-		eval = evaluate(service, new SingletonIteration<>(bindings),
-				baseUri);
+		eval = evaluate(service, new SingletonIteration<>(bindings), baseUri);
 		iter = service.isSilent() ? new SilentIteration(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
 			return iter;
@@ -99,9 +93,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 		return new AbstractCloseableIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
-			public boolean hasNext()
-				throws QueryEvaluationException
-			{
+			public boolean hasNext() throws QueryEvaluationException {
 				if (isClosed()) {
 					return false;
 				}
@@ -113,9 +105,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			}
 
 			@Override
-			public BindingSet next()
-				throws QueryEvaluationException
-			{
+			public BindingSet next() throws QueryEvaluationException {
 				if (isClosed()) {
 					throw new NoSuchElementException("The iteration has been closed.");
 				}
@@ -127,37 +117,30 @@ public class TupleFunctionFederatedService implements FederatedService {
 						projected.addBinding(var, v);
 					}
 					return projected;
-				}
-				catch (NoSuchElementException e) {
+				} catch (NoSuchElementException e) {
 					close();
 					throw e;
 				}
 			}
 
 			@Override
-			public void remove()
-				throws QueryEvaluationException
-			{
+			public void remove() throws QueryEvaluationException {
 				if (isClosed()) {
 					throw new IllegalStateException("The iteration has been closed.");
 				}
 				try {
 					iter.remove();
-				}
-				catch (IllegalStateException e) {
+				} catch (IllegalStateException e) {
 					close();
 					throw e;
 				}
 			}
 
 			@Override
-			public void handleClose()
-				throws QueryEvaluationException
-			{
+			public void handleClose() throws QueryEvaluationException {
 				try {
 					super.handleClose();
-				}
-				finally {
+				} finally {
 					iter.close();
 				}
 			}
@@ -167,8 +150,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 	@Override
 	public final CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		if (!bindings.hasNext()) {
 			return new EmptyIteration<>();
 		}
@@ -178,9 +160,9 @@ public class TupleFunctionFederatedService implements FederatedService {
 			return new EmptyIteration<>();
 		}
 
-		TupleFunctionCall funcCall = (TupleFunctionCall)expr;
-		TupleFunction func = tupleFunctionRegistry.get(funcCall.getURI()).orElseThrow(
-				() -> new QueryEvaluationException("Unknown tuple function '" + funcCall.getURI() + "'"));
+		TupleFunctionCall funcCall = (TupleFunctionCall) expr;
+		TupleFunction func = tupleFunctionRegistry.get(funcCall.getURI())
+				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + funcCall.getURI() + "'"));
 
 		List<ValueExpr> argExprs = funcCall.getArgs();
 
@@ -192,29 +174,23 @@ public class TupleFunctionFederatedService implements FederatedService {
 				ValueExpr argExpr = argExprs.get(i);
 				Value argValue;
 				if (argExpr instanceof Var) {
-					argValue = getValue((Var)argExpr, bs);
-				}
-				else if (argExpr instanceof ValueConstant) {
-					argValue = ((ValueConstant)argExpr).getValue();
-				}
-				else {
-					throw new ValueExprEvaluationException("Unsupported ValueExpr for argument " + i + ": "
-							+ argExpr.getClass().getSimpleName());
+					argValue = getValue((Var) argExpr, bs);
+				} else if (argExpr instanceof ValueConstant) {
+					argValue = ((ValueConstant) argExpr).getValue();
+				} else {
+					throw new ValueExprEvaluationException(
+							"Unsupported ValueExpr for argument " + i + ": " + argExpr.getClass().getSimpleName());
 				}
 				argValues[i] = argValue;
 			}
-			resultIters.add(TupleFunctionEvaluationStrategy.evaluate(func, funcCall.getResultVars(), bs, vf,
-					argValues));
+			resultIters
+					.add(TupleFunctionEvaluationStrategy.evaluate(func, funcCall.getResultVars(), bs, vf, argValues));
 		}
-		return (resultIters.size() > 1)
-				? new DistinctIteration<>(
-						new UnionIteration<>(resultIters))
+		return (resultIters.size() > 1) ? new DistinctIteration<>(new UnionIteration<>(resultIters))
 				: resultIters.get(0);
 	}
 
-	private static Value getValue(Var var, BindingSet bs)
-		throws ValueExprEvaluationException
-	{
+	private static Value getValue(Var var, BindingSet bs) throws ValueExprEvaluationException {
 		Value v = var.getValue();
 		if (v == null) {
 			v = bs.getValue(var.getName());

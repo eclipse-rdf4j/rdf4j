@@ -25,17 +25,15 @@ public class Cast extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		if (!(arg1 instanceof Literal)) {
 			throw new ValueExprEvaluationException("First argument must be a literal");
 		}
 		if (!(arg2 instanceof IRI)) {
 			throw new ValueExprEvaluationException("Second argument must be a datatype");
 		}
-		Literal value = (Literal)arg1;
-		IRI targetDatatype = (IRI)arg2;
+		Literal value = (Literal) arg1;
+		IRI targetDatatype = (IRI) arg2;
 		Function func = FunctionRegistry.getInstance().get(targetDatatype.stringValue()).orElse(null);
 		return (func != null) ? func.evaluate(valueFactory, value)
 				: valueFactory.createLiteral(value.getLabel(), targetDatatype);

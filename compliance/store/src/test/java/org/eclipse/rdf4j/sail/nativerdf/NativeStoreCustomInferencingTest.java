@@ -22,9 +22,7 @@ public class NativeStoreCustomInferencingTest extends CustomGraphQueryInferencer
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
-	public NativeStoreCustomInferencingTest(String resourceFolder, Expectation testData,
-			QueryLanguage language)
-	{
+	public NativeStoreCustomInferencingTest(String resourceFolder, Expectation testData, QueryLanguage language) {
 		super(resourceFolder, testData, language);
 	}
 
@@ -32,8 +30,7 @@ public class NativeStoreCustomInferencingTest extends CustomGraphQueryInferencer
 	protected NotifyingSail newSail() {
 		try {
 			return new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			fail(e.getMessage());
 			throw new AssertionError(e);
 		}

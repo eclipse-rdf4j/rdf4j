@@ -26,9 +26,7 @@ public class Member implements TupleFunction {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		return new ForEach().evaluate(valueFactory, args);
 	}
 }

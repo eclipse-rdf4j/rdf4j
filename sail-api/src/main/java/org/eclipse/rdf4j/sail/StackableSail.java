@@ -13,8 +13,8 @@ package org.eclipse.rdf4j.sail;
 public interface StackableSail extends Sail {
 
 	/**
-	 * Sets the base Sail that this Sail will work on top of. This method will be called before the
-	 * initialize() method is called.
+	 * Sets the base Sail that this Sail will work on top of. This method will be called before the initialize() method
+	 * is called.
 	 */
 	public void setBaseSail(Sail baseSail);
 

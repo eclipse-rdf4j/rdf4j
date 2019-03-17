@@ -26,19 +26,15 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	private final EvaluationStrategy strategy;
 
-	public ExtensionIterator(Extension extension,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, EvaluationStrategy strategy)
-		throws QueryEvaluationException
-	{
+	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.extension = extension;
 		this.strategy = strategy;
 	}
 
 	@Override
-	public BindingSet convert(BindingSet sourceBindings)
-		throws QueryEvaluationException
-	{
+	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		QueryBindingSet targetBindings = new QueryBindingSet(sourceBindings);
 
 		for (ExtensionElem extElem : extension.getElements()) {
@@ -46,7 +42,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			if (!(expr instanceof AggregateOperator)) {
 				try {
 					// we evaluate each extension element over the targetbindings, so that bindings from
-					// a previous extension element in this same extension can be used by other extension elements. 
+					// a previous extension element in this same extension can be used by other extension elements.
 					// e.g. if a projection contains (?a + ?b as ?c) (?c * 2 as ?d)
 					Value targetValue = strategy.evaluate(extElem.getExpr(), targetBindings);
 
@@ -54,9 +50,8 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 						// Potentially overwrites bindings from super
 						targetBindings.setBinding(extElem.getName(), targetValue);
 					}
-				}
-				catch (ValueExprEvaluationException e) {
-					// silently ignore type errors in extension arguments. They should not cause the 
+				} catch (ValueExprEvaluationException e) {
+					// silently ignore type errors in extension arguments. They should not cause the
 					// query to fail but result in no bindings for this solution
 					// see https://www.w3.org/TR/sparql11-query/#assignment
 					// use null as place holder for unbound variables that must remain so

@@ -61,8 +61,7 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
-		implements InferencerConnection, FederatedServiceResolverClient
-{
+		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 
@@ -70,7 +69,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	public boolean pendingRemovals() {
 		return explicitSinks.values().stream().anyMatch(v -> {
 
-			if(v instanceof Changeset){
+			if (v instanceof Changeset) {
 				return ((Changeset) v).hasDeprecated();
 			}
 			return false;
@@ -156,9 +155,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * 
 	 * @param sail
 	 * @param store
-	 * @param resolver
-	 *        the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
-	 *        EvaluationStrategy}.
+	 * @param resolver the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
+	 *                 EvaluationStrategy}.
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
 		this(sail, store, new StrictEvaluationStrategyFactory(resolver));
@@ -169,19 +167,17 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 *
 	 * @param sail
 	 * @param store
-	 * @param evalStratFactory
-	 *        the {@link EvaluationStrategyFactory} to use.
+	 * @param evalStratFactory the {@link EvaluationStrategyFactory} to use.
 	 */
-	protected SailSourceConnection(AbstractSail sail, SailStore store,
-			EvaluationStrategyFactory evalStratFactory)
-	{
+	protected SailSourceConnection(AbstractSail sail, SailStore store, EvaluationStrategyFactory evalStratFactory) {
 		super(sail);
 		this.vf = sail.getValueFactory();
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
 		this.evalStratFactory = evalStratFactory;
 		this.federatedServiceResolver = (evalStratFactory instanceof StrictEvaluationStrategyFactory)
-				? ((StrictEvaluationStrategyFactory)evalStratFactory).getFederatedServiceResolver() : null;
+				? ((StrictEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
+				: null;
 	}
 
 	/*---------*
@@ -198,8 +194,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	/**
-	 * Sets the {@link FederatedServiceResolver} to use. If a custom {@link EvaluationStrategyFactory} is
-	 * being used then this only has an effect if it implements {@link FederatedServiceResolverClient}.
+	 * Sets the {@link FederatedServiceResolver} to use. If a custom {@link EvaluationStrategyFactory} is being used
+	 * then this only has an effect if it implements {@link FederatedServiceResolverClient}.
 	 */
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
@@ -209,16 +205,14 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)evalStrat).setFederatedServiceResolver(federatedServiceResolver);
+			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
 		return evalStrat;
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException
-	{
+	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
@@ -246,7 +240,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
 			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
-			//The regex as string function optimizer works better if the constants are resolved
+			// The regex as string function optimizer works better if the constants are resolved
 			new RegexAsStringFunctionOptimizer(vf).optimize(tupleExpr, dataset, bindings);
 			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
 			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
@@ -266,30 +260,25 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			iter2 = interlock(iter1, rdfDataset, branch);
 			allGood = true;
 			return iter2;
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
-		}
-		finally {
+		} finally {
 			if (!allGood) {
 				try {
 					if (iter2 != null) {
 						iter2.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (iter1 != null) {
 							iter1.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (rdfDataset != null) {
 								rdfDataset.close();
 							}
-						}
-						finally {
+						} finally {
 							if (branch != null) {
 								branch.close();
 							}
@@ -301,16 +290,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void closeInternal()
-		throws SailException
-	{
+	protected void closeInternal() throws SailException {
 		// no-op
 	}
 
 	@Override
-	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal()
-		throws SailException
-	{
+	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 		flush();
 		SailSource branch = branch(false);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
@@ -318,21 +303,16 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj,
-			IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException
-	{
+	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		flush();
 		SailSource branch = branch(includeInferred);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot,
-				branch);
+		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
 	}
 
 	@Override
-	protected long sizeInternal(Resource... contexts)
-		throws SailException
-	{
+	protected long sizeInternal(Resource... contexts) throws SailException {
 		CloseableIteration<? extends Statement, SailException> iter = null;
 		try {
 			flush();
@@ -347,8 +327,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 
 			return size;
-		}
-		finally {
+		} finally {
 			if (iter != null) {
 				iter.close();
 			}
@@ -356,32 +335,26 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
-		throws SailException
-	{
+	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
 		SailSource branch = branch(false);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);
 	}
 
 	@Override
-	protected String getNamespaceInternal(String prefix)
-		throws SailException
-	{
+	protected String getNamespaceInternal(String prefix) throws SailException {
 		SailSource branch = null;
 		SailDataset snapshot = null;
 		try {
 			branch = branch(false);
 			snapshot = branch.dataset(getIsolationLevel());
 			return snapshot.getNamespace(prefix);
-		}
-		finally {
+		} finally {
 			try {
 				if (snapshot != null) {
 					snapshot.close();
 				}
-			}
-			finally {
+			} finally {
 				if (branch != null) {
 					branch.close();
 				}
@@ -390,9 +363,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void startTransactionInternal()
-		throws SailException
-	{
+	protected void startTransactionInternal() throws SailException {
 		assert explicitOnlyBranch == null;
 		assert inferredOnlyBranch == null;
 		assert includeInferredBranch == null;
@@ -406,9 +377,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void prepareInternal()
-		throws SailException
-	{
+	protected void prepareInternal() throws SailException {
 		SailSource toCheckIncludeInferredBranch = includeInferredBranch;
 		if (toCheckIncludeInferredBranch != null) {
 			toCheckIncludeInferredBranch.prepare();
@@ -416,9 +385,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void commitInternal()
-		throws SailException
-	{
+	protected void commitInternal() throws SailException {
 		SailSource toCloseInferredBranch = includeInferredBranch;
 		explicitOnlyBranch = null;
 		inferredOnlyBranch = null;
@@ -427,8 +394,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
 			}
-		}
-		finally {
+		} finally {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.close();
 			}
@@ -436,9 +402,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void rollbackInternal()
-		throws SailException
-	{
+	protected void rollbackInternal() throws SailException {
 		synchronized (datasets) {
 			SailDataset toCloseDataset = null;
 			SailSink toCloseExplicitSink = null;
@@ -456,44 +420,37 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				if (datasets.containsKey(null)) {
 					toCloseDataset = datasets.remove(null);
 				}
-			}
-			finally {
+			} finally {
 				try {
 					if (toCloseDataset != null) {
 						toCloseDataset.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (explicitSinks.containsKey(null)) {
 							toCloseExplicitSink = explicitSinks.remove(null);
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (toCloseExplicitSink != null) {
 								toCloseExplicitSink.close();
 							}
-						}
-						finally {
+						} finally {
 							try {
 								if (toCloseExplicitOnlyDataset != null) {
 									toCloseExplicitOnlyDataset.close();
 								}
-							}
-							finally {
+							} finally {
 								try {
 									if (toCloseInferredDataset != null) {
 										toCloseInferredDataset.close();
 									}
-								}
-								finally {
+								} finally {
 									try {
 										if (toCloseInferredSink != null) {
 											toCloseInferredSink.close();
 										}
-									}
-									finally {
+									} finally {
 										if (toCloseIncludeInferredBranch != null) {
 											toCloseIncludeInferredBranch.close();
 										}
@@ -508,9 +465,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public void startUpdate(UpdateContext op)
-		throws SailException
-	{
+	public void startUpdate(UpdateContext op) throws SailException {
 		if (op != null) {
 			IsolationLevel level = getIsolationLevel();
 			flush();
@@ -522,11 +477,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 					SailSource explicit = store.getExplicitSailSource();
 					SailSource inferred = store.getInferredSailSource();
 					source = new UnionSailSource(explicit, inferred);
-				}
-				else if (op.isIncludeInferred()) {
+				} else if (op.isIncludeInferred()) {
 					source = new UnionSailSource(explicitOnlyBranch, inferredOnlyBranch);
-				}
-				else {
+				} else {
 					source = branch(false);
 				}
 				datasets.put(op, source.dataset(level));
@@ -537,8 +490,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 
 		verifyIsOpen();
 		verifyIsActive();
@@ -556,8 +508,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		flush();
@@ -574,9 +525,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void endUpdateInternal(UpdateContext op)
-		throws SailException
-	{
+	protected void endUpdateInternal(UpdateContext op) throws SailException {
 		synchronized (datasets) {
 			SailSink toCloseInferredSink = inferredSink;
 			inferredSink = null;
@@ -588,45 +537,38 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				if (toCloseInferredSink != null) {
 					toCloseInferredSink.flush();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					if (toCloseInferredSink != null) {
 						toCloseInferredSink.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (toCloseExplicitOnlyDataset != null) {
 							toCloseExplicitOnlyDataset.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (toCloseInferredDataset != null) {
 								toCloseInferredDataset.close();
 							}
-						}
-						finally {
+						} finally {
 							SailSink explicit = null;
 							try {
 								explicit = explicitSinks.remove(op);
 								if (explicit != null) {
 									explicit.flush();
 								}
-							}
-							finally {
+							} finally {
 								try {
 									if (explicit != null) {
 										explicit.close();
 									}
-								}
-								finally {
+								} finally {
 									SailDataset toCloseDataset = null;
 									try {
 										toCloseDataset = datasets.remove(op);
-									}
-									finally {
+									} finally {
 										if (toCloseDataset != null) {
 											toCloseDataset.close();
 										}
@@ -641,9 +583,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		IsolationLevel level = getIsolationLevel();
@@ -667,8 +607,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 					}
 					inferredSink.approve(subj, pred, obj, null);
 				}
-			}
-			else {
+			} else {
 				for (Resource ctx : contexts) {
 					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, ctx)) {
 						// only add inferred statements that aren't already
@@ -688,17 +627,14 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		}
 	}
 
-	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
-			Resource... contexts)
-		throws SailException
-	{
+	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
+			throws SailException {
 		if (contexts.length == 0) {
 			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
 			sink.approve(subj, pred, obj, null);
-		}
-		else {
+		} else {
 			for (Resource ctx : contexts) {
 				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
@@ -710,8 +646,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -727,12 +662,11 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		}
 	}
 
-	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
-			Resource... contexts)
-		throws SailException
-	{
+	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
+			throws SailException {
 		boolean statementsRemoved = false;
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
 				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
@@ -744,9 +678,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void clearInternal(Resource... contexts)
-		throws SailException
-	{
+	protected void clearInternal(Resource... contexts) throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -764,9 +696,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public void clearInferred(Resource... contexts)
-		throws SailException
-	{
+	public void clearInferred(Resource... contexts) throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -785,16 +715,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public void flushUpdates()
-		throws SailException
-	{
+	public void flushUpdates() throws SailException {
 		flush();
 	}
 
 	@Override
-	protected void setNamespaceInternal(String prefix, String name)
-		throws SailException
-	{
+	protected void setNamespaceInternal(String prefix, String name) throws SailException {
 		SailSource branch = null;
 		SailSink sink = null;
 		try {
@@ -802,14 +728,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			sink = branch.sink(getTransactionIsolation());
 			sink.setNamespace(prefix, name);
 			sink.flush();
-		}
-		finally {
+		} finally {
 			try {
 				if (sink != null) {
 					sink.close();
 				}
-			}
-			finally {
+			} finally {
 				if (branch != null) {
 					branch.close();
 				}
@@ -818,9 +742,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void removeNamespaceInternal(String prefix)
-		throws SailException
-	{
+	protected void removeNamespaceInternal(String prefix) throws SailException {
 		SailSource branch = null;
 		SailSink sink = null;
 		try {
@@ -828,14 +750,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			sink = branch.sink(getTransactionIsolation());
 			sink.removeNamespace(prefix);
 			sink.flush();
-		}
-		finally {
+		} finally {
 			try {
 				if (sink != null) {
 					sink.close();
 				}
-			}
-			finally {
+			} finally {
 				if (branch != null) {
 					branch.close();
 				}
@@ -844,9 +764,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	protected void clearNamespacesInternal()
-		throws SailException
-	{
+	protected void clearNamespacesInternal() throws SailException {
 		SailSource branch = null;
 		SailSink sink = null;
 		try {
@@ -854,14 +772,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			sink = branch.sink(getTransactionIsolation());
 			sink.clearNamespaces();
 			sink.flush();
-		}
-		finally {
+		} finally {
 			try {
 				if (sink != null) {
 					sink.close();
 				}
-			}
-			finally {
+			} finally {
 				if (branch != null) {
 					branch.close();
 				}
@@ -873,13 +789,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * Inner class MemEvaluationStatistics *
 	 *-------------------------------------*/
 
-	private IsolationLevel getIsolationLevel()
-		throws UnknownSailTransactionStateException
-	{
+	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
 		if (isActive()) {
 			return super.getTransactionIsolation();
-		}
-		else {
+		} else {
 			return defaultIsolationLevel;
 		}
 	}
@@ -888,60 +801,48 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * @return read operation {@link SailSource}
 	 * @throws SailException
 	 */
-	private SailSource branch(boolean includeinferred)
-		throws SailException
-	{
+	private SailSource branch(boolean includeinferred) throws SailException {
 		boolean active = isActive();
 		IsolationLevel level = getIsolationLevel();
 		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);
 		if (includeinferred && active && isolated) {
 			// use the transaction branch
 			return new DelegatingSailSource(includeInferredBranch, false);
-		}
-		else if (active && isolated) {
+		} else if (active && isolated) {
 			// use the transaction branch
 			return new DelegatingSailSource(explicitOnlyBranch, false);
-		}
-		else if (includeinferred && active) {
+		} else if (includeinferred && active) {
 			// don't actually branch source
 			return new UnionSailSource(store.getInferredSailSource(), store.getExplicitSailSource());
-		}
-		else if (active) {
+		} else if (active) {
 			// don't actually branch source
 			return store.getExplicitSailSource();
-		}
-		else if (includeinferred) {
+		} else if (includeinferred) {
 			// create a new branch for read operation
-			return new UnionSailSource(store.getInferredSailSource().fork(),
-					store.getExplicitSailSource().fork());
-		}
-		else {
+			return new UnionSailSource(store.getInferredSailSource().fork(), store.getExplicitSailSource().fork());
+		} else {
 			// create a new branch for read operation
 			return store.getExplicitSailSource().fork();
 		}
 	}
 
 	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
-			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes)
-	{
+			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
 		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
 
 			@Override
-			protected void handleSailException(SailException e)
-				throws QueryEvaluationException
-			{
+			protected void handleSailException(SailException e) throws QueryEvaluationException {
 				throw new QueryEvaluationException(e);
 			}
 		};
 	}
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
+			throws SailException {
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
+				contexts)) {
 			return iter.hasNext();
 		}
 	}
-
 
 }

@@ -34,16 +34,14 @@ public class Year implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("YEAR requires 1 argument, got " + args.length);
 		}
 
 		Value argValue = args[0];
 		if (argValue instanceof Literal) {
-			Literal literal = (Literal)argValue;
+			Literal literal = (Literal) argValue;
 
 			IRI datatype = literal.getDatatype();
 
@@ -53,21 +51,16 @@ public class Year implements Function {
 					int year = calValue.getYear();
 					if (DatatypeConstants.FIELD_UNDEFINED != year) {
 						return valueFactory.createLiteral(String.valueOf(year), XMLSchema.INTEGER);
+					} else {
+						throw new ValueExprEvaluationException("can not determine year from value: " + argValue);
 					}
-					else {
-						throw new ValueExprEvaluationException(
-								"can not determine year from value: " + argValue);
-					}
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("illegal calendar value: " + argValue);
 				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + argValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 	}

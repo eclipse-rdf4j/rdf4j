@@ -69,14 +69,12 @@ public class SolrIndex extends AbstractSearchIndex {
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 
 	@Override
-	public void initialize(Properties parameters)
-		throws Exception
-	{
+	public void initialize(Properties parameters) throws Exception {
 		super.initialize(parameters);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
 		// even though it is effectively Map<String,String>
-		this.geoContextMapper = createSpatialContextMapper((Map<String, String>)(Map<?, ?>)parameters);
+		this.geoContextMapper = createSpatialContextMapper((Map<String, String>) (Map<?, ?>) parameters);
 
 		String server = parameters.getProperty(SERVER_KEY);
 		if (server == null) {
@@ -87,15 +85,13 @@ public class SolrIndex extends AbstractSearchIndex {
 			throw new SailException("Missing scheme in " + SERVER_KEY + " parameter: " + server);
 		}
 		String scheme = server.substring(0, pos);
-		Class<?> clientFactoryCls = Class.forName(
-				"org.eclipse.rdf4j.sail.solr.client." + scheme + ".Factory");
-		SolrClientFactory clientFactory = (SolrClientFactory)clientFactoryCls.newInstance();
+		Class<?> clientFactoryCls = Class.forName("org.eclipse.rdf4j.sail.solr.client." + scheme + ".Factory");
+		SolrClientFactory clientFactory = (SolrClientFactory) clientFactoryCls.newInstance();
 		client = clientFactory.create(server);
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
-			Map<String, String> parameters)
-	{
+			Map<String, String> parameters) {
 		// this should really be based on the schema
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
@@ -112,9 +108,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void shutDown()
-		throws IOException
-	{
+	public void shutDown() throws IOException {
 		if (client != null) {
 			client.close();
 			client = null;
@@ -124,36 +118,32 @@ public class SolrIndex extends AbstractSearchIndex {
 	// //////////////////////////////// Methods for updating the index
 
 	/**
-	 * Returns a Document representing the specified document ID (combination of resource and context), or
-	 * null when no such Document exists yet.
+	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
+	 * such Document exists yet.
 	 * 
 	 * @throws SolrServerException
 	 */
 	@Override
-	protected SearchDocument getDocument(String id)
-		throws IOException
-	{
+	protected SearchDocument getDocument(String id) throws IOException {
 		SolrDocument doc;
 		try {
-			doc = (SolrDocument)client.query(new SolrQuery().setRequestHandler("/get").set(
-					SearchFields.ID_FIELD_NAME, id)).getResponse().get("doc");
-		}
-		catch (SolrServerException e) {
+			doc = (SolrDocument) client
+					.query(new SolrQuery().setRequestHandler("/get").set(SearchFields.ID_FIELD_NAME, id))
+					.getResponse()
+					.get("doc");
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 		return (doc != null) ? new SolrSearchDocument(doc) : null;
 	}
 
 	@Override
-	protected Iterable<? extends SearchDocument> getDocuments(String resourceId)
-		throws IOException
-	{
+	protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
 		SolrQuery query = new SolrQuery(termQuery(SearchFields.URI_FIELD_NAME, resourceId));
 		SolrDocumentList docs;
 		try {
 			docs = getDocuments(query);
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 		return Iterables.transform(docs, new Function<SolrDocument, SearchDocument>() {
@@ -172,40 +162,32 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	@Override
 	protected SearchDocument copyDocument(SearchDocument doc) {
-		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
+		SolrDocument document = ((SolrSearchDocument) doc).getDocument();
 		SolrDocument newDocument = new SolrDocument();
 		newDocument.putAll(document);
 		return new SolrSearchDocument(newDocument);
 	}
 
 	@Override
-	protected void addDocument(SearchDocument doc)
-		throws IOException
-	{
-		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
+	protected void addDocument(SearchDocument doc) throws IOException {
+		SolrDocument document = ((SolrSearchDocument) doc).getDocument();
 		try {
 			client.add(SolrUtil.toSolrInputDocument(document));
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}
 
 	@Override
-	protected void updateDocument(SearchDocument doc)
-		throws IOException
-	{
+	protected void updateDocument(SearchDocument doc) throws IOException {
 		addDocument(doc);
 	}
 
 	@Override
-	protected void deleteDocument(SearchDocument doc)
-		throws IOException
-	{
+	protected void deleteDocument(SearchDocument doc) throws IOException {
 		try {
 			client.deleteById(doc.getId());
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}
@@ -220,23 +202,19 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists
-	 * yet). Each document represent a set of statements with the specified Resource as a subject, which are
-	 * stored in a specific context
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+	 * context
 	 */
-	private SolrDocumentList getDocuments(SolrQuery query)
-		throws SolrServerException, IOException
-	{
+	private SolrDocumentList getDocuments(SolrQuery query) throws SolrServerException, IOException {
 		return search(query).getResults();
 	}
 
 	/**
-	 * Returns a Document representing the specified Resource & Context combination, or null when no such
-	 * Document exists yet.
+	 * Returns a Document representing the specified Resource & Context combination, or null when no such Document
+	 * exists yet.
 	 */
-	public SearchDocument getDocument(Resource subject, Resource context)
-		throws IOException
-	{
+	public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
 		// fetch the Document representing this Resource
 		String resourceId = SearchFields.getResourceID(subject);
 		String contextId = SearchFields.getContextID(context);
@@ -244,13 +222,11 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists
-	 * yet). Each document represent a set of statements with the specified Resource as a subject, which are
-	 * stored in a specific context
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+	 * context
 	 */
-	public Iterable<? extends SearchDocument> getDocuments(Resource subject)
-		throws IOException
-	{
+	public Iterable<? extends SearchDocument> getDocuments(Resource subject) throws IOException {
 		String resourceId = SearchFields.getResourceID(subject);
 		return getDocuments(resourceId);
 	}
@@ -268,45 +244,33 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	public void begin()
-		throws IOException
-	{
+	public void begin() throws IOException {
 	}
 
 	@Override
-	public void commit()
-		throws IOException
-	{
+	public void commit() throws IOException {
 		try {
 			client.commit();
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}
 
 	@Override
-	public void rollback()
-		throws IOException
-	{
+	public void rollback() throws IOException {
 		try {
 			client.rollback();
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}
 
 	@Override
-	public void beginReading()
-		throws IOException
-	{
+	public void beginReading() throws IOException {
 	}
 
 	@Override
-	public void endReading()
-		throws IOException
-	{
+	public void endReading() throws IOException {
 	}
 
 	// //////////////////////////////// Methods for querying the index
@@ -314,17 +278,13 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Parse the passed query. To be removed, no longer used.
 	 * 
-	 * @param query
-	 *        string
+	 * @param query string
 	 * @return the parsed query
-	 * @throws ParseException
-	 *         when the parsing brakes
+	 * @throws ParseException when the parsing brakes
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, IRI propertyURI)
-		throws MalformedQueryException
-	{
+	protected SearchQuery parseQuery(String query, IRI propertyURI) throws MalformedQueryException {
 		SolrQuery q = prepareQuery(propertyURI, new SolrQuery(query));
 		return new SolrSearchQuery(q, this);
 	}
@@ -332,17 +292,13 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Parse the passed query.
 	 * 
-	 * @param query
-	 *        string
+	 * @param query string
 	 * @return the parsed query
-	 * @throws ParseException
-	 *         when the parsing brakes
+	 * @throws ParseException when the parsing brakes
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight)
-		throws MalformedQueryException, IOException
-	{
+			boolean highlight) throws MalformedQueryException, IOException {
 		SolrQuery q = prepareQuery(propertyURI, new SolrQuery(query));
 		if (highlight) {
 			q.setHighlight(true);
@@ -356,20 +312,17 @@ public class SolrIndex extends AbstractSearchIndex {
 		QueryResponse response;
 		if (q.getHighlight()) {
 			q.addField("*");
-		}
-		else {
+		} else {
 			q.addField(SearchFields.URI_FIELD_NAME);
 		}
 		q.addField("score");
 		try {
 			if (subject != null) {
 				response = search(subject, q);
-			}
-			else {
+			} else {
 				response = search(q);
 			}
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 		SolrDocumentList results = response.getResults();
@@ -379,8 +332,8 @@ public class SolrIndex extends AbstractSearchIndex {
 			@Override
 			public DocumentScore apply(SolrDocument document) {
 				SolrSearchDocument doc = new SolrSearchDocument(document);
-				Map<String, List<String>> docHighlighting = (highlighting != null)
-						? highlighting.get(doc.getId()) : null;
+				Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
+						: null;
 				return new SolrDocumentScore(doc, docHighlighting);
 			}
 		});
@@ -407,9 +360,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * 
 	 * @throws SolrServerException
 	 */
-	public QueryResponse search(Resource resource, SolrQuery query)
-		throws SolrServerException, IOException
-	{
+	public QueryResponse search(Resource resource, SolrQuery query) throws SolrServerException, IOException {
 		// rewrite the query
 		String idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource));
 		query.setQuery(query.getQuery() + " AND " + idQuery);
@@ -417,20 +368,17 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, final IRI units,
-			double distance, String distanceVar, Var contextVar)
-		throws MalformedQueryException, IOException
-	{
+	protected Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, final IRI units, double distance,
+			String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double kms = GeoUnits.toKilometres(distance, units);
 
 		String qstr = "{!geofilt score=recipDistance}";
 		if (contextVar != null) {
-			Resource ctx = (Resource)contextVar.getValue();
+			Resource ctx = (Resource) contextVar.getValue();
 			String tq = termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
 			if (ctx != null) {
 				qstr = tq + " AND " + qstr;
-			}
-			else {
+			} else {
 				qstr = "-" + tq + " AND " + qstr;
 			}
 		}
@@ -453,8 +401,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		QueryResponse response;
 		try {
 			response = search(q);
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 
@@ -470,10 +417,8 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
-			Shape shape, Var contextVar)
-		throws MalformedQueryException, IOException
-	{
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
+			Var contextVar) throws MalformedQueryException, IOException {
 		String spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;
@@ -481,12 +426,11 @@ public class SolrIndex extends AbstractSearchIndex {
 		String wkt = toWkt(shape);
 		String qstr = "\"" + spatialOp + "(" + wkt + ")\"";
 		if (contextVar != null) {
-			Resource ctx = (Resource)contextVar.getValue();
+			Resource ctx = (Resource) contextVar.getValue();
 			String tq = termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
 			if (ctx != null) {
 				qstr = tq + " AND " + qstr;
-			}
-			else {
+			} else {
 				qstr = "-" + tq + " AND " + qstr;
 			}
 		}
@@ -505,8 +449,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		QueryResponse response;
 		try {
 			response = search(q);
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 
@@ -535,16 +478,14 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Shape parseQueryShape(String property, String value)
-		throws ParseException
-	{
+	protected Shape parseQueryShape(String property, String value) throws ParseException {
 		Shape s = super.parseQueryShape(property, value);
 		// workaround to preserve WKT string
-		return (s instanceof Point) ? new WktPoint((Point)s, value) : new WktShape<>(s, value);
+		return (s instanceof Point) ? new WktPoint((Point) s, value) : new WktShape<>(s, value);
 	}
 
 	protected String toWkt(Shape s) {
-		return ((WktShape<?>)s).wkt;
+		return ((WktShape<?>) s).wkt;
 	}
 
 	private static class WktShape<S extends Shape> implements Shape {
@@ -632,16 +573,13 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * 
 	 * @throws SolrServerException
 	 */
-	public QueryResponse search(SolrQuery query)
-		throws SolrServerException, IOException
-	{
+	public QueryResponse search(SolrQuery query) throws SolrServerException, IOException {
 		int nDocs;
 		if (maxDocs > 0) {
 			nDocs = maxDocs;
-		}
-		else {
+		} else {
 			long docCount = client.query(query.setRows(0)).getResults().getNumFound();
-			nDocs = Math.max((int)Math.min(docCount, Integer.MAX_VALUE), 1);
+			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);
 		}
 		return client.query(query.setRows(nDocs));
 	}
@@ -661,14 +599,11 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @param sail
-	 *        - the underlying native sail where to read the missing triples from after deletion
+	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
 	@Override
-	public synchronized void clearContexts(Resource... contexts)
-		throws IOException
-	{
+	public synchronized void clearContexts(Resource... contexts) throws IOException {
 
 		// logger.warn("Clearing contexts operation did not change the index: contexts are not indexed at the moment");
 
@@ -685,8 +620,7 @@ public class SolrIndex extends AbstractSearchIndex {
 				String contextString = SearchFields.getContextID(context);
 				client.deleteByQuery(termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString));
 			}
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}
@@ -695,13 +629,10 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * 
 	 */
 	@Override
-	public synchronized void clear()
-		throws IOException
-	{
+	public synchronized void clear() throws IOException {
 		try {
 			client.deleteByQuery("*:*");
-		}
-		catch (SolrServerException e) {
+		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 	}

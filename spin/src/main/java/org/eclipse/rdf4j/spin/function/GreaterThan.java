@@ -24,9 +24,7 @@ public class GreaterThan extends BinaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(arg1, arg2, CompareOp.GT));
 	}
 }

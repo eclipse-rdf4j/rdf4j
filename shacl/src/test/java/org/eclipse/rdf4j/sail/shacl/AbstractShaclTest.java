@@ -40,64 +40,31 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
 
-	private static final List<String> testCasePaths = Stream.of(
-		"test-cases/complex/dcat",
-		"test-cases/complex/foaf",
-		"test-cases/datatype/simple",
-		"test-cases/datatype/targetNode",
-		"test-cases/datatype/targetSubjectsOf",
-		"test-cases/datatype/targetSubjectsOfSingle",
-		"test-cases/datatype/targetObjectsOf",
-		"test-cases/minLength/simple",
-		"test-cases/maxLength/simple",
-		"test-cases/pattern/simple",
-		"test-cases/pattern/multiple",
-		"test-cases/languageIn/simple",
-		"test-cases/nodeKind/simple",
-		"test-cases/minCount/simple",
-		"test-cases/minCount/targetNode",
-		"test-cases/maxCount/simple",
-		"test-cases/maxCount/targetNode",
-		"test-cases/or/multiple",
-		"test-cases/or/inheritance",
-		"test-cases/or/inheritance-deep",
-		"test-cases/or/inheritance-deep-minCountMaxCount",
-		"test-cases/or/inheritanceNodeShape",
-		"test-cases/or/datatype",
-		"test-cases/or/datatypeTargetNode",
-		"test-cases/or/minCountMaxCount",
-		"test-cases/or/maxCount",
-		"test-cases/or/minCount",
-		"test-cases/or/nodeKindMinLength",
-		"test-cases/or/implicitAnd",
-		"test-cases/or/datatypeDifferentPaths",
-		"test-cases/minExclusive/simple",
-		"test-cases/minExclusive/dateVsTime",
-		"test-cases/maxExclusive/simple",
-		"test-cases/minInclusive/simple",
-		"test-cases/maxInclusive/simple",
-		"test-cases/implicitTargetClass/simple",
-		"test-cases/class/simple",
-		"test-cases/class/subclass",
-		"test-cases/class/targetNode",
-		"test-cases/class/multipleClass",
-		"test-cases/or/class",
-		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath",
-		"test-cases/deactivated/nodeshape",
-		"test-cases/deactivated/or",
-		"test-cases/deactivated/propertyshape"
-	)
-		.distinct()
-		.collect(Collectors.toList());
-
+	private static final List<String> testCasePaths = Stream.of("test-cases/complex/dcat", "test-cases/complex/foaf",
+			"test-cases/datatype/simple", "test-cases/datatype/targetNode", "test-cases/datatype/targetSubjectsOf",
+			"test-cases/datatype/targetSubjectsOfSingle", "test-cases/datatype/targetObjectsOf",
+			"test-cases/minLength/simple", "test-cases/maxLength/simple", "test-cases/pattern/simple",
+			"test-cases/pattern/multiple", "test-cases/languageIn/simple", "test-cases/nodeKind/simple",
+			"test-cases/minCount/simple", "test-cases/minCount/targetNode", "test-cases/maxCount/simple",
+			"test-cases/maxCount/targetNode", "test-cases/or/multiple", "test-cases/or/inheritance",
+			"test-cases/or/inheritance-deep", "test-cases/or/inheritance-deep-minCountMaxCount",
+			"test-cases/or/inheritanceNodeShape", "test-cases/or/datatype", "test-cases/or/datatypeTargetNode",
+			"test-cases/or/minCountMaxCount", "test-cases/or/maxCount", "test-cases/or/minCount",
+			"test-cases/or/nodeKindMinLength", "test-cases/or/implicitAnd", "test-cases/or/datatypeDifferentPaths",
+			"test-cases/minExclusive/simple", "test-cases/minExclusive/dateVsTime", "test-cases/maxExclusive/simple",
+			"test-cases/minInclusive/simple", "test-cases/maxInclusive/simple", "test-cases/implicitTargetClass/simple",
+			"test-cases/class/simple", "test-cases/class/subclass", "test-cases/class/targetNode",
+			"test-cases/class/multipleClass", "test-cases/or/class", "test-cases/or/datatype2",
+			"test-cases/or/minCountDifferentPath", "test-cases/deactivated/nodeshape", "test-cases/deactivated/or",
+			"test-cases/deactivated/propertyshape").distinct().collect(Collectors.toList());
 
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
 	final IsolationLevel isolationLevel;
 
-	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -110,7 +77,6 @@ abstract public class AbstractShaclTest {
 
 		return getTestsToRun();
 	}
-
 
 	private static List<String> findTestCases(String testCase, String baseCase) {
 
@@ -139,8 +105,9 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)) {
-						Object[] temp = {testCasePath, path, baseCase, isolationLevel};
+					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
+							IsolationLevels.SERIALIZABLE)) {
+						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
 						ret.add(temp);
 					}
 
@@ -151,7 +118,8 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel) throws Exception {
+	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -225,8 +193,8 @@ abstract public class AbstractShaclTest {
 		System.out.println("\n############################################");
 	}
 
-	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
-		throws Exception {
+	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";

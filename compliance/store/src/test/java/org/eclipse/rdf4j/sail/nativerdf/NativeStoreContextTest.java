@@ -32,15 +32,12 @@ public class NativeStoreContextTest extends RDFNotifyingStoreTest {
 	 *---------*/
 
 	@Override
-	protected NotifyingSail createSail()
-		throws SailException
-	{
+	protected NotifyingSail createSail() throws SailException {
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
 			sail.init();
 			return sail;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 	}

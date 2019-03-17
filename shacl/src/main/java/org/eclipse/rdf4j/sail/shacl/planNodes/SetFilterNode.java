@@ -39,13 +39,13 @@ public class SetFilterNode implements PlanNode {
 
 			Tuple next;
 
-			private void calulateNext(){
-				while(next == null && iterator.hasNext()){
+			private void calulateNext() {
+				while (next == null && iterator.hasNext()) {
 					Tuple temp = iterator.next();
 					boolean contains = targetNodeList.contains(temp.getlist().get(index));
-					if(returnValid && contains){
+					if (returnValid && contains) {
 						next = temp;
-					}else if (!returnValid && !contains){
+					} else if (!returnValid && !contains) {
 						next = temp;
 					}
 				}
@@ -90,7 +90,8 @@ public class SetFilterNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -100,7 +101,6 @@ public class SetFilterNode implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
@@ -108,10 +108,7 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SetFilterNode{" +
-			"targetNodeList=" + Arrays.toString(targetNodeList.toArray()) +
-			", index=" + index +
-			", returnValid=" + returnValid +
-			'}';
+		return "SetFilterNode{" + "targetNodeList=" + Arrays.toString(targetNodeList.toArray()) + ", index=" + index
+				+ ", returnValid=" + returnValid + '}';
 	}
 }

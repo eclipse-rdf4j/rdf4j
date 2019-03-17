@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
-
 public class EnvelopeTest extends GeometricUnaryFunctionTest {
 
 	@Override

@@ -23,9 +23,7 @@ public class NativeStoreDirLockTest {
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	@Test
-	public void testLocking()
-		throws Exception
-	{
+	public void testLocking() throws Exception {
 		File dataDir = tempDir.newFolder("nativestore");
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.initialize();
@@ -35,17 +33,14 @@ public class NativeStoreDirLockTest {
 			sail2.initialize();
 			try {
 				fail("initialized a second native store with same dataDir");
-			}
-			finally {
+			} finally {
 				sail2.shutDown();
 			}
-		}
-		catch (SailLockedException e) {
+		} catch (SailLockedException e) {
 			// Expected: should not be able to open two native stores with the
 			// same dataDir
 			assertNotNull(e);
-		}
-		finally {
+		} finally {
 			sail.shutDown();
 		}
 	}

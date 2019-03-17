@@ -28,13 +28,12 @@ import org.eclipse.rdf4j.sail.SailLockedException;
 import org.eclipse.rdf4j.sail.StackableSail;
 
 /**
- * An implementation of the {@link Repository} interface that operates on a (stack of) {@link Sail Sail}
- * object(s). The behaviour of the repository is determined by the Sail stack that it operates on; for
- * example, the repository will only support RDF Schema or OWL semantics if the Sail stack includes an
- * inferencer for this.
+ * An implementation of the {@link Repository} interface that operates on a (stack of) {@link Sail Sail} object(s). The
+ * behaviour of the repository is determined by the Sail stack that it operates on; for example, the repository will
+ * only support RDF Schema or OWL semantics if the Sail stack includes an inferencer for this.
  * <p>
- * Creating a repository object of this type is very easy. For example, the following code creates and
- * initializes a main-memory store with RDF Schema semantics:
+ * Creating a repository object of this type is very easy. For example, the following code creates and initializes a
+ * main-memory store with RDF Schema semantics:
  * 
  * <pre>
  * Repository repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
@@ -54,8 +53,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
  * @author Arjohn Kampman
  */
 public class SailRepository extends AbstractRepository implements FederatedServiceResolverClient,
-		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
-{
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Constants *
@@ -70,8 +68,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	/**
 	 * Creates a new repository object that operates on the supplied Sail.
 	 * 
-	 * @param sail
-	 *        A Sail object.
+	 * @param sail A Sail object.
 	 */
 	public SailRepository(Sail sail) {
 		this.sail = sail;
@@ -112,8 +109,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		SessionManagerDependent stack = findSailOf(sail, SessionManagerDependent.class);
 		if (stack != null) {
 			return stack.getHttpClientSessionManager();
-		}
-		else {
+		} else {
 			return null;
 		}
 	}
@@ -131,8 +127,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		HttpClientDependent stack = findSailOf(sail, HttpClientDependent.class);
 		if (stack != null) {
 			return stack.getHttpClient();
-		}
-		else {
+		} else {
 			return null;
 		}
 	}
@@ -146,31 +141,24 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	protected void initializeInternal()
-		throws RepositoryException
-	{
+	protected void initializeInternal() throws RepositoryException {
 		try {
 			sail.init();
-		}
-		catch (SailLockedException e) {
+		} catch (SailLockedException e) {
 			String l = e.getLockedBy();
 			String r = e.getRequestedBy();
 			String m = e.getMessage();
 			throw new RepositoryLockedException(l, r, m, e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e.getMessage(), e);
 		}
 	}
 
 	@Override
-	protected void shutDownInternal()
-		throws RepositoryException
-	{
+	protected void shutDownInternal() throws RepositoryException {
 		try {
 			sail.shutDown();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException("Unable to shutdown Sail", e);
 		}
 	}
@@ -185,13 +173,10 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public boolean isWritable()
-		throws RepositoryException
-	{
+	public boolean isWritable() throws RepositoryException {
 		try {
 			return sail.isWritable();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException("Unable to determine writable status of Sail", e);
 		}
 	}
@@ -202,13 +187,10 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public SailRepositoryConnection getConnection()
-		throws RepositoryException
-	{
+	public SailRepositoryConnection getConnection() throws RepositoryException {
 		try {
 			return new SailRepositoryConnection(this, sail.getConnection());
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -221,11 +203,9 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	private <T> T findSailOf(Sail sail, Class<T> type) {
 		if (type.isInstance(sail)) {
 			return type.cast(sail);
-		}
-		else if (sail instanceof StackableSail) {
-			return findSailOf(((StackableSail)sail).getBaseSail(), type);
-		}
-		else {
+		} else if (sail instanceof StackableSail) {
+			return findSailOf(((StackableSail) sail).getBaseSail(), type);
+		} else {
 			return null;
 		}
 	}

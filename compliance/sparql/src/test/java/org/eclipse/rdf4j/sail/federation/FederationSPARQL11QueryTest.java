@@ -19,21 +19,17 @@ import junit.framework.Test;
 
 public class FederationSPARQL11QueryTest extends SPARQLQueryTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
+					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return new FederationSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality);
 			}
 
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder)
-			{
+					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
 						// test case incompatible with RDF 1.1 - see
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
@@ -42,8 +38,7 @@ public class FederationSPARQL11QueryTest extends SPARQLQueryTest {
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
 						"STRLANG   TypeErrors",
 						// known issue: SES-937
-						"sq03 - Subquery within graph pattern, graph variable is not bound",
-						};
+						"sq03 - Subquery within graph pattern, graph variable is not bound", };
 
 				return new FederationSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);
@@ -53,14 +48,12 @@ public class FederationSPARQL11QueryTest extends SPARQLQueryTest {
 	}
 
 	public FederationSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, String... ignoredTests)
-	{
+			Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, ignoredTests);
 	}
 
 	public FederationSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests)
-	{
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

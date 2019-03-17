@@ -43,13 +43,11 @@ public class SpinxFunctionParser implements FunctionParser {
 	}
 
 	@Override
-	public Function parse(IRI funcUri, TripleSource store)
-		throws RDF4JException
-	{
+	public Function parse(IRI funcUri, TripleSource store) throws RDF4JException {
 		Value codeValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_CODE_PROPERTY, store);
-		String code = (codeValue instanceof Literal) ? ((Literal)codeValue).getLabel() : null;
+		String code = (codeValue instanceof Literal) ? ((Literal) codeValue).getLabel() : null;
 		Value fileValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_FILE_PROPERTY, store);
-		String file = (fileValue instanceof Literal) ? ((Literal)fileValue).getLabel() : null;
+		String file = (fileValue instanceof Literal) ? ((Literal) fileValue).getLabel() : null;
 		if (code == null && file == null) {
 			return null;
 		}
@@ -67,22 +65,18 @@ public class SpinxFunctionParser implements FunctionParser {
 							new URL(new URL(ns.substring(0, ns.length() - 1)), file).openStream());
 					try {
 						engine.eval(reader);
-					}
-					finally {
+					} finally {
 						try {
 							reader.close();
-						}
-						catch (IOException e) {
+						} catch (IOException e) {
 							// ignore
 						}
 					}
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					throw new QueryEvaluationException(e);
 				}
 			}
-		}
-		catch (ScriptException e) {
+		} catch (ScriptException e) {
 			throw new QueryEvaluationException(e);
 		}
 
@@ -93,7 +87,7 @@ public class SpinxFunctionParser implements FunctionParser {
 		SpinxFunction func = new SpinxFunction(funcUri.stringValue());
 		func.setScriptEngine(engine);
 		func.setScript(code);
-		func.setReturnType((returnValue instanceof IRI) ? (IRI)returnValue : null);
+		func.setReturnType((returnValue instanceof IRI) ? (IRI) returnValue : null);
 		List<IRI> orderedArgs = SpinParser.orderArguments(templateArgs.keySet());
 		for (IRI IRI : orderedArgs) {
 			Argument arg = templateArgs.get(IRI);

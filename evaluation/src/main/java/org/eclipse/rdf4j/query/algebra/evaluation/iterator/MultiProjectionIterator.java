@@ -44,8 +44,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	 *--------------*/
 
 	public MultiProjectionIterator(MultiProjection multiProjection,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings)
-	{
+			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
 		this.projections = multiProjection.getProjections();
 		this.iter = iter;
 		this.parentBindings = bindings;
@@ -61,9 +60,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	 *---------*/
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 		while (true) {
 			if (isClosed()) {
 				return null;
@@ -83,13 +80,11 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 					previousBindings[projIdx] = result;
 					return result;
 				}
-			}
-			else if (iter.hasNext()) {
+			} else if (iter.hasNext()) {
 				// Continue with the next result
 				currentBindings = iter.next();
 				nextProjectionIdx = 0;
-			}
-			else {
+			} else {
 				// no more results
 				return null;
 			}
@@ -97,17 +92,13 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				iter.close();
-			}
-			finally {
+			} finally {
 				nextProjectionIdx = -1;
 				Arrays.fill(previousBindings, null);
 			}

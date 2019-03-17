@@ -71,15 +71,13 @@ public class LuceneSailTupleFunctionTest {
 	 * <li>{@link LuceneSail}
 	 * <li>{@link SailRepository}
 	 * </ul>
-	 * First item on the list is the most base whereas the last one is the abstraction provider. The SPARQL
-	 * request is evaluated by <code>LuceneSail</code> so that class is the abstraction provider. <br/>
+	 * First item on the list is the most base whereas the last one is the abstraction provider. The SPARQL request is
+	 * evaluated by <code>LuceneSail</code> so that class is the abstraction provider. <br/>
 	 *
 	 * @throws Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
 
@@ -102,31 +100,24 @@ public class LuceneSailTupleFunctionTest {
 	}
 
 	@After
-	public void tearDown()
-		throws IOException, RepositoryException
-	{
+	public void tearDown() throws IOException, RepositoryException {
 		try {
 			if (connection != null) {
 				connection.close();
 			}
-		}
-		finally {
+		} finally {
 			if (repository != null) {
 				repository.shutDown();
 			}
 		}
 	}
 
-	protected void configure(LuceneSail sail)
-		throws IOException
-	{
+	protected void configure(LuceneSail sail) throws IOException {
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, tempDir.newFolder().getAbsolutePath());
 	}
 
-	protected void populate(RepositoryConnection connection)
-		throws Exception
-	{
+	protected void populate(RepositoryConnection connection) throws Exception {
 		// process transaction
 		try {
 			// load resources
@@ -135,15 +126,12 @@ public class LuceneSailTupleFunctionTest {
 			connection.begin();
 
 			assert resourceURL instanceof URL;
-			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE,
-					new Resource[] {});
+			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE, new Resource[] {});
 
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 
@@ -155,9 +143,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleTest()
-		throws Exception
-	{
+	public void simpleTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
 		try {
@@ -169,12 +155,10 @@ public class LuceneSailTupleFunctionTest {
 				log.info("count statements: {}", count);
 				Assert.assertTrue(count > 0);
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 	}
@@ -193,9 +177,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleSearchTest()
-		throws Exception
-	{
+	public void simpleSearchTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?label where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
@@ -218,12 +200,10 @@ public class LuceneSailTupleFunctionTest {
 				Assert.assertTrue(count == 1);
 			}
 
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 
@@ -244,9 +224,7 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test220Issue()
-		throws Exception
-	{
+	public void test220Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
@@ -268,12 +246,10 @@ public class LuceneSailTupleFunctionTest {
 				log.info("count statements: {}", count);
 				Assert.assertTrue(count == 1);
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 
@@ -297,16 +273,14 @@ public class LuceneSailTupleFunctionTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test235Issue()
-		throws Exception
-	{
+	public void test235Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
 		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
 		buffer.append("  ?pred <urn:ontology/label> ?label .\n");
 		buffer.append("  ?pred <urn:ontology/score> ?score . \n");
 		buffer.append(" } where {\n");
-		//buffer.append("select * where {\n");
+		// buffer.append("select * where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
 		buffer.append("     <" + QUERY + "> \"ornare\";\n");
 		buffer.append("     <" + SCORE + "> ?score \n");
@@ -335,20 +309,16 @@ public class LuceneSailTupleFunctionTest {
 			 * try (TupleQueryResult res = query.evaluate()) { int count = countTupleResults(res); log.info(
 			 * "count statements: {}", count); Assert.assertTrue(count == 2); }
 			 */
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 	}
 
 	@Test
-	public void testDistanceFunction()
-		throws Exception
-	{
+	public void testDistanceFunction() throws Exception {
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
 				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
@@ -362,43 +332,33 @@ public class LuceneSailTupleFunctionTest {
 				int count = countTupleResults(result);
 				assertThat(count).isEqualTo(2);
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 	}
 
-	public int countStatements(RepositoryConnection con)
-		throws Exception
-	{
+	public int countStatements(RepositoryConnection con) throws Exception {
 		try {
 			connection.begin();
 
 			RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
 			return Iterations.asList(sts).size();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 	}
 
-	public int countTupleResults(TupleQueryResult results)
-		throws Exception
-	{
+	public int countTupleResults(TupleQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 
-	public int countGraphResults(GraphQueryResult results)
-		throws Exception
-	{
+	public int countGraphResults(GraphQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 

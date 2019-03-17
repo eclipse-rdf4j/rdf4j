@@ -38,18 +38,17 @@ import java.util.stream.Collectors;
 
 /**
  * <p>
- * The SchemaCachingRDFSInferencer is an RDFS reasoner that caches all schema (TBox) statements
- * and calculates an inference map to quickly determine inferred statements. The reasoner can also be
- * instantiated with a predefined schema for improved performance.
+ * The SchemaCachingRDFSInferencer is an RDFS reasoner that caches all schema (TBox) statements and calculates an
+ * inference map to quickly determine inferred statements. The reasoner can also be instantiated with a predefined
+ * schema for improved performance.
  * </p>
  * <p>
  * This reasoner is not a rule based reasoner and will be up to 80x faster than the
  * {@link ForwardChainingRDFSInferencer}, as well as being more complete.
  * </p>
  * <p>
- * The sail puts no limitations on isolation level for read transactions, however all write/delete/update
- * transactions are serializable with exclusive locks. This limits write/delete/update transactions to one
- * transaction at a time.
+ * The sail puts no limitations on isolation level for read transactions, however all write/delete/update transactions
+ * are serializable with exclusive locks. This limits write/delete/update transactions to one transaction at a time.
  * </p>
  *
  * @author Håvard Mikkelsen Ottestad
@@ -108,8 +107,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	/**
 	 * Instantiate a SchemaCachingRDFSInferencer.
 	 *
-	 * @param data
-	 *        Base sail for storing data.
+	 * @param data Base sail for storing data.
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data) {
 		super(data);
@@ -118,14 +116,12 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be
-	 * used for inference, all other schema statements added will be ignored and no schema statements can be
-	 * removed. Using a predefined schema significantly improves performance.
+	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be used for inference, all
+	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
+	 * significantly improves performance.
 	 *
-	 * @param data
-	 *        Base sail for storing data.
-	 * @param schema
-	 *        Repository containing the schema.
+	 * @param data   Base sail for storing data.
+	 * @param schema Repository containing the schema.
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
 		super(data);
@@ -137,10 +133,8 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	/**
 	 * Instantiate a SchemaCachingRDFSInferencer.
 	 *
-	 * @param data
-	 *        Base sail for storing data.
-	 * @param useAllRdfsRules
-	 *        Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @param data            Base sail for storing data.
+	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
 		super(data);
@@ -151,19 +145,16 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be
-	 * used for inference, all other schema statements added will be ignored and no schema statements can be
-	 * removed. Using a predefined schema significantly improves performance.
+	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be used for inference, all
+	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
+	 * significantly improves performance.
 	 *
-	 * @param data
-	 *        Base sail for storing data.
-	 * @param schema
-	 *        Repository containing the schema.
-	 * @param useAllRdfsRules
-	 *        Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @param data            Base sail for storing data.
+	 * @param schema          Repository containing the schema.
+	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository schema,
-									   boolean useAllRdfsRules) {
+			boolean useAllRdfsRules) {
 		super(data);
 
 		this.schema = schema;
@@ -187,11 +178,10 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is
-	 * obtained or an interrupt signal is received.
+	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is obtained
+	 * or an interrupt signal is received.
 	 *
-	 * @throws SailException
-	 *         if the thread is interrupted while waiting to obtain the lock.
+	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
 	 */
 	void acquireExclusiveWriteLock() {
 		if (exclusiveWriteLock.isHeldByCurrentThread()) {
@@ -216,7 +206,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public void initialize()
-		throws SailException {
+			throws SailException {
 		super.initialize();
 
 		if (sharedSchema) {
@@ -235,8 +225,10 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 				try (RepositoryConnection schemaConnection = schema.getConnection()) {
 					schemaConnection.begin();
 					RepositoryResult<Statement> statements = schemaConnection.getStatements(null, null, null);
-					tboxStatments = Iterations.stream(statements).peek(conn::processForSchemaCache).collect(
-						Collectors.toList());
+					tboxStatments = Iterations.stream(statements)
+							.peek(conn::processForSchemaCache)
+							.collect(
+									Collectors.toList());
 					schemaConnection.commit();
 				}
 			}
@@ -245,7 +237,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 			if (schema != null) {
 				tboxStatments.forEach(statement -> conn.addStatement(statement.getSubject(),
-					statement.getPredicate(), statement.getObject(), statement.getContext()));
+						statement.getPredicate(), statement.getObject(), statement.getContext()));
 			}
 
 			conn.commit();
@@ -255,7 +247,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public SchemaCachingRDFSInferencerConnection getConnection()
-		throws SailException {
+			throws SailException {
 		InferencerConnection e = (InferencerConnection) super.getConnection();
 		return new SchemaCachingRDFSInferencerConnection(this, e);
 	}
@@ -266,44 +258,37 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation
-	 * extracts the schema lookup tables generated by the existing sail and uses them to populate the lookup
-	 * tables of a new reasoner. Schema triples can not be queried in the
-	 * SchemaCachingRDFSInferencer returned by this method.
+	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation extracts the schema lookup
+	 * tables generated by the existing sail and uses them to populate the lookup tables of a new reasoner. Schema
+	 * triples can not be queried in the SchemaCachingRDFSInferencer returned by this method.
 	 *
-	 * @param sailToInstantiateFrom
-	 *        The SchemaCachingRDFSInferencer to extract the lookup tables from.
-	 * @param store
-	 *        Base sail for storing data.
+	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
+	 * @param store                 Base sail for storing data.
 	 * @return
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
-		SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
+			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
 		return fastInstantiateFrom(sailToInstantiateFrom, store, true);
 	}
 
 	/**
-	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation
-	 * extracts the schema lookup tables generated by the existing sail and uses them to populate the lookup
-	 * tables of a new reasoner. Schema triples can not be queried in the
-	 * SchemaCachingRDFSInferencer returned by this method.
+	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation extracts the schema lookup
+	 * tables generated by the existing sail and uses them to populate the lookup tables of a new reasoner. Schema
+	 * triples can not be queried in the SchemaCachingRDFSInferencer returned by this method.
 	 *
-	 * @param sailToInstantiateFrom
-	 *        The SchemaCachingRDFSInferencer to extract the lookup tables from.
-	 * @param store
-	 *        Base sail for storing data.
-	 * @param useAllRdfsRules
-	 *        Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
+	 * @param store                 Base sail for storing data.
+	 * @param useAllRdfsRules       Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
 	 * @return
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
-		SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
-		boolean useAllRdfsRules) {
+			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
+			boolean useAllRdfsRules) {
 
 		sailToInstantiateFrom.getConnection().close();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,
-			sailToInstantiateFrom.schema, useAllRdfsRules);
+				sailToInstantiateFrom.schema, useAllRdfsRules);
 
 		ret.sharedSchema = true;
 
@@ -349,7 +334,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	long getSchemaSize() {
 		return subClassOfStatements.size() + subPropertyOfStatements.size() + rangeStatements.size()
-			+ domainStatements.size() + properties.size() + types.size();
+				+ domainStatements.size() + properties.size() + types.size();
 	}
 
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
@@ -479,7 +464,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		// Fixed point is reached when they are the same.
 		// Eg. Two consecutive applications return the same number of subclasses
 		long prevSize = 0;
-		final long[] newSize = {-1};
+		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
 
 			prevSize = newSize[0];
@@ -519,7 +504,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
 		long prevSize = 0;
-		final long[] newSize = {-1};
+		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
 
 			prevSize = newSize[0];
@@ -538,7 +523,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	private void calculateRangeDomain(Collection<Statement> rangeOrDomainStatements,
-									  Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
+			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
 		rangeOrDomainStatements.forEach(s -> {
 			Resource predicate = s.getSubject();
@@ -558,16 +543,19 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 		});
 
-		calculatedProperties.keySet().stream().filter(
-			key -> !calculatedRangeOrDomain.containsKey(key)).forEach(
-			key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
+		calculatedProperties.keySet()
+				.stream()
+				.filter(
+						key -> !calculatedRangeOrDomain.containsKey(key))
+				.forEach(
+						key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
 
 		// Fixed point approach to finding all ranges or domains.
 		// prevSize is the size of the previous application of the function
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
 		long prevSize = 0;
-		final long[] newSize = {-1};
+		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
 
 			prevSize = newSize[0];

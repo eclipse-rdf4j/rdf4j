@@ -22,19 +22,17 @@ import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 public class SearchIndexUtils {
 
 	/**
-	 * The method creates instance of {@link SearchIndex}. The type of instantiated class depends on the value
-	 * of {@link LuceneSail#INDEX_CLASS_KEY} parameter. By default it is
+	 * The method creates instance of {@link SearchIndex}. The type of instantiated class depends on the value of
+	 * {@link LuceneSail#INDEX_CLASS_KEY} parameter. By default it is
 	 * <code>org.eclipse.rdf4j.sail.lucene.LuceneIndex</code>.
 	 *
 	 * @param parameters
 	 * @return
 	 * @throws Exception
 	 */
-	public static SearchIndex createSearchIndex(Properties parameters)
-		throws Exception
-	{
+	public static SearchIndex createSearchIndex(Properties parameters) throws Exception {
 		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
-		SearchIndex index = (SearchIndex)Class.forName(indexClassName).newInstance();
+		SearchIndex index = (SearchIndex) Class.forName(indexClassName).newInstance();
 		index.initialize(parameters);
 		return index;
 	}

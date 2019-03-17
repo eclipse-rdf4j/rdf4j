@@ -70,8 +70,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
 
 				leftJoin.getRightArg().visit(this);
-			}
-			finally {
+			} finally {
 				boundVars = origBoundVars;
 			}
 		}
@@ -96,7 +95,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				List<Extension> orderedExtensions = getExtensions(joinArgs);
 				joinArgs.removeAll(orderedExtensions);
 				priorityArgs.addAll(orderedExtensions);
-				
+
 				// get all subselects and order them
 				List<TupleExpr> orderedSubselects = reorderSubselects(getSubSelects(joinArgs));
 				joinArgs.removeAll(orderedSubselects);
@@ -112,9 +111,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					for (TupleExpr tupleExpr : joinArgs) {
 						cardinalityMap.put(tupleExpr, statistics.getCardinality(tupleExpr));
 						if (tupleExpr instanceof ZeroLengthPath) {
-							varsMap.put(tupleExpr, ((ZeroLengthPath)tupleExpr).getVarList());
-						}
-						else {
+							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());
+						} else {
 							varsMap.put(tupleExpr, getStatementPatternVars(tupleExpr));
 						}
 					}
@@ -127,8 +125,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
-						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap,
-								varFreqMap, boundVars);
+						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
+								boundVars);
 
 						joinArgs.remove(tupleExpr);
 						orderedJoinArgs.add(tupleExpr);
@@ -166,24 +164,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// Replace old join hierarchy
 					node.replaceWith(replacement);
 
-				}
-				else {
+				} else {
 					// only subselect/priority joins involved in this query.
 					node.replaceWith(priorityJoins);
 				}
-			}
-			finally {
+			} finally {
 				boundVars = origBoundVars;
 			}
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
 			if (tupleExpr instanceof Join) {
-				Join join = (Join)tupleExpr;
+				Join join = (Join) tupleExpr;
 				getJoinArgs(join.getLeftArg(), joinArgs);
 				getJoinArgs(join.getRightArg(), joinArgs);
-			}
-			else {
+			} else {
 				joinArgs.add(tupleExpr);
 			}
 
@@ -212,7 +207,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			List<Extension> extensions = new ArrayList<>();
 			for (TupleExpr expr : expressions) {
 				if (expr instanceof Extension) {
-					extensions.add((Extension)expr);
+					extensions.add((Extension) expr);
 				}
 			}
 			return extensions;
@@ -230,10 +225,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Determines an optimal ordering of subselect join arguments, based on variable bindings. An ordering
-		 * is considered optimal if for each consecutive element it holds that first of all its shared
-		 * variables with all previous elements is maximized, and second, the union of all its variables with
-		 * all previous elements is maximized.
+		 * Determines an optimal ordering of subselect join arguments, based on variable bindings. An ordering is
+		 * considered optimal if for each consecutive element it holds that first of all its shared variables with all
+		 * previous elements is maximized, and second, the union of all its variables with all previous elements is
+		 * maximized.
 		 * <p>
 		 * Example: reordering
 		 * 
@@ -247,8 +242,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 *   [a b c] [a d] [b e] [e f] [f]
 		 * </pre>
 		 * 
-		 * @param subselects
-		 *        the original ordering of expressions
+		 * @param subselects the original ordering of expressions
 		 * @return the optimized ordering of expressions
 		 */
 		protected List<TupleExpr> reorderSubselects(List<TupleExpr> subselects) {
@@ -283,8 +277,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					if (joinSizes.containsKey(joinSize)) {
 						l = joinSizes.get(joinSize);
-					}
-					else {
+					} else {
 						l = new ArrayList<>();
 					}
 					TupleExpr[] tupleTuple = new TupleExpr[] { firstArg, secondArg };
@@ -358,8 +351,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						selected = candidate;
 						currentJoinSize = joinSize;
 						currentUnionSize = unionSize;
-					}
-					else if (joinSize == currentJoinSize) {
+					} else if (joinSize == currentJoinSize) {
 						if (unionSize > currentUnionSize) {
 							selected = candidate;
 							currentJoinSize = joinSize;
@@ -373,22 +365,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This
-		 * method selects the tuple expression with highest number of bound variables, preferring variables
-		 * that have been bound in other tuple expressions over variables with a fixed value.
+		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This method
+		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
+		 * bound in other tuple expressions over variables with a fixed value.
 		 */
-		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions,
-				Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap,
-				Map<Var, Integer> varFreqMap, Set<String> boundVars)
-		{
+		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			TupleExpr result = null;
 
 			if (expressions.size() > 1) {
 				double lowestCardinality = Double.POSITIVE_INFINITY;
 				for (TupleExpr tupleExpr : expressions) {
 					// Calculate a score for this tuple expression
-					double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap,
-							varFreqMap, boundVars);
+					double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap,
+							boundVars);
 
 					if (cardinality < lowestCardinality || result == null) {
 						// More specific path expression found
@@ -396,8 +386,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						result = tupleExpr;
 					}
 				}
-			}
-			else {
+			} else {
 				result = expressions.get(0);
 			}
 
@@ -405,8 +394,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars)
-		{
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double cardinality = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);
@@ -416,7 +404,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			List<Var> constantVars = getConstantVars(vars);
 			int nonConstantVarCount = vars.size() - constantVars.size();
 			if (nonConstantVarCount > 0) {
-				double exp = (double)unboundVars.size() / nonConstantVarCount;
+				double exp = (double) unboundVars.size() / nonConstantVarCount;
 				cardinality = Math.pow(cardinality, exp);
 			}
 
@@ -425,8 +413,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (nonConstantVarCount > 0) {
 					cardinality /= nonConstantVarCount;
 				}
-			}
-			else {
+			} else {
 				// Prefer patterns that bind variables from other tuple expressions
 				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
 				if (foreignVarFreq > 0) {

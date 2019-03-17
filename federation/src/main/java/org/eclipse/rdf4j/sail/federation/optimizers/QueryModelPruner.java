@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 
 /**
- * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex
- * parts with simpler parts.
+ * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex parts with
+ * simpler parts.
  * 
  * @author Arjohn Kampman
  */
@@ -45,13 +45,10 @@ public class QueryModelPruner implements QueryOptimizer {
 	protected class TreeSanitizer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
-		public void meetOther(QueryModelNode node)
-			throws RuntimeException
-		{
+		public void meetOther(QueryModelNode node) throws RuntimeException {
 			if (node instanceof NaryJoin) {
-				meetMultiJoin((NaryJoin)node);
-			}
-			else {
+				meetMultiJoin((NaryJoin) node);
+			} else {
 				super.meetOther(node);
 			}
 		}
@@ -61,8 +58,7 @@ public class QueryModelPruner implements QueryOptimizer {
 			for (TupleExpr arg : join.getArgs()) {
 				if (arg instanceof SingletonSet) {
 					join.removeArg(arg);
-				}
-				else if (arg instanceof EmptySet) {
+				} else if (arg instanceof EmptySet) {
 					join.replaceWith(new EmptySet()); // NOPMD
 					return;
 				}
@@ -81,11 +77,9 @@ public class QueryModelPruner implements QueryOptimizer {
 
 			if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
 				join.replaceWith(new EmptySet());
-			}
-			else if (leftArg instanceof SingletonSet) {
+			} else if (leftArg instanceof SingletonSet) {
 				join.replaceWith(rightArg);
-			}
-			else if (rightArg instanceof SingletonSet) {
+			} else if (rightArg instanceof SingletonSet) {
 				join.replaceWith(leftArg);
 			}
 		}
@@ -98,26 +92,21 @@ public class QueryModelPruner implements QueryOptimizer {
 			ValueExpr condition = leftJoin.getCondition();
 			if (leftArg instanceof EmptySet) {
 				leftJoin.replaceWith(leftArg);
-			}
-			else if (rightArg instanceof EmptySet) {
+			} else if (rightArg instanceof EmptySet) {
 				leftJoin.replaceWith(leftArg);
-			}
-			else if (rightArg instanceof SingletonSet) {
+			} else if (rightArg instanceof SingletonSet) {
 				leftJoin.replaceWith(leftArg);
-			}
-			else if (condition instanceof ValueConstant) {
+			} else if (condition instanceof ValueConstant) {
 				boolean conditionValue;
 				try {
-					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
-							((ValueConstant)condition).getValue());
-				}
-				catch (ValueExprEvaluationException e) {
+					conditionValue = QueryEvaluationUtil
+							.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
+				} catch (ValueExprEvaluationException e) {
 					conditionValue = false;
 				}
 				if (conditionValue) {
 					leftJoin.setCondition(null);
-				}
-				else {
+				} else {
 					// Constraint is always false
 					leftJoin.replaceWith(leftArg);
 				}
@@ -131,11 +120,9 @@ public class QueryModelPruner implements QueryOptimizer {
 			TupleExpr rightArg = union.getRightArg();
 			if (leftArg instanceof EmptySet) {
 				union.replaceWith(rightArg);
-			}
-			else if (rightArg instanceof EmptySet) {
+			} else if (rightArg instanceof EmptySet) {
 				union.replaceWith(leftArg);
-			}
-			else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
+			} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
 				union.replaceWith(leftArg);
 			}
 		}
@@ -147,11 +134,9 @@ public class QueryModelPruner implements QueryOptimizer {
 			TupleExpr rightArg = difference.getRightArg();
 			if (leftArg instanceof EmptySet) {
 				difference.replaceWith(leftArg);
-			}
-			else if (rightArg instanceof EmptySet) {
+			} else if (rightArg instanceof EmptySet) {
 				difference.replaceWith(leftArg);
-			}
-			else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
+			} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
 				difference.replaceWith(new EmptySet());
 			}
 		}

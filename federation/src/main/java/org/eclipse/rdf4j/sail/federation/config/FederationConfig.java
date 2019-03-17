@@ -45,8 +45,8 @@ public class FederationConfig extends AbstractSailImplConfig {
 	public static final IRI MEMBER = vf.createIRI(NAMESPACE + "member");
 
 	/**
-	 * For all triples with a predicate in this space, the container RDF store contains all triples with that
-	 * subject and any predicate in this space.
+	 * For all triples with a predicate in this space, the container RDF store contains all triples with that subject
+	 * and any predicate in this space.
 	 */
 	public static final IRI LOCALPROPERTYSPACE = vf.createIRI(NAMESPACE // NOPMD
 			+ "localPropertySpace");
@@ -122,16 +122,13 @@ public class FederationConfig extends AbstractSailImplConfig {
 	}
 
 	@Override
-	public void parse(Model graph, Resource implNode)
-		throws SailConfigException
-	{
+	public void parse(Model graph, Resource implNode) throws SailConfigException {
 		super.parse(graph, implNode);
 		LinkedHashModel model = new LinkedHashModel(graph);
 		for (Value member : model.filter(implNode, MEMBER, null).objects()) {
 			try {
-				addMember(create(graph, (Resource)member));
-			}
-			catch (RepositoryConfigException e) {
+				addMember(create(graph, (Resource) member));
+			} catch (RepositoryConfigException e) {
 				throw new SailConfigException(e);
 			}
 		}
@@ -147,16 +144,13 @@ public class FederationConfig extends AbstractSailImplConfig {
 			if (bool.isPresent() && bool.get().booleanValue()) {
 				readOnly = true;
 			}
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			throw new SailConfigException(e);
 		}
 	}
 
 	@Override
-	public void validate()
-		throws SailConfigException
-	{
+	public void validate() throws SailConfigException {
 		super.validate();
 		if (members.isEmpty()) {
 			throw new SailConfigException("No federation members specified");
@@ -164,8 +158,7 @@ public class FederationConfig extends AbstractSailImplConfig {
 		for (RepositoryImplConfig member : members) {
 			try {
 				member.validate();
-			}
-			catch (RepositoryConfigException e) {
+			} catch (RepositoryConfigException e) {
 				throw new SailConfigException(e);
 			}
 		}

@@ -34,9 +34,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Activates support of {@link SearchIndex} feature inside {@link SpinSail} and manages the index during
- * statements adding/removing. Technically this sail binds {@link SearchIndex} using
- * .addQueryContextInitializer and wraps connection from baseSail by wrapped which modify SearchIndex.
+ * Activates support of {@link SearchIndex} feature inside {@link SpinSail} and manages the index during statements
+ * adding/removing. Technically this sail binds {@link SearchIndex} using .addQueryContextInitializer and wraps
+ * connection from baseSail by wrapped which modify SearchIndex.
  *
  * @author jacek grzebyta
  */
@@ -66,8 +66,8 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	/**
 	 * Replaces existing parameters.
 	 * <p>
-	 * By default parameters field is instantiated in constructor. Using this method replaces the existing
-	 * field. If you wish only add missing parameters use {@link #addAbsentParameters(java.util.Properties)}.
+	 * By default parameters field is instantiated in constructor. Using this method replaces the existing field. If you
+	 * wish only add missing parameters use {@link #addAbsentParameters(java.util.Properties)}.
 	 * </p>
 	 * 
 	 * @param parameters
@@ -89,8 +89,8 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Creates absolute path to Lucene Index. If the properties contains no absolute path to lucene index than
-	 * it is created here. The generic pattern of lisp-like pseudocode in that case is: <br/>
+	 * Creates absolute path to Lucene Index. If the properties contains no absolute path to lucene index than it is
+	 * created here. The generic pattern of lisp-like pseudocode in that case is: <br/>
 	 * <code>
 	* (Paths/get (absolute datadir) + (or (getProperty parameters LuceneSail/LUCENE_DIR_KEY) "index/"))
 	* </code>
@@ -109,17 +109,14 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * @throws SailException
 	 */
 	@Override
-	public void initialize()
-		throws SailException
-	{
+	public void initialize() throws SailException {
 		// Add support for indexed fields
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
 			Properties prop = new Properties();
 			try (Reader reader = new StringReader(indexedfieldsString)) {
 				prop.load(reader);
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new SailException("Could read " + INDEXEDFIELDS + ": " + indexedfieldsString, e);
 			}
 			ValueFactory vf = getValueFactory();
@@ -129,26 +126,24 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 				String keyStr = key.toString();
 				if (keyStr.startsWith("index.")) {
 					indexedFields.add(vf.createIRI(prop.getProperty(keyStr)));
-				}
-				else {
+				} else {
 					indexedFieldsMapping.put(vf.createIRI(keyStr), vf.createIRI(prop.getProperty(keyStr)));
 				}
 			}
 		}
 
-		((SpinSail)getBaseSail()).setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
+		((SpinSail) getBaseSail()).setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY,
 				getParameters().getProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS));
 		Path indexLocation = getAbsoluteLuceneIndexDir();
 		log.debug("index location: {}", indexLocation);
-		Properties newParameters = (Properties)this.parameters.clone();
+		Properties newParameters = (Properties) this.parameters.clone();
 		newParameters.setProperty(LuceneSail.LUCENE_DIR_KEY, indexLocation.toString());
 		try {
 			si = SearchIndexUtils.createSearchIndex(newParameters);
 			// bind index to SpinSail
-			((SpinSail)getBaseSail()).addQueryContextInitializer(new SearchIndexQueryContextInitializer(si));
-		}
-		catch (Exception ex) {
+			((SpinSail) getBaseSail()).addQueryContextInitializer(new SearchIndexQueryContextInitializer(si));
+		} catch (Exception ex) {
 			log.warn("error occured during set up of the search index. It might affect functionality.");
 			throw new SailException(ex);
 		}
@@ -160,9 +155,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * @return @throws SailException
 	 */
 	@Override
-	public NotifyingSailConnection getConnection()
-		throws SailException
-	{
+	public NotifyingSailConnection getConnection() throws SailException {
 		if (si == null) {
 			throw new SailException("Index is not created");
 		}
@@ -195,8 +188,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 		if (predicateChanged) {
 			return getValueFactory().createStatement(statement.getSubject(), p, statement.getObject(),
 					statement.getContext());
-		}
-		else {
+		} else {
 			return statement;
 		}
 	}

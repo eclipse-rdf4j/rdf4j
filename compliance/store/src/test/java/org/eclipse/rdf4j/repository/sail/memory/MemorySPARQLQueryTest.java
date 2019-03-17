@@ -19,24 +19,19 @@ import junit.framework.Test;
 
 public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			@Override
-			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
-			{
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, false);
+			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
+				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
+						false);
 			}
 
 			@Override
-			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
-					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
-					boolean checkOrder)
-			{
+			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
 						// test case incompatible with RDF 1.1 - see
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
@@ -47,8 +42,8 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 						// known issue: SES-937
 						"sq03 - Subquery within graph pattern, graph variable is not bound" };
 
-				return new MemorySPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder, ignoredTests);
+				return new MemorySPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
+						checkOrder, ignoredTests);
 			}
 			// skip 'service' tests because it requires the test rig to start up
 			// a remote endpoint
@@ -56,8 +51,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 	}
 
 	protected MemorySPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests)
-	{
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

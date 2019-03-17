@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A wrapper around an {@link SailSource} that can suppress the call to {@link #close()}. This is useful when
- * the a shared branch is sometimes to be used and other times a dedicated branch is to be used.
+ * A wrapper around an {@link SailSource} that can suppress the call to {@link #close()}. This is useful when the a
+ * shared branch is sometimes to be used and other times a dedicated branch is to be used.
  * 
  * @author James Leigh
  */
@@ -23,12 +23,11 @@ class DelegatingSailSource implements SailSource {
 	private final boolean releasing;
 
 	/**
-	 * Wraps this {@link SailSource}, delegating all calls to it unless <code>closing</code> is false, in
-	 * which case {@link #close()} will not be delegated.
+	 * Wraps this {@link SailSource}, delegating all calls to it unless <code>closing</code> is false, in which case
+	 * {@link #close()} will not be delegated.
 	 * 
 	 * @param delegate
-	 * @param closing
-	 *        if {@link #close()} should be delegated
+	 * @param closing  if {@link #close()} should be delegated
 	 */
 	public DelegatingSailSource(SailSource delegate, boolean closing) {
 		assert delegate != null;
@@ -42,9 +41,7 @@ class DelegatingSailSource implements SailSource {
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		if (releasing) {
 			delegate.close();
 		}
@@ -56,30 +53,22 @@ class DelegatingSailSource implements SailSource {
 	}
 
 	@Override
-	public void prepare()
-		throws SailException
-	{
+	public void prepare() throws SailException {
 		delegate.prepare();
 	}
 
 	@Override
-	public void flush()
-		throws SailException
-	{
+	public void flush() throws SailException {
 		delegate.flush();
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level)
-		throws SailException
-	{
+	public SailSink sink(IsolationLevel level) throws SailException {
 		return delegate.sink(level);
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level)
-		throws SailException
-	{
+	public SailDataset dataset(IsolationLevel level) throws SailException {
 		return delegate.dataset(level);
 	}
 }

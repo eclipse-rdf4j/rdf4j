@@ -21,9 +21,7 @@ public class MemoryStoreIsolationLevelTest extends SailIsolationLevelTest {
 	 *---------*/
 
 	@Override
-	protected Sail createSail()
-		throws SailException
-	{
+	protected Sail createSail() throws SailException {
 		return new MemoryStore();
 	}
 }

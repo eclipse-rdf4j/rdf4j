@@ -30,25 +30,30 @@ public class PathPropertyShape extends PropertyShape {
 	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated) {
 		super(id, nodeShape, deactivated);
 
-		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is undefined.
+		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
+		// undefined.
 		path = new SimplePath(id, connection);
 
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, path.getQuery("?a", "?c", null), "*"));
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
+		return shaclSailConnection
+				.getCachedNodeFor(new Select(shaclSailConnection, path.getQuery("?a", "?c", null), "*"));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null), "*"));
+		return shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null), "*"));
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), path.getQuery("?a", "?c", null), "*"));
+		return shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), path.getQuery("?a", "?c", null), "*"));
 
 	}
 
@@ -57,19 +62,17 @@ public class PathPropertyShape extends PropertyShape {
 		return Collections.singletonList(path);
 	}
 
-
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		if (deactivated) {
 			return false;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
+		return super.requiresEvaluation(addedStatements, removedStatements)
+				|| path.requiresEvaluation(addedStatements, removedStatements);
 	}
-
 
 	public Path getPath() {
 		return path;
 	}
 }
-

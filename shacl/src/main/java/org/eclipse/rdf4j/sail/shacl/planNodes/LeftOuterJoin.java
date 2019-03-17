@@ -8,11 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
 
 /**
  * @author Håvard Ottestad
@@ -31,7 +29,6 @@ public class LeftOuterJoin implements PlanNode {
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
-
 
 			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
 			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
@@ -58,18 +55,16 @@ public class LeftOuterJoin implements PlanNode {
 					nextRight = rightIterator.next();
 				}
 
-
 				while (next == null) {
-
 
 					if (nextRight != null) {
 
-						if (nextLeft.line.get(0) == nextRight.line.get(0) || nextLeft.line.get(0).equals(nextRight.line.get(0))) {
+						if (nextLeft.line.get(0) == nextRight.line.get(0)
+								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
 							prevLeft = nextLeft;
 							nextRight = null;
 						} else {
-
 
 							int compareTo = nextLeft.compareTo(nextRight);
 
@@ -108,7 +103,6 @@ public class LeftOuterJoin implements PlanNode {
 					}
 				}
 
-
 			}
 
 			@Override
@@ -145,25 +139,28 @@ public class LeftOuterJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
-		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
+		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		if(left.getIteratorDataType() == right.getIteratorDataType()) return left.getIteratorDataType();
+		if (left.getIteratorDataType() == right.getIteratorDataType())
+			return left.getIteratorDataType();
 
 		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
 

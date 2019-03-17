@@ -70,6 +70,6 @@ public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<Tup
 
 	@Override
 	public AbstractNaryTupleOperator clone() { // NOPMD
-		return (AbstractNaryTupleOperator)super.clone();
+		return (AbstractNaryTupleOperator) super.clone();
 	}
 }

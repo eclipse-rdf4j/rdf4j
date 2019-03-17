@@ -40,13 +40,11 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 
 	@Override
 	public ParsedGraphQuery getParsedQuery() {
-		return (ParsedGraphQuery)super.getParsedQuery();
+		return (ParsedGraphQuery) super.getParsedQuery();
 	}
 
 	@Override
-	public GraphQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
@@ -58,8 +56,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 		boolean allGood = false;
 		try {
 			SailConnection sailCon = getSailConnection();
-			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred());
+			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
@@ -82,15 +79,14 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {
-					Resource subject = (Resource)bindingSet.getValue("subject");
-					IRI predicate = (IRI)bindingSet.getValue("predicate");
+					Resource subject = (Resource) bindingSet.getValue("subject");
+					IRI predicate = (IRI) bindingSet.getValue("predicate");
 					Value object = bindingSet.getValue("object");
-					Resource context = (Resource)bindingSet.getValue("context");
+					Resource context = (Resource) bindingSet.getValue("context");
 
 					if (context == null) {
 						return vf.createStatement(subject, predicate, object);
-					}
-					else {
+					} else {
 						return vf.createStatement(subject, predicate, object, context);
 					}
 				}
@@ -99,36 +95,30 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 			result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
 			allGood = true;
 			return result;
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
-		}
-		finally {
+		} finally {
 			if (!allGood) {
 				try {
 					if (result != null) {
 						result.close();
 					}
-				}
-				finally {
+				} finally {
 					try {
 						if (stIter != null) {
 							stIter.close();
 						}
-					}
-					finally {
+					} finally {
 						try {
 							if (bindingsIter3 != null) {
 								bindingsIter3.close();
 							}
-						}
-						finally {
+						} finally {
 							try {
 								if (bindingsIter2 != null) {
 									bindingsIter2.close();
 								}
-							}
-							finally {
+							} finally {
 								if (bindingsIter1 != null) {
 									bindingsIter1.close();
 								}
@@ -141,9 +131,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 	}
 
 	@Override
-	public void evaluate(RDFHandler handler)
-		throws QueryEvaluationException, RDFHandlerException
-	{
+	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 		GraphQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

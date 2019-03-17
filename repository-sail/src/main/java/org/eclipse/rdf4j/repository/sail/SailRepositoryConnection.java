@@ -50,9 +50,8 @@ import org.eclipse.rdf4j.sail.SailReadOnlyException;
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
-public class SailRepositoryConnection extends AbstractRepositoryConnection implements
-		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
-{
+public class SailRepositoryConnection extends AbstractRepositoryConnection implements FederatedServiceResolverClient,
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Variables *
@@ -68,8 +67,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	 *--------------*/
 
 	/**
-	 * Creates a new repository connection that will wrap the supplied SailConnection.
-	 * SailRepositoryConnection objects are created by {@link SailRepository#getConnection}.
+	 * Creates a new repository connection that will wrap the supplied SailConnection. SailRepositoryConnection objects
+	 * are created by {@link SailRepository#getConnection}.
 	 */
 	protected SailRepositoryConnection(SailRepository repository, SailConnection sailConnection) {
 		super(repository);
@@ -90,23 +89,22 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		if (sailConnection instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)sailConnection).setFederatedServiceResolver(resolver);
+			((FederatedServiceResolverClient) sailConnection).setFederatedServiceResolver(resolver);
 		}
 	}
 
 	@Override
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		if (sailConnection instanceof RepositoryResolverClient) {
-			((RepositoryResolverClient)sailConnection).setRepositoryResolver(resolver);
+			((RepositoryResolverClient) sailConnection).setRepositoryResolver(resolver);
 		}
 	}
 
 	@Override
 	public HttpClientSessionManager getHttpClientSessionManager() {
 		if (sailConnection instanceof SessionManagerDependent) {
-			return ((SessionManagerDependent)sailConnection).getHttpClientSessionManager();
-		}
-		else {
+			return ((SessionManagerDependent) sailConnection).getHttpClientSessionManager();
+		} else {
 			return null;
 		}
 	}
@@ -114,16 +112,15 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		if (sailConnection instanceof SessionManagerDependent) {
-			((SessionManagerDependent)sailConnection).setHttpClientSessionManager(client);
+			((SessionManagerDependent) sailConnection).setHttpClientSessionManager(client);
 		}
 	}
 
 	@Override
 	public HttpClient getHttpClient() {
 		if (sailConnection instanceof HttpClientDependent) {
-			return ((HttpClientDependent)sailConnection).getHttpClient();
-		}
-		else {
+			return ((HttpClientDependent) sailConnection).getHttpClient();
+		} else {
 			return null;
 		}
 	}
@@ -131,193 +128,152 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void setHttpClient(HttpClient client) {
 		if (sailConnection instanceof HttpClientDependent) {
-			((HttpClientDependent)sailConnection).setHttpClient(client);
+			((HttpClientDependent) sailConnection).setHttpClient(client);
 		}
 	}
 
 	@Override
-	public void begin()
-		throws RepositoryException
-	{
+	public void begin() throws RepositoryException {
 		try {
 			sailConnection.begin(getIsolationLevel());
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-		throws RepositoryException
-	{
+	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			sailConnection.begin(level);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void commit()
-		throws RepositoryException
-	{
+	public void commit() throws RepositoryException {
 		try {
 			sailConnection.flush();
 			sailConnection.prepare();
 			sailConnection.commit();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void rollback()
-		throws RepositoryException
-	{
+	public void rollback() throws RepositoryException {
 		try {
 			sailConnection.rollback();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void close()
-		throws RepositoryException
-	{
+	public void close() throws RepositoryException {
 		try {
 			super.close();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
-		}
-		finally {
+		} finally {
 			sailConnection.close();
 		}
 	}
 
 	@Override
-	public boolean isOpen()
-		throws RepositoryException
-	{
+	public boolean isOpen() throws RepositoryException {
 		try {
 			return sailConnection.isOpen();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException
-	{
+	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI);
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
-			return new SailTupleQuery((ParsedTupleQuery)parsedQuery, this);
-		}
-		else if (parsedQuery instanceof ParsedGraphQuery) {
-			return new SailGraphQuery((ParsedGraphQuery)parsedQuery, this);
-		}
-		else if (parsedQuery instanceof ParsedBooleanQuery) {
-			return new SailBooleanQuery((ParsedBooleanQuery)parsedQuery, this);
-		}
-		else {
+			return new SailTupleQuery((ParsedTupleQuery) parsedQuery, this);
+		} else if (parsedQuery instanceof ParsedGraphQuery) {
+			return new SailGraphQuery((ParsedGraphQuery) parsedQuery, this);
+		} else if (parsedQuery instanceof ParsedBooleanQuery) {
+			return new SailBooleanQuery((ParsedBooleanQuery) parsedQuery, this);
+		} else {
 			throw new RuntimeException("Unexpected query type: " + parsedQuery.getClass());
 		}
 	}
 
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(ql, queryString, baseURI);
 		return new SailTupleQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		ParsedGraphQuery parsedQuery = QueryParserUtil.parseGraphQuery(ql, queryString, baseURI);
 		return new SailGraphQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		ParsedBooleanQuery parsedQuery = QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI);
 		return new SailBooleanQuery(parsedQuery, this);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-		throws RepositoryException, MalformedQueryException
-	{
+			throws RepositoryException, MalformedQueryException {
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
 
 		return new SailUpdate(parsedUpdate, this);
 	}
 
 	@Override
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts)
-		throws RepositoryException
-	{
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws RepositoryException {
 		return sailConnection.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
-	public RepositoryResult<Resource> getContextIDs()
-		throws RepositoryException
-	{
+	public RepositoryResult<Resource> getContextIDs() throws RepositoryException {
 		try {
 			return createRepositoryResult(sailConnection.getContextIDs());
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException("Unable to get context IDs from Sail", e);
 		}
 	}
 
 	@Override
-	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts)
-		throws RepositoryException
-	{
+	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
-			return createRepositoryResult(
-					sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
-		}
-		catch (SailException e) {
+			return createRepositoryResult(sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
+		} catch (SailException e) {
 			throw new RepositoryException("Unable to get statements from Sail", e);
 		}
 	}
 
 	@Override
-	public boolean isEmpty()
-		throws RepositoryException
-	{
+	public boolean isEmpty() throws RepositoryException {
 		// The following is more efficient than "size() == 0" for Sails
 		return !hasStatement(null, null, null, false);
 	}
 
 	@Override
-	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			RDFHandler handler, Resource... contexts)
-		throws RepositoryException, RDFHandlerException
-	{
+	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+			Resource... contexts) throws RepositoryException, RDFHandlerException {
 		handler.startRDF();
 
 		try ( // Export namespace information
-			CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
+				CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
 			while (nsIter.hasNext()) {
 				Namespace ns = nsIter.next();
 				handler.handleNamespace(ns.getPrefix(), ns.getName());
@@ -332,8 +288,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			while (stIter.hasNext()) {
 				handler.handleStatement(stIter.next());
 			}
-		}
-		finally {
+		} finally {
 			stIter.close();
 		}
 
@@ -341,164 +296,126 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public long size(Resource... contexts)
-		throws RepositoryException
-	{
+	public long size(Resource... contexts) throws RepositoryException {
 		try {
 			return sailConnection.size(contexts);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		try {
 			sailConnection.addStatement(subject, predicate, object, contexts);
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
+			throws RepositoryException {
 		try {
 			if (subject == null && predicate == null && object == null) {
 				sailConnection.clear(contexts);
-			}
-			else {
+			} else {
 				sailConnection.removeStatements(subject, predicate, object, contexts);
 			}
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void clear(Resource... contexts)
-		throws RepositoryException
-	{
+	public void clear(Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.clear(contexts);
 			conditionalCommit(local);
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void setNamespace(String prefix, String name)
-		throws RepositoryException
-	{
+	public void setNamespace(String prefix, String name) throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.setNamespace(prefix, name);
 			conditionalCommit(local);
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void removeNamespace(String prefix)
-		throws RepositoryException
-	{
+	public void removeNamespace(String prefix) throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.removeNamespace(prefix);
 			conditionalCommit(local);
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public void clearNamespaces()
-		throws RepositoryException
-	{
+	public void clearNamespaces() throws RepositoryException {
 		try {
 			boolean local = startLocalTransaction();
 			sailConnection.clearNamespaces();
 			conditionalCommit(local);
-		}
-		catch (SailReadOnlyException e) {
+		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	@Override
-	public RepositoryResult<Namespace> getNamespaces()
-		throws RepositoryException
-	{
+	public RepositoryResult<Namespace> getNamespaces() throws RepositoryException {
 		try {
 			return createRepositoryResult(sailConnection.getNamespaces());
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException("Unable to get namespaces from Sail", e);
 		}
 	}
 
 	@Override
-	public String getNamespace(String prefix)
-		throws RepositoryException
-	{
+	public String getNamespace(String prefix) throws RepositoryException {
 		try {
 			return sailConnection.getNamespace(prefix);
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
 	}
 
 	/**
-	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required
-	 * conversions
+	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required conversions
 	 */
-	protected <E> RepositoryResult<E> createRepositoryResult(
-			CloseableIteration<? extends E, SailException> sailIter)
-	{
+	protected <E> RepositoryResult<E> createRepositoryResult(CloseableIteration<? extends E, SailException> sailIter) {
 		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 
 	@Override
-	public boolean isActive()
-		throws UnknownTransactionStateException
-	{
+	public boolean isActive() throws UnknownTransactionStateException {
 		try {
 			return sailConnection.isActive();
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new UnknownTransactionStateException(e);
 		}
 	}

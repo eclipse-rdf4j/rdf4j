@@ -35,8 +35,7 @@ public class NegativeIntegerCast extends IntegerCastFunction {
 	}
 
 	@Override
-	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-	{
+	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue) {
 		if (integerValue.compareTo(BigInteger.ZERO) < 0) {
 			return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
 		}

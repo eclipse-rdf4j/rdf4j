@@ -24,11 +24,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public class FloatCast extends CastFunction {
 
 	@Override
-	protected Literal convert(ValueFactory valueFactory, Value value)
-		throws ValueExprEvaluationException
-	{
+	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof Literal) {
-			Literal literal = (Literal)value;
+			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
 			if (XMLDatatypeUtil.isNumericDatatype(datatype)) {
@@ -37,16 +35,13 @@ public class FloatCast extends CastFunction {
 				try {
 					float floatValue = literal.floatValue();
 					return valueFactory.createLiteral(floatValue);
-				}
-				catch (NumberFormatException e) {
+				} catch (NumberFormatException e) {
 					throw typeError(literal, e);
 				}
-			}
-			else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
 					return valueFactory.createLiteral(literal.booleanValue() ? 1f : 0f);
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}
 			}

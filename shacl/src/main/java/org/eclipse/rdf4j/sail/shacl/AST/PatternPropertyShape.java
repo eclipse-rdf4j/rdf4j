@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -34,7 +33,8 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private final String flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, String pattern, String flags) {
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			String pattern, String flags) {
 		super(id, connection, nodeShape, deactivated);
 
 		this.pattern = pattern;
@@ -42,19 +42,15 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 	}
 
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new PatternFilter(parent, pattern, flags),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

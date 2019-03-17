@@ -133,9 +133,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(final QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(final QueryModelVisitor<X> visitor) throws X {
 		for (Expr arg : args) {
 			if (arg != null) {
 				arg.visit(visitor);
@@ -148,9 +146,8 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	public void replaceChildNode(final QueryModelNode current, final QueryModelNode replacement) {
 		final int index = args.indexOf(current);
 		if (index >= 0) {
-			setArg(index, (Expr)replacement);
-		}
-		else {
+			setArg(index, (Expr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -158,10 +155,10 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	@Override
 	@SuppressWarnings("unchecked")
 	public AbstractNaryOperator<Expr> clone() { // NOPMD
-		final AbstractNaryOperator<Expr> clone = (AbstractNaryOperator<Expr>)super.clone();
+		final AbstractNaryOperator<Expr> clone = (AbstractNaryOperator<Expr>) super.clone();
 		clone.args = new ArrayList<>(args.size());
 		for (Expr arg : args) {
-			final Expr argClone = (arg == null) ? null : (Expr)arg.clone(); // NOPMD
+			final Expr argClone = (arg == null) ? null : (Expr) arg.clone(); // NOPMD
 			clone.addArg(argClone);
 		}
 		return clone;

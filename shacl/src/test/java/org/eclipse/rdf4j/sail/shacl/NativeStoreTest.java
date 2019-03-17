@@ -53,16 +53,13 @@ public class NativeStoreTest {
 
 			connection.begin();
 
-			StringReader invalidSampleData = new StringReader(
-				String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .", "@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
-					"ex:peter a foaf:Person ;",
-					"  foaf:age 20, \"30\"^^xsd:int  ."
+					"ex:peter a foaf:Person ;", "  foaf:age 20, \"30\"^^xsd:int  ."
 
-				));
+			));
 
 			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
 			try {
@@ -83,24 +80,15 @@ public class NativeStoreTest {
 
 			connection.begin();
 
-			StringReader shaclRules = new StringReader(
-				String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			StringReader shaclRules = new StringReader(String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"ex:PersonShape",
-					"  a sh:NodeShape  ;",
-					"  sh:targetClass foaf:Person ;",
+					"ex:PersonShape", "  a sh:NodeShape  ;", "  sh:targetClass foaf:Person ;",
 					"  sh:property ex:PersonShapeProperty .",
 
-					"ex:PersonShapeProperty ",
-					"  sh:path foaf:age ;",
-					"  sh:datatype xsd:int ;",
-					"  sh:maxCount 1 ;",
-					"  sh:minCount 1 ."
-				));
+					"ex:PersonShapeProperty ", "  sh:path foaf:age ;", "  sh:datatype xsd:int ;", "  sh:maxCount 1 ;",
+					"  sh:minCount 1 ."));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
@@ -120,5 +108,3 @@ public class NativeStoreTest {
 	}
 
 }
-
-

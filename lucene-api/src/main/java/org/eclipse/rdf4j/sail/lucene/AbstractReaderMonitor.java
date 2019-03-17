@@ -12,9 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader
- * and IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was
- * read.
+ * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader and
+ * IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was read.
  * 
  * @author Tomasz Trela, DFKI Gmbh
  */
@@ -57,9 +56,7 @@ public abstract class AbstractReaderMonitor {
 	 * 
 	 * @throws IOException
 	 */
-	public final synchronized void endReading()
-		throws IOException
-	{
+	public final synchronized void endReading() throws IOException {
 		if (readingCount.decrementAndGet() <= 0 && doClose.get()) {
 			// when endReading is called on CurrentMonitor and it should be
 			// closed, close it
@@ -78,9 +75,7 @@ public abstract class AbstractReaderMonitor {
 	 * @return <code>true</code> if the close succeeded, <code>false</code> otherwise.
 	 * @throws IOException
 	 */
-	public final synchronized boolean closeWhenPossible()
-		throws IOException
-	{
+	public final synchronized boolean closeWhenPossible() throws IOException {
 		doClose.set(true);
 		if (readingCount.get() == 0) {
 			close();
@@ -88,9 +83,7 @@ public abstract class AbstractReaderMonitor {
 		return closed.get();
 	}
 
-	public final void close()
-		throws IOException
-	{
+	public final void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			handleClose();
 		}
@@ -101,6 +94,5 @@ public abstract class AbstractReaderMonitor {
 	 * 
 	 * @throws IOException
 	 */
-	protected abstract void handleClose()
-		throws IOException;
+	protected abstract void handleClose() throws IOException;
 }

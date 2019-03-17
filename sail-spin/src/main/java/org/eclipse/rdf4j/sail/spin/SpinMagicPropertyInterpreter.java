@@ -70,9 +70,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 	private final IRI spinServiceUri;
 
-	static void registerSpinParsingTupleFunctions(SpinParser parser,
-			TupleFunctionRegistry tupleFunctionRegistry)
-	{
+	static void registerSpinParsingTupleFunctions(SpinParser parser, TupleFunctionRegistry tupleFunctionRegistry) {
 		if (!tupleFunctionRegistry.has(SPIN.CONSTRUCT_PROPERTY.stringValue())) {
 			tupleFunctionRegistry.add(new ConstructTupleFunction(parser));
 		}
@@ -82,8 +80,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 	}
 
 	public SpinMagicPropertyInterpreter(SpinParser parser, TripleSource tripleSource,
-			TupleFunctionRegistry tupleFunctionRegistry, AbstractFederatedServiceResolver serviceResolver)
-	{
+			TupleFunctionRegistry tupleFunctionRegistry, AbstractFederatedServiceResolver serviceResolver) {
 		this.parser = parser;
 		this.tripleSource = tripleSource;
 		this.tupleFunctionRegistry = tupleFunctionRegistry;
@@ -95,36 +92,31 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		try {
 			tupleExpr.visit(new PropertyScanner());
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			logger.warn("Failed to parse tuple function");
 		}
 	}
 
 	private class PropertyScanner extends QueryModelVisitorBase<RDF4JException> {
 
-		private void processGraphPattern(List<StatementPattern> sps)
-			throws RDF4JException
-		{
+		private void processGraphPattern(List<StatementPattern> sps) throws RDF4JException {
 			Map<StatementPattern, TupleFunction> magicProperties = new LinkedHashMap<>();
 			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<>();
 
 			for (StatementPattern sp : sps) {
-				IRI pred = (IRI)sp.getPredicateVar().getValue();
+				IRI pred = (IRI) sp.getPredicateVar().getValue();
 				if (pred != null) {
 					TupleFunction func = tupleFunctionRegistry.get(pred.stringValue()).orElse(null);
 					if (func != null) {
 						magicProperties.put(sp, func);
-					}
-					else {
+					} else {
 						Statement magicPropStmt = TripleSources.single(pred, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS,
 								tripleSource);
 						if (magicPropStmt != null) {
 							func = parser.parseMagicProperty(pred, tripleSource);
 							tupleFunctionRegistry.add(func);
 							magicProperties.put(sp, func);
-						}
-						else {
+						} else {
 							// normal statement
 							String subj = sp.getSubjectVar().getName();
 							Map<IRI, List<StatementPattern>> predMap = spIndex.get(subj);
@@ -155,30 +147,27 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 					TupleExpr subjNodes = addList(subjList, sp.getSubjectVar(), spIndex);
 					if (subjNodes != null) {
 						stmts = new Join(stmts, subjNodes);
-					}
-					else {
-						subjList = Collections.<ValueExpr> singletonList(sp.getSubjectVar());
+					} else {
+						subjList = Collections.<ValueExpr>singletonList(sp.getSubjectVar());
 					}
 
 					List<? super Var> objList = new ArrayList<ValueExpr>(4);
 					TupleExpr objNodes = addList(objList, sp.getObjectVar(), spIndex);
 					if (objNodes != null) {
 						stmts = new Join(stmts, objNodes);
-					}
-					else {
-						objList = Collections.<ValueExpr> singletonList(sp.getObjectVar());
+					} else {
+						objList = Collections.<ValueExpr>singletonList(sp.getObjectVar());
 					}
 					union.setLeftArg(stmts);
 
 					TupleFunctionCall funcCall = new TupleFunctionCall();
 					funcCall.setURI(sp.getPredicateVar().getValue().stringValue());
 					if (func instanceof InverseMagicProperty) {
-						funcCall.setArgs((List<ValueExpr>)objList);
-						funcCall.setResultVars((List<Var>)subjList);
-					}
-					else {
-						funcCall.setArgs((List<ValueExpr>)subjList);
-						funcCall.setResultVars((List<Var>)objList);
+						funcCall.setArgs((List<ValueExpr>) objList);
+						funcCall.setResultVars((List<Var>) subjList);
+					} else {
+						funcCall.setArgs((List<ValueExpr>) subjList);
+						funcCall.setResultVars((List<Var>) objList);
 					}
 
 					TupleExpr magicPropertyNode;
@@ -193,20 +182,16 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						String exprString;
 						try {
 							exprString = new SPARQLQueryRenderer().render(new ParsedTupleQuery(stmts));
-							exprString = exprString.substring(exprString.indexOf('{') + 1,
-									exprString.lastIndexOf('}'));
-						}
-						catch (Exception e) {
+							exprString = exprString.substring(exprString.indexOf('{') + 1, exprString.lastIndexOf('}'));
+						} catch (Exception e) {
 							throw new MalformedQueryException(e);
 						}
 						Map<String, String> prefixDecls = new HashMap<>(8);
 						prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 						prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 						prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
-						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null,
-								false);
-					}
-					else {
+						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null, false);
+					} else {
 						magicPropertyNode = funcCall;
 					}
 
@@ -219,16 +204,14 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 			toMove.replaceWith(new SingletonSet());
 			if (node != null) {
 				node = new Join(node, toMove);
-			}
-			else {
+			} else {
 				node = toMove;
 			}
 			return node;
 		}
 
 		private TupleExpr addList(List<? super Var> list, Var subj,
-				Map<String, Map<IRI, List<StatementPattern>>> spIndex)
-		{
+				Map<String, Map<IRI, List<StatementPattern>>> spIndex) {
 			TupleExpr node = null;
 			do {
 				Map<IRI, List<StatementPattern>> predMap = spIndex.get(subj.getName());
@@ -269,24 +252,19 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						}
 					}
 				}
-			}
-			while (!RDF.NIL.equals(subj.getValue()));
+			} while (!RDF.NIL.equals(subj.getValue()));
 			return node;
 		}
 
 		@Override
-		public void meet(Join node)
-			throws RDF4JException
-		{
+		public void meet(Join node) throws RDF4JException {
 			BGPCollector<RDF4JException> collector = new BGPCollector<>(this);
 			node.visit(collector);
 			processGraphPattern(collector.getStatementPatterns());
 		}
 
 		@Override
-		public void meet(StatementPattern node)
-			throws RDF4JException
-		{
+		public void meet(StatementPattern node) throws RDF4JException {
 			processGraphPattern(Collections.singletonList(node));
 		}
 	}
