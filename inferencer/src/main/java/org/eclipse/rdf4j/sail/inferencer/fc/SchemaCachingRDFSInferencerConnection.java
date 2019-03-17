@@ -803,6 +803,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
+
 		addStatement(false, subj, pred, obj, contexts);
 		super.addStatement(modify, subj, pred, obj, contexts);
 	}
