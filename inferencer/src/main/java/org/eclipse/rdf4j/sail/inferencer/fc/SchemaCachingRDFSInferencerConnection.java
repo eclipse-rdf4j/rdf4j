@@ -51,7 +51,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	 */
 	private boolean statementsAdded;
 
-	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail, InferencerConnection connection) {
+	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail,
+			InferencerConnection connection) {
 
 		super(connection);
 		connection.addConnectionListener(this);
@@ -83,7 +84,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-			sail.addSubClassOfStatement(sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+			sail.addSubClassOfStatement(
+					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
 			sail.addSubPropertyOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
@@ -102,7 +104,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private boolean inferredCleared = false;
 
 	@Override
-	public void clearInferred(Resource... contexts) throws SailException {
+	public void clearInferred(Resource... contexts)
+			throws SailException {
 		super.clearInferred(contexts);
 		inferredCleared = true;
 	}
@@ -110,19 +113,21 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private long originalSchemaSize = -1;
 
 	@Override
-	public void commit() throws SailException {
+	public void commit()
+			throws SailException {
 		super.commit();
 		sail.releaseExclusiveWriteLock();
 	}
 
-	void doInferencing() throws SailException {
+	void doInferencing()
+			throws SailException {
 
 		// Check on schema cache size is always reliable since things can only be added to the cache
 		// The only place where things can be removed from the cache is within the method clearInferenceTables()
 		// which is only called from within this block
 		if (sail.schema == null && originalSchemaSize != sail.getSchemaSize()) {
 
-			regenerateCacheAndInferenceMaps();
+			regenerateCacheAndInferenceMaps(true);
 			inferredCleared = true;
 
 		}
@@ -131,29 +136,33 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			return;
 		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
-				null, false)) {
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
+				null, null, null, false)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
-				addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(), next.getContext());
+				addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(),
+						next.getContext());
 			}
 		}
 		inferredCleared = false;
 
 	}
 
-	private void regenerateCacheAndInferenceMaps() {
+	private void regenerateCacheAndInferenceMaps(boolean addInferredStatements) {
 		sail.clearInferenceTables();
-		addAxiomStatements();
+		if (addInferredStatements) {
+			addAxiomStatements();
+		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
-				null, sail.useInferredToCreateSchema)) {
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
+				null, null, null, sail.useInferredToCreateSchema)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
-				processForSchemaCache(next);
+				processForSchemaCache(sail.getValueFactory()
+						.createStatement(next.getSubject(), next.getPredicate(), next.getObject()));
 			}
 		}
-		sail.calculateInferenceMaps(this);
+		sail.calculateInferenceMaps(this, addInferredStatements);
 
 		originalSchemaSize = sail.getSchemaSize();
 	}
@@ -171,12 +180,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts) throws SailException {
+	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
+			throws SailException {
 		addStatement(true, subject, predicate, object, contexts);
 	}
 
 	// actuallyAdd
-	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... context)
+	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object,
+			Resource... context)
 			throws SailException {
 
 		Resource[] inferredContext;
@@ -266,6 +277,17 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 					.forEach(inferredType -> addInferredStatementInternal(((Resource) object), RDF.TYPE, inferredType,
 							inferredContext));
 		}
+
+		sail.resolveDomainTypes(predicate)
+				.stream()
+				.peek(inferredType -> {
+					if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+						addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
+					}
+				})
+				.forEach(inferredType -> addInferredStatementInternal((subject), RDF.TYPE, inferredType,
+						inferredContext));
+
 	}
 
 	void addAxiomStatements() {
@@ -705,14 +727,13 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void rollback() throws SailException {
+	public void rollback()
+			throws SailException {
+
 		super.rollback();
 
-		// if the schema cache was modified
-		if (sail.schema == null && sail.getSchemaSize() != originalSchemaSize) {
-			sail.clearInferenceTables();
-			sail.rolledBackAfterModifyingSchemaCache = true;
-		}
+		sail.clearInferenceTables();
+		regenerateCacheAndInferenceMaps(false);
 
 		statementsRemoved = false;
 
@@ -720,12 +741,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void begin() throws SailException {
+	public void begin()
+			throws SailException {
 		this.begin(null);
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level)
+			throws SailException {
 
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
@@ -739,19 +762,12 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 		super.begin(compatibleLevel);
 
-		if (sail.rolledBackAfterModifyingSchemaCache) {
-			// previous connection was rolled back after modifying the schema cache
-			// refresh the cache before beginning
-
-			regenerateCacheAndInferenceMaps();
-		}
-
-		sail.rolledBackAfterModifyingSchemaCache = false;
 		originalSchemaSize = sail.getSchemaSize();
 	}
 
 	@Override
-	public void flushUpdates() throws SailException {
+	public void flushUpdates()
+			throws SailException {
 		if (statementsRemoved) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();
@@ -787,6 +803,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
+
 		addStatement(false, subj, pred, obj, contexts);
 		super.addStatement(modify, subj, pred, obj, contexts);
 	}
