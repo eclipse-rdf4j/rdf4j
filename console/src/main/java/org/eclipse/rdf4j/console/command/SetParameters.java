@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
@@ -40,19 +39,6 @@ public class SetParameters extends ConsoleCommand {
 			builder.append(setting.getHelpLong());
 		}
 		return PrintHelp.USAGE + "set                            Shows all parameter values\n" + builder.toString();
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param parameters
-	 */
-	@Deprecated
-	public SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		super(consoleIO, state);
-		this.settings = convertParams(parameters);
 	}
 
 	/**

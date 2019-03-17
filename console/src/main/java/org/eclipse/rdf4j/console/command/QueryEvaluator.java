@@ -30,7 +30,6 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
@@ -90,20 +89,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private final static Pattern PATTERN_IO = Pattern.compile(
 			"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?" + "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
 			Pattern.CASE_INSENSITIVE);
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param parameters
-	 */
-	@Deprecated
-	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		super(consoleIO, state);
-		this.settings = convertParams(parameters);
-		this.evaluator = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
-	}
 
 	/**
 	 * Constructor
