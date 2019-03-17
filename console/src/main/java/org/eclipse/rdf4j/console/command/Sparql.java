@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.console.command;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
@@ -43,18 +42,6 @@ public class Sparql extends QueryEvaluator {
 				+ "sparql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n" + "\n"
 				+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
 				+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param params
-	 */
-	@Deprecated
-	public Sparql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
-		super(consoleIO, state, params);
 	}
 
 	/**

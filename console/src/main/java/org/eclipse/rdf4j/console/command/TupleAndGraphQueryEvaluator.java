@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
@@ -50,20 +49,6 @@ public class TupleAndGraphQueryEvaluator {
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param parameters
-	 */
-	@Deprecated
-	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
-		this.state = state;
-		this.settings = ConsoleCommand.convertParams(parameters);
 	}
 
 	/**
