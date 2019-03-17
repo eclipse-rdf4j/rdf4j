@@ -48,11 +48,14 @@ import static org.junit.Assert.assertFalse;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures",
+		"-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile",
+		"-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions",
+		"-XX:+DebugNonSafepoints" })
+@Measurement(iterations = 20)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class BasicBenchmarks {
 
@@ -101,8 +104,9 @@ public class BasicBenchmarks {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
-			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
@@ -119,14 +123,16 @@ public class BasicBenchmarks {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
-			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
 	}
 
-	private void loadRDF(String path, SailRepositoryConnection conn) throws IOException {
+	private void loadRDF(String path, SailRepositoryConnection conn)
+			throws IOException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
