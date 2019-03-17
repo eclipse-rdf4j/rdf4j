@@ -26,28 +26,28 @@ class CmdLineParser {
 	private final static Option HELP = new Option("h", "help", false, "print this help");
 	private final static Option VERSION = new Option("v", "version", false, "print version information");
 	private final static Option SERVER = new Option("s", "serverURL", true,
-		"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
+			"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
 	private final static Option DIRECTORY = new Option("d", "dataDir", true, "data dir to 'connect' to");
 	private final static Option ECHO = new Option("e", "echo", false,
-		"echoes input back to stdout, useful for logging script sessions");
+			"echoes input back to stdout, useful for logging script sessions");
 	private final static Option QUIET = new Option("q", "quiet", false, "suppresses prompts, useful for scripting");
 	private final static Option FORCE = new Option("f", "force", false,
-		"always answer yes to (suppressed) confirmation prompts");
+			"always answer yes to (suppressed) confirmation prompts");
 	private final static Option CAUTIOUS = new Option("c", "cautious", false,
-		"always answer no to (suppressed) confirmation prompts");
+			"always answer no to (suppressed) confirmation prompts");
 	private final static Option MODE = new Option("x", "exitOnError", false,
-		"immediately exit the console on the first error");
+			"immediately exit the console on the first error");
 
 	private final static OptionGroup CAUTION_GROUP = new OptionGroup().addOption(CAUTIOUS)
-		.addOption(FORCE)
-		.addOption(MODE);
+			.addOption(FORCE)
+			.addOption(MODE);
 	private final static OptionGroup LOCATION_GROUP = new OptionGroup().addOption(SERVER).addOption(DIRECTORY);
 	private final static Options OPTIONS = new Options().addOptionGroup(LOCATION_GROUP)
-		.addOptionGroup(CAUTION_GROUP)
-		.addOption(HELP)
-		.addOption(VERSION)
-		.addOption(ECHO)
-		.addOption(QUIET);
+			.addOptionGroup(CAUTION_GROUP)
+			.addOption(HELP)
+			.addOption(VERSION)
+			.addOption(ECHO)
+			.addOption(QUIET);
 
 	private final Console console;
 	private CommandLine commandLine;
@@ -173,8 +173,7 @@ class CmdLineParser {
 	}
 
 	/**
-	 * Get remaining argument from command line, if any. Returns empty string if there is no argument, null on
-	 * error
+	 * Get remaining argument from command line, if any. Returns empty string if there is no argument, null on error
 	 *
 	 * @return argument as string, or null on error
 	 */
