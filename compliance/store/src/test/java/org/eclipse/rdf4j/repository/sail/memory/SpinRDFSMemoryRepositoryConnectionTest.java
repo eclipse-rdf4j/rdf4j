@@ -34,6 +34,6 @@ public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnection
 	protected Repository createRepository()
 			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
 		return new SailRepository(
-				new SpinSail(new SchemaCachingRDFSInferencer(new DedupingInferencer(new MemoryStore()))));
+				new SpinSail(new SchemaCachingRDFSInferencer(new DedupingInferencer(new MemoryStore()), false)));
 	}
 }

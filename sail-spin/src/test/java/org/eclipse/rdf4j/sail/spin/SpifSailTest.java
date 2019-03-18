@@ -64,7 +64,7 @@ public class SpifSailTest {
 	public void setup() throws RepositoryException {
 		NotifyingSail baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
-		NotifyingSail rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);
+		NotifyingSail rdfsInferencer = new SchemaCachingRDFSInferencer(deduper, false);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		repo = new SailRepository(spinSail);
 		repo.initialize();
