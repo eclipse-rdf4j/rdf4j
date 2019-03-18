@@ -42,11 +42,14 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	private Resource id;
 
 	private List<PropertyShape> propertyShapes = Collections.emptyList();
+	private List<PropertyShape> nodeShapes = Collections.emptyList();
 
 	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
 		if (!deactivated) {
 			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
+			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id);
+			System.out.println();
 		}
 	}
 
@@ -77,11 +80,22 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			boolean printPlans) {
-		return propertyShapes.stream()
-				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
-						shaclSailConnection.getRemovedStatements()))
-				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
-				.collect(Collectors.toList());
+
+		List<PlanNode> propertyShapesPlans = propertyShapes
+			.stream()
+			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+			.collect(Collectors.toList());
+
+		List<PlanNode> nodeShapesPlans = nodeShapes
+			.stream()
+			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+			.collect(Collectors.toList());
+
+		nodeShapesPlans.addAll(propertyShapesPlans);
+
+		return nodeShapesPlans;
 	}
 
 	@Override

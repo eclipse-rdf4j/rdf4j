@@ -28,8 +28,8 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxInclusivePropertyShape.class);
 
 	MaxInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			boolean deactivated, Literal maxInclusive) {
-		super(id, connection, nodeShape, deactivated);
+			boolean deactivated, Resource path, Literal maxInclusive) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.maxInclusive = maxInclusive;
 

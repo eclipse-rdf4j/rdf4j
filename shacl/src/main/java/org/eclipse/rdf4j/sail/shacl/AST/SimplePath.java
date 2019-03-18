@@ -30,15 +30,10 @@ public class SimplePath extends Path {
 
 	private final IRI path;
 
-	SimplePath(Resource id, SailRepositoryConnection connection) {
+	SimplePath(IRI id, SailRepositoryConnection connection) {
 		super(id);
+		this.path = id;
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATH, null, true))) {
-			path = stream.map(Statement::getObject)
-					.map(v -> (IRI) v)
-					.findAny()
-					.orElseThrow(() -> new RuntimeException("Expected to find sh:path on " + id));
-		}
 
 	}
 

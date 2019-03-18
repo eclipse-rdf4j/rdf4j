@@ -28,8 +28,8 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinInclusivePropertyShape.class);
 
 	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			boolean deactivated, Literal minInclusive) {
-		super(id, connection, nodeShape, deactivated);
+			boolean deactivated, Resource path, Literal minInclusive) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.minInclusive = minInclusive;
 	}

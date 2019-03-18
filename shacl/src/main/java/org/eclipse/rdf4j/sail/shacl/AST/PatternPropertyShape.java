@@ -34,8 +34,9 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
 	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
 			String pattern, String flags) {
-		super(id, connection, nodeShape, deactivated);
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.pattern = pattern;
 		this.flags = flags;

@@ -39,8 +39,9 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
 			Long minCount) {
-		super(id, connection, nodeShape, deactivated);
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.minCount = minCount;
 
