@@ -48,13 +48,14 @@ abstract public class AbstractShaclTest {
 //			"test-cases/datatype/targetSubjectsOf",
 //			"test-cases/datatype/targetSubjectsOfSingle",
 //			"test-cases/datatype/targetObjectsOf",
+			"test-cases/datatype/validateTarget"
 //			"test-cases/minLength/simple",
 //			"test-cases/maxLength/simple",
 //			"test-cases/pattern/simple",
 //			"test-cases/pattern/multiple",
 //			"test-cases/languageIn/simple",
 //			"test-cases/nodeKind/simple",
-			"test-cases/nodeKind/validateTarget"
+//			"test-cases/nodeKind/validateTarget",
 //			"test-cases/minCount/simple",
 //			"test-cases/minCount/targetNode",
 //			"test-cases/maxCount/simple",
