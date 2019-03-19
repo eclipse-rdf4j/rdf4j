@@ -18,6 +18,7 @@ public class ShaclProperties {
 
 	List<Resource> clazz = new ArrayList<>(0);
 	List<Resource> or = new ArrayList<>(0);
+	List<Resource> and = new ArrayList<>(0);
 	Long minCount;
 	Long maxCount;
 
@@ -56,6 +57,9 @@ public class ShaclProperties {
 				switch (predicate) {
 				case "http://www.w3.org/ns/shacl#or":
 					or.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#and":
+					and.add((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
