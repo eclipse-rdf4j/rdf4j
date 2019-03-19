@@ -28,8 +28,9 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
 	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
 			Resource nodeKind) {
-		super(id, connection, nodeShape, deactivated);
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.nodeKind = NodeKind.from(nodeKind);
 
@@ -84,4 +85,5 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.NodeKindConstraintComponent;
 	}
+
 }

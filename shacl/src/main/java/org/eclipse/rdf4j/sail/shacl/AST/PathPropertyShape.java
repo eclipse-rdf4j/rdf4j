@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -27,12 +28,15 @@ public class PathPropertyShape extends PropertyShape {
 
 	Path path;
 
-	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated) {
+	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path) {
 		super(id, nodeShape, deactivated);
 
 		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
 		// undefined.
-		path = new SimplePath(id, connection);
+		if (path != null) {
+			this.path = new SimplePath((IRI) path, connection);
+		}
 
 	}
 
@@ -66,6 +70,10 @@ public class PathPropertyShape extends PropertyShape {
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		if (deactivated) {
 			return false;
+		}
+
+		if (path == null) {
+			return super.requiresEvaluation(addedStatements, removedStatements);
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements)

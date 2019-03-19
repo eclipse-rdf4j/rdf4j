@@ -75,13 +75,19 @@ public class OrPropertyShape extends PropertyShape {
 			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
 		}
 
-		List<List<PlanNode>> plannodes = or.stream().map(shapes -> shapes.stream().map(shape -> {
-			if (shaclSailConnection.stats.isBaseSailEmpty()) {
-				return shape.getPlan(shaclSailConnection, nodeShape, false, null);
-			}
-			return shape.getPlan(shaclSailConnection, nodeShape, false,
-					new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
-		}).filter(Objects::nonNull).collect(Collectors.toList()))
+		List<List<PlanNode>> plannodes = or
+				.stream()
+				.map(shapes -> shapes
+						.stream()
+						.map(shape -> {
+							if (shaclSailConnection.stats.isBaseSailEmpty()) {
+								return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+							}
+							return shape.getPlan(shaclSailConnection, nodeShape, false,
+									new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+						})
+						.filter(Objects::nonNull)
+						.collect(Collectors.toList()))
 				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
@@ -103,16 +109,20 @@ public class OrPropertyShape extends PropertyShape {
 			if (collect.size() > 1) {
 				iteratorData = IteratorData.aggregated;
 			}
+			if (collect.stream().anyMatch(Objects::isNull)) {
+				iteratorData = IteratorData.aggregated;
+			}
 		}
 
 		PlanNode ret;
 
 		if (iteratorData == IteratorData.tripleBased) {
 
-			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
+			PlanNode equalsJoin = new LoggingNode(
+					new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true), "");
 
 			for (int i = 2; i < plannodes.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
+				equalsJoin = new LoggingNode(new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true), "");
 			}
 
 			ret = new LoggingNode(equalsJoin, "");
@@ -129,7 +139,6 @@ public class OrPropertyShape extends PropertyShape {
 			ret = new LoggingNode(innerJoin, "");
 		} else {
 			throw new IllegalStateException("Should not get here!");
-
 		}
 
 		if (printPlans) {

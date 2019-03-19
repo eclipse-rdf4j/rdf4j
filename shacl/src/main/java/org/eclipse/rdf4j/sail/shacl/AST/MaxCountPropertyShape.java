@@ -38,8 +38,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	private long maxCount;
 
 	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
 			Long maxCount) {
-		super(id, connection, nodeShape, deactivated);
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.maxCount = maxCount;
 

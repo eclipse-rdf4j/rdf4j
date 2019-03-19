@@ -29,6 +29,8 @@ public class ShaclProperties {
 	Resource languageIn;
 	Resource nodeKind;
 
+	Resource path;
+
 	Literal minExclusive;
 	Literal maxExclusive;
 	Literal minInclusive;
@@ -145,8 +147,13 @@ public class ShaclProperties {
 				case "http://www.w3.org/ns/shacl#flags":
 					flags += object.stringValue();
 					break;
+				case "http://www.w3.org/ns/shacl#path":
+					if (path != null) {
+						throw new IllegalStateException("sh:path aleady populated");
+					}
+					path = (Resource) object;
+					break;
 				}
-
 			});
 		}
 

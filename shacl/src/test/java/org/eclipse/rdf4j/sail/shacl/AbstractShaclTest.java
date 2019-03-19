@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -40,23 +39,60 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
 
-	private static final List<String> testCasePaths = Stream.of("test-cases/complex/dcat", "test-cases/complex/foaf",
-			"test-cases/datatype/simple", "test-cases/datatype/targetNode", "test-cases/datatype/targetSubjectsOf",
-			"test-cases/datatype/targetSubjectsOfSingle", "test-cases/datatype/targetObjectsOf",
-			"test-cases/minLength/simple", "test-cases/maxLength/simple", "test-cases/pattern/simple",
-			"test-cases/pattern/multiple", "test-cases/languageIn/simple", "test-cases/nodeKind/simple",
-			"test-cases/minCount/simple", "test-cases/minCount/targetNode", "test-cases/maxCount/simple",
-			"test-cases/maxCount/targetNode", "test-cases/or/multiple", "test-cases/or/inheritance",
-			"test-cases/or/inheritance-deep", "test-cases/or/inheritance-deep-minCountMaxCount",
-			"test-cases/or/inheritanceNodeShape", "test-cases/or/datatype", "test-cases/or/datatypeTargetNode",
-			"test-cases/or/minCountMaxCount", "test-cases/or/maxCount", "test-cases/or/minCount",
-			"test-cases/or/nodeKindMinLength", "test-cases/or/implicitAnd", "test-cases/or/datatypeDifferentPaths",
-			"test-cases/minExclusive/simple", "test-cases/minExclusive/dateVsTime", "test-cases/maxExclusive/simple",
-			"test-cases/minInclusive/simple", "test-cases/maxInclusive/simple", "test-cases/implicitTargetClass/simple",
-			"test-cases/class/simple", "test-cases/class/subclass", "test-cases/class/targetNode",
-			"test-cases/class/multipleClass", "test-cases/or/class", "test-cases/or/datatype2",
-			"test-cases/or/minCountDifferentPath", "test-cases/deactivated/nodeshape", "test-cases/deactivated/or",
-			"test-cases/deactivated/propertyshape").distinct().collect(Collectors.toList());
+	private static final List<String> testCasePaths = Stream.of(
+			"test-cases/complex/dcat",
+			"test-cases/complex/foaf",
+			"test-cases/datatype/simple",
+			"test-cases/datatype/targetNode",
+			"test-cases/datatype/targetSubjectsOf",
+			"test-cases/datatype/targetSubjectsOfSingle",
+			"test-cases/datatype/targetObjectsOf",
+			"test-cases/datatype/validateTarget",
+			"test-cases/minLength/simple",
+			"test-cases/maxLength/simple",
+			"test-cases/pattern/simple",
+			"test-cases/pattern/multiple",
+			"test-cases/languageIn/simple",
+			"test-cases/nodeKind/simple",
+			"test-cases/nodeKind/validateTarget",
+			"test-cases/minCount/simple",
+			"test-cases/minCount/targetNode",
+			"test-cases/maxCount/simple",
+			"test-cases/maxCount/targetNode",
+			"test-cases/or/multiple",
+			"test-cases/or/inheritance",
+			"test-cases/or/inheritance-deep",
+			"test-cases/or/inheritance-deep-minCountMaxCount",
+			"test-cases/or/inheritanceNodeShape",
+			"test-cases/or/datatype",
+			"test-cases/or/datatypeTargetNode",
+			"test-cases/or/minCountMaxCount",
+			"test-cases/or/maxCount",
+			"test-cases/or/minCount",
+			"test-cases/or/nodeKindMinLength",
+			"test-cases/or/implicitAnd",
+			"test-cases/or/datatypeDifferentPaths",
+			"test-cases/minExclusive/simple",
+			"test-cases/minExclusive/dateVsTime",
+			"test-cases/maxExclusive/simple",
+			"test-cases/minInclusive/simple",
+			"test-cases/maxInclusive/simple",
+			"test-cases/implicitTargetClass/simple",
+			"test-cases/class/simple",
+			"test-cases/class/subclass",
+			"test-cases/class/targetNode",
+			"test-cases/class/multipleClass",
+			"test-cases/class/validateTarget",
+			"test-cases/or/class",
+			"test-cases/or/classValidateTarget",
+			"test-cases/or/datatype2",
+			"test-cases/or/minCountDifferentPath",
+			"test-cases/or/nodeKindValidateTarget",
+			"test-cases/deactivated/nodeshape",
+			"test-cases/deactivated/or",
+			"test-cases/deactivated/propertyshape")
+			.distinct()
+			.collect(Collectors.toList());
 
 	final String testCasePath;
 	final String path;
@@ -68,7 +104,6 @@ abstract public class AbstractShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-		LoggingNode.loggingEnabled = true;
 		this.isolationLevel = isolationLevel;
 	}
 
@@ -131,11 +166,9 @@ abstract public class AbstractShaclTest {
 
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setLogValidationPlans(true);
-//		shaclSail.setParallelValidation(false);
-		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.init();
+
+		SailRepository shaclRepository = getShaclSail();
+
 		Utils.loadShapeData(shaclRepository, shaclFile);
 
 		boolean exception = false;
@@ -172,7 +205,7 @@ abstract public class AbstractShaclTest {
 
 		}
 
-		shaclSail.shutDown();
+		shaclRepository.shutDown();
 
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
@@ -182,15 +215,6 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
-	}
-
-	private static void printResults(RepositoryException sailException) {
-		System.out.println("\n############################################");
-		System.out.println("\tValidation Report\n");
-		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-		Model validationReport = cause.validationReportAsModel();
-		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-		System.out.println("\n############################################");
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
@@ -204,10 +228,7 @@ abstract public class AbstractShaclTest {
 			shaclPath = shaclPath + "/";
 		}
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclSail.setLogValidationPlans(true);
-		shaclRepository.init();
+		SailRepository shaclRepository = getShaclSail();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 
 		boolean exception = false;
@@ -249,6 +270,9 @@ abstract public class AbstractShaclTest {
 				printResults(sailException);
 			}
 		}
+
+		shaclRepository.shutDown();
+
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
@@ -257,6 +281,15 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
+	}
+
+	private static void printResults(RepositoryException sailException) {
+		System.out.println("\n############################################");
+		System.out.println("\tValidation Report\n");
+		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+		Model validationReport = cause.validationReportAsModel();
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+		System.out.println("\n############################################");
 	}
 
 	String getShaclPath() {
@@ -272,6 +305,21 @@ abstract public class AbstractShaclTest {
 	enum ExpectedResult {
 		valid,
 		invalid
+	}
+
+	private static SailRepository getShaclSail() {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository shaclRepository = new SailRepository(shaclSail);
+
+		shaclSail.setLogValidationPlans(true);
+		shaclSail.setCacheSelectNodes(true);
+		shaclSail.setParallelValidation(true);
+		shaclSail.setGlobalLogValidationExecution(true);
+
+		shaclRepository.init();
+
+		return shaclRepository;
 	}
 
 }

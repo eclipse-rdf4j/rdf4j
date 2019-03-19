@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -71,8 +73,24 @@ public class TargetNode extends NodeShape {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return targetNodeSet.stream()
-				.map(r -> "{{ select * where {BIND(<" + r + "> as " + subjectVariable + "). " + subjectVariable
-						+ " ?b1 " + objectVariable + " .}}}")
+				.map(node -> {
+					if (node instanceof Resource)
+						return "<" + node + ">";
+					if (node instanceof Literal) {
+						IRI datatype = ((Literal) node).getDatatype();
+						if (datatype == null)
+							return "\"" + node.stringValue() + "\"";
+						return "\"" + node.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
+
+					throw new IllegalStateException(node.getClass().getSimpleName());
+
+				})
+				.map(r -> "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 "
+						+ objectVariable + " .}}}"
+						+ "\n UNION \n"
+						+ "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + objectVariable + " ?b1 "
+						+ subjectVariable + " .}}}")
 				.reduce((a, b) -> a + " UNION " + b)
 				.get();
 
