@@ -28,11 +28,20 @@ public class StandardisedPlanHelper {
 	static public PlanNode getGenericSingleObjectPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			FilterAttacher filterAttacher, PathPropertyShape pathPropertyShape, PlanNode overrideTargetNode) {
 		if (overrideTargetNode != null) {
-			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode,
-					shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), false), "");
 
-			return new LoggingNode(
-					filterAttacher.attachFilter(bulkedExternalInnerJoin).getFalseNode(UnBufferedPlanNode.class), "");
+			PlanNode planNode;
+
+			if(pathPropertyShape.path == null){
+				planNode = new ModifyTuple(overrideTargetNode, t -> {
+					t.line.add(t.line.get(0));
+					return t;
+				});
+			}else{
+				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), false), "");
+			}
+
+
+			return new LoggingNode(filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class), "AAAAAA");
 		}
 
 		if(pathPropertyShape.path == null){

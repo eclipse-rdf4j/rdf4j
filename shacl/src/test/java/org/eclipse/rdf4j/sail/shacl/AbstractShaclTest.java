@@ -87,6 +87,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/or/class",
 			"test-cases/or/datatype2",
 			"test-cases/or/minCountDifferentPath",
+			"test-cases/or/nodeKindValidateTarget",
 			"test-cases/deactivated/nodeshape",
 			"test-cases/deactivated/or",
 			"test-cases/deactivated/propertyshape"
@@ -169,7 +170,7 @@ abstract public class AbstractShaclTest {
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
-//		shaclSail.setParallelValidation(false);
+		shaclSail.setCacheSelectNodes(false);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);
@@ -243,6 +244,8 @@ abstract public class AbstractShaclTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclSail.setLogValidationPlans(true);
+		shaclSail.setCacheSelectNodes(false);
+
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 

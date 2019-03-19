@@ -41,58 +41,65 @@ public class OrPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource or) {
+					Resource or) {
 		super(id, nodeShape, deactivated);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
-				.collect(Collectors.toList());
+			.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+			.collect(Collectors.toList());
 
 	}
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+							PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
 		List<List<PlanNode>> initialPlanNodes = or.stream()
-				.map(shapes -> shapes.stream()
-						.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
-						.filter(Objects::nonNull)
-						.collect(Collectors.toList()))
-				.filter(list -> !list.isEmpty())
-				.collect(Collectors.toList());
+			.map(shapes -> shapes.stream()
+				.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
+				.filter(Objects::nonNull)
+				.collect(Collectors.toList()))
+			.filter(list -> !list.isEmpty())
+			.collect(Collectors.toList());
 
 		BufferedSplitter targetNodesToValidate;
 		if (overrideTargetNode == null) {
 			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
-					.flatMap(Collection::stream)
-					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
-					.collect(Collectors.toList())));
+				.flatMap(Collection::stream)
+				.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+				.collect(Collectors.toList())));
 
 		} else {
 			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
 		}
 
-		List<List<PlanNode>> plannodes = or.stream().map(shapes -> shapes.stream().map(shape -> {
-			if (shaclSailConnection.stats.isBaseSailEmpty()) {
-				return shape.getPlan(shaclSailConnection, nodeShape, false, null);
-			}
-			return shape.getPlan(shaclSailConnection, nodeShape, false,
-					new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
-		}).filter(Objects::nonNull).collect(Collectors.toList()))
-				.filter(list -> !list.isEmpty())
-				.collect(Collectors.toList());
+		List<List<PlanNode>> plannodes = or
+			.stream()
+			.map(shapes ->
+				shapes
+					.stream()
+					.map(shape -> {
+						if (shaclSailConnection.stats.isBaseSailEmpty()) {
+							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+						}
+						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+					})
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList())
+			)
+			.filter(list -> !list.isEmpty())
+			.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes = plannodes.stream()
-				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
-				.distinct()
-				.collect(Collectors.toList());
+			.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
+			.distinct()
+			.collect(Collectors.toList());
 
 		if (iteratorDataTypes.size() > 1) {
 			throw new UnsupportedOperationException(
-					"No support for OR shape with mix between aggregate and raw triples");
+				"No support for OR shape with mix between aggregate and raw triples");
 		}
 
 		IteratorData iteratorData = iteratorDataTypes.get(0);
@@ -103,33 +110,33 @@ public class OrPropertyShape extends PropertyShape {
 			if (collect.size() > 1) {
 				iteratorData = IteratorData.aggregated;
 			}
+			if(collect.stream().anyMatch(Objects::isNull)){
+				iteratorData = IteratorData.aggregated;
+			}
 		}
 
 		PlanNode ret;
 
 		if (iteratorData == IteratorData.tripleBased) {
 
-			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
+			PlanNode equalsJoin = new LoggingNode(new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true), "");
 
 			for (int i = 2; i < plannodes.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
+				equalsJoin = new LoggingNode(new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true), "");
 			}
 
 			ret = new LoggingNode(equalsJoin, "");
 		} else if (iteratorData == IteratorData.aggregated) {
 
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)))
-					.getJoined(BufferedPlanNode.class), "");
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1))).getJoined(BufferedPlanNode.class), "");
 
 			for (int i = 2; i < plannodes.size(); i++) {
-				innerJoin = new LoggingNode(
-						new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
 			}
 
 			ret = new LoggingNode(innerJoin, "");
 		} else {
 			throw new IllegalStateException("Should not get here!");
-
 		}
 
 		if (printPlans) {
@@ -157,10 +164,10 @@ public class OrPropertyShape extends PropertyShape {
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements) || or.stream()
-				.flatMap(Collection::stream)
-				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
-				.reduce((a, b) -> a || b)
-				.orElse(false);
+			.flatMap(Collection::stream)
+			.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+			.reduce((a, b) -> a || b)
+			.orElse(false);
 	}
 
 	@Override

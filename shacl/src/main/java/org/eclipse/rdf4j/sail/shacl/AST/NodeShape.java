@@ -49,7 +49,6 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		if (!deactivated) {
 			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
 			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id);
-			System.out.println();
 		}
 	}
 
