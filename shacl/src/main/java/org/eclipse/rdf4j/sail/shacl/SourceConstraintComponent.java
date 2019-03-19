@@ -25,7 +25,8 @@ public enum SourceConstraintComponent {
 	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT),
 	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT),
 	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT),
-	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT);
+	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT),
+	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT);
 
 	private final IRI iri;
 

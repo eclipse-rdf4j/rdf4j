@@ -79,6 +79,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/maxInclusive/simple",
 			"test-cases/implicitTargetClass/simple",
 			"test-cases/class/simple",
+			"test-cases/class/and",
 			"test-cases/class/subclass",
 			"test-cases/class/targetNode",
 			"test-cases/class/multipleClass",
@@ -90,7 +91,8 @@ abstract public class AbstractShaclTest {
 			"test-cases/or/nodeKindValidateTarget",
 			"test-cases/deactivated/nodeshape",
 			"test-cases/deactivated/or",
-			"test-cases/deactivated/propertyshape")
+			"test-cases/deactivated/propertyshape"
+	)
 			.distinct()
 			.collect(Collectors.toList());
 
@@ -315,6 +317,7 @@ abstract public class AbstractShaclTest {
 		shaclSail.setLogValidationPlans(true);
 		shaclSail.setCacheSelectNodes(true);
 		shaclSail.setParallelValidation(true);
+		shaclSail.setLogValidationViolations(true);
 		shaclSail.setGlobalLogValidationExecution(true);
 
 		shaclRepository.init();

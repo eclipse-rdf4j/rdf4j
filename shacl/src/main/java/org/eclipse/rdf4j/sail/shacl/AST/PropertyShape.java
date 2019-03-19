@@ -224,6 +224,12 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 							shaclProperties.deactivated, shaclProperties.path, clazz));
 				});
 			}
+			if (!shaclProperties.and.isEmpty()) {
+				shaclProperties.and.forEach(and -> {
+					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, and));
+				});
+			}
 
 			return propertyShapes;
 		}
