@@ -34,7 +34,6 @@ public class SimplePath extends Path {
 		super(id);
 		this.path = id;
 
-
 	}
 
 	@Override

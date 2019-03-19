@@ -86,6 +86,4 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		return SourceConstraintComponent.NodeKindConstraintComponent;
 	}
 
-
-
 }

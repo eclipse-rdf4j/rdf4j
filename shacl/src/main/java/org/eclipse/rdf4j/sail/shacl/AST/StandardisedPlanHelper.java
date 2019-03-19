@@ -31,25 +31,27 @@ public class StandardisedPlanHelper {
 
 			PlanNode planNode;
 
-			if(pathPropertyShape.path == null){
+			if (pathPropertyShape.path == null) {
 				planNode = new ModifyTuple(overrideTargetNode, t -> {
 					t.line.add(t.line.get(0));
 					return t;
 				});
-			}else{
-				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), false), "");
+			} else {
+				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection,
+						pathPropertyShape.path.getQuery("?a", "?c", null), false), "");
 			}
 
-
-			return new LoggingNode(filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class), "AAAAAA");
+			return new LoggingNode(filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class),
+					"AAAAAA");
 		}
 
-		if(pathPropertyShape.path == null){
+		if (pathPropertyShape.path == null) {
 
-			PlanNode targets = new ModifyTuple(new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), t -> {
-				t.line.add(t.line.get(0));
-				return t;
-			});
+			PlanNode targets = new ModifyTuple(
+					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), t -> {
+						t.line.add(t.line.get(0));
+						return t;
+					});
 
 			return new LoggingNode(filterAttacher.attachFilter(targets).getFalseNode(UnBufferedPlanNode.class), "");
 

@@ -73,22 +73,24 @@ public class TargetNode extends NodeShape {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return targetNodeSet.stream()
-			.map(node -> {
-				if(node instanceof Resource) return "<"+node+">";
-				if(node instanceof Literal){
-					IRI datatype = ((Literal) node).getDatatype();
-					if(datatype == null) return "\""+node.stringValue()+"\"";
-					return "\""+node.stringValue()+"\"^^<"+datatype.stringValue()+">";
-				}
+				.map(node -> {
+					if (node instanceof Resource)
+						return "<" + node + ">";
+					if (node instanceof Literal) {
+						IRI datatype = ((Literal) node).getDatatype();
+						if (datatype == null)
+							return "\"" + node.stringValue() + "\"";
+						return "\"" + node.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
 
-				throw new IllegalStateException(node.getClass().getSimpleName());
+					throw new IllegalStateException(node.getClass().getSimpleName());
 
-			})
-				.map(r ->
-					"{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 " + objectVariable + " .}}}"
-					+ "\n UNION \n"
-					+ "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + objectVariable + " ?b1 " + subjectVariable + " .}}}"
-				)
+				})
+				.map(r -> "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 "
+						+ objectVariable + " .}}}"
+						+ "\n UNION \n"
+						+ "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + objectVariable + " ?b1 "
+						+ subjectVariable + " .}}}")
 				.reduce((a, b) -> a + " UNION " + b)
 				.get();
 

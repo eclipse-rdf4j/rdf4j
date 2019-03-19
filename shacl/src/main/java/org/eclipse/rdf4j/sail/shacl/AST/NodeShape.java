@@ -81,16 +81,18 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 			boolean printPlans) {
 
 		List<PlanNode> propertyShapesPlans = propertyShapes
-			.stream()
-			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
-			.collect(Collectors.toList());
+				.stream()
+				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
+						shaclSailConnection.getRemovedStatements()))
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+				.collect(Collectors.toList());
 
 		List<PlanNode> nodeShapesPlans = nodeShapes
-			.stream()
-			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
-			.collect(Collectors.toList());
+				.stream()
+				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
+						shaclSailConnection.getRemovedStatements()))
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+				.collect(Collectors.toList());
 
 		nodeShapesPlans.addAll(propertyShapesPlans);
 
