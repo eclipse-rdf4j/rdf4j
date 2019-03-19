@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -28,8 +27,10 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private final NodeKind nodeKind;
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
-	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource nodeKind) {
-		super(id, connection, nodeShape, deactivated);
+	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
+			Resource nodeKind) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.nodeKind = NodeKind.from(nodeKind);
 
@@ -42,8 +43,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		Literal(SHACL.LITERAL),
 		BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
 		BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL),
-		IRIOrLiteral(SHACL.IRI_OR_LITERAL),
-		;
+		IRIOrLiteral(SHACL.IRI_OR_LITERAL),;
 
 		IRI iri;
 
@@ -62,19 +62,15 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		}
 	}
 
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new NodeKindFilter(parent, nodeKind),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new NodeKindFilter(parent, nodeKind), this, overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
@@ -89,4 +85,5 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.NodeKindConstraintComponent;
 	}
+
 }

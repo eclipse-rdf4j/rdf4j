@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -39,21 +41,25 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection,
+				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(parent, 0, 1);
 	}
 
@@ -63,12 +69,30 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return targetNodeSet.stream()
-			.map(r -> "{{ select * where {BIND(<" + r + "> as " + subjectVariable + "). " + subjectVariable + " ?b1 " + objectVariable + " .}}}")
-			.reduce((a, b) -> a + " UNION " + b)
-			.get();
+				.map(node -> {
+					if (node instanceof Resource)
+						return "<" + node + ">";
+					if (node instanceof Literal) {
+						IRI datatype = ((Literal) node).getDatatype();
+						if (datatype == null)
+							return "\"" + node.stringValue() + "\"";
+						return "\"" + node.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
+
+					throw new IllegalStateException(node.getClass().getSimpleName());
+
+				})
+				.map(r -> "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 "
+						+ objectVariable + " .}}}"
+						+ "\n UNION \n"
+						+ "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + objectVariable + " ?b1 "
+						+ subjectVariable + " .}}}")
+				.reduce((a, b) -> a + " UNION " + b)
+				.get();
 
 	}
 

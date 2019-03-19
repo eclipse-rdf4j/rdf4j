@@ -37,7 +37,11 @@ public class EmptyNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
+		stringBuilder.append(getId())
+				.append(" [label=\"")
+				.append(StringEscapeUtils.escapeJava(this.toString()))
+				.append("\"];")
+				.append("\n");
 	}
 
 	@Override

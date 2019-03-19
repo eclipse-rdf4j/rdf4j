@@ -19,7 +19,7 @@ public class TestUnsignedByteCast extends TestIntegerDatatypeCast<UnsignedByteCa
 
 	@Override
 	protected Optional<BigInteger> getMaxValue() {
-		return Optional.of(new BigInteger(String.valueOf((long)Math.pow(2, 8) - 1l)));
+		return Optional.of(new BigInteger(String.valueOf((long) Math.pow(2, 8) - 1l)));
 	}
 
 	@Override

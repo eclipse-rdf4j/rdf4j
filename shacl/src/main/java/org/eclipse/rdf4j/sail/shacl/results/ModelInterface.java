@@ -14,11 +14,12 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 
 public interface ModelInterface {
 
-	default Model asModel(){
+	default Model asModel() {
 		return asModel(new LinkedHashModelFactory().createEmptyModel());
 	}
 
 	Model asModel(Model model);
+
 	Resource getId();
 
 }

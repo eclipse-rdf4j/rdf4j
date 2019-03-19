@@ -29,9 +29,7 @@ public class Split implements InverseMagicProperty {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			final ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			final ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
 					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
@@ -42,12 +40,11 @@ public class Split implements InverseMagicProperty {
 		if (!(args[1] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Second list element must be a literal");
 		}
-		final String s = ((Literal)args[0]).stringValue();
-		final String regex = ((Literal)args[1]).stringValue();
+		final String s = ((Literal) args[0]).stringValue();
+		final String regex = ((Literal) args[1]).stringValue();
 		final String[] parts = s.split(regex);
 		return new CloseableIteratorIteration<List<? extends Value>, QueryEvaluationException>(
-				SingleValueToListTransformer.transform(new Iterator<Value>()
-		{
+				SingleValueToListTransformer.transform(new Iterator<Value>() {
 
 					int pos = 0;
 

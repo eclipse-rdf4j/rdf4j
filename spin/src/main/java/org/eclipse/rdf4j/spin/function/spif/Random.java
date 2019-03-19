@@ -21,9 +21,7 @@ public class Random implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		return valueFactory.createLiteral(Math.random());
 	}
 }

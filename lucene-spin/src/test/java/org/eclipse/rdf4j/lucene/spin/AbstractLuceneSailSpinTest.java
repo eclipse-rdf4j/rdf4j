@@ -55,9 +55,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleTest()
-		throws Exception
-	{
+	public void simpleTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
 		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
@@ -78,21 +76,18 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void simpleSearchTest()
-		throws Exception
-	{
+	public void simpleSearchTest() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?predicate ?score ?subject where {\n");
-		buffer.append(
-				"(\"ornare\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
+		buffer.append("(\"ornare\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred <urn:test.org/onto#number> ?subject .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
 		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
 		log.debug("query class: {}", query.getClass());
-		//log.debug("query representation: \n{}", query);
-		//printTupleResult(query);
+		// log.debug("query representation: \n{}", query);
+		// printTupleResult(query);
 		try (TupleQueryResult res = query.evaluate()) {
 			int count = countTupleResults(res);
 			log.info("count statements: {}", count);
@@ -112,14 +107,11 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test220Issue()
-		throws Exception
-	{
+	public void test220Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
-		buffer.append(
-				"  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
+		buffer.append("  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
@@ -146,9 +138,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test235Issue()
-		throws Exception
-	{
+	public void test235Issue() throws Exception {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
 		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
@@ -156,8 +146,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("  ?pred <urn:ontology/score> ?score .\n");
 		buffer.append(" } where {\n");
 		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
-		buffer.append(
-				"  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
+		buffer.append("  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("  bind(fn:upper-case(?label) as ?label2)\n");
 		buffer.append(" }");
@@ -172,9 +161,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	}
 
 	@Test
-	public void testDistanceFunction()
-		throws Exception
-	{
+	public void testDistanceFunction() throws Exception {
 		RepositoryConnection connection = getConnection();
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
@@ -190,12 +177,10 @@ public abstract class AbstractLuceneSailSpinTest {
 				int count = countTupleResults(result);
 				Assert.assertEquals(2, count);
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			connection.rollback();
 			throw e;
-		}
-		finally {
+		} finally {
 			connection.commit();
 		}
 	}
@@ -203,8 +188,8 @@ public abstract class AbstractLuceneSailSpinTest {
 	/**
 	 * Example for issue #771. Complex query: <br\>
 	 * <p>
-	 * <h3>Scenario description:</h3> The target searched term is in a statement with using unknown predicate.
-	 * The predicate might be found using a label with following statements:
+	 * <h3>Scenario description:</h3> The target searched term is in a statement with using unknown predicate. The
+	 * predicate might be found using a label with following statements:
 	 * <code style='display: block;'> ?pred_map rdfs:label "keyWord" ; t:column
 	 * ?pred .</code> This style of RDF file is made by Apache Any23.
 	 * </p>
@@ -218,8 +203,8 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * (?term_string search:allMaches search:score) search:search (?sub ?score)
 	 * . ?sub a t:Data . }
 	 * </code> </div> <br/>
-	 * However that is not well managed by RDF4J so there should be a separation between binding value to
-	 * `?term_string` and the magic property job: <br/>
+	 * However that is not well managed by RDF4J so there should be a separation between binding value to `?term_string`
+	 * and the magic property job: <br/>
 	 * <code>
 	 * prefix t: <urn:test.org/onto#>
 	 * prefix kw: <urn:test.org/key-words/>
@@ -241,15 +226,12 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void test771issue()
-		throws Exception
-	{
+	public void test771issue() throws Exception {
 		StringBuilder sb = new StringBuilder();
 		sb.append("prefix t: <urn:test.org/onto#> \n");
 		sb.append("prefix kw: <urn:test.org/key-words/> \n\n");
 		sb.append("select ?term_string ?sub ?score where { \n");
-		sb.append(
-				"  (?term_string <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?sub ?score) . \n");
+		sb.append("  (?term_string <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?sub ?score) . \n");
 		sb.append("  ?sub a t:Data . \n");
 		sb.append("   { \n");
 		sb.append("   select ?term_string where { \n");
@@ -273,29 +255,22 @@ public abstract class AbstractLuceneSailSpinTest {
 			Assert.assertTrue(subjects.contains("urn:test.org/data/rec5"));
 			Assert.assertTrue(subjects.contains("urn:test.org/data/rec4"));
 			Assert.assertTrue(subjects.contains("urn:test.org/data/rec2"));
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 			throw new RuntimeException(e);
 		}
 	}
 
-	public int countStatements(RepositoryConnection connection)
-		throws Exception
-	{
+	public int countStatements(RepositoryConnection connection) throws Exception {
 		RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
 		return Iterations.asList(sts).size();
 	}
 
-	public int countTupleResults(TupleQueryResult results)
-		throws Exception
-	{
+	public int countTupleResults(TupleQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 
-	public int countGraphResults(GraphQueryResult results)
-		throws Exception
-	{
+	public int countGraphResults(GraphQueryResult results) throws Exception {
 		return Iterations.asList(results).size();
 	}
 

@@ -55,9 +55,7 @@ public class NativeStoreConsistencyTest {
 	 *---------*/
 
 	@Test
-	public void testSES1867IndexCorruption()
-		throws Exception
-	{
+	public void testSES1867IndexCorruption() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
@@ -74,6 +72,7 @@ public class NativeStoreConsistencyTest {
 		conn.begin();
 		RDFInserter inserter = new RDFInserter(conn) {
 			private int count;
+
 			@Override
 			protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
 				super.addStatement(subj, pred, obj, ctxt);
@@ -94,11 +93,11 @@ public class NativeStoreConsistencyTest {
 		conn.begin();
 
 		logger.info("Removing old context");
-		conn.remove((Resource)null, (IRI)null, (Value)null, oldContext);
+		conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
 
 		logger.info("Adding updated context");
-		conn.add(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/newTriples.nt"), "",
-				RDFFormat.NTRIPLES, newContext);
+		conn.add(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/newTriples.nt"), "", RDFFormat.NTRIPLES,
+				newContext);
 		conn.commit();
 
 		// Step 3: check whether oldContext is actually empty
@@ -115,8 +114,7 @@ public class NativeStoreConsistencyTest {
 		repo.initialize();
 		conn = repo.getConnection();
 		logger.info("Repository size with SPOC index only: " + conn.size());
-		Model spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false),
-				new LinkedHashModel());
+		Model spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
 		conn.close();
 		repo.shutDown();
 
@@ -127,18 +125,15 @@ public class NativeStoreConsistencyTest {
 		repo.initialize();
 		conn = repo.getConnection();
 		logger.info("Repository size with PSOC index only: " + conn.size());
-		Model psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false),
-				new LinkedHashModel());
+		Model psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
 		conn.close();
 		repo.shutDown();
 
 		// Step 6: computing the differences of the contents of the indices
 		logger.info("Computing differences of sets...");
 
-		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements,
-				psocStatements);
-		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements,
-				spocStatements);
+		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements, psocStatements);
+		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements, spocStatements);
 
 		logger.info("Difference SPOC MINUS PSOC: " + differenceA.size());
 		logger.info("Difference PSOC MINUS SPOC: " + differenceB.size());

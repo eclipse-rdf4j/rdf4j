@@ -27,31 +27,24 @@ public class TripleStoreRecoveryTest {
 	private File dataDir;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		dataDir = FileUtil.createTempDir("nativestore");
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		FileUtil.deleteDir(dataDir);
 		dataDir = null;
 	}
 
 	@Test
-	public void testRollbackRecovery()
-		throws Exception
-	{
+	public void testRollbackRecovery() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 4);
 			// forget to commit or tollback
-		}
-		finally {
+		} finally {
 			tripleStore.close();
 		}
 
@@ -61,23 +54,19 @@ public class TripleStoreRecoveryTest {
 			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
 				assertNull(iter.next());
 			}
-		}
-		finally {
+		} finally {
 			tripleStore.close();
 		}
 	}
 
 	@Test
-	public void testCommitRecovery()
-		throws Exception
-	{
+	public void testCommitRecovery() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 4);
 			// forget to commit or rollback
-		}
-		finally {
+		} finally {
 			tripleStore.close();
 		}
 
@@ -85,8 +74,7 @@ public class TripleStoreRecoveryTest {
 		TxnStatusFile txnStatusFile = new TxnStatusFile(dataDir);
 		try {
 			txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
-		}
-		finally {
+		} finally {
 			txnStatusFile.close();
 		}
 
@@ -98,8 +86,7 @@ public class TripleStoreRecoveryTest {
 				assertNotNull(iter.next());
 				assertNull(iter.next());
 			}
-		}
-		finally {
+		} finally {
 			tripleStore.close();
 		}
 	}

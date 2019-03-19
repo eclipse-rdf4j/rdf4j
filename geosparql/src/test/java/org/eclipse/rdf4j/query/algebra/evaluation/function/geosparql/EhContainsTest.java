@@ -41,7 +41,7 @@ public class EhContainsTest extends GeometricRelationFunctionTest {
 		assertNotNull("Binded value is null", value);
 
 		assertTrue("Value is not an IRI", value instanceof IRI);
-		IRI iri = (IRI)value;
+		IRI iri = (IRI) value;
 
 		assertEquals("City is not Denver", "http://example.org/denver", iri.stringValue());
 	}

@@ -35,8 +35,7 @@ public class UnsignedShortCast extends IntegerCastFunction {
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-		throws ArithmeticException
-	{
+			throws ArithmeticException {
 		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
 			return Optional.of(vf.createLiteral(String.valueOf(integerValue.shortValueExact()), getXsdDatatype()));
 		}

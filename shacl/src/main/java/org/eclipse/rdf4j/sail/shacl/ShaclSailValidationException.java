@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
@@ -41,11 +40,11 @@ public class ShaclSailValidationException extends SailException {
 		model.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
 		return model;
 
-
 	}
 
 	/**
-	 * @return A ValidationReport Java object that describes what failed and can optionally be converted to a Model as specified by the SHACL Recommendation
+	 * @return A ValidationReport Java object that describes what failed and can optionally be converted to a Model as
+	 *         specified by the SHACL Recommendation
 	 */
 	@SuppressWarnings("WeakerAccess")
 	public ValidationReport getValidationReport() {
@@ -56,7 +55,8 @@ public class ShaclSailValidationException extends SailException {
 			ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
 
 			while (!propertyShapes.isEmpty()) {
-				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(), (Resource) invalidTuple.line.get(0));
+				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
+						invalidTuple.line.get(0));
 				if (parent == null) {
 					validationReport.addValidationResult(validationResult);
 				} else {

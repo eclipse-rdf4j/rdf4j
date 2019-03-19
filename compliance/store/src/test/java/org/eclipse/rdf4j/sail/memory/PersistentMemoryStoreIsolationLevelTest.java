@@ -15,8 +15,8 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of {@link MemoryStoreIsolationLevelTest} for testing the class {@link MemoryStore} using
- * on-disk persistence.
+ * An extension of {@link MemoryStoreIsolationLevelTest} for testing the class {@link MemoryStore} using on-disk
+ * persistence.
  */
 public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolationLevelTest {
 
@@ -28,14 +28,11 @@ public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolatio
 	 *---------*/
 
 	@Override
-	protected Sail createSail()
-		throws SailException
-	{
+	protected Sail createSail() throws SailException {
 		MemoryStore sail;
 		try {
 			sail = new MemoryStore(tempDir.newFolder("memory-store"));
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 		sail.setSyncDelay(100);

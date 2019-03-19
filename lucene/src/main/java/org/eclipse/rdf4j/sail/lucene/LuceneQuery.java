@@ -43,14 +43,11 @@ public class LuceneQuery implements SearchQuery {
 
 	@Override
 	@Deprecated
-	public Iterable<? extends DocumentScore> query(Resource resource)
-		throws IOException
-	{
+	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		TopDocs docs;
 		if (resource != null) {
 			docs = index.search(resource, query);
-		}
-		else {
+		} else {
 			docs = index.search(query);
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentScore>() {

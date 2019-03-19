@@ -39,46 +39,51 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", null), "*"));
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
+		PlanNode parent = shaclSailConnection
+				.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(parent, 0, 1);
 	}
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
-		return targetSubjectsOf
-			.stream()
-			.map(target -> addedStatements.hasStatement(null, target, null, false))
-			.reduce((a, b) -> a || b)
-			.orElseThrow(IllegalStateException::new);
+		return targetSubjectsOf.stream()
+				.map(target -> addedStatements.hasStatement(null, target, null, false))
+				.reduce((a, b) -> a || b)
+				.orElseThrow(IllegalStateException::new);
 
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return targetSubjectsOf
-			.stream()
-			.map(target -> "\n { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable + ".  } \n")
-			.reduce((a, b) -> a + " UNION " + b)
-			.get();
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		return targetSubjectsOf.stream()
+				.map(target -> "\n { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable
+						+ ".  } \n")
+				.reduce((a, b) -> a + " UNION " + b)
+				.get();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalFilterByPredicate(shaclSailConnection, targetSubjectsOf, parent, 0, ExternalFilterByPredicate.On.Subject);
+		return new ExternalFilterByPredicate(shaclSailConnection, targetSubjectsOf, parent, 0,
+				ExternalFilterByPredicate.On.Subject);
 	}
 
 }

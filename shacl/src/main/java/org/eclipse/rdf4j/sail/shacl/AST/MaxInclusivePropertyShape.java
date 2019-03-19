@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -28,26 +27,24 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	private final Literal maxInclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MaxInclusivePropertyShape.class);
 
-	MaxInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal maxInclusive) {
-		super(id, connection, nodeShape, deactivated);
+	MaxInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
+			boolean deactivated, Resource path, Literal maxInclusive) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.maxInclusive = maxInclusive;
 
 	}
 
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
-			shaclSailConnection,
-			nodeShape,
-			(parent) -> new LiteralComparatorFilter(parent, maxInclusive, value -> value >= 0),
-			this,
-			overrideTargetNode);
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new LiteralComparatorFilter(parent, maxInclusive, value -> value >= 0), this,
+				overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

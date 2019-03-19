@@ -57,9 +57,7 @@ public class Template {
 		return arguments;
 	}
 
-	public ParsedOperation call(Map<IRI, Value> argValues)
-		throws MalformedSpinException
-	{
+	public ParsedOperation call(Map<IRI, Value> argValues) throws MalformedSpinException {
 		MapBindingSet args = new MapBindingSet();
 		for (Argument arg : arguments) {
 			IRI argPred = arg.getPredicate();
@@ -78,17 +76,13 @@ public class Template {
 		ParsedOperation callOp;
 		if (parsedOp instanceof ParsedBooleanQuery) {
 			callOp = new ParsedBooleanTemplate(this, args);
-		}
-		else if (parsedOp instanceof ParsedTupleQuery) {
+		} else if (parsedOp instanceof ParsedTupleQuery) {
 			callOp = new ParsedTupleTemplate(this, args);
-		}
-		else if (parsedOp instanceof ParsedGraphQuery) {
+		} else if (parsedOp instanceof ParsedGraphQuery) {
 			callOp = new ParsedGraphTemplate(this, args);
-		}
-		else if (parsedOp instanceof ParsedUpdate) {
+		} else if (parsedOp instanceof ParsedUpdate) {
 			callOp = new ParsedUpdateTemplate(this, args);
-		}
-		else {
+		} else {
 			throw new AssertionError("Unrecognised ParsedOperation: " + parsedOp.getClass());
 		}
 		return callOp;

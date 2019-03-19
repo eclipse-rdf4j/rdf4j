@@ -33,15 +33,13 @@ public class Floor implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("FLOOR requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
+			Literal literal = (Literal) args[0];
 
 			IRI datatype = literal.getDatatype();
 
@@ -49,25 +47,19 @@ public class Floor implements Function {
 			if (datatype != null && XMLDatatypeUtil.isNumericDatatype(datatype)) {
 				if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
 					return literal;
-				}
-				else if (XMLDatatypeUtil.isDecimalDatatype(datatype)) {
+				} else if (XMLDatatypeUtil.isDecimalDatatype(datatype)) {
 					BigDecimal floor = literal.decimalValue().setScale(0, RoundingMode.FLOOR);
 					return valueFactory.createLiteral(floor.toPlainString(), datatype);
-				}
-				else if (XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
+				} else if (XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
 					double floor = Math.floor(literal.doubleValue());
 					return valueFactory.createLiteral(Double.toString(floor), datatype);
+				} else {
+					throw new ValueExprEvaluationException("unexpected datatype for function operand: " + args[0]);
 				}
-				else {
-					throw new ValueExprEvaluationException(
-							"unexpected datatype for function operand: " + args[0]);
-				}
-			}
-			else {
+			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("unexpected input value for function: " + args[0]);
 		}
 

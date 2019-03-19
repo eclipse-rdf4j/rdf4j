@@ -42,9 +42,7 @@ public class ConvertSpinRDFToString extends AbstractSpinFunction implements Func
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 1 || args.length > 2) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
@@ -54,14 +52,13 @@ public class ConvertSpinRDFToString extends AbstractSpinFunction implements Func
 		if (args.length == 2 && !(args[1] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Second argument must be a string");
 		}
-		Resource q = (Resource)args[0];
-		boolean useHtml = (args.length == 2) ? ((Literal)args[1]).booleanValue() : false;
+		Resource q = (Resource) args[0];
+		boolean useHtml = (args.length == 2) ? ((Literal) args[1]).booleanValue() : false;
 		String sparqlString;
 		try {
 			ParsedOperation op = parser.parse(q, getCurrentQueryPreparer().getTripleSource());
-			sparqlString = new SPARQLQueryRenderer().render((ParsedQuery)op);
-		}
-		catch (Exception e) {
+			sparqlString = new SPARQLQueryRenderer().render((ParsedQuery) op);
+		} catch (Exception e) {
 			throw new ValueExprEvaluationException(e);
 		}
 		return valueFactory.createLiteral(sparqlString);

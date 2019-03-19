@@ -46,13 +46,12 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatatypeBenchmarkEmpty {
-
 
 	private static final int NUMBER_OF_TRANSACTIONS = 10;
 	private static final int STATEMENTS_PER_TRANSACTION = 1000;
@@ -66,7 +65,6 @@ public class DatatypeBenchmarkEmpty {
 
 		allStatements = new ArrayList<>(NUMBER_OF_TRANSACTIONS);
 
-
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (int j = 0; j < NUMBER_OF_TRANSACTIONS; j++) {
@@ -74,11 +72,9 @@ public class DatatypeBenchmarkEmpty {
 			allStatements.add(statements);
 			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
-				);
-				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE, vf.createLiteral(i))
-				);
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+						vf.createLiteral(i)));
 			}
 		}
 		System.gc();
@@ -89,7 +85,6 @@ public class DatatypeBenchmarkEmpty {
 	public void tearDown() {
 		allStatements.clear();
 	}
-
 
 	@Benchmark
 	public void shacl() throws Exception {
@@ -116,7 +111,6 @@ public class DatatypeBenchmarkEmpty {
 
 	}
 
-
 	@Benchmark
 	public void noShacl() {
 
@@ -140,7 +134,6 @@ public class DatatypeBenchmarkEmpty {
 
 	}
 
-
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
 
@@ -156,7 +149,10 @@ public class DatatypeBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE + "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection
+						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
+								+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
+						.evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -164,6 +160,5 @@ public class DatatypeBenchmarkEmpty {
 		}
 
 	}
-
 
 }

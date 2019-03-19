@@ -28,9 +28,7 @@ public class StrLang implements Function {
 	}
 
 	@Override
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException("STRLANG requires 2 arguments, got " + args.length);
 		}
@@ -39,16 +37,14 @@ public class StrLang implements Function {
 		Value languageValue = args[1];
 
 		if (QueryEvaluationUtil.isSimpleLiteral(lexicalValue)) {
-			Literal lit = (Literal)lexicalValue;
+			Literal lit = (Literal) lexicalValue;
 
 			if (languageValue instanceof Literal) {
-				return valueFactory.createLiteral(lit.getLabel(), ((Literal)languageValue).getLabel());
-			}
-			else {
+				return valueFactory.createLiteral(lit.getLabel(), ((Literal) languageValue).getLabel());
+			} else {
 				throw new ValueExprEvaluationException("illegal value for operand: " + languageValue);
 			}
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("illegal value for operand: " + lexicalValue);
 		}
 

@@ -56,8 +56,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param tripleSource
 	 */
 	public LimitedSizeEvaluationStrategy(TripleSource tripleSource, long maxSize,
-			FederatedServiceResolver serviceManager)
-	{
+			FederatedServiceResolver serviceManager) {
 		super(tripleSource, serviceManager);
 		this.maxSize = maxSize;
 	}
@@ -68,33 +67,27 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param maxCollectionsSize
 	 */
 	public LimitedSizeEvaluationStrategy(TripleSource tripleSource, Dataset dataset, int maxCollectionsSize,
-			FederatedServiceResolver serviceManager)
-	{
+			FederatedServiceResolver serviceManager) {
 		super(tripleSource, dataset, serviceManager);
 		this.maxSize = maxCollectionsSize;
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct,
-			BindingSet bindings)
-		throws QueryEvaluationException
-	{
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
+			throws QueryEvaluationException {
 		return new LimitedSizeDistinctIteration(evaluate(distinct.getArg(), bindings), used, maxSize);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
-			final BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException
-			{
+					throws QueryEvaluationException {
 				return evaluate(difference.getLeftArg(), bindings);
 			}
 		};
@@ -103,8 +96,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException
-			{
+					throws QueryEvaluationException {
 				return evaluate(difference.getRightArg(), bindings);
 			}
 		};
@@ -114,17 +106,14 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
-			final BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException
-			{
+					throws QueryEvaluationException {
 				return evaluate(intersection.getLeftArg(), bindings);
 			}
 		};
@@ -133,8 +122,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException
-			{
+					throws QueryEvaluationException {
 				return evaluate(intersection.getRightArg(), bindings);
 			}
 		};
@@ -144,29 +132,24 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		if (join.getRightArg() instanceof Service) {
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(),
-					bindings);
-			return new ServiceJoinIterator(leftIter, (Service)join.getRightArg(), bindings, this);
+			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(), bindings);
+			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
 		}
 
 		if (TupleExprs.containsSubquery(join.getRightArg())) {
 			return new LimitedSizeHashJoinIteration(this, join, bindings, used, maxSize);
-		}
-		else {
+		} else {
 			return new JoinIterator(this, join, bindings);
 		}
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
-			final BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			final BindingSet bindings) throws QueryEvaluationException {
 		final Scope scope = alp.getScope();
 		final Var subjectVar = alp.getSubjectVar();
 		final TupleExpr pathExpression = alp.getPathExpression();
@@ -174,31 +157,27 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 
-		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar,
-				minLength, bindings, used, maxSize);
-	}
-
-	@Override
-	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar,
-			Var objVar, Var contextVar, Value subj, Value obj)
-	{
-		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar,
+		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength,
 				bindings, used, maxSize);
 	}
 
 	@Override
+	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar, Var objVar,
+			Var contextVar, Value subj, Value obj) {
+		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar, bindings, used,
+				maxSize);
+	}
+
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		long limit = getLimit(node);
 		if (maxSize < limit) {
 			ValueComparator vcmp = new ValueComparator();
 			OrderComparator cmp = new OrderComparator(this, node, vcmp);
 			boolean reduced = isReducedOrDistinct(node);
-			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used,
-					maxSize);
-		}
-		else {
+			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used, maxSize);
+		} else {
 			return super.evaluate(node, bindings);
 		}
 	}

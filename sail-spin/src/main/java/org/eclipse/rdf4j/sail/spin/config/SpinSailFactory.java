@@ -36,16 +36,14 @@ public class SpinSailFactory implements SailFactory {
 	}
 
 	@Override
-	public Sail getSail(SailImplConfig config)
-		throws SailConfigException
-	{
+	public Sail getSail(SailImplConfig config) throws SailConfigException {
 		if (!SAIL_TYPE.equals(config.getType())) {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
 
 		SpinSail spinSail = new SpinSail();
 		if (config instanceof SpinSailConfig) {
-			spinSail.setAxiomClosureNeeded(((SpinSailConfig)config).isAxiomClosureNeeded());
+			spinSail.setAxiomClosureNeeded(((SpinSailConfig) config).isAxiomClosureNeeded());
 		}
 
 		return spinSail;

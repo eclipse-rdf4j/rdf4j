@@ -25,7 +25,7 @@ import static org.junit.Assert.assertTrue;
  * @author Bart Hanssens
  */
 public class SfWithinTest extends GeometricRelationFunctionTest {
-	
+
 	/**
 	 * Test sfWithin
 	 * 
@@ -34,19 +34,19 @@ public class SfWithinTest extends GeometricRelationFunctionTest {
 	@Test
 	public void testDenverSfWithinColorado() throws IOException {
 		BindingSet bs = GeoSPARQLTests.getBindingSet("sfwithin_denver.rq");
-		
+
 		assertNotNull("Bindingset is null", bs);
-		
+
 		Value value = bs.getBinding("within").getValue();
 		assertNotNull("Binded value is null", value);
-		
+
 		assertTrue("Value is not a literal", value instanceof Literal);
 		Literal l = (Literal) value;
 		assertTrue("Literal not of type double", l.getDatatype().equals(XMLSchema.BOOLEAN));
 
 		assertTrue("Denver not within Colorado", l.booleanValue());
 	}
-	
+
 	/**
 	 * Test sf:within
 	 * 
@@ -55,12 +55,12 @@ public class SfWithinTest extends GeometricRelationFunctionTest {
 	@Test
 	public void testBrusselsSfWithinColorado() throws IOException {
 		BindingSet bs = GeoSPARQLTests.getBindingSet("sfwithin_brussels.rq");
-		
+
 		assertNotNull("Bindingset is null", bs);
-		
+
 		Value value = bs.getBinding("within").getValue();
 		assertNotNull("Binded value is null", value);
-		
+
 		assertTrue("Value is not a literal", value instanceof Literal);
 		Literal l = (Literal) value;
 		assertTrue("Literal not of type double", l.getDatatype().equals(XMLSchema.BOOLEAN));

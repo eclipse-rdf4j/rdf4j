@@ -33,15 +33,17 @@ public class RdfsSubClassOfReasoner {
 	private final Map<Resource, Set<Resource>> forwardChainCache = new HashMap<>();
 	private final Map<Resource, Set<Resource>> backwardsChainCache = new HashMap<>();
 
-
 	public Stream<Statement> forwardChain(Statement statement) {
 		if (forwardChainCache.isEmpty()) {
 			return Stream.of(statement);
 		}
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		if (statement.getPredicate().equals(RDF.TYPE) && forwardChainCache.containsKey(((Resource) statement.getObject()))) {
-			return forwardChainCache.get(statement.getObject()).stream().map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
+		if (statement.getPredicate().equals(RDF.TYPE)
+				&& forwardChainCache.containsKey(((Resource) statement.getObject()))) {
+			return forwardChainCache.get(statement.getObject())
+					.stream()
+					.map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
 		}
 		return Stream.of(statement);
 	}
@@ -100,7 +102,6 @@ public class RdfsSubClassOfReasoner {
 		forwardChainUntilFixPoint(forwardChainCache);
 		forwardChainUntilFixPoint(backwardsChainCache);
 
-
 	}
 
 	private void forwardChainUntilFixPoint(Map<Resource, Set<Resource>> forwardChainCache) {
@@ -110,7 +111,7 @@ public class RdfsSubClassOfReasoner {
 		// Fixed point is reached when they are the same.
 		// Eg. Two consecutive applications return the same number of subclasses
 		long prevSize = 0;
-		final long[] newSize = {-1};
+		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
 
 			prevSize = newSize[0];
@@ -133,11 +134,11 @@ public class RdfsSubClassOfReasoner {
 		return iris != null ? iris : Collections.emptySet();
 	}
 
-
 	static RdfsSubClassOfReasoner createReasoner(ShaclSailConnection shaclSailConnection) {
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
-		try (Stream<? extends Statement> stream = Iterations.stream(shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false))) {
+		try (Stream<? extends Statement> stream = Iterations
+				.stream(shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false))) {
 			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
 		}
 

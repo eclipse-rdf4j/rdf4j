@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import org.eclipse.rdf4j.model.impl.ContextStatement;
 
 /**
- * A MemStatement is a Statement which contains context information and a flag indicating whether the
- * statement is explicit or inferred.
+ * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
+ * explicit or inferred.
  */
 public class MemStatement extends ContextStatement {
 
@@ -45,12 +45,10 @@ public class MemStatement extends ContextStatement {
 	 *--------------*/
 
 	/**
-	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as
-	 * 'explicit'.
+	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as 'explicit'.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
-			int sinceSnapshot)
-	{
+			int sinceSnapshot) {
 		this(subject, predicate, object, context, true, sinceSnapshot);
 	}
 
@@ -58,9 +56,8 @@ public class MemStatement extends ContextStatement {
 	 * Creates a new MemStatement with the supplied subject, predicate, object and context. The value of the
 	 * <tt>explicit</tt> parameter determines if this statement is marked as 'explicit' or not.
 	 */
-	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
-			boolean explicit, int sinceSnapshot)
-	{
+	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
+			int sinceSnapshot) {
 		super(subject, predicate, object, context);
 		setExplicit(explicit);
 		setSinceSnapshot(sinceSnapshot);
@@ -72,22 +69,22 @@ public class MemStatement extends ContextStatement {
 
 	@Override
 	public MemResource getSubject() {
-		return (MemResource)super.getSubject();
+		return (MemResource) super.getSubject();
 	}
 
 	@Override
 	public MemIRI getPredicate() {
-		return (MemIRI)super.getPredicate();
+		return (MemIRI) super.getPredicate();
 	}
 
 	@Override
 	public MemValue getObject() {
-		return (MemValue)super.getObject();
+		return (MemValue) super.getObject();
 	}
 
 	@Override
 	public MemResource getContext() {
-		return (MemResource)super.getContext();
+		return (MemResource) super.getContext();
 	}
 
 	public void setSinceSnapshot(int snapshot) {
@@ -119,8 +116,8 @@ public class MemStatement extends ContextStatement {
 	}
 
 	/**
-	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and
-	 * context. The transaction status will be set to {@link TxnStatus#NEW}.
+	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and context.
+	 * The transaction status will be set to {@link TxnStatus#NEW}.
 	 */
 	public void addToComponentLists() {
 		getSubject().addSubjectStatement(this);
@@ -133,8 +130,8 @@ public class MemStatement extends ContextStatement {
 	}
 
 	/**
-	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate,
-	 * object and context. The transaction status will be set to <tt>null</tt>.
+	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate, object and
+	 * context. The transaction status will be set to <tt>null</tt>.
 	 */
 	public void removeFromComponentLists() {
 		getSubject().removeSubjectStatement(this);

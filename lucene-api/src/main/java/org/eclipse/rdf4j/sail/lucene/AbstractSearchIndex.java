@@ -62,9 +62,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
 	@Override
-	public void initialize(Properties parameters)
-		throws Exception
-	{
+	public void initialize(Properties parameters) throws Exception {
 		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
 		maxDocs = (maxDocParam != null) ? Integer.parseInt(maxDocParam) : -1;
 
@@ -77,11 +75,10 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	protected abstract SpatialContext getSpatialContext(String property);
 
 	/**
-	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does
-	 * not make much since to index xsd:float.
+	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
+	 * much since to index xsd:float.
 	 * 
-	 * @param literal
-	 *        the literal to be accepted
+	 * @param literal the literal to be accepted
 	 * @return true if the given literal will be indexed by this LuceneIndex
 	 */
 	@Override
@@ -91,8 +88,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			return false;
 
 		// we reject literals that are in the list of rejected data types
-		if ((literal.getDatatype() != null)
-				&& (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue())))
+		if ((literal.getDatatype() != null) && (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue())))
 			return false;
 
 		return true;
@@ -107,9 +103,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * Indexes the specified Statement.
 	 */
 	@Override
-	public final synchronized void addStatement(Statement statement)
-		throws IOException
-	{
+	public final synchronized void addStatement(Statement statement) throws IOException {
 		// determine stuff to store
 		String text = SearchFields.getLiteralPropertyValueAsString(statement);
 		if (text == null) {
@@ -132,8 +126,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 			// add it to the index
 			addDocument(document);
-		}
-		else {
+		} else {
 			// update this Document when this triple has not been stored already
 			if (!document.hasProperty(field, text)) {
 				// create a copy of the old document; updating the retrieved
@@ -151,9 +144,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	@Override
-	public final synchronized void removeStatement(Statement statement)
-		throws IOException
-	{
+	public final synchronized void removeStatement(Statement statement) throws IOException {
 		String text = SearchFields.getLiteralPropertyValueAsString(statement);
 		if (text == null) {
 			return;
@@ -176,8 +167,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 				int nrProperties = countPropertyValues(document);
 				if (nrProperties == 1) {
 					deleteDocument(document);
-				}
-				else {
+				} else {
 					// there are more triples encoded in this Document: remove the
 					// document and add a new Document without this triple
 					SearchDocument newDocument = newDocument(id, resourceId, contextId);
@@ -192,19 +182,15 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	/**
-	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has
-	 * to be done inside this method. The passed added/removed sets are disjunct, no statement can be in both
+	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
+	 * done inside this method. The passed added/removed sets are disjunct, no statement can be in both
 	 * 
-	 * @param added
-	 *        all added statements, can have multiple subjects
-	 * @param removed
-	 *        all removed statements, can have multiple subjects
+	 * @param added   all added statements, can have multiple subjects
+	 * @param removed all removed statements, can have multiple subjects
 	 */
 	@Override
-	public final synchronized void addRemoveStatements(Collection<Statement> added,
-			Collection<Statement> removed)
-		throws IOException
-	{
+	public final synchronized void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed)
+			throws IOException {
 		// Buffer per resource
 		MapOfListMaps<Resource, String, Statement> rsAdded = new MapOfListMaps<>();
 		MapOfListMaps<Resource, String, Statement> rsRemoved = new MapOfListMaps<>();
@@ -264,8 +250,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 						logger.info(
 								"Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.",
 								resource, contextId);
-				}
-				else {
+				} else {
 					// update the Document
 
 					// buffer the removed literal statements
@@ -321,8 +306,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 						if (mutated) {
 							updater.update(newDocument);
 						}
-					}
-					else {
+					} else {
 						updater.delete(document);
 					}
 				}
@@ -332,12 +316,11 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	/**
-	 * Creates a copy of the old document; updating the retrieved Document instance works ok for stored
-	 * properties but indexed data gets lost when doing an IndexWriter.updateDocument with it.
+	 * Creates a copy of the old document; updating the retrieved Document instance works ok for stored properties but
+	 * indexed data gets lost when doing an IndexWriter.updateDocument with it.
 	 */
 	private boolean copyDocument(SearchDocument newDocument, SearchDocument document,
-			Map<String, Set<String>> removedProperties)
-	{
+			Map<String, Set<String>> removedProperties) {
 		// track if newDocument is actually different from document
 		boolean mutated = false;
 		for (String oldFieldName : document.getPropertyNames()) {
@@ -345,15 +328,13 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			List<String> oldValues = document.getProperty(oldFieldName);
 			if (oldValues != null) {
 				// which fields were removed?
-				Set<String> objectsRemoved = (removedProperties != null) ? removedProperties.get(oldFieldName)
-						: null;
+				Set<String> objectsRemoved = (removedProperties != null) ? removedProperties.get(oldFieldName) : null;
 				for (String oldValue : oldValues) {
 					// do not copy removed properties to the new version of the
 					// document
 					if ((objectsRemoved != null) && (objectsRemoved.contains(oldValue))) {
 						mutated = true;
-					}
-					else {
+					} else {
 						addProperty(oldFieldName, oldValue, newDocument);
 					}
 				}
@@ -375,17 +356,14 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	/**
-	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with
-	 * the same subject id. (assume the existing document was deleted)
+	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
+	 * subject id. (assume the existing document was deleted)
 	 * 
-	 * @param statements
-	 *        the statements that make up the resource
+	 * @param statements the statements that make up the resource
 	 * @throws IOException
 	 */
 	@Override
-	public final synchronized void addDocuments(Resource subject, List<Statement> statements)
-		throws IOException
-	{
+	public final synchronized void addDocuments(Resource subject, List<Statement> statements) throws IOException {
 
 		String resourceId = SearchFields.getResourceID(subject);
 
@@ -415,13 +393,11 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	/**
-	 * check if the passed statement should be added (is it indexed? is it stored?) and add it as predicate to
-	 * the passed document. No checks whether the predicate was already there.
+	 * check if the passed statement should be added (is it indexed? is it stored?) and add it as predicate to the
+	 * passed document. No checks whether the predicate was already there.
 	 * 
-	 * @param statement
-	 *        the statement to add
-	 * @param document
-	 *        the document to add to
+	 * @param statement the statement to add
+	 * @param document  the document to add to
 	 */
 	private void addProperty(Statement statement, SearchDocument document) {
 		String value = SearchFields.getLiteralPropertyValueAsString(statement);
@@ -435,8 +411,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	private void addProperty(String field, String value, SearchDocument document) {
 		if (isGeoField(field)) {
 			document.addGeoProperty(field, value);
-		}
-		else {
+		} else {
 			document.addProperty(field, value);
 		}
 	}
@@ -446,44 +421,36 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 */
 	@Override
 	@Deprecated
-	public Collection<BindingSet> evaluate(QuerySpec query)
-		throws SailException
-	{
+	public Collection<BindingSet> evaluate(QuerySpec query) throws SailException {
 		Iterable<? extends DocumentScore> result = evaluateQuery(query);
 		return generateBindingSets(query, result);
 	}
 
 	@Override
-	public final Collection<BindingSet> evaluate(SearchQueryEvaluator evaluator)
-		throws SailException
-	{
+	public final Collection<BindingSet> evaluate(SearchQueryEvaluator evaluator) throws SailException {
 		if (evaluator instanceof QuerySpec) {
-			QuerySpec query = (QuerySpec)evaluator;
+			QuerySpec query = (QuerySpec) evaluator;
 			Iterable<? extends DocumentScore> result = evaluateQuery(query);
 			return generateBindingSets(query, result);
-		}
-		else if (evaluator instanceof DistanceQuerySpec) {
-			DistanceQuerySpec query = (DistanceQuerySpec)evaluator;
+		} else if (evaluator instanceof DistanceQuerySpec) {
+			DistanceQuerySpec query = (DistanceQuerySpec) evaluator;
 			Iterable<? extends DocumentDistance> result = evaluateQuery(query);
 			return generateBindingSets(query, result);
-		}
-		else if (evaluator instanceof GeoRelationQuerySpec) {
-			GeoRelationQuerySpec query = (GeoRelationQuerySpec)evaluator;
+		} else if (evaluator instanceof GeoRelationQuerySpec) {
+			GeoRelationQuerySpec query = (GeoRelationQuerySpec) evaluator;
 			Iterable<? extends DocumentResult> result = evaluateQuery(query);
 			return generateBindingSets(query, result);
-		}
-		else {
-			throw new IllegalArgumentException("Unsupported " + SearchQueryEvaluator.class.getSimpleName()
-					+ ": " + evaluator.getClass().getName());
+		} else {
+			throw new IllegalArgumentException("Unsupported " + SearchQueryEvaluator.class.getSimpleName() + ": "
+					+ evaluator.getClass().getName());
 		}
 	}
 
 	/**
-	 * Evaluates one Lucene Query. It distinguishes between two cases, the one where no subject is given and
-	 * the one were it is given.
+	 * Evaluates one Lucene Query. It distinguishes between two cases, the one where no subject is given and the one
+	 * were it is given.
 	 * 
-	 * @param query
-	 *        the Lucene query to evaluate
+	 * @param query the Lucene query to evaluate
 	 * @return QueryResult consisting of hits and highlighter
 	 */
 	private Iterable<? extends DocumentScore> evaluateQuery(QuerySpec query) {
@@ -497,19 +464,16 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			if (!sQuery.isEmpty()) {
 				// if the query requests for the snippet, create a highlighter using
 				// this query
-				boolean highlight = (query.getSnippetVariableName() != null
-						|| query.getPropertyVariableName() != null);
+				boolean highlight = (query.getSnippetVariableName() != null || query.getPropertyVariableName() != null);
 
 				// distinguish the two cases of subject == null
 				hits = query(query.getSubject(), query.getQueryString(), query.getPropertyURI(), highlight);
-			}
-			else {
+			} else {
 				hits = null;
 			}
-		}
-		catch (Exception e) {
-			logger.error("There was a problem evaluating query '" + query.getQueryString()
-					+ "' for property '" + query.getPropertyURI() + "!", e);
+		} catch (Exception e) {
+			logger.error("There was a problem evaluating query '" + query.getQueryString() + "' for property '"
+					+ query.getPropertyURI() + "!", e);
 		}
 
 		return hits;
@@ -518,15 +482,12 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * This method generates bindings from the given result of a Lucene query.
 	 * 
-	 * @param query
-	 *        the Lucene query
+	 * @param query the Lucene query
 	 * @return a LinkedHashSet containing generated bindings
 	 * @throws SailException
 	 */
-	private Collection<BindingSet> generateBindingSets(QuerySpec query,
-			Iterable<? extends DocumentScore> hits)
-		throws SailException
-	{
+	private Collection<BindingSet> generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits)
+			throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -583,8 +544,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 						if (query.getPropertyURI() != null) {
 							String fieldname = SearchFields.getPropertyField(query.getPropertyURI());
 							fields = Collections.singleton(fieldname);
-						}
-						else {
+						} else {
 							fields = doc.getPropertyNames();
 						}
 
@@ -596,8 +556,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 									if (snippet != null && !snippet.isEmpty()) {
 										// create an individual binding set for each
 										// snippet
-										QueryBindingSet snippetBindings = new QueryBindingSet(
-												derivedBindings);
+										QueryBindingSet snippetBindings = new QueryBindingSet(derivedBindings);
 
 										if (snippetVar != null) {
 											snippetBindings.addBinding(snippetVar, vf.createLiteral(snippet));
@@ -612,15 +571,13 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 								}
 							}
 						}
-					}
-					else {
+					} else {
 						logger.warn(
 								"Lucene Query requests snippet, but no highlighter was generated for it, no snippets will be generated!\n{}",
 								query);
 						bindingSets.add(derivedBindings);
 					}
-				}
-				else {
+				} else {
 					bindingSets.add(derivedBindings);
 				}
 			}
@@ -645,12 +602,11 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			if (!(shape instanceof Point)) {
 				throw new MalformedQueryException("Geometry literal is not a point: " + from.getLabel());
 			}
-			Point p = (Point)shape;
+			Point p = (Point) shape;
 			hits = geoQuery(geoProperty, p, units, distance, query.getDistanceVar(), query.getContextVar());
-		}
-		catch (Exception e) {
-			logger.error("There was a problem evaluating distance query 'within " + distance
-					+ getUnitSymbol(units) + " of " + from.getLabel() + "'!", e);
+		} catch (Exception e) {
+			logger.error("There was a problem evaluating distance query 'within " + distance + getUnitSymbol(units)
+					+ " of " + from.getLabel() + "'!", e);
 		}
 
 		return hits;
@@ -659,16 +615,13 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	private static String getUnitSymbol(IRI units) {
 		if (GEOF.UOM_METRE.equals(units)) {
 			return "m";
-		}
-		else {
+		} else {
 			return "";
 		}
 	}
 
 	private Collection<BindingSet> generateBindingSets(DistanceQuerySpec query,
-			Iterable<? extends DocumentDistance> hits)
-		throws SailException
-	{
+			Iterable<? extends DocumentDistance> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -704,8 +657,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 				if (doc == null)
 					continue;
 
-				List<String> geometries = doc.getProperty(
-						SearchFields.getPropertyField(query.getGeoProperty()));
+				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {
 					double distance = hit.getDistance();
 					// Distance queries are generally implemented by checking
@@ -760,8 +712,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			}
 			Shape qshape = parseQueryShape(SearchFields.getPropertyField(geoProperty), qgeom.getLabel());
 			hits = geoRelationQuery(query.getRelation(), geoProperty, qshape, query.getContextVar());
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			logger.error("There was a problem evaluating spatial relation query '" + query.getRelation() + " "
 					+ qgeom.getLabel() + "'!", e);
 		}
@@ -770,9 +721,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	private Collection<BindingSet> generateBindingSets(GeoRelationQuerySpec query,
-			Iterable<? extends DocumentResult> hits)
-		throws SailException
-	{
+			Iterable<? extends DocumentResult> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -807,8 +756,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 				if (doc == null)
 					continue;
 
-				List<String> geometries = doc.getProperty(
-						SearchFields.getPropertyField(query.getGeoProperty()));
+				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {
 					QueryBindingSet derivedBindings = new QueryBindingSet();
 					if (subjVar != null) {
@@ -837,9 +785,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return new BindingSetCollection(bindingNames, bindingSets);
 	}
 
-	protected Shape parseQueryShape(String property, String value)
-		throws ParseException
-	{
+	protected Shape parseQueryShape(String property, String value) throws ParseException {
 		return getSpatialContext(property).readShapeFromWkt(value);
 	}
 
@@ -850,43 +796,34 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return SearchFields.createResource(document.getResource());
 	}
 
-	protected abstract SearchDocument getDocument(String id)
-		throws IOException;
+	protected abstract SearchDocument getDocument(String id) throws IOException;
 
-	protected abstract Iterable<? extends SearchDocument> getDocuments(String resourceId)
-		throws IOException;
+	protected abstract Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException;
 
 	protected abstract SearchDocument newDocument(String id, String resourceId, String context);
 
 	protected abstract SearchDocument copyDocument(SearchDocument doc);
 
-	protected abstract void addDocument(SearchDocument doc)
-		throws IOException;
+	protected abstract void addDocument(SearchDocument doc) throws IOException;
 
-	protected abstract void updateDocument(SearchDocument doc)
-		throws IOException;
+	protected abstract void updateDocument(SearchDocument doc) throws IOException;
 
-	protected abstract void deleteDocument(SearchDocument doc)
-		throws IOException;
+	protected abstract void deleteDocument(SearchDocument doc) throws IOException;
 
 	/**
 	 * To be removed.
 	 */
 	@Deprecated
-	protected abstract SearchQuery parseQuery(String q, IRI property)
-		throws MalformedQueryException;
+	protected abstract SearchQuery parseQuery(String q, IRI property) throws MalformedQueryException;
 
 	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
-			boolean highlight)
-		throws MalformedQueryException, IOException;
+			boolean highlight) throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, IRI units,
-			double distance, String distanceVar, Var context)
-		throws MalformedQueryException, IOException;
+			double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
-			Shape shape, Var context)
-		throws MalformedQueryException, IOException;
+			Shape shape, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract BulkUpdater newBulkUpdate();
 }

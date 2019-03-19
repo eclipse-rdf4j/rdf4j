@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.Ignore;
@@ -32,9 +32,8 @@ public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnection
 
 	@Override
 	protected Repository createRepository()
-		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException
-	{
+			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
 		return new SailRepository(
-				new SpinSail(new ForwardChainingRDFSInferencer(new DedupingInferencer(new MemoryStore()))));
+				new SpinSail(new SchemaCachingRDFSInferencer(new DedupingInferencer(new MemoryStore()), false)));
 	}
 }

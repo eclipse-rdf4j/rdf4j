@@ -49,9 +49,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	}
 
 	@Override
-	public void validate()
-		throws RepositoryConfigException
-	{
+	public void validate() throws RepositoryConfigException {
 		super.validate();
 		if (sailImplConfig == null) {
 			throw new RepositoryConfigException("No Sail implementation specified for Sail repository");
@@ -59,8 +57,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			sailImplConfig.validate();
-		}
-		catch (SailConfigException e) {
+		} catch (SailConfigException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}
@@ -79,27 +76,23 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 	}
 
 	@Override
-	public void parse(Model model, Resource repImplNode)
-		throws RepositoryConfigException
-	{
+	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
 		try {
-			Optional<Resource> sailImplNode = Models.objectResource(
-					model.filter(repImplNode, SAILIMPL, null));
+			Optional<Resource> sailImplNode = Models.objectResource(model.filter(repImplNode, SAILIMPL, null));
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.filter(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
-					SailFactory factory = SailRegistry.getInstance().get(typeLit.getLabel()).orElseThrow(
-							() -> new RepositoryConfigException(
+					SailFactory factory = SailRegistry.getInstance()
+							.get(typeLit.getLabel())
+							.orElseThrow(() -> new RepositoryConfigException(
 									"Unsupported Sail type: " + typeLit.getLabel()));
 
 					sailImplConfig = factory.getConfig();
 					sailImplConfig.parse(model, sailImplNode.get());
 				});
 			}
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
-		}
-		catch (SailConfigException e) {
+		} catch (SailConfigException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}

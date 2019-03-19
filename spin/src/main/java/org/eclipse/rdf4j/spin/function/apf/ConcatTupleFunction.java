@@ -29,9 +29,7 @@ public class ConcatTupleFunction implements InverseMagicProperty {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		Literal result = new Concat().evaluate(valueFactory, args);
 		return new SingletonIteration<List<? extends Value>, QueryEvaluationException>(
 				Collections.singletonList(result));

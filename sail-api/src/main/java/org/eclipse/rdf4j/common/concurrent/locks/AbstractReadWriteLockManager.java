@@ -44,9 +44,8 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	/**
 	 * Creates a new MultiReadSingleWriteLockManager, optionally with lock tracking enabled.
 	 * 
-	 * @param trackLocks
-	 *        Controls whether the lock manager will keep track of active locks. Enabling lock tracking will
-	 *        add some overhead, but can be very useful for debugging.
+	 * @param trackLocks Controls whether the lock manager will keep track of active locks. Enabling lock tracking will
+	 *                   add some overhead, but can be very useful for debugging.
 	 */
 	public AbstractReadWriteLockManager(boolean trackLocks) {
 		boolean trace = trackLocks || Properties.lockTrackingEnabled();
@@ -77,9 +76,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 * 
 	 * @throws InterruptedException
 	 */
-	protected void waitForActiveWriter()
-		throws InterruptedException
-	{
+	protected void waitForActiveWriter() throws InterruptedException {
 		activeWriter.waitForActiveLocks();
 	}
 
@@ -88,16 +85,13 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 * 
 	 * @throws InterruptedException
 	 */
-	protected void waitForActiveReaders()
-		throws InterruptedException
-	{
+	protected void waitForActiveReaders() throws InterruptedException {
 		activeReaders.waitForActiveLocks();
 	}
 
 	/**
-	 * Creates a new Lock for reading and increments counter for active readers. The lock is tracked if lock
-	 * tracking is enabled. This method is not thread safe itself, the calling method is expected to handle
-	 * synchronization issues.
+	 * Creates a new Lock for reading and increments counter for active readers. The lock is tracked if lock tracking is
+	 * enabled. This method is not thread safe itself, the calling method is expected to handle synchronization issues.
 	 * 
 	 * @return a read lock.
 	 */
@@ -106,9 +100,8 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	}
 
 	/**
-	 * Creates a new Lock for writing. The lock is tracked if lock tracking is enabled. This method is not
-	 * thread safe itself for performance reasons, the calling method is expected to handle synchronization
-	 * issues.
+	 * Creates a new Lock for writing. The lock is tracked if lock tracking is enabled. This method is not thread safe
+	 * itself for performance reasons, the calling method is expected to handle synchronization issues.
 	 * 
 	 * @return a write lock.
 	 */

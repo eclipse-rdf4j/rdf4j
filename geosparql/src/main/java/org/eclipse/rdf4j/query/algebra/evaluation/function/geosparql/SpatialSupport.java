@@ -12,10 +12,10 @@ import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
 
 /**
  * This class is responsible for creating the {@link org.locationtech.spatial4j.context.SpatialContext},
- * {@link SpatialAlgebra} and {@link WktWriter} that will be used. It will first try to load a subclass of
- * itself called "org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer" .
- * This is not provided, and is primarily intended as a way to inject custom geospatial support. If this fails
- * then the following fall-backs are used:
+ * {@link SpatialAlgebra} and {@link WktWriter} that will be used. It will first try to load a subclass of itself called
+ * "org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer" . This is not provided, and
+ * is primarily intended as a way to inject custom geospatial support. If this fails then the following fall-backs are
+ * used:
  * <ul>
  * <li>it uses the JTS GEO SpatialContext implementation, with added support for polygons.</li>
  * {@link org.locationtech.spatial4j.context.SpatialContextFactory} . The prefix is stripped from the system property
@@ -36,11 +36,10 @@ abstract class SpatialSupport {
 		SpatialSupport support;
 		try {
 			Class<?> cls = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer",
-					true, Thread.currentThread().getContextClassLoader());
-			support = (SpatialSupport)cls.newInstance();
-		}
-		catch (Exception e) {
+					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer", true,
+					Thread.currentThread().getContextClassLoader());
+			support = (SpatialSupport) cls.newInstance();
+		} catch (Exception e) {
 			support = new JtsSpatialSupport();
 		}
 		spatialContext = support.createSpatialContext();
@@ -75,7 +74,7 @@ abstract class SpatialSupport {
 
 		@Override
 		protected JtsSpatialAlgebra createSpatialAlgebra() {
-			return new JtsSpatialAlgebra((JtsSpatialContext)spatialContext);
+			return new JtsSpatialAlgebra((JtsSpatialContext) spatialContext);
 		}
 
 		@Override

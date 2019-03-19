@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
  * The GeoSPARQL {@link Function} geof:getSRID, as defined in
- * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for
- * RDF Data</a>.
+ * <a href="http://www.opengeospatial.org/standards/geosparql">OGC GeoSPARQL - A Geographic Query Language for RDF
+ * Data</a>.
  */
 public class SRID implements Function {
 
@@ -29,12 +29,9 @@ public class SRID implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(
-					getURI() + " requires exactly 1 argument, got " + args.length);
+			throw new ValueExprEvaluationException(getURI() + " requires exactly 1 argument, got " + args.length);
 		}
 
 		Literal geom = FunctionArguments.getLiteral(this, args[0], GEO.WKT_LITERAL);
@@ -43,8 +40,7 @@ public class SRID implements Function {
 		int sep = wkt.indexOf(' ');
 		if (sep != -1 && wkt.charAt(0) == '<' && wkt.charAt(sep - 1) == '>') {
 			srid = wkt.substring(1, sep - 1);
-		}
-		else {
+		} else {
 			srid = GEO.DEFAULT_SRID;
 		}
 

@@ -26,9 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 public class FilterCursor extends FilterIterator {
 
 	public FilterCursor(CloseableIteration<BindingSet, QueryEvaluationException> result, ValueExpr condition,
-			final Set<String> scopeBindingNames, EvaluationStrategy strategy)
-		throws QueryEvaluationException
-	{
+			final Set<String> scopeBindingNames, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(new Filter(new EmptySet() {
 
 			@Override

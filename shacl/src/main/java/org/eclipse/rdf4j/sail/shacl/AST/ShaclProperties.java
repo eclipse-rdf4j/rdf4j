@@ -16,7 +16,6 @@ import java.util.stream.Stream;
 
 public class ShaclProperties {
 
-
 	List<Resource> clazz = new ArrayList<>(0);
 	List<Resource> or = new ArrayList<>(0);
 	Long minCount;
@@ -29,6 +28,8 @@ public class ShaclProperties {
 
 	Resource languageIn;
 	Resource nodeKind;
+
+	Resource path;
 
 	Literal minExclusive;
 	Literal maxExclusive;
@@ -53,106 +54,109 @@ public class ShaclProperties {
 				String predicate = statement.getPredicate().toString();
 				Value object = statement.getObject();
 				switch (predicate) {
-					case "http://www.w3.org/ns/shacl#or":
-						or.add((Resource) object);
-						break;
-					case "http://www.w3.org/ns/shacl#languageIn":
-						if (languageIn != null) {
-							throw new IllegalStateException("sh:languageIn already populated");
-						}
-						languageIn = (Resource) object;
-						break;
-					case "http://www.w3.org/ns/shacl#nodeKind":
-						if (nodeKind != null) {
-							throw new IllegalStateException("sh:nodeKind already populated");
-						}
-						nodeKind = (Resource) object;
-						break;
-					case "http://www.w3.org/ns/shacl#datatype":
-						if (datatype != null) {
-							throw new IllegalStateException("sh:datatype already populated");
-						}
-						datatype = (Resource) object;
-						break;
-					case "http://www.w3.org/ns/shacl#minCount":
-						if (minCount != null) {
-							throw new IllegalStateException("sh:minCount aleady populated");
-						}
-						minCount = ((Literal) object).longValue();
-						break;
-					case "http://www.w3.org/ns/shacl#maxCount":
-						if (maxCount != null) {
-							throw new IllegalStateException("sh:maxCount aleady populated");
-						}
-						maxCount = ((Literal) object).longValue();
-						break;
-					case "http://www.w3.org/ns/shacl#minLength":
-						if (minLength != null) {
-							throw new IllegalStateException("sh:minLength aleady populated");
-						}
-						minLength = ((Literal) object).longValue();
-						break;
-					case "http://www.w3.org/ns/shacl#maxLength":
-						if (maxLength != null) {
-							throw new IllegalStateException("sh:maxLength aleady populated");
-						}
-						maxLength = ((Literal) object).longValue();
-						break;
-					case "http://www.w3.org/ns/shacl#minExclusive":
-						if (minExclusive != null) {
-							throw new IllegalStateException("sh:minExclusive aleady populated");
-						}
-						minExclusive = (Literal) object;
-						break;
-					case "http://www.w3.org/ns/shacl#maxExclusive":
-						if (maxExclusive != null) {
-							throw new IllegalStateException("sh:maxExclusive aleady populated");
-						}
-						maxExclusive = (Literal) object;
-						break;
-					case "http://www.w3.org/ns/shacl#minInclusive":
-						if (minInclusive != null) {
-							throw new IllegalStateException("sh:minInclusive aleady populated");
-						}
-						minInclusive = (Literal) object;
-						break;
-					case "http://www.w3.org/ns/shacl#maxInclusive":
-						if (maxInclusive != null) {
-							throw new IllegalStateException("sh:maxInclusive aleady populated");
-						}
-						maxInclusive = (Literal) object;
-						break;
-					case "http://www.w3.org/ns/shacl#pattern":
-						pattern.add(object.stringValue());
-						break;
-					case "http://www.w3.org/ns/shacl#class":
-						clazz.add((Resource) object);
-						break;
-					case "http://www.w3.org/ns/shacl#targetNode":
-						targetNode.add(object);
-						break;
-					case "http://www.w3.org/ns/shacl#targetClass":
-						targetClass.add((Resource) object);
-						break;
-					case "http://www.w3.org/ns/shacl#targetSubjectsOf":
-						targetSubjectsOf.add((IRI) object);
-						break;
-					case "http://www.w3.org/ns/shacl#targetObjectsOf":
-						targetObjectsOf.add((IRI) object);
-						break;
-					case "http://www.w3.org/ns/shacl#deactivated":
-						deactivated = ((Literal) object).booleanValue();
-						break;
-					case "http://www.w3.org/ns/shacl#flags":
-						flags += object.stringValue();
-						break;
+				case "http://www.w3.org/ns/shacl#or":
+					or.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#languageIn":
+					if (languageIn != null) {
+						throw new IllegalStateException("sh:languageIn already populated");
+					}
+					languageIn = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#nodeKind":
+					if (nodeKind != null) {
+						throw new IllegalStateException("sh:nodeKind already populated");
+					}
+					nodeKind = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#datatype":
+					if (datatype != null) {
+						throw new IllegalStateException("sh:datatype already populated");
+					}
+					datatype = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#minCount":
+					if (minCount != null) {
+						throw new IllegalStateException("sh:minCount aleady populated");
+					}
+					minCount = ((Literal) object).longValue();
+					break;
+				case "http://www.w3.org/ns/shacl#maxCount":
+					if (maxCount != null) {
+						throw new IllegalStateException("sh:maxCount aleady populated");
+					}
+					maxCount = ((Literal) object).longValue();
+					break;
+				case "http://www.w3.org/ns/shacl#minLength":
+					if (minLength != null) {
+						throw new IllegalStateException("sh:minLength aleady populated");
+					}
+					minLength = ((Literal) object).longValue();
+					break;
+				case "http://www.w3.org/ns/shacl#maxLength":
+					if (maxLength != null) {
+						throw new IllegalStateException("sh:maxLength aleady populated");
+					}
+					maxLength = ((Literal) object).longValue();
+					break;
+				case "http://www.w3.org/ns/shacl#minExclusive":
+					if (minExclusive != null) {
+						throw new IllegalStateException("sh:minExclusive aleady populated");
+					}
+					minExclusive = (Literal) object;
+					break;
+				case "http://www.w3.org/ns/shacl#maxExclusive":
+					if (maxExclusive != null) {
+						throw new IllegalStateException("sh:maxExclusive aleady populated");
+					}
+					maxExclusive = (Literal) object;
+					break;
+				case "http://www.w3.org/ns/shacl#minInclusive":
+					if (minInclusive != null) {
+						throw new IllegalStateException("sh:minInclusive aleady populated");
+					}
+					minInclusive = (Literal) object;
+					break;
+				case "http://www.w3.org/ns/shacl#maxInclusive":
+					if (maxInclusive != null) {
+						throw new IllegalStateException("sh:maxInclusive aleady populated");
+					}
+					maxInclusive = (Literal) object;
+					break;
+				case "http://www.w3.org/ns/shacl#pattern":
+					pattern.add(object.stringValue());
+					break;
+				case "http://www.w3.org/ns/shacl#class":
+					clazz.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetNode":
+					targetNode.add(object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetClass":
+					targetClass.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetSubjectsOf":
+					targetSubjectsOf.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetObjectsOf":
+					targetObjectsOf.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#deactivated":
+					deactivated = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#flags":
+					flags += object.stringValue();
+					break;
+				case "http://www.w3.org/ns/shacl#path":
+					if (path != null) {
+						throw new IllegalStateException("sh:path aleady populated");
+					}
+					path = (Resource) object;
+					break;
 				}
-
-
 			});
 		}
 
 	}
-
 
 }

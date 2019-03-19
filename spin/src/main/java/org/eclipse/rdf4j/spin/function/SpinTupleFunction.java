@@ -65,32 +65,26 @@ public class SpinTupleFunction extends AbstractSpinFunction implements Transient
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
-	{
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter;
 		if (parsedQuery instanceof ParsedBooleanQuery) {
-			ParsedBooleanQuery askQuery = (ParsedBooleanQuery)parsedQuery;
+			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, arguments, args);
 			Value result = BooleanLiteral.valueOf(queryOp.evaluate());
-			iter = new SingletonIteration<>(
-					Collections.singletonList(result));
-		}
-		else if (parsedQuery instanceof ParsedTupleQuery) {
-			ParsedTupleQuery selectQuery = (ParsedTupleQuery)parsedQuery;
+			iter = new SingletonIteration<>(Collections.singletonList(result));
+		} else if (parsedQuery instanceof ParsedTupleQuery) {
+			ParsedTupleQuery selectQuery = (ParsedTupleQuery) parsedQuery;
 			TupleQuery queryOp = qp.prepare(selectQuery);
 			addBindings(queryOp, arguments, args);
 			iter = new TupleQueryResultIteration(queryOp.evaluate());
-		}
-		else if (parsedQuery instanceof ParsedGraphQuery) {
-			ParsedGraphQuery graphQuery = (ParsedGraphQuery)parsedQuery;
+		} else if (parsedQuery instanceof ParsedGraphQuery) {
+			ParsedGraphQuery graphQuery = (ParsedGraphQuery) parsedQuery;
 			GraphQuery queryOp = qp.prepare(graphQuery);
 			addBindings(queryOp, arguments, args);
 			iter = new GraphQueryResultIteration(queryOp.evaluate());
-		}
-		else {
+		} else {
 			throw new IllegalStateException("Unexpected query: " + parsedQuery);
 		}
 		return iter;

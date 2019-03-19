@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A statement iterator that wraps a RecordIterator containing statement records and translates these records
- * to {@link Statement} objects.
+ * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
+ * {@link Statement} objects.
  */
 class NativeStatementIterator extends LookAheadIteration<Statement, SailException> {
 
@@ -39,9 +39,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	/**
 	 * Creates a new NativeStatementIterator.
 	 */
-	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore)
-		throws IOException
-	{
+	public NativeStatementIterator(RecordIterator btreeIter, ValueStore valueStore) throws IOException {
 		this.btreeIter = btreeIter;
 		this.valueStore = valueStore;
 	}
@@ -51,9 +49,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	 *---------*/
 
 	@Override
-	public Statement getNextElement()
-		throws SailException
-	{
+	public Statement getNextElement() throws SailException {
 		try {
 			byte[] nextValue = btreeIter.next();
 
@@ -62,10 +58,10 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 			}
 
 			int subjID = ByteArrayUtil.getInt(nextValue, TripleStore.SUBJ_IDX);
-			Resource subj = (Resource)valueStore.getValue(subjID);
+			Resource subj = (Resource) valueStore.getValue(subjID);
 
 			int predID = ByteArrayUtil.getInt(nextValue, TripleStore.PRED_IDX);
-			IRI pred = (IRI)valueStore.getValue(predID);
+			IRI pred = (IRI) valueStore.getValue(predID);
 
 			int objID = ByteArrayUtil.getInt(nextValue, TripleStore.OBJ_IDX);
 			Value obj = valueStore.getValue(objID);
@@ -73,28 +69,23 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 			Resource context = null;
 			int contextID = ByteArrayUtil.getInt(nextValue, TripleStore.CONTEXT_IDX);
 			if (contextID != 0) {
-				context = (Resource)valueStore.getValue(contextID);
+				context = (Resource) valueStore.getValue(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw causeIOException(e);
 		}
 	}
 
 	@Override
-	protected void handleClose()
-		throws SailException
-	{
+	protected void handleClose() throws SailException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				btreeIter.close();
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw causeIOException(e);
 			}
 		}

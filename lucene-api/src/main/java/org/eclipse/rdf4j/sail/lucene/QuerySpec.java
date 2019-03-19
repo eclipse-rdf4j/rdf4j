@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import com.google.common.base.Supplier;
 
 /**
- * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access
- * the patterns or use the get-methods to get the names of the variables to bind.
+ * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access the
+ * patterns or use the get-methods to get the names of the variables to bind.
  */
 public class QuerySpec implements SearchQueryEvaluator {
 
@@ -49,10 +49,9 @@ public class QuerySpec implements SearchQueryEvaluator {
 
 	private final String snippetVarName;
 
-	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern,
-			StatementPattern propertyPattern, StatementPattern scorePattern, StatementPattern snippetPattern,
-			StatementPattern typePattern, Resource subject, String queryString, IRI propertyURI)
-	{
+	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
+			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesPattern = matchesPattern;
 		this.queryPattern = queryPattern;
 		this.propertyPattern = propertyPattern;
@@ -64,33 +63,28 @@ public class QuerySpec implements SearchQueryEvaluator {
 		this.propertyURI = propertyURI;
 		if (matchesPattern != null) {
 			this.matchesVarName = matchesPattern.getSubjectVar().getName();
-		}
-		else {
+		} else {
 			this.matchesVarName = null;
 		}
 		if (propertyPattern != null) {
 			this.propertyVarName = propertyPattern.getObjectVar().getName();
-		}
-		else {
+		} else {
 			this.propertyVarName = null;
 		}
 		if (scorePattern != null) {
 			this.scoreVarName = scorePattern.getObjectVar().getName();
-		}
-		else {
+		} else {
 			this.scoreVarName = null;
 		}
 		if (snippetPattern != null) {
 			this.snippetVarName = snippetPattern.getObjectVar().getName();
-		}
-		else {
+		} else {
 			this.snippetVarName = null;
 		}
 	}
 
-	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName,
-			String snippetVarName, Resource subject, String queryString, IRI propertyURI)
-	{
+	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName, String snippetVarName,
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesVarName = matchesVarName;
 		this.propertyVarName = propertyVarName;
 		this.scoreVarName = scoreVarName;
@@ -138,10 +132,8 @@ public class QuerySpec implements SearchQueryEvaluator {
 	/**
 	 * Replace the given node with a new instance of the given replacement type.
 	 * 
-	 * @param pattern
-	 *        the pattern to remove
-	 * @param replacement
-	 *        the replacement type
+	 * @param pattern     the pattern to remove
+	 * @param replacement the replacement type
 	 */
 	private void replace(QueryModelNode node, Supplier<? extends QueryModelNode> replacement) {
 		if (node != null) {
@@ -200,14 +192,13 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	/**
-	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A null type is possible, but not
-	 * valid.
+	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A null type is possible, but not valid.
 	 * 
 	 * @return the type of the Query or null, if no type assigned.
 	 */
 	public IRI getQueryType() {
 		if (typePattern != null)
-			return (IRI)typePattern.getObjectVar().getValue();
+			return (IRI) typePattern.getObjectVar().getValue();
 		else
 			return null;
 	}
@@ -217,8 +208,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	/**
-	 * return the literal expression of the query or null, if none set. (null values are possible, but not
-	 * valid).
+	 * return the literal expression of the query or null, if none set. (null values are possible, but not valid).
 	 * 
 	 * @return the query or null
 	 */

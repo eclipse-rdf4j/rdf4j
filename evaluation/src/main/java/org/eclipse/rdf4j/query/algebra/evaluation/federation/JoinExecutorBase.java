@@ -14,22 +14,18 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and
- * thus any implementation of this class is applicable for pipelining when used in a different thread (access
- * to shared variables is synchronized).
+ * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and thus any
+ * implementation of this class is applicable for pipelining when used in a different thread (access to shared variables
+ * is synchronized).
  * 
  * @author Andreas Schwarte
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
  */
 @Deprecated
-public abstract class JoinExecutorBase<T>
-		extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T>
-{
+public abstract class JoinExecutorBase<T> extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T> {
 
 	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			BindingSet bindings) throws QueryEvaluationException {
 		super(leftIter, rightArg, bindings);
 	}
 }

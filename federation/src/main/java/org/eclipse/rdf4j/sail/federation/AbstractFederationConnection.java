@@ -76,9 +76,8 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  * @author Arjohn Kampman
  */
-abstract class AbstractFederationConnection extends AbstractSailConnection implements
-		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
-{
+abstract class AbstractFederationConnection extends AbstractSailConnection implements FederatedServiceResolverClient,
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractFederationConnection.class);
 
@@ -97,9 +96,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		super(new AbstractSail() {
 
 			@Override
-			public boolean isWritable()
-				throws SailException
-			{
+			public boolean isWritable() throws SailException {
 				return false;
 			}
 
@@ -109,16 +106,12 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			}
 
 			@Override
-			protected void shutDownInternal()
-				throws SailException
-			{
+			protected void shutDownInternal() throws SailException {
 				// ignore
 			}
 
 			@Override
-			protected SailConnection getConnectionInternal()
-				throws SailException
-			{
+			protected SailConnection getConnectionInternal() throws SailException {
 				return null;
 			}
 
@@ -152,31 +145,23 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public void closeInternal()
-		throws SailException
-	{
+	public void closeInternal() throws SailException {
 		excute(new Procedure() {
 
 			@Override
-			public void run(RepositoryConnection con)
-				throws RepositoryException
-			{
+			public void run(RepositoryConnection con) throws RepositoryException {
 				con.close();
 			}
 		});
 	}
 
 	@Override
-	public CloseableIteration<? extends Resource, SailException> getContextIDsInternal()
-		throws SailException
-	{
+	public CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 		CloseableIteration<? extends Resource, SailException> cursor = union(new Function<Resource>() {
 
 			@Override
-			public CloseableIteration<? extends Resource, RepositoryException> call(
-					RepositoryConnection member)
-				throws RepositoryException
-			{
+			public CloseableIteration<? extends Resource, RepositoryException> call(RepositoryConnection member)
+					throws RepositoryException {
 				return member.getContextIDs();
 			}
 		});
@@ -197,7 +182,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		this.federatedServiceResolver = resolver;
 		for (RepositoryConnection member : members) {
 			if (member instanceof FederatedServiceResolverClient) {
-				((FederatedServiceResolverClient)member).setFederatedServiceResolver(resolver);
+				((FederatedServiceResolverClient) member).setFederatedServiceResolver(resolver);
 			}
 		}
 	}
@@ -206,7 +191,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		for (RepositoryConnection member : members) {
 			if (member instanceof RepositoryResolverClient) {
-				((RepositoryResolverClient)member).setRepositoryResolver(resolver);
+				((RepositoryResolverClient) member).setRepositoryResolver(resolver);
 			}
 		}
 	}
@@ -215,7 +200,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public HttpClientSessionManager getHttpClientSessionManager() {
 		for (RepositoryConnection member : members) {
 			if (member instanceof SessionManagerDependent) {
-				HttpClientSessionManager client = ((SessionManagerDependent)member).getHttpClientSessionManager();
+				HttpClientSessionManager client = ((SessionManagerDependent) member).getHttpClientSessionManager();
 				if (client != null) {
 					return client;
 				}
@@ -228,7 +213,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		for (RepositoryConnection member : members) {
 			if (member instanceof SessionManagerDependent) {
-				((SessionManagerDependent)member).setHttpClientSessionManager(client);
+				((SessionManagerDependent) member).setHttpClientSessionManager(client);
 			}
 		}
 	}
@@ -237,7 +222,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public HttpClient getHttpClient() {
 		for (RepositoryConnection member : members) {
 			if (member instanceof HttpClientDependent) {
-				HttpClient client = ((HttpClientDependent)member).getHttpClient();
+				HttpClient client = ((HttpClientDependent) member).getHttpClient();
 				if (client != null) {
 					return client;
 				}
@@ -250,38 +235,32 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public void setHttpClient(HttpClient client) {
 		for (RepositoryConnection member : members) {
 			if (member instanceof HttpClientDependent) {
-				((HttpClientDependent)member).setHttpClient(client);
+				((HttpClientDependent) member).setHttpClient(client);
 			}
 		}
 	}
 
 	@Override
-	public String getNamespaceInternal(String prefix)
-		throws SailException
-	{
+	public String getNamespaceInternal(String prefix) throws SailException {
 		try {
 			String namespace = null;
 			for (RepositoryConnection member : members) {
 				String candidate = member.getNamespace(prefix);
 				if (namespace == null) {
 					namespace = candidate;
-				}
-				else if (candidate != null && !candidate.equals(namespace)) {
+				} else if (candidate != null && !candidate.equals(namespace)) {
 					namespace = null; // NOPMD
 					break;
 				}
 			}
 			return namespace;
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
-		throws SailException
-	{
+	public CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
 		Map<String, Namespace> namespaces = new HashMap<>();
 		Set<String> prefixes = new HashSet<>();
 		Set<String> conflictedPrefixes = new HashSet<>();
@@ -295,15 +274,13 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 						if (prefixes.add(prefix)) {
 							namespaces.put(prefix, next);
-						}
-						else if (!next.getName().equals(namespaces.get(prefix).getName())) {
+						} else if (!next.getName().equals(namespaces.get(prefix).getName())) {
 							conflictedPrefixes.add(prefix);
 						}
 					}
 				}
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
 		for (String prefix : conflictedPrefixes) {
@@ -313,9 +290,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public long sizeInternal(Resource... contexts)
-		throws SailException
-	{
+	public long sizeInternal(Resource... contexts) throws SailException {
 		try {
 			if (federation.isDistinct()) {
 				long size = 0;
@@ -323,10 +298,9 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 					size += member.size(contexts);
 				}
 				return size; // NOPMD
-			}
-			else {
-				try (CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null,
-					null, false, contexts)) {
+			} else {
+				try (CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null, null,
+						false, contexts)) {
 					long size = 0;
 					while (cursor.hasNext()) {
 						cursor.next();
@@ -335,8 +309,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 					return size;
 				}
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
 	}
@@ -344,15 +317,12 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatementsInternal(final Resource subj,
 			final IRI pred, final Value obj, final boolean includeInferred, final Resource... contexts)
-		throws SailException
-	{
+			throws SailException {
 		CloseableIteration<? extends Statement, SailException> cursor = union(new Function<Statement>() {
 
 			@Override
-			public CloseableIteration<? extends Statement, RepositoryException> call(
-					RepositoryConnection member)
-				throws RepositoryException
-			{
+			public CloseableIteration<? extends Statement, RepositoryException> call(RepositoryConnection member)
+					throws RepositoryException {
 				return member.getStatements(subj, pred, obj, includeInferred, contexts);
 			}
 		});
@@ -366,18 +336,15 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr query, Dataset dataset, BindingSet bindings, boolean inf)
-		throws SailException
-	{
+	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr query,
+			Dataset dataset, BindingSet bindings, boolean inf) throws SailException {
 		TripleSource tripleSource = new FederationTripleSource(inf);
 		EvaluationStrategy strategy = federation.createEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver());
 		TupleExpr qry = optimize(query, dataset, bindings, inf, strategy);
 		try {
 			return strategy.evaluate(qry, EmptyBindingSet.getInstance());
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
 		}
 	}
@@ -391,13 +358,11 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-				IRI pred, Value obj, Resource... contexts)
-			throws QueryEvaluationException
-		{
+		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+				Value obj, Resource... contexts) throws QueryEvaluationException {
 			try {
-				CloseableIteration<? extends Statement, SailException> result = AbstractFederationConnection.this.getStatements(
-						subj, pred, obj, inf, contexts);
+				CloseableIteration<? extends Statement, SailException> result = AbstractFederationConnection.this
+						.getStatements(subj, pred, obj, inf, contexts);
 				return new ExceptionConvertingIteration<Statement, QueryEvaluationException>(result) {
 
 					@Override
@@ -405,8 +370,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 						return new QueryEvaluationException(e);
 					}
 				};
-			}
-			catch (SailException e) {
+			} catch (SailException e) {
 				throw new QueryEvaluationException(e);
 			}
 		}
@@ -417,10 +381,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		}
 	}
 
-	private TupleExpr optimize(TupleExpr parsed, Dataset dataset, BindingSet bindings,
-			boolean includeInferred, EvaluationStrategy strategy)
-		throws SailException
-	{
+	private TupleExpr optimize(TupleExpr parsed, Dataset dataset, BindingSet bindings, boolean includeInferred,
+			EvaluationStrategy strategy) throws SailException {
 		LOGGER.trace("Incoming query model:\n{}", parsed);
 
 		// Clone the tuple expression to allow for more aggressive optimisations
@@ -440,15 +402,13 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		// prepare bloom filters
 		RepositoryBloomFilter defaultBloomFilter = new AccurateRepositoryBloomFilter(includeInferred);
 		Map<Repository, RepositoryBloomFilter> bloomFilters = federation.getBloomFilters();
-		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFilters.getOrDefault(
-				c, defaultBloomFilter);
+		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFilters
+				.getOrDefault(c, defaultBloomFilter);
 
-		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset,
-				bindings);
+		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset, bindings);
 		boolean distinct = federation.isDistinct();
 		PrefixHashSet local = federation.getLocalPropertySpace();
-		new FederationJoinOptimizer(members, distinct, local, bloomFilterFunction).optimize(query, dataset,
-				bindings);
+		new FederationJoinOptimizer(members, distinct, local, bloomFilterFunction).optimize(query, dataset, bindings);
 		new OwnedTupleExprPruner().optimize(query, dataset, bindings);
 		new QueryModelPruner().optimize(query, dataset, bindings);
 		new QueryMultiJoinOptimizer().optimize(query, dataset, bindings);
@@ -461,27 +421,22 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 	interface Procedure {
 
-		void run(RepositoryConnection member)
-			throws RepositoryException;
+		void run(RepositoryConnection member) throws RepositoryException;
 	}
 
-	void excute(Procedure operation)
-		throws SailException
-	{ // NOPMD
+	void excute(Procedure operation) throws SailException { // NOPMD
 		RepositoryException storeExc = null;
 		RuntimeException runtimeExc = null;
 
 		for (RepositoryConnection member : members) {
 			try {
 				operation.run(member);
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				LOGGER.error("Failed to execute procedure on federation members", e);
 				if (storeExc == null) {
 					storeExc = e;
 				}
-			}
-			catch (RuntimeException e) {
+			} catch (RuntimeException e) {
 				LOGGER.error("Failed to execute procedure on federation members", e);
 				if (runtimeExc == null) {
 					runtimeExc = e;
@@ -501,21 +456,17 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	private interface Function<E> {
 
 		CloseableIteration<? extends E, RepositoryException> call(RepositoryConnection member)
-			throws RepositoryException;
+				throws RepositoryException;
 	}
 
-	private <E> CloseableIteration<? extends E, SailException> union(Function<E> function)
-		throws SailException
-	{
-		List<CloseableIteration<? extends E, RepositoryException>> cursors = new ArrayList<>(
-				members.size());
+	private <E> CloseableIteration<? extends E, SailException> union(Function<E> function) throws SailException {
+		List<CloseableIteration<? extends E, RepositoryException>> cursors = new ArrayList<>(members.size());
 
 		try {
 			for (RepositoryConnection member : members) {
 				cursors.add(function.call(member));
 			}
-			UnionIteration<E, RepositoryException> result = new UnionIteration<>(
-					cursors);
+			UnionIteration<E, RepositoryException> result = new UnionIteration<>(cursors);
 			return new ExceptionConvertingIteration<E, SailException>(result) {
 
 				@Override
@@ -523,12 +474,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 					return new SailException(e);
 				}
 			};
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			closeAll(cursors);
 			throw new SailException(e);
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			closeAll(cursors);
 			throw e;
 		}
@@ -551,8 +500,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		for (CloseableIteration<?, RepositoryException> cursor : cursors) {
 			try {
 				cursor.close();
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				LOGGER.error("Failed to close cursor", e);
 			}
 		}

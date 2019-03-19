@@ -42,55 +42,57 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
+			PlanNode overrideTargetNode) {
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection,
+				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(parent, 0, 1);
 	}
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
-		return targetClass
-			.stream()
-			.map(target -> addedStatements.hasStatement(null, RDF.TYPE, target, false))
-			.reduce((a, b) -> a || b)
-			.orElseThrow(IllegalStateException::new);
+		return targetClass.stream()
+				.map(target -> addedStatements.hasStatement(null, RDF.TYPE, target, false))
+				.reduce((a, b) -> a || b)
+				.orElseThrow(IllegalStateException::new);
 
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getQuery(String subjectVariable, String objectVariable,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		Set<Resource> targets = targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
 			targets = new HashSet<>(targets);
 
-			targets = targets
-				.stream()
-				.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
-				.collect(Collectors.toSet());
+			targets = targets.stream()
+					.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
+					.collect(Collectors.toSet());
 		}
 
 		assert targets.size() >= 1;
 
-		return targets
-			.stream()
-			.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
-			.reduce((l, r) -> l + " UNION " + r)
-			.get();
-
+		return targets.stream()
+				.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable
+						+ " ?b1 " + objectVariable + ". } \n")
+				.reduce((l, r) -> l + " UNION " + r)
+				.get();
 
 	}
 

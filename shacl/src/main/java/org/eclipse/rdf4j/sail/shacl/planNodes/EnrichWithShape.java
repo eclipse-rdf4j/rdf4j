@@ -30,7 +30,7 @@ public class EnrichWithShape implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		if(closed){
+		if (closed) {
 			throw new IllegalStateException();
 		}
 		return new CloseableIteration<Tuple, SailException>() {
@@ -57,7 +57,7 @@ public class EnrichWithShape implements PlanNode {
 			@Override
 			public void close() throws SailException {
 				closed = true;
-				if(parentIterator != null){
+				if (parentIterator != null) {
 					parentIterator.close();
 					parentIterator = null;
 				}
@@ -72,18 +72,22 @@ public class EnrichWithShape implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed)
+			return;
 		printed = true;
-		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
+		stringBuilder.append(getId())
+				.append(" [label=\"")
+				.append(StringEscapeUtils.escapeJava(this.toString()))
+				.append("\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId()).append(" -> ").append(getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
-
 
 	@Override
 	public IteratorData getIteratorDataType() {

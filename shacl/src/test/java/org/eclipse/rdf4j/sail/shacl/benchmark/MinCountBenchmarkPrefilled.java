@@ -45,12 +45,11 @@ import java.util.stream.Stream;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MinCountBenchmarkPrefilled {
-
 
 	private List<List<Statement>> allStatements;
 
@@ -58,16 +57,17 @@ public class MinCountBenchmarkPrefilled {
 	private SailRepository memoryStoreRepo;
 	private SailRepository sparqlQueryMemoryStoreRepo;
 
-
 	@Setup(Level.Invocation)
 	public void setUp() throws Exception {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		if(shaclRepo != null) shaclRepo.shutDown();
-		if(memoryStoreRepo != null) memoryStoreRepo.shutDown();
-		if(sparqlQueryMemoryStoreRepo != null) sparqlQueryMemoryStoreRepo.shutDown();
-
+		if (shaclRepo != null)
+			shaclRepo.shutDown();
+		if (memoryStoreRepo != null)
+			memoryStoreRepo.shutDown();
+		if (sparqlQueryMemoryStoreRepo != null)
+			sparqlQueryMemoryStoreRepo.shutDown();
 
 		allStatements = new ArrayList<>(10);
 
@@ -78,11 +78,9 @@ public class MinCountBenchmarkPrefilled {
 			allStatements.add(statements);
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
-				);
-				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL, vf.createLiteral("label" + i))
-				);
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
+						vf.createLiteral("label" + i)));
 			}
 		}
 
@@ -90,13 +88,10 @@ public class MinCountBenchmarkPrefilled {
 
 		for (int i = 0; i < 100000; i++) {
 			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE)
-			);
-			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL, vf.createLiteral("label" + i))
-			);
+					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
+			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL,
+					vf.createLiteral("label" + i)));
 		}
-
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
@@ -104,10 +99,8 @@ public class MinCountBenchmarkPrefilled {
 		memoryStoreRepo = new SailRepository(new MemoryStore());
 		memoryStoreRepo.init();
 
-
 		sparqlQueryMemoryStoreRepo = new SailRepository(new MemoryStore());
 		sparqlQueryMemoryStoreRepo.init();
-
 
 		shaclRepo.disableValidation();
 		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
@@ -130,10 +123,8 @@ public class MinCountBenchmarkPrefilled {
 		allStatements.clear();
 	}
 
-
 	@Benchmark
 	public void shacl() {
-
 
 		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
 			connection.begin();
@@ -149,12 +140,10 @@ public class MinCountBenchmarkPrefilled {
 		}
 
 	}
-
 
 	@Benchmark
 	public void noShacl() {
 
-
 		try (SailRepositoryConnection connection = memoryStoreRepo.getConnection()) {
 			connection.begin();
 			connection.commit();
@@ -169,10 +158,8 @@ public class MinCountBenchmarkPrefilled {
 
 	}
 
-
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
-
 
 		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
 			connection.begin();
@@ -182,7 +169,10 @@ public class MinCountBenchmarkPrefilled {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <" + RDFS.LABEL + "> ?c})}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection
+						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <"
+								+ RDFS.LABEL + "> ?c})}")
+						.evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -190,6 +180,5 @@ public class MinCountBenchmarkPrefilled {
 		}
 
 	}
-
 
 }

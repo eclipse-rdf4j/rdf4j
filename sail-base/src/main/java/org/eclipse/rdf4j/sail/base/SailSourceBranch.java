@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,6 +21,14 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
@@ -46,18 +47,17 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
-	private final LinkedList<Changeset> changes = new LinkedList<>();
+	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
 
 	/**
-	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this
-	 * {@link SailSource}.
+	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
 	 */
-	private final Collection<Changeset> pending = new LinkedList<>();
+	private final Collection<Changeset> pending = new ArrayList<>();
 
 	/**
 	 * Set of open {@link SailDataset} for this {@link SailSource}.
 	 */
-	private final Collection<SailDataset> observers = new LinkedList<>();
+	private final Collection<SailDataset> observers = new ArrayList<>();
 
 	/**
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
@@ -65,9 +65,8 @@ class SailSourceBranch implements SailSource {
 	private final SailSource backingSource;
 
 	/**
-	 * The {@link Model} instances that should be used to store
-	 * {@link SailSink#approve(Resource, IRI, Value, Resource)} and
-	 * {@link SailSink#deprecate(Resource, IRI, Value, Resource)} statements.
+	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
+	 * and {@link SailSink#deprecate(Resource, IRI, Value, Resource)} statements.
 	 */
 	private final ModelFactory modelFactory;
 
@@ -111,8 +110,8 @@ class SailSourceBranch implements SailSource {
 	}
 
 	/**
-	 * Creates a new {@link SailSource} derived from the given {@link SailSource} and if
-	 * <code>autoFlush</code> is true, will automatically call {@link #flush()} when not in use.
+	 * Creates a new {@link SailSource} derived from the given {@link SailSource} and if <code>autoFlush</code> is true,
+	 * will automatically call {@link #flush()} when not in use.
 	 * 
 	 * @param backingSource
 	 * @param modelFactory
@@ -125,9 +124,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public void close()
-		throws SailException
-	{
+	public void close() throws SailException {
 		semaphore.lock();
 		try {
 			try {
@@ -152,24 +149,19 @@ class SailSourceBranch implements SailSource {
 				}
 
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level)
-		throws SailException
-	{
+	public SailSink sink(IsolationLevel level) throws SailException {
 		Changeset changeset = new Changeset() {
 
 			private boolean prepared;
 
 			@Override
-			public void prepare()
-				throws SailException
-			{
+			public void prepare() throws SailException {
 				if (!prepared) {
 					preparedChangeset(this);
 					prepared = true;
@@ -178,20 +170,15 @@ class SailSourceBranch implements SailSource {
 			}
 
 			@Override
-			public void flush()
-				throws SailException
-			{
+			public void flush() throws SailException {
 				merge(this);
 			}
 
 			@Override
-			public void close()
-				throws SailException
-			{
+			public void close() throws SailException {
 				try {
 					super.close();
-				}
-				finally {
+				} finally {
 					if (prepared) {
 						closeChangeset(this);
 						prepared = false;
@@ -208,31 +195,25 @@ class SailSourceBranch implements SailSource {
 		try {
 			semaphore.lock();
 			pending.add(changeset);
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 		return changeset;
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level)
-		throws SailException
-	{
+	public SailDataset dataset(IsolationLevel level) throws SailException {
 		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
 
 			@Override
-			public void close()
-				throws SailException
-			{
+			public void close() throws SailException {
 				super.close();
 				try {
 					semaphore.lock();
 					observers.remove(this);
 					compressChanges();
 					autoFlush();
-				}
-				finally {
+				} finally {
 					semaphore.unlock();
 				}
 			}
@@ -240,8 +221,7 @@ class SailSourceBranch implements SailSource {
 		try {
 			semaphore.lock();
 			observers.add(dataset);
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 		return dataset;
@@ -253,31 +233,25 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public void prepare()
-		throws SailException
-	{
+	public void prepare() throws SailException {
 		try {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
 				if (prepared == null && serializable == null) {
 					prepared = backingSource.sink(IsolationLevels.NONE);
-				}
-				else if (prepared == null) {
+				} else if (prepared == null) {
 					prepared = serializable;
 				}
 				prepare(prepared);
 				prepared.prepare();
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
 	@Override
-	public void flush()
-		throws SailException
-	{
+	public void flush() throws SailException {
 		try {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
@@ -290,13 +264,11 @@ class SailSourceBranch implements SailSource {
 					if (prepared != serializable) {
 						prepared.close();
 					}
-				}
-				finally {
+				} finally {
 					prepared = null;
 				}
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
@@ -305,8 +277,7 @@ class SailSourceBranch implements SailSource {
 		try {
 			semaphore.lock();
 			return !changes.isEmpty();
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
@@ -333,8 +304,7 @@ class SailSourceBranch implements SailSource {
 					c.prepend(merged);
 				}
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
@@ -342,19 +312,23 @@ class SailSourceBranch implements SailSource {
 	void compressChanges() {
 		try {
 			semaphore.lock();
-			while (changes.size() > 1 && !changes.get(changes.size() - 2).isRefback()) {
+			while (changes.size() > 1) {
+				Changeset pop = changes.removeLast();
+				if (changes.peekLast().isRefback()) {
+					changes.addLast(pop);
+					break;
+				}
+
 				try {
-					Changeset pop = changes.removeLast();
 					prepare(pop, changes.getLast());
 					flush(pop, changes.getLast());
-				}
-				catch (SailException e) {
+				} catch (SailException e) {
 					// Changeset does not throw SailException
 					throw new AssertionError(e);
 				}
 			}
-		}
-		finally {
+
+		} finally {
 			semaphore.unlock();
 		}
 	}
@@ -363,32 +337,26 @@ class SailSourceBranch implements SailSource {
 		semaphore.unlock();
 	}
 
-	void autoFlush()
-		throws SailException
-	{
+	void autoFlush() throws SailException {
 		if (autoFlush && semaphore.tryLock()) {
 			try {
 				if (serializable == null && observers.isEmpty()) {
 					flush();
 				}
-			}
-			finally {
+			} finally {
 				semaphore.unlock();
 			}
 		}
 	}
 
 	private boolean isChanged(Changeset change) {
-		return change.getApproved() != null || change.getDeprecated() != null
-				|| change.getApprovedContexts() != null || change.getDeprecatedContexts() != null
-				|| change.getAddedNamespaces() != null || change.getRemovedPrefixes() != null
-				|| change.isStatementCleared() || change.isNamespaceCleared()
+		return change.getApproved() != null || change.getDeprecated() != null || change.getApprovedContexts() != null
+				|| change.getDeprecatedContexts() != null || change.getAddedNamespaces() != null
+				|| change.getRemovedPrefixes() != null || change.isStatementCleared() || change.isNamespaceCleared()
 				|| change.getObservations() != null;
 	}
 
-	private SailDataset derivedFromSerializable(IsolationLevel level)
-		throws SailException
-	{
+	private SailDataset derivedFromSerializable(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
 			if (serializable == null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
@@ -397,19 +365,15 @@ class SailSourceBranch implements SailSource {
 			SailDataset derivedFrom = derivedFromSnapshot(level);
 			if (serializable == null) {
 				return derivedFrom;
-			}
-			else {
+			} else {
 				return new ObservingSailDataset(derivedFrom, sink(level));
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	private SailDataset derivedFromSnapshot(IsolationLevel level)
-		throws SailException
-	{
+	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
 			SailDataset derivedFrom;
@@ -418,14 +382,11 @@ class SailSourceBranch implements SailSource {
 				derivedFrom = new DelegatingSailDataset(this.snapshot) {
 
 					@Override
-					public void close()
-						throws SailException
-					{
+					public void close() throws SailException {
 						// don't close snapshot yet
 					}
 				};
-			}
-			else {
+			} else {
 				derivedFrom = backingSource.dataset(level);
 				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 					this.snapshot = derivedFrom;
@@ -433,9 +394,7 @@ class SailSourceBranch implements SailSource {
 					derivedFrom = new DelegatingSailDataset(derivedFrom) {
 
 						@Override
-						public void close()
-							throws SailException
-						{
+						public void close() throws SailException {
 							// don't close snapshot yet
 						}
 					};
@@ -446,75 +405,61 @@ class SailSourceBranch implements SailSource {
 				derivedFrom = new SailDatasetImpl(derivedFrom, iter.next());
 			}
 			return derivedFrom;
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	private void prepare(SailSink sink)
-		throws SailException
-	{
+	private void prepare(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
 			Iterator<Changeset> iter = changes.iterator();
 			while (iter.hasNext()) {
 				prepare(iter.next(), sink);
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	private void prepare(Changeset change, SailSink sink)
-		throws SailException
-	{
+	private void prepare(Changeset change, SailSink sink) throws SailException {
 		Set<StatementPattern> observations = change.getObservations();
 		if (observations != null) {
 			for (StatementPattern p : observations) {
-				Resource subj = (Resource)p.getSubjectVar().getValue();
-				IRI pred = (IRI)p.getPredicateVar().getValue();
+				Resource subj = (Resource) p.getSubjectVar().getValue();
+				IRI pred = (IRI) p.getPredicateVar().getValue();
 				Value obj = p.getObjectVar().getValue();
 				Var ctxVar = p.getContextVar();
 				if (ctxVar == null) {
 					sink.observe(subj, pred, obj);
-				}
-				else {
-					sink.observe(subj, pred, obj, (Resource)ctxVar.getValue());
+				} else {
+					sink.observe(subj, pred, obj, (Resource) ctxVar.getValue());
 				}
 			}
 		}
 	}
 
-	private void flush(SailSink sink)
-		throws SailException
-	{
+	private void flush(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
 			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset
-					&& !isChanged((Changeset)sink))
-			{
+					&& !isChanged((Changeset) sink)) {
 				// one change to apply that is not in use to an empty Changeset
-				Changeset dst = (Changeset)sink;
+				Changeset dst = (Changeset) sink;
 				dst.setChangeset(changes.pop());
-			}
-			else {
+			} else {
 				Iterator<Changeset> iter = changes.iterator();
 				while (iter.hasNext()) {
 					flush(iter.next(), sink);
 					iter.remove();
 				}
 			}
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	private void flush(Changeset change, SailSink sink)
-		throws SailException
-	{
+	private void flush(Changeset change, SailSink sink) throws SailException {
 		prepare(change, sink);
 		if (change.isNamespaceCleared()) {
 			sink.clearNamespaces();

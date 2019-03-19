@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -34,10 +33,12 @@ public class ExternalFilterByPredicate implements PlanNode {
 	private boolean printed = false;
 
 	public enum On {
-		Subject, Object
+		Subject,
+		Object
 	}
 
-	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, int index, On on) {
+	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, int index,
+			On on) {
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
@@ -45,21 +46,17 @@ public class ExternalFilterByPredicate implements PlanNode {
 		this.on = on;
 	}
 
-
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-
 			Tuple next = null;
-
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
-
 
 					Value subject = temp.line.get(index);
 
@@ -77,19 +74,17 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 				if (node instanceof Resource && on == On.Subject) {
 
-					return filterOnPredicates
-						.stream()
-						.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
-						.findFirst()
-						.orElse(null);
+					return filterOnPredicates.stream()
+							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
+							.findFirst()
+							.orElse(null);
 
 				} else if (on == On.Object) {
 
-					return filterOnPredicates
-						.stream()
-						.filter(predicate -> connection.hasStatement(null, predicate, node, true))
-						.findFirst()
-						.orElse(null);
+					return filterOnPredicates.stream()
+							.filter(predicate -> connection.hasStatement(null, predicate, node, true))
+							.findFirst()
+							.orElse(null);
 
 				}
 				return null;
@@ -134,14 +129,16 @@ public class ExternalFilterByPredicate implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
-
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+					+ getId() + " [label=\"filter source\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
+					.append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -149,9 +146,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByPredicate{" +
-			"filterOnPredicates=" + Arrays.toString(filterOnPredicates.toArray()) +
-			'}';
+		return "ExternalFilterByPredicate{" + "filterOnPredicates=" + Arrays.toString(filterOnPredicates.toArray())
+				+ '}';
 	}
 
 	@Override

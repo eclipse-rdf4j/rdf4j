@@ -30,9 +30,7 @@ abstract class AbstractStringReplacer implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length < 1 || args.length > 2) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
@@ -42,8 +40,8 @@ abstract class AbstractStringReplacer implements Function {
 		if (args.length == 2 && !(args[1] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Second argument must be a string");
 		}
-		String s = ((Literal)args[0]).getLabel();
-		String regex = (args.length == 2) ? ((Literal)args[1]).getLabel() : ".";
+		String s = ((Literal) args[0]).getLabel();
+		String regex = (args.length == 2) ? ((Literal) args[1]).getLabel() : ".";
 		StringBuffer buf = new StringBuffer(s.length());
 		Matcher matcher = Pattern.compile(regex).matcher(s);
 		while (matcher.find()) {

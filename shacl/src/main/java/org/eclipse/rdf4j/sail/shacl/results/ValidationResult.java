@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.results;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -30,9 +31,9 @@ public class ValidationResult implements ModelInterface {
 	private PropertyShape sourceShape;
 	private Path path;
 	private ValidationResult detail;
-	private Resource focusNode;
+	private Value focusNode;
 
-	public ValidationResult(PropertyShape sourceShape, Resource focusNode) {
+	public ValidationResult(PropertyShape sourceShape, Value focusNode) {
 		this.sourceShape = sourceShape;
 		this.focusNode = focusNode;
 		this.sourceConstraintComponent = sourceShape.getSourceConstraintComponent();
@@ -41,7 +42,6 @@ public class ValidationResult implements ModelInterface {
 		}
 
 	}
-
 
 	public void setDetail(ValidationResult detail) {
 		this.detail = detail;
@@ -57,12 +57,12 @@ public class ValidationResult implements ModelInterface {
 	/**
 	 * @return all ValidationResult(s) with more information as to what failed. Usually for nested Shapes in eg. sh:or.
 	 */
-	public List<ValidationResult> getDetails(){
+	public List<ValidationResult> getDetails() {
 
 		ArrayList<ValidationResult> validationResults = new ArrayList<>();
 
 		ValidationResult temp = detail;
-		while(temp != null){
+		while (temp != null) {
 			validationResults.add(temp);
 			temp = temp.detail;
 		}
@@ -84,7 +84,7 @@ public class ValidationResult implements ModelInterface {
 			model.add(getId(), SHACL.RESULT_PATH, ((SimplePath) getPath()).getPath());
 		}
 
-		if(detail != null){
+		if (detail != null) {
 			model.add(getId(), SHACL.DETAIL, detail.getId());
 			detail.asModel(model);
 		}
@@ -106,11 +106,10 @@ public class ValidationResult implements ModelInterface {
 		return sourceShape.getId();
 	}
 
-
 	/**
 	 * @return the focus node, aka. the subject, that caused the violation
 	 */
-	private Resource getFocusNode() {
+	private Value getFocusNode() {
 		return focusNode;
 	}
 
@@ -118,7 +117,6 @@ public class ValidationResult implements ModelInterface {
 	public Resource getId() {
 		return id;
 	}
-
 
 	/**
 	 * @return the type of the source constraint that caused the violation

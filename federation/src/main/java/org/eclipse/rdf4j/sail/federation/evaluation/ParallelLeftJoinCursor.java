@@ -20,14 +20,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
- * Transform the condition into a filter and the right side into an {@link AlternativeCursor}, then evaluate
- * as a {@link ParallelJoinCursor}.
+ * Transform the condition into a filter and the right side into an {@link AlternativeCursor}, then evaluate as a
+ * {@link ParallelJoinCursor}.
  * 
  * @author James Leigh
  */
 public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException>
-		implements Runnable
-{
+		implements Runnable {
 
 	/*-----------*
 	 * Constants *
@@ -40,8 +39,8 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	private final LeftJoin join;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
-	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are (only)
+	 * included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 
@@ -68,8 +67,7 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	 *--------------*/
 
 	public ParallelLeftJoinCursor(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		super();
 		this.strategy = strategy;
 		this.join = join;
@@ -90,36 +88,29 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 				BindingSet leftBindings = leftIter.next();
 				addToRightQueue(condition, leftBindings);
 			}
-		}
-		catch (RuntimeException e) {
+		} catch (RuntimeException e) {
 			rightQueue.toss(e);
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-		}
-		finally {
+		} finally {
 			evaluationThread = null; // NOPMD
 			rightQueue.done();
 		}
 	}
 
 	private void addToRightQueue(ValueExpr condition, BindingSet leftBindings)
-		throws QueryEvaluationException, InterruptedException
-	{
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(
-				join.getRightArg(), leftBindings);
+			throws QueryEvaluationException, InterruptedException {
+		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(join.getRightArg(),
+				leftBindings);
 		if (condition != null) {
 			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(
-				leftBindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(leftBindings);
 		rightQueue.put(new AlternativeCursor<>(result, alt));
 	}
 
 	@Override
-	public BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	public BindingSet getNextElement() throws QueryEvaluationException {
 		BindingSet result = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 		while (!isClosed() && (nextRightIter != null || rightQueue.hasNext())) {
@@ -130,8 +121,7 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 				if (nextRightIter.hasNext()) {
 					result = nextRightIter.next();
 					break;
-				}
-				else {
+				} else {
 					nextRightIter.close();
 					nextRightIter = rightIter = null; // NOPMD
 				}
@@ -142,29 +132,24 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	}
 
 	@Override
-	public void handleClose()
-		throws QueryEvaluationException
-	{
+	public void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			try {
 				Thread toCloseEvaluationThread = evaluationThread;
 				if (toCloseEvaluationThread != null) {
 					toCloseEvaluationThread.interrupt();
 				}
-			}
-			finally {
+			} finally {
 				try {
 					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
 					rightIter = null; // NOPMD
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}
-				}
-				finally {
+				} finally {
 					leftIter.close();
 				}
 			}

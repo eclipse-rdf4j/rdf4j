@@ -31,8 +31,7 @@ public class SimpleEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param serviceResolver
 	 */
 	public SimpleEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver)
-	{
+			FederatedServiceResolver serviceResolver) {
 		super(tripleSource, dataset, serviceResolver);
 	}
 
@@ -43,8 +42,7 @@ public class SimpleEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param iterationCacheSyncTreshold
 	 */
 	public SimpleEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold)
-	{
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold);
 	}
 

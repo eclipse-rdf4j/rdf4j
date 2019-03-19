@@ -38,19 +38,15 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	@Override
-	public void process(TupleExpr tupleExpr, BindingSet bindings,
-			final Collection<SearchQueryEvaluator> results)
-		throws SailException
-	{
+	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
+			throws SailException {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, GeoRelationQuerySpec> specs = new HashMap<>();
 
 			@Override
-			public void meet(FunctionCall f)
-				throws SailException
-			{
+			public void meet(FunctionCall f) throws SailException {
 				if (f.getURI().startsWith(GEOF.NAMESPACE)) {
 					List<ValueExpr> args = f.getArgs();
 					if (args.size() != 2) {
@@ -68,12 +64,11 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 					String fVar = null;
 					QueryModelNode parent = f.getParentNode();
 					if (parent instanceof ExtensionElem) {
-						fVar = ((ExtensionElem)parent).getName();
+						fVar = ((ExtensionElem) parent).getName();
 						QueryModelNode extension = parent.getParentNode();
 						filter = getFilter(extension.getParentNode(), fVar);
-					}
-					else if (parent instanceof Filter) {
-						filter = (Filter)parent;
+					} else if (parent instanceof Filter) {
+						filter = (Filter) parent;
 					}
 
 					if (filter == null) {
@@ -92,10 +87,9 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				IRI propertyName = (IRI)sp.getPredicateVar().getValue();
+				IRI propertyName = (IRI) sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-						&& !sp.getObjectVar().hasValue())
-				{
+						&& !sp.getObjectVar().hasValue()) {
 					String objectVarName = sp.getObjectVar().getName();
 					GeoRelationQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
@@ -117,13 +111,12 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	private static Filter getFilter(QueryModelNode node, String varName) {
 		Filter filter = null;
 		if (node instanceof Filter) {
-			Filter f = (Filter)node;
+			Filter f = (Filter) node;
 			ValueExpr condition = f.getCondition();
 			if (varName.equals(getVarName(condition))) {
 				filter = f;
 			}
-		}
-		else if (node != null) {
+		} else if (node != null) {
 			filter = getFilter(node.getParentNode(), varName);
 		}
 		return filter;
@@ -132,7 +125,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	private static Literal getLiteral(ValueExpr v) {
 		Value value = getValue(v);
 		if (value instanceof Literal) {
-			return (Literal)value;
+			return (Literal) value;
 		}
 		return null;
 	}
@@ -140,17 +133,16 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	private static Value getValue(ValueExpr v) {
 		Value value = null;
 		if (v instanceof ValueConstant) {
-			value = ((ValueConstant)v).getValue();
-		}
-		else if (v instanceof Var) {
-			value = ((Var)v).getValue();
+			value = ((ValueConstant) v).getValue();
+		} else if (v instanceof Var) {
+			value = ((Var) v).getValue();
 		}
 		return value;
 	}
 
 	private static String getVarName(ValueExpr v) {
 		if (v instanceof Var) {
-			Var var = (Var)v;
+			Var var = (Var) v;
 			if (!var.isConstant()) {
 				return var.getName();
 			}

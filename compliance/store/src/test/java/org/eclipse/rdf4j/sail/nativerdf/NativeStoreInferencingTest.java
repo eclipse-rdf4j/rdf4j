@@ -28,8 +28,7 @@ public class NativeStoreInferencingTest extends InferencingTest {
 			NotifyingSail sailStack = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
 			sailStack = new ForwardChainingRDFSInferencer(sailStack);
 			return new SailRepository(sailStack);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
 	}

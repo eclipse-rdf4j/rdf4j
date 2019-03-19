@@ -18,10 +18,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.RDF4JException;
@@ -33,6 +32,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -70,6 +70,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
@@ -85,6 +87,8 @@ import org.eclipse.rdf4j.spin.RuleProperty;
 import org.eclipse.rdf4j.spin.SpinParser;
 import org.eclipse.rdf4j.spin.function.TransientFunction;
 import org.eclipse.rdf4j.spin.function.TransientTupleFunction;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 
@@ -94,8 +98,11 @@ import com.google.common.collect.Lists;
 
 class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
-	private static final IRI EXECUTED = SimpleValueFactory.getInstance().createIRI(
-			"http://www.openrdf.org/schema/spin#executed");
+	static private final Logger logger = LoggerFactory.getLogger(SpinSailConnection.class);
+
+	private static final IRI EXECUTED = SimpleValueFactory.getInstance()
+			.createIRI(
+					"http://www.openrdf.org/schema/spin#executed");
 
 	private static final Marker constraintViolationMarker = MarkerFactory.getMarker("ConstraintViolation");
 
@@ -131,8 +138,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private SailConnectionQueryPreparer queryPreparer;
 
+	private SpinSail sail;
+
 	public SpinSailConnection(SpinSail sail, InferencerConnection con) {
 		super(sail, con);
+		this.sail = sail;
 		this.evaluationMode = sail.getEvaluationMode();
 		this.axiomClosureNeeded = sail.isAxiomClosureNeeded();
 		this.functionRegistry = sail.getFunctionRegistry();
@@ -150,9 +160,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 						"SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of "
 								+ AbstractFederatedServiceResolver.class.getName());
 			}
-			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver)serviceResolver;
-		}
-		else {
+			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver) serviceResolver;
+		} else {
 			this.tupleFunctionServiceResolver = null;
 		}
 
@@ -172,20 +181,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException
-	{
+			throws SailException {
 		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 		QueryContext qctx = new QueryContext(queryPreparer);
 		qctx.begin();
 		try {
 			initQueryContext(qctx);
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
-		}
-		finally {
+		} finally {
 			try {
 				destroyQueryContext(qctx);
-			}
-			finally {
+			} finally {
 				qctx.end();
 			}
 		}
@@ -209,8 +215,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException
-	{
+			throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		// Clone the tuple expression to allow for more aggresive optimizations
@@ -254,26 +259,22 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 			try {
 				return strategy.evaluate(tupleExpr, bindings);
-			}
-			catch (QueryEvaluationException e) {
+			} catch (QueryEvaluationException e) {
 				throw new SailException(e);
 			}
-		}
-		else {
+		} else {
 			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
 		}
 	}
 
 	@Override
 	public void close()
-		throws SailException
-	{
+			throws SailException {
 		super.close();
 	}
 
 	private void initRuleProperties()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		if (rulePropertyMap != null) {
 			return;
 		}
@@ -311,37 +312,34 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private List<IRI> getRuleProperties()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		initRuleProperties();
 		return orderedRuleProperties;
 	}
 
 	private RuleProperty getRuleProperty(IRI ruleProp)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		initRuleProperties();
 		return rulePropertyMap.get(ruleProp);
 	}
 
 	private void initClasses()
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		if (classToSuperclassMap != null) {
 			return;
 		}
 
 		classToSuperclassMap = new HashMap<>();
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmtIter = tripleSource.getStatements(
-			null, RDFS.SUBCLASSOF, null)) {
+				null, RDFS.SUBCLASSOF, null)) {
 			while (stmtIter.hasNext()) {
 				Statement stmt = stmtIter.next();
 				if (stmt.getSubject() instanceof IRI && stmt.getObject() instanceof IRI) {
-					IRI cls = (IRI)stmt.getSubject();
-					IRI superclass = (IRI)stmt.getObject();
+					IRI cls = (IRI) stmt.getSubject();
+					IRI superclass = (IRI) stmt.getObject();
 					Set<IRI> superclasses = getSuperclasses(cls);
 					if (superclasses == null) {
-						superclasses = new HashSet<>(64);
+						superclasses = new HashSet<>();
 						classToSuperclassMap.put(cls, superclasses);
 					}
 					superclasses.add(superclass);
@@ -355,56 +353,93 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private Set<IRI> getSuperclasses(Resource cls)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		initClasses();
 		return classToSuperclassMap.get(cls);
 	}
 
 	@Override
 	protected Model createModel() {
-		return new TreeModel();
+		return new LinkedHashModel();
+	}
+
+	private final static List<Statement> schemaSp;
+	private final static List<Statement> schemaSpin;
+	private final static List<Statement> schemaSplSpin;
+	private final static List<Statement> schemaSpinFull;
+	private final static List<Statement> schemaSpinFullFC;
+
+	static {
+		try {
+			schemaSp = getStatementsAsList("/schema/sp.ttl", RDFFormat.TURTLE);
+			schemaSpin = getStatementsAsList("/schema/spin.ttl", RDFFormat.TURTLE);
+			schemaSplSpin = getStatementsAsList("/schema/spl.spin.ttl", RDFFormat.TURTLE);
+			schemaSpinFull = getStatementsAsList("/schema/spin-full.ttl", RDFFormat.TURTLE);
+			schemaSpinFullFC = getStatementsAsList("/schema/spin-full-forwardchained.ttl", RDFFormat.TURTLE);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	@Override
 	protected void addAxiomStatements()
-		throws SailException
-	{
-		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
+			throws SailException {
+		RDFInferencerInserter inserter = new RDFInferencerInserter(this, vf);
 		if (axiomClosureNeeded) {
-			loadAxiomStatements(parser, "/schema/spin-full.ttl");
-		}
-		else {
-			loadAxiomStatements(parser, "/schema/sp.ttl");
-			loadAxiomStatements(parser, "/schema/spin.ttl");
-			loadAxiomStatements(parser, "/schema/spl.spin.ttl");
+			schemaSpinFullFC.forEach(inserter::handleStatement);
+		} else {
+			schemaSp.forEach(inserter::handleStatement);
+			schemaSpin.forEach(inserter::handleStatement);
+			schemaSplSpin.forEach(inserter::handleStatement);
 		}
 	}
 
-	private void loadAxiomStatements(RDFParser parser, String file)
-		throws SailException
-	{
-		RDFInferencerInserter inserter = new RDFInferencerInserter(this, vf);
-		parser.setRDFHandler(inserter);
-		URL url = getClass().getResource(file);
-		try {
-			try (InputStream in = new BufferedInputStream(url.openStream())) {
-				logger.debug("loading axioms statements from {}", file);
-				parser.parse(in, url.toString());
+	private static List<Statement> getStatementsAsList(String resourceName, RDFFormat format) throws IOException {
+		RDFParser parser = Rio.createParser(format);
+		URL url = SpinSailConnection.class.getResource(resourceName);
+
+		List<Statement> ret = new ArrayList<>();
+		parser.setRDFHandler(new RDFHandler() {
+			@Override
+			public void startRDF() throws RDFHandlerException {
+
 			}
+
+			@Override
+			public void endRDF() throws RDFHandlerException {
+
+			}
+
+			@Override
+			public void handleNamespace(String s, String s1) throws RDFHandlerException {
+
+			}
+
+			@Override
+			public void handleStatement(Statement statement) throws RDFHandlerException {
+				ret.add(statement);
+			}
+
+			@Override
+			public void handleComment(String s) throws RDFHandlerException {
+
+			}
+		});
+
+		try (InputStream in = new BufferedInputStream(url.openStream())) {
+			parser.parse(in, url.toString());
 		}
-		catch (IOException ioe) {
-			throw new SailException(ioe);
-		}
-		catch (RDF4JException e) {
-			throw new SailException(e);
-		}
+
+		return ret;
 	}
 
 	@Override
 	protected void doInferencing()
-		throws SailException
-	{
+			throws SailException {
+		if (sail.isInitializing() && sail.isAxiomClosureNeeded()) {
+			return;
+		}
+
 		ruleExecutions = new HashMap<>();
 		super.doInferencing();
 		ruleExecutions = null;
@@ -412,29 +447,25 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	@Override
 	protected int applyRules(Model iteration)
-		throws SailException
-	{
+			throws SailException {
 		try {
 			int nofInferred = 0;
 			nofInferred += applyRulesInternal(iteration.subjects());
 			nofInferred += applyRulesInternal(Iterables.filter(iteration.objects(), Resource.class));
 			return nofInferred;
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw e;
-		}
-		catch (RDF4JException e) {
+		} catch (RDF4JException e) {
 			throw new SailException(e);
 		}
 	}
 
 	/**
-	 * update spin:rules modify existing (non-inferred) statements directly. spin:constructors should be run
-	 * after spin:rules for each subject of an RDF.TYPE statement.
+	 * update spin:rules modify existing (non-inferred) statements directly. spin:constructors should be run after
+	 * spin:rules for each subject of an RDF.TYPE statement.
 	 */
 	private int applyRulesInternal(Iterable<? extends Resource> resources)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		int nofInferred = 0;
 		for (Resource res : resources) {
 			logger.debug("building class hierarchy for {}", res);
@@ -482,9 +513,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private Collection<IRI> getClasses(Resource subj)
-		throws QueryEvaluationException
-	{
-		List<IRI> classes = new LinkedList<>();
+			throws QueryEvaluationException {
+		List<IRI> classes = new ArrayList<>();
 		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(
 				subj, RDF.TYPE, tripleSource);
 		Iterations.addAll(classIter, classes);
@@ -492,10 +522,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private int executeConstructors(Resource subj, List<IRI> classHierarchy)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		int nofInferred = 0;
-		Set<Resource> constructed = new HashSet<>(classHierarchy.size());
+		Set<Resource> constructed = new HashSet<>(classHierarchy.size() * 3);
 		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = TripleSources.getObjectResources(
 				subj, EXECUTED, tripleSource);
 		Iterations.addAll(classIter, constructed);
@@ -519,18 +548,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private List<Resource> getConstructorsForClass(IRI cls)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		List<Resource> constructors = new ArrayList<>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = TripleSources.getObjectResources(
-				cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource);
+		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = TripleSources
+				.getObjectResources(
+						cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource);
 		Iterations.addAll(constructorIter, constructors);
 		return constructors;
 	}
 
 	private int executeRules(Resource subj, List<IRI> classHierarchy)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		int nofInferred = 0;
 		// get rule properties
 		List<IRI> ruleProps = getRuleProperties();
@@ -570,8 +598,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private int executeRule(Resource subj, Resource rule)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		return SpinInferencing.executeRule(subj, rule, queryPreparer, parser, this);
 	}
 
@@ -579,20 +606,19 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	 * @return Map with rules in execution order.
 	 */
 	private Map<IRI, List<Resource>> getRulesForClass(IRI cls, List<IRI> ruleProps)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		// NB: preserve ruleProp order!
-		Map<IRI, List<Resource>> classRulesByProperty = new LinkedHashMap<>(
-				ruleProps.size());
+		Map<IRI, List<Resource>> classRulesByProperty = new HashMap<>(ruleProps.size() * 3);
 		for (IRI ruleProp : ruleProps) {
 			List<Resource> rules = new ArrayList<>(2);
-			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources.getObjectResources(
-					cls, ruleProp, tripleSource);
+			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources
+					.getObjectResources(
+							cls, ruleProp, tripleSource);
 			Iterations.addAll(ruleIter, rules);
 			if (!rules.isEmpty()) {
 				if (rules.size() > 1) {
 					// sort by comments
-					final Map<Resource, String> comments = new HashMap<>(rules.size());
+					final Map<Resource, String> comments = new HashMap<>(rules.size() * 3);
 					for (Resource rule : rules) {
 						String comment = getHighestComment(rule);
 						if (comment != null) {
@@ -607,14 +633,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 							String comment2 = comments.get(rule2);
 							if (comment1 != null && comment2 != null) {
 								return comment1.compareTo(comment2);
-							}
-							else if (comment1 != null && comment2 == null) {
+							} else if (comment1 != null && comment2 == null) {
 								return 1;
-							}
-							else if (comment1 == null && comment2 != null) {
+							} else if (comment1 == null && comment2 != null) {
 								return -1;
-							}
-							else {
+							} else {
 								return 0;
 							}
 						}
@@ -627,11 +650,10 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private String getHighestComment(Resource subj)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		String comment = null;
 		try (CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
-			subj, RDFS.COMMENT, tripleSource)) {
+				subj, RDFS.COMMENT, tripleSource)) {
 			while (iter.hasNext()) {
 				Literal l = iter.next();
 				String label = l.getLabel();
@@ -644,8 +666,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private void checkConstraints(Resource subj, List<IRI> classHierarchy)
-		throws RDF4JException
-	{
+			throws RDF4JException {
+		if (sail.isInitializing()) {
+			return;
+		}
+
 		Map<IRI, List<Resource>> constraintsByClass = getConstraintsForSubject(subj, classHierarchy);
 
 		if (!constraintsByClass.isEmpty()) {
@@ -661,39 +686,36 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private void checkConstraint(Resource subj, Resource constraint)
-		throws RDF4JException
-	{
+			throws RDF4JException {
 		logger.trace("checking constraint {} on resoure {}", constraint, subj);
 		ConstraintViolation violation = SpinInferencing.checkConstraint(subj, constraint, queryPreparer,
 				parser);
 		if (violation != null) {
 			handleConstraintViolation(violation);
-		}
-		else {
+		} else {
 			logger.trace("no violation detected for resource {}", subj);
 		}
 	}
 
 	protected void handleConstraintViolation(ConstraintViolation violation)
-		throws ConstraintViolationException
-	{
+			throws ConstraintViolationException {
 		switch (violation.getLevel()) {
-			case INFO:
-				logger.info(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
-						getConstraintViolationLogMessageArgs(violation));
-				break;
-			case WARNING:
-				logger.warn(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
-						getConstraintViolationLogMessageArgs(violation));
-				break;
-			case ERROR:
-				logger.error(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
-						getConstraintViolationLogMessageArgs(violation));
-				throw new ConstraintViolationException(violation);
-			case FATAL:
-				logger.error(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
-						getConstraintViolationLogMessageArgs(violation));
-				throw new ConstraintViolationException(violation);
+		case INFO:
+			logger.info(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
+					getConstraintViolationLogMessageArgs(violation));
+			break;
+		case WARNING:
+			logger.warn(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
+					getConstraintViolationLogMessageArgs(violation));
+			break;
+		case ERROR:
+			logger.error(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
+					getConstraintViolationLogMessageArgs(violation));
+			throw new ConstraintViolationException(violation);
+		case FATAL:
+			logger.error(constraintViolationMarker, CONSTRAINT_VIOLATION_MESSAGE,
+					getConstraintViolationLogMessageArgs(violation));
+			throw new ConstraintViolationException(violation);
 		}
 	}
 
@@ -706,10 +728,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private Map<IRI, List<Resource>> getConstraintsForSubject(Resource subj, List<IRI> classHierarchy)
-		throws QueryEvaluationException
-	{
-		Map<IRI, List<Resource>> constraintsByClass = new LinkedHashMap<>(
-				classHierarchy.size());
+			throws QueryEvaluationException {
+		Map<IRI, List<Resource>> constraintsByClass = new HashMap<>(
+				classHierarchy.size() * 3);
 		// check each class of subj for constraints
 		for (IRI cls : classHierarchy) {
 			List<Resource> constraints = getConstraintsForClass(cls);
@@ -721,11 +742,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	private List<Resource> getConstraintsForClass(Resource cls)
-		throws QueryEvaluationException
-	{
+			throws QueryEvaluationException {
 		List<Resource> constraints = new ArrayList<>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = TripleSources.getObjectResources(
-				cls, SPIN.CONSTRAINT_PROPERTY, tripleSource);
+		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = TripleSources
+				.getObjectResources(
+						cls, SPIN.CONSTRAINT_PROPERTY, tripleSource);
 		Iterations.addAll(constraintIter, constraints);
 		return constraints;
 	}
@@ -734,14 +755,14 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		@Override
 		public void statementAdded(Statement st) {
-			if (RDFS.SUBCLASSOF.equals(st.getPredicate()) && st.getObject() instanceof Resource) {
+			if (st.getObject() instanceof Resource && RDFS.SUBCLASSOF.equals(st.getPredicate())) {
 				resetClasses();
 			}
 		}
 
 		@Override
 		public void statementRemoved(Statement st) {
-			if (RDFS.SUBCLASSOF.equals(st.getPredicate())) {
+			if (st.getObject() instanceof Resource && RDFS.SUBCLASSOF.equals(st.getPredicate())) {
 				resetClasses();
 			}
 		}
@@ -764,11 +785,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			IRI pred = st.getPredicate();
 			if (RDFS.SUBPROPERTYOF.equals(pred) && SPIN.RULE_PROPERTY.equals(st.getObject())) {
 				changed = true;
-			}
-			else if (SPIN.NEXT_RULE_PROPERTY_PROPERTY.equals(pred)) {
+			} else if (SPIN.NEXT_RULE_PROPERTY_PROPERTY.equals(pred)) {
 				changed = true;
-			}
-			else if (SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY.equals(pred)) {
+			} else if (SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY.equals(pred)) {
 				changed = true;
 			}
 			if (changed) {
@@ -791,7 +810,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		private void invalidate(Resource subj) {
 			if (subj instanceof IRI) {
-				parser.reset((IRI)subj);
+				parser.reset((IRI) subj);
 				String key = subj.stringValue();
 				Function func = functionRegistry.get(key).orElse(null);
 				if (func instanceof TransientFunction) {

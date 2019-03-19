@@ -30,7 +30,6 @@ import static junit.framework.TestCase.assertTrue;
 
 public class RdfsShaclConnectionTest {
 
-
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 	IRI sup = vf.createIRI("http://example.com/sup");
 	IRI sub = vf.createIRI("http://example.com/sub");
@@ -38,7 +37,6 @@ public class RdfsShaclConnectionTest {
 	IRI aSubSub = vf.createIRI("http://example.com/aSubSub");
 	IRI aSub = vf.createIRI("http://example.com/aSub");
 	IRI aSup = vf.createIRI("http://example.com/aSup");
-
 
 	@Test
 	public void testHasStatement() {
@@ -51,7 +49,8 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).validating = true;
-			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner((ShaclSailConnection) connection);
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
+					.createReasoner((ShaclSailConnection) connection);
 			assertTrue(connection.hasStatement(aSubSub, RDF.TYPE, sup, true));
 		}
 
@@ -68,35 +67,35 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).validating = true;
-			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner((ShaclSailConnection) connection);
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
+					.createReasoner((ShaclSailConnection) connection);
 
-			try (Stream<? extends Statement> stream = Iterations.stream(connection.getStatements(aSubSub, RDF.TYPE, sup, true))) {
+			try (Stream<? extends Statement> stream = Iterations
+					.stream(connection.getStatements(aSubSub, RDF.TYPE, sup, true))) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup))
-				);
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
 				assertEquals(expected, collect);
 			}
 
-			try (Stream<? extends Statement> stream = Iterations.stream(connection.getStatements(aSubSub, RDF.TYPE, sub, true))) {
+			try (Stream<? extends Statement> stream = Iterations
+					.stream(connection.getStatements(aSubSub, RDF.TYPE, sub, true))) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub))
-				);
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
 				assertEquals(expected, collect);
 			}
 
-			try (Stream<? extends Statement> stream = Iterations.stream(connection.getStatements(aSubSub, RDF.TYPE, subSub, true))) {
+			try (Stream<? extends Statement> stream = Iterations
+					.stream(connection.getStatements(aSubSub, RDF.TYPE, subSub, true))) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub))
-				);
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
 				assertEquals(expected, collect);
 			}
 		}
 
 	}
-
 
 	@Test
 	public void testGetStatementNoDuplicates() {
@@ -114,16 +113,17 @@ public class RdfsShaclConnectionTest {
 			connection.commit();
 
 			((ShaclSailConnection) connection).validating = true;
-			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner((ShaclSailConnection) connection);
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
+					.createReasoner((ShaclSailConnection) connection);
 
-			try (Stream<? extends Statement> stream = Iterations.stream(connection.getStatements(aSubSub, RDF.TYPE, sup, true))) {
+			try (Stream<? extends Statement> stream = Iterations
+					.stream(connection.getStatements(aSubSub, RDF.TYPE, sup, true))) {
 				List<Statement> collect = stream.peek(System.out::println).collect(Collectors.toList());
 				assertEquals(new HashSet<>(collect).size(), collect.size());
 
 			}
 		}
 	}
-
 
 	private void fill(ShaclSail shaclSail) {
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {

@@ -41,35 +41,29 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareBooleanQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareGraphQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException
-	{
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareTupleQuery(ql, query, baseURI));
 	}
 
-	void loadDataset(Dataset datasets)
-		throws QueryEvaluationException
-	{
+	void loadDataset(Dataset datasets) throws QueryEvaluationException {
 		try {
 			if (datasets == null) {
 				return;
@@ -80,27 +74,24 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 			for (IRI dataset : datasets.getNamedGraphs()) {
 				repository.loadDataset(new URL(dataset.toString()), dataset, getParserConfig());
 			}
-		}
-		catch (MalformedURLException e) {
+		} catch (MalformedURLException e) {
 			throw new QueryEvaluationException(e);
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}
 
 	private Query wrap(SailQuery q) {
 		if (q instanceof SailBooleanQuery) {
-			return wrap((SailBooleanQuery)q);
+			return wrap((SailBooleanQuery) q);
 		}
 		if (q instanceof SailGraphQuery) {
-			return wrap((SailGraphQuery)q);
+			return wrap((SailGraphQuery) q);
 		}
 		if (q instanceof SailTupleQuery) {
-			return wrap((SailTupleQuery)q);
+			return wrap((SailTupleQuery) q);
 		}
-		throw new IllegalArgumentException(
-				q.getClass().getSimpleName() + " not supported on DatasetRepository");
+		throw new IllegalArgumentException(q.getClass().getSimpleName() + " not supported on DatasetRepository");
 	}
 
 	private BooleanQuery wrap(final SailBooleanQuery q) {

@@ -23,7 +23,7 @@ public class SolrDocumentScore extends SolrDocumentResult implements DocumentSco
 
 	@Override
 	public float getScore() {
-		Number s = ((Number)doc.getDocument().get("score"));
+		Number s = ((Number) doc.getDocument().get("score"));
 		return (s != null) ? s.floatValue() : 0.0f;
 	}
 

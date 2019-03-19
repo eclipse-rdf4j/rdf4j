@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
- * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to
- * enable reuse of namespace String objects (reducing memory usage) and that gives it node properties.
+ * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
+ * reuse of namespace String objects (reducing memory usage) and that gives it node properties.
  */
 public class MemIRI implements IRI, MemResource {
 
@@ -68,12 +68,9 @@ public class MemIRI implements IRI, MemResource {
 	/**
 	 * Creates a new MemURI for a URI.
 	 * 
-	 * @param creator
-	 *        The object that is creating this MemURI.
-	 * @param namespace
-	 *        namespace part of URI.
-	 * @param localName
-	 *        localname part of URI.
+	 * @param creator   The object that is creating this MemURI.
+	 * @param namespace namespace part of URI.
+	 * @param localName localname part of URI.
 	 */
 	public MemIRI(Object creator, String namespace, String localName) {
 		this.creator = creator;
@@ -112,14 +109,13 @@ public class MemIRI implements IRI, MemResource {
 		}
 
 		if (other instanceof MemIRI) {
-			MemIRI o = (MemIRI)other;
+			MemIRI o = (MemIRI) other;
 			return namespace.equals(o.getNamespace()) && localName.equals(o.getLocalName());
-		}
-		else if (other instanceof IRI) {
+		} else if (other instanceof IRI) {
 			String otherStr = other.toString();
 
-			return namespace.length() + localName.length() == otherStr.length()
-					&& otherStr.endsWith(localName) && otherStr.startsWith(namespace);
+			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
+					&& otherStr.startsWith(namespace);
 		}
 
 		return false;
@@ -149,8 +145,7 @@ public class MemIRI implements IRI, MemResource {
 	public MemStatementList getSubjectStatementList() {
 		if (subjectStatements == null) {
 			return EMPTY_LIST;
-		}
-		else {
+		} else {
 			return subjectStatements;
 		}
 	}
@@ -159,8 +154,7 @@ public class MemIRI implements IRI, MemResource {
 	public int getSubjectStatementCount() {
 		if (subjectStatements == null) {
 			return 0;
-		}
-		else {
+		} else {
 			return subjectStatements.size();
 		}
 	}
@@ -202,8 +196,7 @@ public class MemIRI implements IRI, MemResource {
 	public MemStatementList getPredicateStatementList() {
 		if (predicateStatements == null) {
 			return EMPTY_LIST;
-		}
-		else {
+		} else {
 			return predicateStatements;
 		}
 	}
@@ -216,8 +209,7 @@ public class MemIRI implements IRI, MemResource {
 	public int getPredicateStatementCount() {
 		if (predicateStatements == null) {
 			return 0;
-		}
-		else {
+		} else {
 			return predicateStatements.size();
 		}
 	}
@@ -245,11 +237,10 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot
-	 * version) from this MemValue's list of statements for which it is the predicate.
+	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
+	 * this MemValue's list of statements for which it is the predicate.
 	 * 
-	 * @param currentSnapshot
-	 *        The current snapshot version.
+	 * @param currentSnapshot The current snapshot version.
 	 */
 	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) {
 		if (predicateStatements != null) {
@@ -265,8 +256,7 @@ public class MemIRI implements IRI, MemResource {
 	public MemStatementList getObjectStatementList() {
 		if (objectStatements == null) {
 			return EMPTY_LIST;
-		}
-		else {
+		} else {
 			return objectStatements;
 		}
 	}
@@ -275,8 +265,7 @@ public class MemIRI implements IRI, MemResource {
 	public int getObjectStatementCount() {
 		if (objectStatements == null) {
 			return 0;
-		}
-		else {
+		} else {
 			return objectStatements.size();
 		}
 	}
@@ -312,8 +301,7 @@ public class MemIRI implements IRI, MemResource {
 	public MemStatementList getContextStatementList() {
 		if (contextStatements == null) {
 			return EMPTY_LIST;
-		}
-		else {
+		} else {
 			return contextStatements;
 		}
 	}
@@ -322,8 +310,7 @@ public class MemIRI implements IRI, MemResource {
 	public int getContextStatementCount() {
 		if (contextStatements == null) {
 			return 0;
-		}
-		else {
+		} else {
 			return contextStatements.size();
 		}
 	}

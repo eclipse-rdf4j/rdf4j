@@ -22,17 +22,14 @@ public interface SailImplConfig {
 	public long getIterationCacheSyncThreshold();
 
 	/**
-	 * Validates this configuration. A {@link SailConfigException} is thrown when the configuration is
-	 * invalid. The exception should contain an error message that indicates why the configuration is invalid.
+	 * Validates this configuration. A {@link SailConfigException} is thrown when the configuration is invalid. The
+	 * exception should contain an error message that indicates why the configuration is invalid.
 	 * 
-	 * @throws SailConfigException
-	 *         If the configuration is invalid.
+	 * @throws SailConfigException If the configuration is invalid.
 	 */
-	public void validate()
-		throws SailConfigException;
+	public void validate() throws SailConfigException;
 
 	public Resource export(Model graph);
 
-	public void parse(Model graph, Resource implNode)
-		throws SailConfigException;
+	public void parse(Model graph, Resource implNode) throws SailConfigException;
 }

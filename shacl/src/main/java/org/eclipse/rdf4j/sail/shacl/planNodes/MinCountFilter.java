@@ -8,14 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
 import org.eclipse.rdf4j.model.Literal;
 
 /**
  * @author Håvard Ottestad
  */
 public class MinCountFilter extends FilterPlanNode {
-
 
 	private final long minCount;
 
@@ -32,8 +30,6 @@ public class MinCountFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "MinCountFilter{" +
-			"minCount=" + minCount +
-			'}';
+		return "MinCountFilter{" + "minCount=" + minCount + '}';
 	}
 }

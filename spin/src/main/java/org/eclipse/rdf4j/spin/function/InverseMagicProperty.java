@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.spin.function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 
 /**
- * Magic properties are normally treated as {@link TupleFunction}s acting on the subject of a statement.
- * However, there are many cases where it makes more sense to treat a magic property as acting on the object
- * of a statement instead. Any TupleFunction implementing this interface will be given the object of the magic
- * property as the argument and the result will be bound to the subject of the magic property.
+ * Magic properties are normally treated as {@link TupleFunction}s acting on the subject of a statement. However, there
+ * are many cases where it makes more sense to treat a magic property as acting on the object of a statement instead.
+ * Any TupleFunction implementing this interface will be given the object of the magic property as the argument and the
+ * result will be bound to the subject of the magic property.
  */
 public interface InverseMagicProperty extends TupleFunction {
 }

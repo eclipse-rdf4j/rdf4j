@@ -22,14 +22,11 @@ public class Localname extends UnaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg)
-		throws ValueExprEvaluationException
-	{
+	protected Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException {
 		if (arg instanceof URI) {
-			URI uri = (URI)arg;
+			URI uri = (URI) arg;
 			return valueFactory.createLiteral(uri.getLocalName());
-		}
-		else {
+		} else {
 			throw new ValueExprEvaluationException("Not a URI");
 		}
 	}
