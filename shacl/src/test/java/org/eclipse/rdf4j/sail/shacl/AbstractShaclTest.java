@@ -85,6 +85,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/class/multipleClass",
 			"test-cases/class/validateTarget",
 			"test-cases/or/class",
+			"test-cases/or/classValidateTarget",
 			"test-cases/or/datatype2",
 			"test-cases/or/minCountDifferentPath",
 			"test-cases/or/nodeKindValidateTarget",
