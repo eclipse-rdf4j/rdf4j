@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -105,7 +104,6 @@ abstract public class AbstractShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-		LoggingNode.loggingEnabled = true;
 		this.isolationLevel = isolationLevel;
 	}
 
@@ -168,11 +166,9 @@ abstract public class AbstractShaclTest {
 
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setLogValidationPlans(true);
-		shaclSail.setCacheSelectNodes(false);
-		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.init();
+
+		SailRepository shaclRepository = getShaclSail();
+
 		Utils.loadShapeData(shaclRepository, shaclFile);
 
 		boolean exception = false;
@@ -209,7 +205,7 @@ abstract public class AbstractShaclTest {
 
 		}
 
-		shaclSail.shutDown();
+		shaclRepository.shutDown();
 
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
@@ -219,15 +215,6 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
-	}
-
-	private static void printResults(RepositoryException sailException) {
-		System.out.println("\n############################################");
-		System.out.println("\tValidation Report\n");
-		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-		Model validationReport = cause.validationReportAsModel();
-		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-		System.out.println("\n############################################");
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
@@ -241,12 +228,7 @@ abstract public class AbstractShaclTest {
 			shaclPath = shaclPath + "/";
 		}
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclSail.setLogValidationPlans(true);
-		shaclSail.setCacheSelectNodes(false);
-
-		shaclRepository.init();
+		SailRepository shaclRepository = getShaclSail();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 
 		boolean exception = false;
@@ -288,6 +270,9 @@ abstract public class AbstractShaclTest {
 				printResults(sailException);
 			}
 		}
+
+		shaclRepository.shutDown();
+
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
@@ -296,6 +281,15 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
+	}
+
+	private static void printResults(RepositoryException sailException) {
+		System.out.println("\n############################################");
+		System.out.println("\tValidation Report\n");
+		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+		Model validationReport = cause.validationReportAsModel();
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+		System.out.println("\n############################################");
 	}
 
 	String getShaclPath() {
@@ -311,6 +305,21 @@ abstract public class AbstractShaclTest {
 	enum ExpectedResult {
 		valid,
 		invalid
+	}
+
+	private static SailRepository getShaclSail() {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository shaclRepository = new SailRepository(shaclSail);
+
+		shaclSail.setLogValidationPlans(true);
+		shaclSail.setCacheSelectNodes(true);
+		shaclSail.setParallelValidation(true);
+		shaclSail.setGlobalLogValidationExecution(true);
+
+		shaclRepository.init();
+
+		return shaclRepository;
 	}
 
 }
