@@ -33,31 +33,30 @@ public class AndPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
 	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-					 Resource and) {
+			Resource and) {
 		super(id, nodeShape, deactivated);
 		this.and = toList(connection, and).stream()
-			.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
-			.collect(Collectors.toList());
+				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+				.collect(Collectors.toList());
 
 	}
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-							PlanNode overrideTargetNode) {
+			PlanNode overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
 		List<PlanNode> plans = and
-			.stream()
-			.flatMap(List::stream)
-			.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, printPlans, overrideTargetNode))
-			.collect(Collectors.toList());
+				.stream()
+				.flatMap(List::stream)
+				.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, printPlans, overrideTargetNode))
+				.collect(Collectors.toList());
 
 		PlanNode unionPlan = unionAll(plans);
 
 		return new EnrichWithShape(unionPlan, this);
-
 
 	}
 
@@ -72,10 +71,10 @@ public class AndPropertyShape extends PropertyShape {
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements) || and.stream()
-			.flatMap(Collection::stream)
-			.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
-			.reduce((a, b) -> a || b)
-			.orElse(false);
+				.flatMap(Collection::stream)
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 	}
 
 	@Override
