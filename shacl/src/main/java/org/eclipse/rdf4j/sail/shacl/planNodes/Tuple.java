@@ -38,6 +38,10 @@ public class Tuple implements Comparable<Tuple> {
 		line = list;
 	}
 
+	public Tuple(Value... list) {
+		line = Arrays.asList(list);
+	}
+
 	public Tuple(List<Value> list, Tuple historyTuple) {
 		line = list;
 		addHistory(historyTuple);

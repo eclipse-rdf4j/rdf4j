@@ -80,7 +80,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private SailRepositoryConnection shapesConnection;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
-	private Map<Select, BufferedSplitter> selectNodeCache;
+	private Map<PlanNode, BufferedSplitter> selectNodeCache;
 
 	// used to indicate if the transaction is in the validating phase
 	boolean validating;
@@ -424,7 +424,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	synchronized public PlanNode getCachedNodeFor(Select select) {
+	synchronized public PlanNode getCachedNodeFor(PlanNode select) {
 
 		if (!sail.isCacheSelectNodes()) {
 			return select;

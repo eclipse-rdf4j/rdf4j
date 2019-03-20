@@ -53,12 +53,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -222,6 +224,12 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 				shaclProperties.clazz.forEach(clazz -> {
 					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
 							shaclProperties.deactivated, shaclProperties.path, clazz));
+				});
+			}
+			if (!shaclProperties.and.isEmpty()) {
+				shaclProperties.and.forEach(and -> {
+					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
+							shaclProperties.deactivated, and));
 				});
 			}
 

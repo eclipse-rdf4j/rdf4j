@@ -59,14 +59,16 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);

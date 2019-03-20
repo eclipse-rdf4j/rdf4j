@@ -74,10 +74,12 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			return new EnrichWithShape(new LoggingNode(directTupleFromFilter, ""), this);
 		}
 
-		PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape),
+		PlanNode planAddedStatements = new LoggingNode(
+				nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
 				"");
 
-		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape),
+		PlanNode planAddedStatements1 = new LoggingNode(
+				super.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
 				"");
 
 		planAddedStatements1 = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1),
