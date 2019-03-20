@@ -53,12 +53,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 

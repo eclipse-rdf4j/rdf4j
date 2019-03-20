@@ -14,7 +14,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Collections;
 import java.util.List;
@@ -43,22 +44,31 @@ public class PathPropertyShape extends PropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
-		return shaclSailConnection
-				.getCachedNodeFor(new Select(shaclSailConnection, path.getQuery("?a", "?c", null), "*"));
+		return shaclSailConnection.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection, null,
+				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null), "*"));
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 
+		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getAddedStatements(), null,
+				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+		if (planeNodeWrapper != null) {
+			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+		}
+		return shaclSailConnection.getCachedNodeFor(new Sort(unorderedSelect));
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), path.getQuery("?a", "?c", null), "*"));
-
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null,
+				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+		if (planeNodeWrapper != null) {
+			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+		}
+		return shaclSailConnection.getCachedNodeFor(new Sort(unorderedSelect));
 	}
 
 	@Override

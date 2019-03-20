@@ -79,19 +79,20 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
 			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(
-					new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), ""), 0, 1), "");
+					new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape, null), ""), 0, 1),
+					"");
 
 			PlanNode filteredPlanRemovedStatements = new LoggingNode(
 					nodeShape.getTargetFilter(shaclSailConnection, planRemovedStatements), "");
 
 			PlanNode planAddedStatements = new LoggingNode(
-					nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
+					nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), "");
 
 			PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, filteredPlanRemovedStatements), "");
 
 			PlanNode unique = new LoggingNode(new Unique(mergeNode), "");
 
-			PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape);
+			PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape, null);
 
 			planAddedStatements1 = new LoggingNode(
 					(nodeShape).getTargetFilter(shaclSailConnection, planAddedStatements1), "");
@@ -108,9 +109,9 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		} else {
 
 			PlanNode planAddedForShape = new LoggingNode(
-					nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
+					nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), "");
 
-			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
+			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape, null), "");
 
 			addedByPath = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, addedByPath), "");
 
