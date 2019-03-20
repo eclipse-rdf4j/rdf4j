@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Set;
 
@@ -50,8 +51,19 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c"));
+
+		PlanNode select;
+		if (targetObjectsOf.size() == 1) {
+			IRI iri = targetObjectsOf.stream().findAny().get();
+
+			select = new UnorderedSelect(shaclSailConnection.getAddedStatements(), null, iri, null,
+					UnorderedSelect.OutputPattern.ObjectPredicateSubject);
+		} else {
+			select = new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1",
+					"?c");
+		}
+
+		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(select);
 		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
 
 	}
@@ -59,9 +71,19 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c"));
-		return new TrimTuple(parent, 0, 1);
+		PlanNode select;
+		if (targetObjectsOf.size() == 1) {
+			IRI iri = targetObjectsOf.stream().findAny().get();
+
+			select = new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null, iri, null,
+					UnorderedSelect.OutputPattern.ObjectPredicateSubject);
+		} else {
+			select = new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1",
+					"?c");
+		}
+
+		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(select);
+		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
 	}
 
 	@Override

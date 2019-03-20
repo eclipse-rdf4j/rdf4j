@@ -75,6 +75,9 @@ public class UnorderedSelect implements PlanNode {
 				if (outputPattern == OutputPattern.SubjectPredicateObject) {
 					return new Tuple(next.getSubject(), next.getPredicate(), next.getObject());
 				}
+				if (outputPattern == OutputPattern.ObjectPredicateSubject) {
+					return new Tuple(next.getObject(), next.getPredicate(), next.getSubject());
+				}
 
 				throw new IllegalStateException("Unkown output pattern: " + outputPattern);
 			}
@@ -168,6 +171,7 @@ public class UnorderedSelect implements PlanNode {
 
 	public enum OutputPattern {
 		SubjectObject,
+		ObjectPredicateSubject,
 		SubjectPredicateObject
 	}
 }
