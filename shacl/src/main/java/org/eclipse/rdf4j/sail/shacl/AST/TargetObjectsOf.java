@@ -48,7 +48,8 @@ public class TargetObjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c"));
 		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
@@ -56,7 +57,8 @@ public class TargetObjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c"));
 		return new TrimTuple(parent, 0, 1);

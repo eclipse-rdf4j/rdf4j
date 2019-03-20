@@ -19,7 +19,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -50,18 +52,37 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
-		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode planNode;
+		if (targetClass.size() == 1) {
+			Resource clazz = targetClass.stream().findAny().get();
+			planNode = shaclSailConnection
+					.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection.getAddedStatements(), null,
+							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+		} else {
+			planNode = shaclSailConnection.getCachedNodeFor(
+					new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
+		}
+
+		return new TrimTuple(new LoggingNode(planNode, ""), 0, 1);
 
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
-		return new TrimTuple(parent, 0, 1);
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode planNode;
+		if (targetClass.size() == 1) {
+			Resource clazz = targetClass.stream().findAny().get();
+			planNode = shaclSailConnection
+					.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null,
+							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+		} else {
+			planNode = shaclSailConnection.getCachedNodeFor(
+					new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+		}
+		return new TrimTuple(planNode, 0, 1);
 	}
 
 	@Override

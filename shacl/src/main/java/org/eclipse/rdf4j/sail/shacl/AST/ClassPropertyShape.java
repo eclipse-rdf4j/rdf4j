@@ -96,7 +96,8 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			if (path == null) {
 				PlanNode targets = new ModifyTuple(
-						new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), t -> {
+						new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
+						t -> {
 							t.line.add(t.line.get(0));
 							return t;
 						});
@@ -142,11 +143,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 				return new EnrichWithShape(filteredAgainsteBaseSail, this);
 			}
 
-			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
+			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape, null), "");
 
 			// join all added by type and path
 			InnerJoin innerJoinHolder = new InnerJoin(
-					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), addedByPath);
+					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
+					addedByPath);
 			PlanNode innerJoin = new LoggingNode(innerJoinHolder.getJoined(BufferedPlanNode.class), "");
 			PlanNode discardedRight = new LoggingNode(innerJoinHolder.getDiscardedRight(BufferedPlanNode.class), "");
 
@@ -158,7 +160,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a
 			// foaf:Person", and ":peter foaf:knows :steve" is already added
 			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(
-					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""),
+					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
 					shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
 
 			// only get tuples that came from the first or the innerJoin or bulkedExternalLeftOuter,
