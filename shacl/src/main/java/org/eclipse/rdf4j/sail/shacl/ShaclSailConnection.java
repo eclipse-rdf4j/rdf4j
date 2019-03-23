@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -557,6 +559,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.orElse(false);
 		}
 		return hasStatement;
+	}
+
+	public ValidationReport revalidate(){
+		return new ValidationReport(true);
 	}
 
 }
