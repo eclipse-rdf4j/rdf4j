@@ -42,7 +42,7 @@ public class ReduceNumberOfPlansTest {
 
 			List<PlanNode> collect = shaclSail.getNodeShapes()
 					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.flatMap(shape -> shape.generatePlans(connection, shape, false, false).stream())
 					.collect(Collectors.toList());
 
 			assertEquals(0, collect.size());
@@ -53,7 +53,7 @@ public class ReduceNumberOfPlansTest {
 
 			List<PlanNode> collect2 = shaclSail.getNodeShapes()
 					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.flatMap(shape -> shape.generatePlans(connection, shape, false, false).stream())
 					.collect(Collectors.toList());
 
 			assertEquals(2, collect2.size());
@@ -95,7 +95,7 @@ public class ReduceNumberOfPlansTest {
 
 			List<PlanNode> collect1 = shaclSail.getNodeShapes()
 					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.flatMap(shape -> shape.generatePlans(connection, shape, false, false).stream())
 					.collect(Collectors.toList());
 			assertEquals(1, collect1.size());
 
@@ -105,7 +105,7 @@ public class ReduceNumberOfPlansTest {
 
 			List<PlanNode> collect2 = shaclSail.getNodeShapes()
 					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.flatMap(shape -> shape.generatePlans(connection, shape, false, false).stream())
 					.collect(Collectors.toList());
 			assertEquals(1, collect2.size());
 
@@ -114,7 +114,7 @@ public class ReduceNumberOfPlansTest {
 
 			List<PlanNode> collect3 = shaclSail.getNodeShapes()
 					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+					.flatMap(shape -> shape.generatePlans(connection, shape, false, false).stream())
 					.collect(Collectors.toList());
 			assertEquals(2, collect3.size());
 

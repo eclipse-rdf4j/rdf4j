@@ -72,7 +72,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 				});
 
 			} else {
-				planNode = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection,
+				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection,
 						path.getQuery("?a", "?c", null), false), "");
 			}
 

@@ -325,8 +325,10 @@ abstract public class AbstractShaclTest {
 
 			((ShaclSail) shaclRepository.getSail()).enableValidation();
 
+			shaclSailConnection.begin();
 			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
 
+			shaclSailConnection.commit();
 		}
 
 		shaclRepository.shutDown();
