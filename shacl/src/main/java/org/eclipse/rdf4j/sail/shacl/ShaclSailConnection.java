@@ -562,6 +562,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public ValidationReport revalidate() {
 
+		if (!isActive()) {
+			throw new IllegalStateException("No active transaction!");
+		}
+
 		List<Tuple> validate = validate(true);
 
 		return new ValidationReport(validate.isEmpty());
