@@ -39,6 +39,8 @@ import static org.junit.Assert.assertFalse;
  */
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
+	// @formatter:off
+	// formatter doesn't understand that the trailing ) needs to be on a new line.
 
 	private static final List<String> testCasePaths = Stream.of(
 		"test-cases/complex/dcat",
@@ -92,9 +94,12 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
-		"test-cases/deactivated/propertyshape")
+		"test-cases/deactivated/propertyshape"
+	)
 		.distinct()
 		.collect(Collectors.toList());
+
+	// @formatter:on
 
 	final String testCasePath;
 	final String path;
@@ -102,7 +107,7 @@ abstract public class AbstractShaclTest {
 	final IsolationLevel isolationLevel;
 
 	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
-							 IsolationLevel isolationLevel) {
+			IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -143,8 +148,8 @@ abstract public class AbstractShaclTest {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
 					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
-						IsolationLevels.SERIALIZABLE)) {
-						Object[] temp = {testCasePath, path, baseCase, isolationLevel};
+							IsolationLevels.SERIALIZABLE)) {
+						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
 						ret.add(temp);
 					}
 
@@ -156,7 +161,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-							IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -220,7 +225,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
-											 IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -286,7 +291,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
-									  IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -333,13 +338,11 @@ abstract public class AbstractShaclTest {
 
 		shaclRepository.shutDown();
 
-
 		if (expectedResult == ExpectedResult.valid) {
 			assertTrue(report.conforms());
 		} else {
 			assertFalse(report.conforms());
 		}
-
 
 	}
 

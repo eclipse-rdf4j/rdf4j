@@ -262,7 +262,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			try {
 				Stream<PlanNode> planNodeStream = sail.getNodeShapes()
 						.stream()
-						.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
+						.flatMap(nodeShape -> nodeShape
+								.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
 								.stream());
 				if (sail.isParallelValidation()) {
 					planNodeStream = planNodeStream.parallel();
@@ -559,7 +560,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return hasStatement;
 	}
 
-	public ValidationReport revalidate(){
+	public ValidationReport revalidate() {
 
 		List<Tuple> validate = validate(true);
 
