@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.resultio.text;
+
 
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
