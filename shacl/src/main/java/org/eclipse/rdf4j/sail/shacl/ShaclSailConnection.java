@@ -34,8 +34,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -244,7 +244,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return nodeShapes;
 	}
 
-	private List<Tuple> validate() {
+	private List<Tuple> validate(boolean validateEntireBaseSail) {
 
 		if (!sail.isValidationEnabled()) {
 			return Collections.emptyList();
@@ -262,7 +262,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			try {
 				Stream<PlanNode> planNodeStream = sail.getNodeShapes()
 						.stream()
-						.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans())
+						.flatMap(nodeShape -> nodeShape
+								.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
 								.stream());
 				if (sail.isParallelValidation()) {
 					planNodeStream = planNodeStream.parallel();
@@ -387,7 +388,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new NoShapesLoadedException();
 			}
 
-			List<Tuple> invalidTuples = validate();
+			List<Tuple> invalidTuples = validate(false);
 			boolean valid = invalidTuples.isEmpty();
 
 			if (!valid) {
@@ -557,6 +558,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.orElse(false);
 		}
 		return hasStatement;
+	}
+
+	public ValidationReport revalidate() {
+
+		if (!isActive()) {
+			throw new IllegalStateException("No active transaction!");
+		}
+
+		List<Tuple> validate = validate(true);
+
+		return new ValidationReport(validate.isEmpty());
 	}
 
 }
