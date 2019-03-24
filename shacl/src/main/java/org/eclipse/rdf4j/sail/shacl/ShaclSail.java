@@ -209,6 +209,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.TARGET_NODE,
 				SHACL.DEACTIVATED,
 				SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN,
 				SHACL.TARGET_OBJECTS_OF);
 	}
 

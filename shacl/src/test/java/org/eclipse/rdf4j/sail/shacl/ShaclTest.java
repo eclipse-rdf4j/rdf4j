@@ -33,4 +33,9 @@ public class ShaclTest extends AbstractShaclTest {
 		runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel);
 	}
 
+	@Test
+	public void testRevalidation() throws Exception {
+		runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel);
+	}
+
 }

@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -38,62 +39,68 @@ import static org.junit.Assert.assertFalse;
  */
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
+	// @formatter:off
+	// formatter doesn't understand that the trailing ) needs to be on a new line.
 
 	private static final List<String> testCasePaths = Stream.of(
-			"test-cases/complex/dcat",
-			"test-cases/complex/foaf",
-			"test-cases/datatype/simple",
-			"test-cases/datatype/targetNode",
-			"test-cases/datatype/targetSubjectsOf",
-			"test-cases/datatype/targetSubjectsOfSingle",
-			"test-cases/datatype/targetObjectsOf",
-			"test-cases/datatype/validateTarget",
-			"test-cases/minLength/simple",
-			"test-cases/maxLength/simple",
-			"test-cases/pattern/simple",
-			"test-cases/pattern/multiple",
-			"test-cases/languageIn/simple",
-			"test-cases/nodeKind/simple",
-			"test-cases/nodeKind/validateTarget",
-			"test-cases/minCount/simple",
-			"test-cases/minCount/targetNode",
-			"test-cases/maxCount/simple",
-			"test-cases/maxCount/targetNode",
-			"test-cases/or/multiple",
-			"test-cases/or/inheritance",
-			"test-cases/or/inheritance-deep",
-			"test-cases/or/inheritance-deep-minCountMaxCount",
-			"test-cases/or/inheritanceNodeShape",
-			"test-cases/or/datatype",
-			"test-cases/or/datatypeTargetNode",
-			"test-cases/or/minCountMaxCount",
-			"test-cases/or/maxCount",
-			"test-cases/or/minCount",
-			"test-cases/or/nodeKindMinLength",
-			"test-cases/or/implicitAnd",
-			"test-cases/or/datatypeDifferentPaths",
-			"test-cases/minExclusive/simple",
-			"test-cases/minExclusive/dateVsTime",
-			"test-cases/maxExclusive/simple",
-			"test-cases/minInclusive/simple",
-			"test-cases/maxInclusive/simple",
-			"test-cases/implicitTargetClass/simple",
-			"test-cases/class/simple",
-			"test-cases/class/and",
-			"test-cases/class/subclass",
-			"test-cases/class/targetNode",
-			"test-cases/class/multipleClass",
-			"test-cases/class/validateTarget",
-			"test-cases/or/class",
-			"test-cases/or/classValidateTarget",
-			"test-cases/or/datatype2",
-			"test-cases/or/minCountDifferentPath",
-			"test-cases/or/nodeKindValidateTarget",
-			"test-cases/deactivated/nodeshape",
-			"test-cases/deactivated/or",
-			"test-cases/deactivated/propertyshape")
-			.distinct()
-			.collect(Collectors.toList());
+		"test-cases/complex/dcat",
+		"test-cases/complex/foaf",
+		"test-cases/datatype/simple",
+		"test-cases/datatype/targetNode",
+		"test-cases/datatype/targetSubjectsOf",
+		"test-cases/datatype/targetSubjectsOfSingle",
+		"test-cases/datatype/targetObjectsOf",
+		"test-cases/datatype/validateTarget",
+		"test-cases/minLength/simple",
+		"test-cases/maxLength/simple",
+		"test-cases/pattern/simple",
+		"test-cases/pattern/multiple",
+		"test-cases/languageIn/simple",
+		"test-cases/nodeKind/simple",
+		"test-cases/nodeKind/validateTarget",
+		"test-cases/minCount/simple",
+		"test-cases/minCount/targetNode",
+		"test-cases/maxCount/simple",
+		"test-cases/maxCount/targetNode",
+		"test-cases/or/multiple",
+		"test-cases/or/inheritance",
+		"test-cases/or/inheritance-deep",
+		"test-cases/or/inheritance-deep-minCountMaxCount",
+		"test-cases/or/inheritanceNodeShape",
+		"test-cases/or/datatype",
+		"test-cases/or/datatypeTargetNode",
+		"test-cases/or/minCountMaxCount",
+		"test-cases/or/maxCount",
+		"test-cases/or/minCount",
+		"test-cases/or/nodeKindMinLength",
+		"test-cases/or/implicitAnd",
+		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/minExclusive/simple",
+		"test-cases/minExclusive/dateVsTime",
+		"test-cases/maxExclusive/simple",
+		"test-cases/minInclusive/simple",
+		"test-cases/maxInclusive/simple",
+		"test-cases/implicitTargetClass/simple",
+		"test-cases/class/simple",
+		"test-cases/class/and",
+		"test-cases/class/subclass",
+		"test-cases/class/targetNode",
+		"test-cases/class/multipleClass",
+		"test-cases/class/validateTarget",
+		"test-cases/or/class",
+		"test-cases/or/classValidateTarget",
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/or/nodeKindValidateTarget",
+		"test-cases/deactivated/nodeshape",
+		"test-cases/deactivated/or",
+		"test-cases/deactivated/propertyshape",
+		"test-cases/in/simple"
+	)
+		.distinct()
+		.collect(Collectors.toList());
+
+	// @formatter:on
 
 	final String testCasePath;
 	final String path;
@@ -280,6 +287,62 @@ abstract public class AbstractShaclTest {
 			} else {
 				assertTrue(exception);
 			}
+		}
+
+	}
+
+	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
+			IsolationLevel isolationLevel) throws Exception {
+
+		if (!dataPath.endsWith("/")) {
+			dataPath = dataPath + "/";
+		}
+
+		if (!shaclPath.endsWith("/")) {
+			shaclPath = shaclPath + "/";
+		}
+
+		SailRepository shaclRepository = getShaclSail();
+		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+
+		ValidationReport report;
+
+		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
+			((ShaclSail) shaclRepository.getSail()).disableValidation();
+			shaclSailConnection.begin(isolationLevel);
+
+			for (int j = 0; j < 100; j++) {
+
+				String name = dataPath + "query" + j + ".rq";
+				InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(name);
+				if (resourceAsStream == null) {
+					continue;
+				}
+
+				try {
+					String query = IOUtil.readString(resourceAsStream);
+					shaclSailConnection.prepareUpdate(query).execute();
+
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+			shaclSailConnection.commit();
+
+			((ShaclSail) shaclRepository.getSail()).enableValidation();
+
+			shaclSailConnection.begin();
+			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
+
+			shaclSailConnection.commit();
+		}
+
+		shaclRepository.shutDown();
+
+		if (expectedResult == ExpectedResult.valid) {
+			assertTrue(report.conforms());
+		} else {
+			assertFalse(report.conforms());
 		}
 
 	}
