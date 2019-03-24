@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -19,28 +20,22 @@ import java.util.Set;
 /**
  * @author Håvard Ottestad
  */
-public class LanguageInFilter extends FilterPlanNode {
+public class ValueInFilter extends FilterPlanNode {
 
-	private final Set<String> languageIn;
+	private final Set<Value> valueSet;
 
-	public LanguageInFilter(PlanNode parent, Set<String> languageIn) {
+	public ValueInFilter(PlanNode parent, Set<Value> valueSet) {
 		super(parent);
-		this.languageIn = languageIn;
+		this.valueSet = valueSet;
 	}
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if (!(t.line.get(1) instanceof Literal)) {
-			return false;
-		}
-
-		Optional<String> language = ((Literal) t.line.get(1)).getLanguage();
-		return language.filter(languageIn::contains).isPresent();
-
+		 return valueSet.contains(t.line.get(1));
 	}
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
+		return "ValueInFilter{" + "valueSet=" + Arrays.toString(valueSet.toArray()) + '}';
 	}
 }
