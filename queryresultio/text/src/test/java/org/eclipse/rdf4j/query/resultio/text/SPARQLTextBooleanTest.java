@@ -7,7 +7,6 @@ package org.eclipse.rdf4j.query.resultio.text;
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
