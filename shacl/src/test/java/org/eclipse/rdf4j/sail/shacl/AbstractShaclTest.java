@@ -94,7 +94,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
-		"test-cases/deactivated/propertyshape"
+		"test-cases/deactivated/propertyshape",
+		"test-cases/in/simple"
 	)
 		.distinct()
 		.collect(Collectors.toList());

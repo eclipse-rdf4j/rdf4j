@@ -23,6 +23,7 @@ public class ShaclProperties {
 	Long maxCount;
 
 	Resource datatype;
+	Resource in;
 
 	Long minLength;
 	Long maxLength;
@@ -157,7 +158,14 @@ public class ShaclProperties {
 					}
 					path = (Resource) object;
 					break;
+				case "http://www.w3.org/ns/shacl#in":
+					if (in != null) {
+						throw new IllegalStateException("sh:in aleady populated");
+					}
+					in = (Resource) object;
+					break;
 				}
+
 			});
 		}
 
