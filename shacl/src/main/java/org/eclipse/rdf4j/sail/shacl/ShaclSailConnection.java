@@ -316,42 +316,50 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
-		if (addedStatements != null) {
-			addedStatements.shutDown();
-			addedStatements = null;
-		}
-		if (removedStatements != null) {
-			removedStatements.shutDown();
-			removedStatements = null;
-		}
+		Stream.of(addedStatementsSet, removedStatementsSet)
+				.parallel()
+				.forEach(set -> {
+					Set<Statement> otherSet;
+					MemoryStore repository;
+					if (set == addedStatementsSet) {
+						otherSet = removedStatementsSet;
 
-		addedStatements = getNewMemorySail();
-		removedStatements = getNewMemorySail();
+						if (addedStatements != null) {
+							addedStatements.shutDown();
+							addedStatements = null;
+						}
 
-		addedStatementsSet.forEach(stats::added);
-		removedStatementsSet.forEach(stats::removed);
+						addedStatements = getNewMemorySail();
+						repository = addedStatements;
 
-		try (SailConnection connection = addedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			addedStatementsSet.stream()
-					.filter(statement -> !removedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+						set.forEach(stats::added);
 
-		try (SailConnection connection = removedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			removedStatementsSet.stream()
-					.filter(statement -> !addedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+					} else {
+						otherSet = addedStatementsSet;
+
+						if (removedStatements != null) {
+							removedStatements.shutDown();
+							removedStatements = null;
+						}
+
+						removedStatements = getNewMemorySail();
+						repository = removedStatements;
+
+						set.forEach(stats::removed);
+					}
+
+					try (SailConnection connection = repository.getConnection()) {
+						connection.begin(IsolationLevels.NONE);
+						set.stream()
+								.filter(statement -> !otherSet.contains(statement))
+								.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
+										: rdfsSubClassOfReasoner.forwardChain(statement))
+								.forEach(statement -> connection.addStatement(statement.getSubject(),
+										statement.getPredicate(), statement.getObject(), statement.getContext()));
+						connection.commit();
+					}
+
+				});
 
 		selectNodeCache = new HashMap<>();
 

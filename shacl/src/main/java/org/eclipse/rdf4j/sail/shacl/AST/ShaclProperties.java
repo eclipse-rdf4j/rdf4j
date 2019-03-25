@@ -39,6 +39,7 @@ public class ShaclProperties {
 	Literal maxInclusive;
 
 	List<String> pattern = new ArrayList<>(0);
+	String flags = "";
 
 	Set<Resource> targetClass = new HashSet<>(0);
 	Set<Value> targetNode = new HashSet<>(0);
@@ -47,7 +48,7 @@ public class ShaclProperties {
 
 	boolean deactivated = false;
 
-	String flags = "";
+	boolean uniqueLang = false;
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
@@ -148,6 +149,9 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#deactivated":
 					deactivated = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#uniqueLang":
+					uniqueLang = ((Literal) object).booleanValue();
 					break;
 				case "http://www.w3.org/ns/shacl#flags":
 					flags += object.stringValue();
