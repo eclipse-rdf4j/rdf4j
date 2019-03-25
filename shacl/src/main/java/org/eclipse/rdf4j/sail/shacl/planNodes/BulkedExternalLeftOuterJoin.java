@@ -85,8 +85,9 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 						.map(tuple -> tuple.line.get(0))
 						.map(v -> (Resource) v)
 						.filter(r -> {
-							if (!skipBasedOnPreviousConnection)
+							if (!skipBasedOnPreviousConnection) {
 								return true;
+							}
 
 							if (connection instanceof ShaclSailConnection) {
 								return ((ShaclSailConnection) connection).getPreviousStateConnection()
@@ -189,8 +190,9 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")

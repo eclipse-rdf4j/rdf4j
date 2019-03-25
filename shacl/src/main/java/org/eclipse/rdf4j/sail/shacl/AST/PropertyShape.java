@@ -236,6 +236,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 				propertyShapes.add(new InPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.deactivated, shaclProperties.path, shaclProperties.in));
 			}
+			if (shaclProperties.uniqueLang) {
+				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.uniqueLang));
+			}
 
 			return propertyShapes;
 		}
