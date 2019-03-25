@@ -11,9 +11,11 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -52,10 +54,19 @@ public class NonUniqueTargetLang implements PlanNode {
 						}
 					}
 
-					String lang = ((Literal) next.getlist().get(1)).getLanguage().orElse(null);
+					Value value = next.getlist().get(1);
 
-					if (!seenLanguages.contains(lang)) {
-						seenLanguages.add(lang);
+					if (value instanceof Literal) {
+						Optional<String> lang = ((Literal) value).getLanguage();
+
+						if (!lang.isPresent()) {
+							next = null;
+						} else if (!seenLanguages.contains(lang.get())) {
+							seenLanguages.add(lang.get());
+							next = null;
+						}
+
+					} else {
 						next = null;
 					}
 
@@ -101,8 +112,9 @@ public class NonUniqueTargetLang implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
