@@ -17,9 +17,13 @@
     <description>Stacked Sail with SHACL validation capabilities</description>
 
     <dependencies>
-        <dependency>
-            <groupId>commons-lang</groupId>
-            <artifactId>commons-lang</artifactId>
+		<dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-text</artifactId>
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>

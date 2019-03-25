@@ -8,8 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.NotImplementedException;
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -46,7 +46,7 @@ public class ModifyTuple implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-				throw new NotImplementedException();
+				throw new NotImplementedException("Not implemented yet");
 			}
 		};
 	}
