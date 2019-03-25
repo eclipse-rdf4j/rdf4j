@@ -96,7 +96,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape",
 		"test-cases/in/simple",
-		"test-cases/uniqueLang/simple"
+		"test-cases/uniqueLang/simple",
+		"test-cases/propertyShapeWithTarget/simple"
 	)
 		.distinct()
 		.collect(Collectors.toList());
