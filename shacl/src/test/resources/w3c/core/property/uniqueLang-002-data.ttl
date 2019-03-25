@@ -1,3 +1,0 @@
-@prefix ex: <http://example.org/shacl-test/> .
-
-ex:i ex:message "HI"@en, "Hi"@en .

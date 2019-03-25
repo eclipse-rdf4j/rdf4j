@@ -13,11 +13,24 @@
       <uniqueLang-002>
     ) .
 
+ex:i ex:message "HI"@en, "Hi"@en .
+
+ex:s1 a sh:PropertyShape ;
+  sh:targetNode ex:i ;
+  sh:path ex:message ;
+  sh:minCount 0 ;
+  sh:uniqueLang "1"^^xsd:boolean .
+
+# Note that the value above is "1"^^xsd:boolean, which is distinct from "true"^^xsd:boolean.
+# Only true is mentioned in the spec, meaning that "1" will not activate the constraint
+# and the constraint is being ignored.
+
+
 <uniqueLang-002> a sht:Validate ;
   rdfs:label "Test uniqueLang with other boolean literal for true" ;
   mf:action [
-      sht:dataGraph <uniqueLang-002-data.ttl> ;
-      sht:shapesGraph <uniqueLang-002-shapes.ttl> ] ;
+      sht:dataGraph <> ;
+      sht:shapesGraph <> ] ;
   mf:result [ a sh:ValidationReport ;
       sh:conforms "true"^^xsd:boolean ] ;
   mf:status sht:approved .
