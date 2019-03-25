@@ -61,6 +61,8 @@ public class NonUniqueTargetLang implements PlanNode {
 						}
 					}
 
+					previous = next;
+
 					Value value = next.getlist().get(1);
 
 					if (value instanceof Literal) {
@@ -75,10 +77,6 @@ public class NonUniqueTargetLang implements PlanNode {
 
 					} else {
 						next = null;
-					}
-
-					if (next != null) {
-						previous = next;
 					}
 
 				}
