@@ -43,8 +43,8 @@ import java.util.concurrent.TimeUnit;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -69,9 +69,9 @@ public class AddRemoveBenchmarkEmpty {
 			allStatements.add(statements);
 			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
+						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
 				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
-					vf.createLiteral(i)));
+						vf.createLiteral(i)));
 			}
 		}
 		System.gc();
@@ -103,6 +103,5 @@ public class AddRemoveBenchmarkEmpty {
 		repository.shutDown();
 
 	}
-
 
 }
