@@ -86,7 +86,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	boolean validating;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
+						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesConnection = shapesConnection;
@@ -161,7 +161,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
@@ -172,7 +172,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
@@ -261,10 +261,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			try {
 				Stream<PlanNode> planNodeStream = sail.getNodeShapes()
-						.stream()
-						.flatMap(nodeShape -> nodeShape
-								.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
-								.stream());
+					.stream()
+					.flatMap(nodeShape -> nodeShape
+						.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
+						.stream());
 				if (sail.isParallelValidation()) {
 					planNodeStream = planNodeStream.parallel();
 				}
@@ -274,7 +274,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (LoggingNode.loggingEnabled) {
 							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 							logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
-									+ propertyShape.getId());
+								+ propertyShape.getId());
 						}
 
 						List<Tuple> collect = stream.collect(Collectors.toList());
@@ -282,7 +282,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (LoggingNode.loggingEnabled) {
 							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 							logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(),
-									propertyShape.getId());
+								propertyShape.getId());
 						}
 
 						boolean valid = collect.size() == 0;
@@ -291,11 +291,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 
 							logger.info(
-									"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-									propertyShape.getNodeShape().getId(), propertyShape.getId(),
-									collect.stream()
-											.map(a -> a.toString() + " -cause-> " + a.getCause())
-											.collect(Collectors.joining("\n\t\t")));
+								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+								propertyShape.getNodeShape().getId(), propertyShape.getId(),
+								collect.stream()
+									.map(a -> a.toString() + " -cause-> " + a.getCause())
+									.collect(Collectors.joining("\n\t\t")));
 						}
 
 						return collect.stream();
@@ -316,42 +316,50 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
-		if (addedStatements != null) {
-			addedStatements.shutDown();
-			addedStatements = null;
-		}
-		if (removedStatements != null) {
-			removedStatements.shutDown();
-			removedStatements = null;
-		}
+		Stream.of(addedStatementsSet, removedStatementsSet)
+			.parallel()
+			.forEach(set -> {
+				Set<Statement> otherSet;
+				MemoryStore repository;
+				if (set == addedStatementsSet) {
+					otherSet = removedStatementsSet;
 
-		addedStatements = getNewMemorySail();
-		removedStatements = getNewMemorySail();
+					if (addedStatements != null) {
+						addedStatements.shutDown();
+						addedStatements = null;
+					}
 
-		addedStatementsSet.forEach(stats::added);
-		removedStatementsSet.forEach(stats::removed);
+					addedStatements = getNewMemorySail();
+					repository = addedStatements;
 
-		try (SailConnection connection = addedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			addedStatementsSet.stream()
-					.filter(statement -> !removedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+					set.forEach(stats::added);
 
-		try (SailConnection connection = removedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			removedStatementsSet.stream()
-					.filter(statement -> !addedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+				} else {
+					otherSet = addedStatementsSet;
+
+					if (removedStatements != null) {
+						removedStatements.shutDown();
+						removedStatements = null;
+					}
+
+					removedStatements = getNewMemorySail();
+					repository = removedStatements;
+
+					set.forEach(stats::removed);
+				}
+
+				try (SailConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					set.stream()
+						.filter(statement -> !otherSet.contains(statement))
+						.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement) : rdfsSubClassOfReasoner.forwardChain(statement))
+						.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
+					connection.commit();
+				}
+
+
+			});
+
 
 		selectNodeCache = new HashMap<>();
 
@@ -384,7 +392,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (!sail.isIgnoreNoShapesLoadedException()
-					&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && nodeShapes.isEmpty())) {
+				&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && nodeShapes.isEmpty())) {
 				throw new NoShapesLoadedException();
 			}
 
@@ -470,20 +478,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+																				boolean includeInferred, Resource... contexts) throws SailException {
 		if (rdfsSubClassOfReasoner != null && includeInferred && validating && obj instanceof Resource
-				&& RDF.TYPE.equals(pred)) {
+			&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (!inferredTypes.isEmpty()) {
 
 				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes.stream()
-						.map(r -> super.getStatements(subj, pred, r, false, contexts))
-						.toArray(CloseableIteration[]::new);
+					.map(r -> super.getStatements(subj, pred, r, false, contexts))
+					.toArray(CloseableIteration[]::new);
 
 				return new CloseableIteration<Statement, SailException>() {
 
 					UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
-							statementsMatchingInferredTypes);
+						statementsMatchingInferredTypes);
 
 					Statement next = null;
 
@@ -497,7 +505,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						while (next == null && unionIteration.hasNext()) {
 							Statement temp = unionIteration.next();
 							temp = SimpleValueFactory.getInstance()
-									.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
+								.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
 
 							if (!dedupe.isEmpty()) {
 								boolean contains = dedupe.contains(temp);
@@ -546,16 +554,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
 
 		if (rdfsSubClassOfReasoner != null && includeInferred && validating && obj instanceof Resource
-				&& RDF.TYPE.equals(pred)) {
+			&& RDF.TYPE.equals(pred)) {
 			return hasStatement | rdfsSubClassOfReasoner.backwardsChain((Resource) obj)
-					.stream()
-					.map(type -> super.hasStatement(subj, pred, type, false, contexts))
-					.reduce((a, b) -> a || b)
-					.orElse(false);
+				.stream()
+				.map(type -> super.hasStatement(subj, pred, type, false, contexts))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 		}
 		return hasStatement;
 	}
