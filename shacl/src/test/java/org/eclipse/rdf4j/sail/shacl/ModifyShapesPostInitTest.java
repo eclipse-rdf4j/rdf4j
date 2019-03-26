@@ -32,18 +32,18 @@ public class ModifyShapesPostInitTest {
 			connection.begin();
 
 			StringReader shaclRules = new StringReader(String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-				"ex:PersonShape",
-				"        a sh:NodeShape  ;",
-				"        sh:targetClass ex:Person ;",
-				"        sh:property [",
-				"                sh:path ex:age ;",
-				"                sh:datatype xsd:integer ;",
-				"        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
@@ -51,18 +51,18 @@ public class ModifyShapesPostInitTest {
 			add(connection, "ex:pete a ex:Person .");
 
 			StringReader extraShaclRules = new StringReader(String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-				"ex:PersonShape",
-				"        a sh:NodeShape  ;",
-				"        sh:targetClass ex:Person ;",
-				"        sh:property [",
-				"                sh:path ex:birthyear ;",
-				"                sh:datatype xsd:integer ;",
-				"        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:birthyear ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."));
 
 			connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -81,18 +81,18 @@ public class ModifyShapesPostInitTest {
 			connection.begin();
 
 			StringReader shaclRules = new StringReader(String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-				"ex:PersonShape",
-				"        a sh:NodeShape  ;",
-				"        sh:targetClass ex:Person ;",
-				"        sh:property [",
-				"                sh:path ex:age ;",
-				"                sh:datatype xsd:integer ;",
-				"        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
@@ -100,18 +100,18 @@ public class ModifyShapesPostInitTest {
 			add(connection, "ex:pete a ex:Person .");
 
 			StringReader extraShaclRules = new StringReader(String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-				"ex:PersonShape",
-				"        a sh:NodeShape  ;",
-				"        sh:targetClass ex:Person ;",
-				"        sh:property [",
-				"                sh:path ex:age ;",
-				"                sh:minCount 1 ;",
-				"        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:minCount 1 ;",
+					"        ] ."));
 
 			try {
 				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -135,6 +135,45 @@ public class ModifyShapesPostInitTest {
 			connection.begin();
 
 			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:minCount 1 ;",
+					"        ] ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				throw e.getCause();
+			}
+
+		}
+	}
+
+	@Test
+	public void testAddingShapesThatFails() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		add(connection1, "ex:pete a ex:Person .");
+
+		connection2.begin();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -148,49 +187,7 @@ public class ModifyShapesPostInitTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				throw e.getCause();
-			}
-
-		}
-	}
-
-
-	@Test
-	public void testAddingShapesThatFails() throws Throwable {
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-
-		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
-
-
-		SailRepositoryConnection connection1 = sailRepository.getConnection();
-		SailRepositoryConnection connection2 = sailRepository.getConnection();
-
-		add(connection1, "ex:pete a ex:Person .");
-
-		connection2.begin();
-
-		StringReader shaclRules = new StringReader(String.join("\n", "",
-			"@prefix ex: <http://example.com/ns#> .",
-			"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-			"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-
-			"ex:PersonShape",
-			"        a sh:NodeShape  ;",
-			"        sh:targetClass ex:Person ;",
-			"        sh:property [",
-			"                sh:path ex:age ;",
-			"                sh:minCount 1 ;",
-			"        ] ."));
-
 		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
 
 		try {
 			connection2.commit();
@@ -208,7 +205,6 @@ public class ModifyShapesPostInitTest {
 
 	}
 
-
 	@Test(expected = ShaclSailValidationException.class)
 	public void testViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
@@ -216,29 +212,27 @@ public class ModifyShapesPostInitTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-
 		SailRepositoryConnection connection1 = sailRepository.getConnection();
 		SailRepositoryConnection connection2 = sailRepository.getConnection();
 
 		connection2.begin();
 
 		StringReader shaclRules = new StringReader(String.join("\n", "",
-			"@prefix ex: <http://example.com/ns#> .",
-			"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-			"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-			"ex:PersonShape",
-			"        a sh:NodeShape  ;",
-			"        sh:targetClass ex:Person ;",
-			"        sh:property [",
-			"                sh:path ex:age ;",
-			"                sh:minCount 1 ;",
-			"        ] ."));
+				"ex:PersonShape",
+				"        a sh:NodeShape  ;",
+				"        sh:targetClass ex:Person ;",
+				"        sh:property [",
+				"                sh:path ex:age ;",
+				"                sh:minCount 1 ;",
+				"        ] ."));
 
 		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		connection2.commit();
-
 
 		try {
 			add(connection1, "ex:steve a ex:Person .");
@@ -254,7 +248,6 @@ public class ModifyShapesPostInitTest {
 
 	}
 
-
 	@Test
 	public void testRollbak() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
@@ -262,25 +255,24 @@ public class ModifyShapesPostInitTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-
 		SailRepositoryConnection connection1 = sailRepository.getConnection();
 		SailRepositoryConnection connection2 = sailRepository.getConnection();
 
 		connection2.begin();
 
 		StringReader shaclRules = new StringReader(String.join("\n", "",
-			"@prefix ex: <http://example.com/ns#> .",
-			"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-			"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-			"ex:PersonShape",
-			"        a sh:NodeShape  ;",
-			"        sh:targetClass ex:Person ;",
-			"        sh:property [",
-			"                sh:path ex:age ;",
-			"                sh:minCount 1 ;",
-			"        ] ."));
+				"ex:PersonShape",
+				"        a sh:NodeShape  ;",
+				"        sh:targetClass ex:Person ;",
+				"        sh:property [",
+				"                sh:path ex:age ;",
+				"                sh:minCount 1 ;",
+				"        ] ."));
 
 		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		connection2.getSailConnection().prepare();
@@ -297,10 +289,10 @@ public class ModifyShapesPostInitTest {
 
 	private void add(SailRepositoryConnection connection, String data) throws IOException {
 		data = String.join("\n", "",
-			"@prefix ex: <http://example.com/ns#> .",
-			"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-			data);
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				data);
 
 		connection.begin();
 
@@ -312,11 +304,10 @@ public class ModifyShapesPostInitTest {
 
 	private void addInTransaction(SailRepositoryConnection connection, String data) throws IOException {
 		data = String.join("\n", "",
-			"@prefix ex: <http://example.com/ns#> .",
-			"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-			data);
-
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				data);
 
 		StringReader stringReader = new StringReader(data);
 

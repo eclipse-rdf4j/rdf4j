@@ -110,7 +110,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
  * 			try {
  * 				connection.commit();
- *            } catch (RepositoryException exception) {
+ * 			} catch (RepositoryException exception) {
  * 				Throwable cause = exception.getCause();
  * 				if (cause instanceof ShaclSailValidationException) {
  * 					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
@@ -118,11 +118,11 @@ import java.util.concurrent.locks.ReentrantLock;
  * 					// use validationReport or validationReportModel to understand validation violations
  *
  * 					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *                }
+ * 				}
  * 				throw exception;
- *            }
- *        }
- *    }
+ * 			}
+ * 		}
+ * 	}
  * }
  * </pre>
  *
@@ -149,7 +149,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	// exclusive lock for modifying the shapes.
 	private final ReentrantLock exclusiveWriteLock = new ReentrantLock(true);
 
-
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
@@ -163,11 +162,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 		try {
 			SH_OR_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or.rq");
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
+					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
 			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
-				"shacl-sparql-inference/propertyShapeWithTarget.rq");
+					"shacl-sparql-inference/propertyShapeWithTarget.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -195,31 +194,31 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
 		return Arrays.asList(
-			SHACL.TARGET_CLASS,
-			SHACL.PATH,
-			SHACL.PROPERTY,
-			SHACL.OR,
-			SHACL.AND,
-			SHACL.MIN_COUNT,
-			SHACL.MAX_COUNT,
-			SHACL.MIN_LENGTH,
-			SHACL.MAX_LENGTH,
-			SHACL.PATTERN,
-			SHACL.FLAGS,
-			SHACL.NODE_KIND_PROP,
-			SHACL.LANGUAGE_IN,
-			SHACL.DATATYPE,
-			SHACL.MIN_EXCLUSIVE,
-			SHACL.MIN_INCLUSIVE,
-			SHACL.MAX_EXCLUSIVE,
-			SHACL.MAX_INCLUSIVE,
-			SHACL.CLASS,
-			SHACL.TARGET_NODE,
-			SHACL.DEACTIVATED,
-			SHACL.TARGET_SUBJECTS_OF,
-			SHACL.IN,
-			SHACL.UNIQUE_LANG,
-			SHACL.TARGET_OBJECTS_OF);
+				SHACL.TARGET_CLASS,
+				SHACL.PATH,
+				SHACL.PROPERTY,
+				SHACL.OR,
+				SHACL.AND,
+				SHACL.MIN_COUNT,
+				SHACL.MAX_COUNT,
+				SHACL.MIN_LENGTH,
+				SHACL.MAX_LENGTH,
+				SHACL.PATTERN,
+				SHACL.FLAGS,
+				SHACL.NODE_KIND_PROP,
+				SHACL.LANGUAGE_IN,
+				SHACL.DATATYPE,
+				SHACL.MIN_EXCLUSIVE,
+				SHACL.MIN_INCLUSIVE,
+				SHACL.MAX_EXCLUSIVE,
+				SHACL.MAX_INCLUSIVE,
+				SHACL.CLASS,
+				SHACL.TARGET_NODE,
+				SHACL.DEACTIVATED,
+				SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN,
+				SHACL.UNIQUE_LANG,
+				SHACL.TARGET_OBJECTS_OF);
 	}
 
 	@Override
@@ -229,7 +228,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		if (getDataDir() != null) {
 			if (parallelValidation) {
 				logger.info("Automatically disabled parallel SHACL validation because persistent base sail "
-					+ "was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
+						+ "was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
 			}
 			setParallelValidation(false);
 		}
@@ -238,7 +237,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo.shutDown();
 			shapesRepo = null;
 		}
-
 
 		if (super.getBaseSail().getDataDir() != null) {
 			String path = super.getBaseSail().getDataDir().getPath();
@@ -251,7 +249,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		} else {
 			shapesRepo = new SailRepository(new MemoryStore());
 		}
-
 
 		shapesRepo.init();
 
@@ -298,8 +295,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection() throws SailException {
 		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
 	}
-
-
 
 	List<NodeShape> getNodeShapes() {
 		return nodeShapes;

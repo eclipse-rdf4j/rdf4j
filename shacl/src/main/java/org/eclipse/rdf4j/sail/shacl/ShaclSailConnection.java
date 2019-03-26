@@ -95,7 +95,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.shapesRepoConnection = shapesRepoConnection;
 		this.sail = sail;
 
-
 		if (sail.isValidationEnabled()) {
 			addConnectionListener(this);
 		}
@@ -161,7 +160,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		previousStateConnection.commit();
 		super.commit();
 		shapesRepoConnection.commit();
-		if(shapesModifiedInCurrentTransaction){
+		if (shapesModifiedInCurrentTransaction) {
 			sail.setNodeShapes(nodeShapes);
 		}
 		cleanup();
@@ -218,18 +217,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void rollback() throws SailException {
 
-			previousStateConnection.rollback();
-			shapesRepoConnection.rollback();
-			super.rollback();
-			if(shapesModifiedInCurrentTransaction || isShapeRefreshNeeded){
-				isShapeRefreshNeeded = true; // force refresh shapes after rollback of the shapesRepoConnection
-				refreshShapes();
-				if(shapesModifiedInCurrentTransaction){
-					sail.setNodeShapes(nodeShapes);
-				}
+		previousStateConnection.rollback();
+		shapesRepoConnection.rollback();
+		super.rollback();
+		if (shapesModifiedInCurrentTransaction || isShapeRefreshNeeded) {
+			isShapeRefreshNeeded = true; // force refresh shapes after rollback of the shapesRepoConnection
+			refreshShapes();
+			if (shapesModifiedInCurrentTransaction) {
+				sail.setNodeShapes(nodeShapes);
 			}
-			cleanup();
-			sail.releaseExclusiveWriteLock();
+		}
+		cleanup();
+		sail.releaseExclusiveWriteLock();
 	}
 
 	void cleanup() {
