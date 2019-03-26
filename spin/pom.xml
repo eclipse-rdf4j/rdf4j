@@ -15,10 +15,9 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>commons-lang</groupId>
-			<artifactId>commons-lang</artifactId>
-		</dependency>
-
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-text</artifactId>
+        </dependency>
         <dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryalgebra-model</artifactId>
