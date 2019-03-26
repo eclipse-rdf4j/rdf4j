@@ -391,11 +391,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				return;
 			}
 
-			if (!sail.isIgnoreNoShapesLoadedException()
-					&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && nodeShapes.isEmpty())) {
-				throw new NoShapesLoadedException();
-			}
-
 			List<Tuple> invalidTuples = validate(false);
 			boolean valid = invalidTuples.isEmpty();
 
