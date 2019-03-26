@@ -88,7 +88,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	// used to indicate if the transaction is in the validating phase
 	boolean validating;
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesRepoConnection, SailRepositoryConnection shapesRepoCacheConnection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesRepoConnection,
+			SailRepositoryConnection shapesRepoCacheConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesRepoConnection = shapesRepoConnection;

@@ -147,7 +147,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private SailRepository shapesRepoCached;
 
-
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
@@ -273,7 +272,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection, SailRepositoryConnection shapesRepoCacheConnection) throws SailException {
+	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection,
+			SailRepositoryConnection shapesRepoCacheConnection) throws SailException {
 		shapesRepoCacheConnection.clear();
 
 		try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
@@ -297,7 +297,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection(), shapesRepoCached.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection(),
+				shapesRepoCached.getConnection());
 	}
 
 	/**

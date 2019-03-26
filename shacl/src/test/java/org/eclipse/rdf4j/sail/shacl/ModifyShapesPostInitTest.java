@@ -116,7 +116,7 @@ public class ModifyShapesPostInitTest {
 
 			try {
 				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			}catch (RepositoryException e){
+			} catch (RepositoryException e) {
 				throw e.getCause();
 			}
 		}
@@ -153,7 +153,7 @@ public class ModifyShapesPostInitTest {
 
 			try {
 				connection.commit();
-			}catch (RepositoryException e){
+			} catch (RepositoryException e) {
 				throw e.getCause();
 			}
 
