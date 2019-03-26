@@ -273,33 +273,6 @@ public class TempTest {
 
 	}
 
-	@Test(expected = NoShapesLoadedException.class)
-	public void testShapeWithoutTargetClassInvalid() throws Exception {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", false);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.remove(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.commit();
-
-		}
-
-	}
-
 	@Test
 	@Ignore // this method is used to produce the log examples in the documentation
 	public void doc() throws IOException {
