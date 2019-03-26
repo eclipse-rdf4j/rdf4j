@@ -281,8 +281,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 
 		runInferencingSparqlQueries(shapesRepoCacheConnection);
-		nodeShapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
-		return nodeShapes;
+		List<NodeShape> shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
+		nodeShapes = shapes;
+		return shapes;
 	}
 
 	@Override

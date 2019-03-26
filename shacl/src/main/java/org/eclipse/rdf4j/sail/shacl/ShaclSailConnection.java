@@ -57,6 +57,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
+	private List<NodeShape> nodeShapes;
+
 	private NotifyingSailConnection previousStateConnection;
 
 	MemoryStore addedStatements;
@@ -92,6 +94,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.shapesRepoConnection = shapesRepoConnection;
 		this.shapesRepoCacheConnection = shapesRepoCacheConnection;
 		this.sail = sail;
+
+		this.nodeShapes = sail.getNodeShapes();
 
 		if (sail.isValidationEnabled()) {
 			addConnectionListener(this);
@@ -239,7 +243,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private List<NodeShape> refreshShapes() {
-		List<NodeShape> nodeShapes = sail.getNodeShapes();
 		if (isShapeRefreshNeeded) {
 			nodeShapes = sail.refreshShapes(shapesRepoConnection, shapesRepoCacheConnection);
 			isShapeRefreshNeeded = false;
