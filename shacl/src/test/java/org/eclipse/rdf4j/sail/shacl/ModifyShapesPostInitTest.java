@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -69,8 +70,8 @@ public class ModifyShapesPostInitTest {
 		}
 	}
 
-	@Test
-	public void testUpdatingShapesViolation() throws IOException {
+	@Test(expected = ShaclSailValidationException.class)
+	public void testUpdatingShapesViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
@@ -113,13 +114,16 @@ public class ModifyShapesPostInitTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
+			try {
+				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}catch (RepositoryException e){
+				throw e.getCause();
+			}
 		}
 	}
 
-	@Test
-	public void testAddingShapesAfterData() throws IOException {
+	@Test(expected = ShaclSailValidationException.class)
+	public void testAddingShapesAfterData() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
@@ -146,7 +150,12 @@ public class ModifyShapesPostInitTest {
 					"        ] ."));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection.commit();
+
+			try {
+				connection.commit();
+			}catch (RepositoryException e){
+				throw e.getCause();
+			}
 
 		}
 	}

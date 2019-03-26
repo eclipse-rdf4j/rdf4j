@@ -585,7 +585,7 @@
                           # sh:severity   sh:Violation
                   ]    ,
                   [
-                          # sh:uniqueLang   true ;
+                          sh:uniqueLang   true ;
                           sh:path skos:prefLabel ;
                           # sh:severity   sh:Violation
                   ]    ,

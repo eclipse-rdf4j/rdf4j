@@ -11,9 +11,11 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
@@ -143,6 +145,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	private SailRepository shapesRepo;
 
+	private SailRepository shapesRepoCached;
+
+
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
@@ -235,6 +240,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
+		if (shapesRepoCached != null) {
+			shapesRepoCached.shutDown();
+			shapesRepoCached = null;
+		}
+
 		if (super.getBaseSail().getDataDir() != null) {
 			String path = super.getBaseSail().getDataDir().getPath();
 			if (path.endsWith("/")) {
@@ -247,34 +257,31 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = new SailRepository(new MemoryStore());
 		}
 
-		shapesRepo.init();
+		shapesRepoCached = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-			shapesRepoConnection.begin(IsolationLevels.NONE);
-			refreshShapes(shapesRepoConnection);
-			shapesRepoConnection.commit();
+		shapesRepo.init();
+		shapesRepoCached.init();
+
+		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCached.getConnection()) {
+			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+				shapesRepoConnection.begin(IsolationLevels.NONE);
+				refreshShapes(shapesRepoConnection, shapesRepoCacheConnection);
+				shapesRepoConnection.commit();
+			}
 		}
 		initializing = false;
 
 	}
 
-	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
-		if (!initializing) {
-			try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
-				boolean empty = !beforeCommitConnection.hasStatement(null, null, null, false);
-				if (!empty) {
-					// Our inferencer both adds and removes statements.
-					// To support updates I recommend having two graphs, one raw one with the unmodified data.
-					// Then copy all that data into a new graph, run inferencing on that graph and use it to generate
-					// the java objects
-					throw new IllegalStateException(
-							"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
-				}
-			}
+	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection, SailRepositoryConnection shapesRepoCacheConnection) throws SailException {
+		shapesRepoCacheConnection.clear();
+
+		try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+			shapesRepoCacheConnection.add(statements);
 		}
 
-		runInferencingSparqlQueries(shapesRepoConnection);
-		nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection, this);
+		runInferencingSparqlQueries(shapesRepoCacheConnection);
+		nodeShapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
 		return nodeShapes;
 	}
 
@@ -289,7 +296,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection(), shapesRepoCached.getConnection());
 	}
 
 	/**

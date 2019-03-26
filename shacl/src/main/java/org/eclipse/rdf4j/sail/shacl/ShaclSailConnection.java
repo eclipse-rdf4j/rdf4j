@@ -77,7 +77,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private boolean preparedHasRun = false;
 
-	private SailRepositoryConnection shapesConnection;
+	private SailRepositoryConnection shapesRepoConnection;
+	private SailRepositoryConnection shapesRepoCacheConnection;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private Map<PlanNode, BufferedSplitter> selectNodeCache;
@@ -85,11 +86,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	// used to indicate if the transaction is in the validating phase
 	boolean validating;
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesRepoConnection, SailRepositoryConnection shapesRepoCacheConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
-		this.shapesConnection = shapesConnection;
+		this.shapesRepoConnection = shapesRepoConnection;
+		this.shapesRepoCacheConnection = shapesRepoCacheConnection;
 		this.sail = sail;
 
 		if (sail.isValidationEnabled()) {
@@ -131,7 +132,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		// successivley
 		synchronized (sail) {
 			super.begin(level);
-			shapesConnection.begin(level);
+			shapesRepoConnection.begin(level);
+			shapesRepoCacheConnection.begin(level);
 			previousStateConnection.begin(level);
 		}
 
@@ -154,7 +156,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 		previousStateConnection.commit();
 		super.commit();
-		shapesConnection.commit();
+		shapesRepoConnection.commit();
+		shapesRepoCacheConnection.commit();
 		cleanup();
 
 	}
@@ -163,7 +166,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			shapesConnection.add(subj, pred, obj);
+			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
 			super.addStatement(modify, subj, pred, obj, contexts);
@@ -174,7 +177,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			shapesConnection.remove(subj, pred, obj);
+			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
 			super.removeStatement(modify, subj, pred, obj, contexts);
@@ -184,7 +187,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			shapesConnection.add(subj, pred, obj);
+			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
 			super.addStatement(subj, pred, obj, contexts);
@@ -194,7 +197,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
-			shapesConnection.remove(subj, pred, obj);
+			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
 			super.removeStatements(subj, pred, obj, contexts);
@@ -205,10 +208,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void rollback() throws SailException {
 		synchronized (sail) {
 			previousStateConnection.rollback();
-			shapesConnection.rollback();
+			shapesRepoConnection.rollback();
+			shapesRepoCacheConnection.rollback();
 			super.rollback();
 			cleanup();
-			refreshShapes(shapesConnection);
+			refreshShapes();
 		}
 	}
 
@@ -234,10 +238,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		selectNodeCache = null;
 	}
 
-	private List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) {
+	private List<NodeShape> refreshShapes() {
 		List<NodeShape> nodeShapes = sail.getNodeShapes();
 		if (isShapeRefreshNeeded) {
-			nodeShapes = sail.refreshShapes(shapesRepoConnection);
+			nodeShapes = sail.refreshShapes(shapesRepoConnection, shapesRepoCacheConnection);
 			isShapeRefreshNeeded = false;
 		}
 
@@ -370,7 +374,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (isActive()) {
 			rollback();
 		}
-		shapesConnection.close();
+		shapesRepoConnection.close();
+		shapesRepoCacheConnection.close();
 		previousStateConnection.close();
 		super.close();
 		connectionsToClose.forEach(SailConnection::close);
@@ -381,17 +386,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void prepare() throws SailException {
 		try {
 			preparedHasRun = true;
-
-			List<NodeShape> nodeShapes = refreshShapes(shapesConnection);
+			boolean isShapeRefreshNeeded = this.isShapeRefreshNeeded;
+			List<NodeShape> nodeShapes = refreshShapes();
 
 			// we don't support revalidation of all data when changing the shacl shapes,
 			// so no need to check if the shapes have changed
-			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !isShapeRefreshNeeded) {
 				logger.debug("Nothing has changed, nothing to validate.");
 				return;
 			}
 
-			List<Tuple> invalidTuples = validate(false);
+			List<Tuple> invalidTuples = validate(isShapeRefreshNeeded);
 			boolean valid = invalidTuples.isEmpty();
 
 			if (!valid) {
