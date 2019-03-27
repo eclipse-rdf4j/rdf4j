@@ -163,11 +163,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (shapesModifiedInCurrentTransaction) {
 			sail.setNodeShapes(nodeShapes);
 		}
-		cleanup();
 
 		if (sail.holdsWriteLock(stamp)) {
 			sail.releaseExclusiveWriteLock(stamp);
 		}
+
+		cleanup();
 	}
 
 	@Override
@@ -229,10 +230,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				sail.setNodeShapes(nodeShapes);
 			}
 		}
-		cleanup();
 		if (sail.holdsWriteLock(stamp)) {
 			sail.releaseExclusiveWriteLock(stamp);
 		}
+		cleanup();
 	}
 
 	void cleanup() {
@@ -256,6 +257,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		isShapeRefreshNeeded = false;
 		selectNodeCache = null;
 		shapesModifiedInCurrentTransaction = false;
+		stamp = 0;
 	}
 
 	private List<NodeShape> refreshShapes() {
