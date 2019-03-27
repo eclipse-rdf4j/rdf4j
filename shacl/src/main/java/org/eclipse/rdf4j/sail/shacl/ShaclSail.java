@@ -36,6 +36,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.StampedLock;
 
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
@@ -147,7 +148,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private SailRepository shapesRepo;
 
 	// exclusive lock for modifying the shapes.
-	private final ReentrantLock exclusiveWriteLock = new ReentrantLock(true);
+	private final StampedLock lock = new StampedLock();
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -321,25 +322,31 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
 	 */
-	void acquireExclusiveWriteLock() {
-		if (exclusiveWriteLock.isHeldByCurrentThread()) {
-			return;
+	long acquireExclusiveWriteLock(long stamp) {
+		if (lock.validate(stamp)) {
+			return stamp;
 		}
 
-		try {
-			exclusiveWriteLock.lockInterruptibly();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
-		}
+		return lock.writeLock();
+	}
+
+	boolean holdsWriteLock(long stamp) {
+		return lock.validate(stamp);
 	}
 
 	/**
 	 * Releases the exclusive write lock.
 	 */
-	void releaseExclusiveWriteLock() {
-		while (exclusiveWriteLock.isHeldByCurrentThread()) {
-			exclusiveWriteLock.unlock();
-		}
+	void releaseExclusiveWriteLock(long stamp) {
+		lock.unlockWrite(stamp);
+	}
+
+	long readlock() {
+		return lock.readLock();
+	}
+
+	void releaseReadlock(long stamp) {
+		lock.unlockRead(stamp);
 	}
 
 	/**

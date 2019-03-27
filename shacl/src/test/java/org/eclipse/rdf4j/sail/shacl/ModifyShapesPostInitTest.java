@@ -13,10 +13,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.StringReader;
+
+import static junit.framework.TestCase.assertTrue;
 
 public class ModifyShapesPostInitTest {
 
@@ -192,12 +195,11 @@ public class ModifyShapesPostInitTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
-			System.out.println("here");
 		}
 
+		connection2.rollback();
 		add(connection1, "ex:steve a ex:Person .");
 
-		connection2.rollback();
 		connection2.close();
 		connection1.close();
 
@@ -243,6 +245,59 @@ public class ModifyShapesPostInitTest {
 
 		connection2.close();
 		connection1.close();
+
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testIsolation() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection2.begin();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+				"ex:PersonShape",
+				"        a sh:NodeShape  ;",
+				"        sh:targetClass ex:Person ;",
+				"        sh:property [",
+				"                sh:path ex:age ;",
+				"                sh:minCount 1 ;",
+				"        ] ."));
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection1.begin();
+		connection2.commit();
+
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		try {
+			connection1.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			ValidationReport validationReport = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+
+			assertTrue(validationReport.conforms());
+
+			connection.commit();
+		}
 
 		sailRepository.shutDown();
 

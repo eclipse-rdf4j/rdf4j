@@ -88,6 +88,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	// used to indicate if the transaction is in the validating phase
 	boolean validating;
 
+	private long stamp;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
@@ -128,8 +130,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		assert removedStatements == null;
 		assert connectionsToClose.size() == 0;
 
-		this.nodeShapes = sail.getNodeShapes();
-
 		stats = new Stats();
 
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly
@@ -165,14 +165,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 		cleanup();
 
-		sail.releaseExclusiveWriteLock();
+		if (sail.holdsWriteLock(stamp)) {
+			sail.releaseExclusiveWriteLock(stamp);
+		}
 	}
 
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			sail.acquireExclusiveWriteLock();
+			stamp = sail.acquireExclusiveWriteLock(stamp);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -184,7 +186,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			sail.acquireExclusiveWriteLock();
+			stamp = sail.acquireExclusiveWriteLock(stamp);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -195,7 +197,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			sail.acquireExclusiveWriteLock();
+			stamp = sail.acquireExclusiveWriteLock(stamp);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -206,7 +208,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
-			sail.acquireExclusiveWriteLock();
+			stamp = sail.acquireExclusiveWriteLock(stamp);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -228,7 +230,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 		}
 		cleanup();
-		sail.releaseExclusiveWriteLock();
+		if (sail.holdsWriteLock(stamp)) {
+			sail.releaseExclusiveWriteLock(stamp);
+		}
 	}
 
 	void cleanup() {
@@ -399,7 +403,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void prepare() throws SailException {
+		long readStamp = 0;
+
 		try {
+			if (!sail.holdsWriteLock(stamp)) {
+				readStamp = sail.readlock();
+			}
+			this.nodeShapes = sail.getNodeShapes();
+
 			preparedHasRun = true;
 			refreshShapes();
 
@@ -417,6 +428,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new ShaclSailValidationException(invalidTuples);
 			}
 		} finally {
+			if (!sail.holdsWriteLock(stamp)) {
+				sail.releaseReadlock(readStamp);
+			}
 			super.prepare();
 			previousStateConnection.prepare();
 		}
@@ -588,9 +602,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throw new IllegalStateException("No active transaction!");
 		}
 
+		this.nodeShapes = sail.getNodeShapes();
+
 		List<Tuple> validate = validate(true);
 
-		return new ValidationReport(validate.isEmpty());
+		return new ShaclSailValidationException(validate).getValidationReport();
 	}
 
 }

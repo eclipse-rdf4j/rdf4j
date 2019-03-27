@@ -48,7 +48,7 @@ public class ShaclSailValidationException extends SailException {
 	 */
 	@SuppressWarnings("WeakerAccess")
 	public ValidationReport getValidationReport() {
-		ValidationReport validationReport = new ValidationReport(false);
+		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
 
 		for (Tuple invalidTuple : invalidTuples) {
 			ValidationResult parent = null;
