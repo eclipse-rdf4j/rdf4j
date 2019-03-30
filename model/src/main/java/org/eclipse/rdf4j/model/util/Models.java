@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -760,14 +761,11 @@ public class Models {
 	}
 
 	private static Model toModel(Iterable<? extends Statement> iterable) {
-		Model set = null;
 		if (iterable instanceof Model) {
-			set = (Model) iterable;
-		} else {
-			// Filter duplicates
-			set = new TreeModel();
-			Iterators.addAll(iterable.iterator(), set);
+			return (Model) iterable;
 		}
+		final Model set = new TreeModel();
+		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(st -> set.add(st));
 		return set;
 	}
 

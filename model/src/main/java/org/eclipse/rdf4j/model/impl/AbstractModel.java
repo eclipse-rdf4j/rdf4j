@@ -181,6 +181,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		return super.hashCode();
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -189,7 +190,17 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		if (o instanceof Model) {
 			Model model = (Model) o;
 			return Models.isomorphic(this, model);
+		} else if (o instanceof Set) {
+			if (this.size() != ((Set<?>) o).size()) {
+				return false;
+			}
+			try {
+				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
+			} catch (ClassCastException e) {
+				return false;
+			}
 		}
+
 		return false;
 	}
 
