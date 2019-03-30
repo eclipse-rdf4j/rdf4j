@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -35,7 +36,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.StampedLock;
 
 /**
@@ -149,6 +149,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	// exclusive lock for modifying the shapes.
 	private final StampedLock lock = new StampedLock();
+	transient private Thread threadHoldingWriteLock;
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -327,7 +328,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 			return stamp;
 		}
 
-		return lock.writeLock();
+		long newStamp = lock.writeLock();
+		threadHoldingWriteLock = Thread.currentThread();
+		return newStamp;
 	}
 
 	boolean holdsWriteLock(long stamp) {
@@ -338,10 +341,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Releases the exclusive write lock.
 	 */
 	void releaseExclusiveWriteLock(long stamp) {
+		threadHoldingWriteLock = null;
 		lock.unlockWrite(stamp);
 	}
 
 	long readlock() {
+		if (threadHoldingWriteLock == Thread.currentThread()) {
+			throw new SailConflictException(
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection calls commit()!");
+		}
 		return lock.readLock();
 	}
 

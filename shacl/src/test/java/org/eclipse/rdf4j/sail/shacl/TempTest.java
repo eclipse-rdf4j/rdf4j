@@ -293,19 +293,29 @@ public class TempTest {
 
 			connection.begin();
 
-			StringReader shaclRules = new StringReader(String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"ex:PersonShape\n" + "        a sh:NodeShape  ;\n" + "        sh:targetClass ex:Person ;\n"
-							+ "        sh:property [\n" + "                sh:path ex:age ;\n"
-							+ "                sh:datatype xsd:integer ;\n" + "        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."
+
+			));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
-			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			add(connection, String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
 					"ex:pete a ex:Person ."
 
@@ -315,8 +325,10 @@ public class TempTest {
 			shaclSail.setGlobalLogValidationExecution(true);
 			shaclSail.setLogValidationViolations(true);
 
-			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			add(connection, String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
 					"ex:pete ex:age \"eighteen\" ."
 

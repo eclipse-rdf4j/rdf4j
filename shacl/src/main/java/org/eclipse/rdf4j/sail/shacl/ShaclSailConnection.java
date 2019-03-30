@@ -430,7 +430,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new ShaclSailValidationException(invalidTuples);
 			}
 		} finally {
-			if (!sail.holdsWriteLock(stamp)) {
+			if (readStamp != 0 && !sail.holdsWriteLock(stamp)) {
 				sail.releaseReadlock(readStamp);
 			}
 			super.prepare();
