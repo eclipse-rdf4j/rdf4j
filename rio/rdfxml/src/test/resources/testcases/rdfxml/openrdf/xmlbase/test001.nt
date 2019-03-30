@@ -1,0 +1,1 @@
+<http://example.org/dir/file#subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> "obj"^^<http://example.org/dir/datatype> .

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+
+<!--
+	As test002b.rdf; this adds whitespace between the start and end tags
+-->
+
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:random="http://random.ioctl.org/#">
+
+<rdf:Description rdf:about="http://random.ioctl.org/#bar">
+  <random:someProperty rdf:parseType="Resource">
+  </random:someProperty>
+  <random:label>Some label</random:label>
+</rdf:Description>
+
+</rdf:RDF>
+

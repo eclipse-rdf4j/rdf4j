@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+
+<!--
+	Test case for issues SES-1920
+
+	property element containing only whitespace.
+-->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:random="http://random.ioctl.org/#">
+  
+  <rdf:Description rdf:about="http://random.ioctl.org/#bar">
+    <random:someProperty> </random:someProperty>
+  </rdf:Description>
+</rdf:RDF>
