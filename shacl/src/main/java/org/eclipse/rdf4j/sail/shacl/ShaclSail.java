@@ -328,6 +328,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 			return stamp;
 		}
 
+		if (threadHoldingWriteLock == Thread.currentThread()) {
+			throw new SailConflictException(
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection also tries to modify the shapes!");
+		}
+
 		long newStamp = lock.writeLock();
 		threadHoldingWriteLock = Thread.currentThread();
 		return newStamp;
