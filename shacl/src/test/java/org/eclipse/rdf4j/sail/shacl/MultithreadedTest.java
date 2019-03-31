@@ -41,20 +41,19 @@ public class MultithreadedTest {
 				Transaction transaction = new Transaction();
 
 				String join = String.join("\n", "",
-					"ex:shape_" + i + "_" + j,
-					"        a sh:NodeShape  ;",
-					"        sh:targetClass ex:Person" + j + " ;",
-					"        sh:property [",
-					"                sh:path ex:age ;",
-					"                sh:minCount 1 ;",
-					"        ] .");
+						"ex:shape_" + i + "_" + j,
+						"        a sh:NodeShape  ;",
+						"        sh:targetClass ex:Person" + j + " ;",
+						"        sh:property [",
+						"                sh:path ex:age ;",
+						"                sh:minCount 1 ;",
+						"        ] .");
 
 				transaction.add(join, RDF4J.SHACL_SHAPE_GRAPH);
 				transactions.add(transaction);
 			}
 			list.add(transactions);
 		}
-
 
 		for (int j = 0; j < 10; j++) {
 			ArrayList<Transaction> transactions = new ArrayList<>();
@@ -63,19 +62,18 @@ public class MultithreadedTest {
 				String join;
 				if (i % 2 == 0) {
 					join = String.join("\n", "",
-						"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-						"  ex:age" + i + " " + i + j,
-						"  ."
+							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+							"  ex:age" + i + " " + i + j,
+							"  ."
 
 					);
 				} else {
 					join = String.join("\n", "",
-						"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-						"  ."
+							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+							"  ."
 
 					);
 				}
-
 
 				transaction.add(join, null);
 				transactions.add(transaction);
@@ -89,20 +87,19 @@ public class MultithreadedTest {
 				Transaction transaction = new Transaction();
 
 				String join = String.join("\n", "",
-					"ex:shape_" + i + "_" + j,
-					"        a sh:NodeShape  ;",
-					"        sh:targetClass ex:Person" + j + " ;",
-					"        sh:property [",
-					"                sh:path ex:age ;",
-					"                sh:minCount 1 ;",
-					"        ] .");
+						"ex:shape_" + i + "_" + j,
+						"        a sh:NodeShape  ;",
+						"        sh:targetClass ex:Person" + j + " ;",
+						"        sh:property [",
+						"                sh:path ex:age ;",
+						"                sh:minCount 1 ;",
+						"        ] .");
 
 				transaction.remove(join, RDF4J.SHACL_SHAPE_GRAPH);
 				transactions.add(transaction);
 			}
 			list.add(transactions);
 		}
-
 
 		for (int j = 0; j < 10; j++) {
 			ArrayList<Transaction> transactions = new ArrayList<>();
@@ -111,19 +108,18 @@ public class MultithreadedTest {
 				String join;
 				if (i % 2 == 0) {
 					join = String.join("\n", "",
-						"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-						"  ex:age" + i + " " + i + j,
-						"  ."
+							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+							"  ex:age" + i + " " + i + j,
+							"  ."
 
 					);
 				} else {
 					join = String.join("\n", "",
-						"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-						"  ."
+							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+							"  ."
 
 					);
 				}
-
 
 				transaction.remove(join, null);
 				transactions.add(transaction);
@@ -144,29 +140,29 @@ public class MultithreadedTest {
 		try {
 
 			list.stream()
-				.sorted(Comparator.comparingInt(System::identityHashCode))
-				.parallel()
-				.forEach(transactions -> {
-					try (SailRepositoryConnection connection = repository.getConnection()) {
+					.sorted(Comparator.comparingInt(System::identityHashCode))
+					.parallel()
+					.forEach(transactions -> {
+						try (SailRepositoryConnection connection = repository.getConnection()) {
 
-						transactions.forEach(transaction -> {
-							connection.begin(isolationLevel);
-							connection.add(transaction.addedStatements);
-							connection.remove(transaction.removedStatements);
-							try {
-								connection.commit();
-							} catch (RepositoryException e) {
-								System.out.println("here");
-								if (!(e.getCause() instanceof ShaclSailValidationException)) {
-									throw e;
+							transactions.forEach(transaction -> {
+								connection.begin(isolationLevel);
+								connection.add(transaction.addedStatements);
+								connection.remove(transaction.removedStatements);
+								try {
+									connection.commit();
+								} catch (RepositoryException e) {
+									System.out.println("here");
+									if (!(e.getCause() instanceof ShaclSailValidationException)) {
+										throw e;
+									}
+									connection.rollback();
 								}
-								connection.rollback();
-							}
-						});
+							});
 
-					}
+						}
 
-				});
+					});
 
 		} finally {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -184,25 +180,25 @@ public class MultithreadedTest {
 
 		private void add(String turtle, IRI graph) {
 			turtle = String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.") + turtle;
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.") + turtle;
 
 			StringReader shaclRules = new StringReader(turtle);
 
 			try {
 				Model parse = Rio.parse(shaclRules, "", RDFFormat.TURTLE);
 				parse.stream()
-					.map(statement -> {
-						if (graph != null) {
-							return vf.createStatement(statement.getSubject(), statement.getPredicate(),
-								statement.getObject(), graph);
-						}
+						.map(statement -> {
+							if (graph != null) {
+								return vf.createStatement(statement.getSubject(), statement.getPredicate(),
+										statement.getObject(), graph);
+							}
 
-						return statement;
-					})
-					.forEach(statement -> addedStatements.add(statement));
+							return statement;
+						})
+						.forEach(statement -> addedStatements.add(statement));
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
@@ -211,25 +207,25 @@ public class MultithreadedTest {
 
 		private void remove(String turtle, IRI graph) {
 			turtle = String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.") + turtle;
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.") + turtle;
 
 			StringReader shaclRules = new StringReader(turtle);
 
 			try {
 				Model parse = Rio.parse(shaclRules, "", RDFFormat.TURTLE);
 				parse.stream()
-					.map(statement -> {
-						if (graph != null) {
-							return vf.createStatement(statement.getSubject(), statement.getPredicate(),
-								statement.getObject(), graph);
-						}
+						.map(statement -> {
+							if (graph != null) {
+								return vf.createStatement(statement.getSubject(), statement.getPredicate(),
+										statement.getObject(), graph);
+							}
 
-						return statement;
-					})
-					.forEach(statement -> removedStatements.add(statement));
+							return statement;
+						})
+						.forEach(statement -> removedStatements.add(statement));
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}

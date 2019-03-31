@@ -38,8 +38,8 @@ import java.util.concurrent.TimeUnit;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=ProfilingAggressive.jfc", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -49,7 +49,7 @@ public class ShaclLoadingBenchmark {
 	public void setUp() {
 		System.gc();
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-			.setLevel(ch.qos.logback.classic.Level.ERROR);
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
@@ -67,51 +67,51 @@ public class ShaclLoadingBenchmark {
 
 			for (int i = 0; i < 10; i++) {
 				StringReader data = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+						"@prefix ex: <http://example.com/ns#> .",
+						"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+						"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+						"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " .",
-					"[] a ex:Person; ",
-					"	ex:age"+i+" " + i + " ."
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " .",
+						"[] a ex:Person; ",
+						"	ex:age" + i + " " + i + " ."
 
 				));
 
@@ -123,18 +123,18 @@ public class ShaclLoadingBenchmark {
 			for (int i = 0; i < 10; i++) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				StringReader shaclRules = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+						"@prefix ex: <http://example.com/ns#> .",
+						"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+						"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+						"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"[]",
-					"        a sh:NodeShape  ;",
-					"        sh:targetClass ex:Person ;",
-					"        sh:property [",
-					"                sh:path ex:age" + i + " ;",
-					"                sh:datatype xsd:integer ;",
-					"        ] ."));
+						"[]",
+						"        a sh:NodeShape  ;",
+						"        sh:targetClass ex:Person ;",
+						"        sh:property [",
+						"                sh:path ex:age" + i + " ;",
+						"                sh:datatype xsd:integer ;",
+						"        ] ."));
 
 				connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 				connection.commit();
@@ -145,6 +145,5 @@ public class ShaclLoadingBenchmark {
 		repository.shutDown();
 
 	}
-
 
 }
