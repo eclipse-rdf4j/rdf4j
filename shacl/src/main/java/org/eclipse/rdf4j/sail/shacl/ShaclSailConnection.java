@@ -270,7 +270,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return nodeShapes;
 	}
 
-	private List<Tuple> validate(boolean validateEntireBaseSail) {
+	private List<Tuple> validate(List<NodeShape> nodeShapes, boolean validateEntireBaseSail) {
 
 		if (!sail.isValidationEnabled()) {
 			return Collections.emptyList();
@@ -411,10 +411,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (!sail.holdsWriteLock(stamp)) {
 				readStamp = sail.readlock();
 			}
-			this.nodeShapes = sail.getNodeShapes();
+			loadCachedNodeShapes();
+			List<NodeShape> nodeShapesBeforeRefresh = this.nodeShapes;
 
-			preparedHasRun = true;
 			refreshShapes();
+
+			List<NodeShape> nodeShapesAfterRefresh = this.nodeShapes;
 
 			// we don't support revalidation of all data when changing the shacl shapes,
 			// so no need to check if the shapes have changed
@@ -423,13 +425,27 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				return;
 			}
 
-			List<Tuple> invalidTuples = validate(shapesModifiedInCurrentTransaction);
+			if (shapesModifiedInCurrentTransaction && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+				// we can optimize which shapes to revalidate since no data has changed.
+				assert nodeShapesBeforeRefresh != nodeShapesAfterRefresh;
+
+				HashSet<NodeShape> nodeShapesBeforeRefreshSet = new HashSet<>(nodeShapesBeforeRefresh);
+
+				nodeShapesAfterRefresh = nodeShapesAfterRefresh.stream()
+						.filter(nodeShape -> !nodeShapesBeforeRefreshSet.contains(nodeShape))
+						.collect(Collectors.toList());
+
+			}
+
+			List<Tuple> invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			boolean valid = invalidTuples.isEmpty();
 
 			if (!valid) {
 				throw new ShaclSailValidationException(invalidTuples);
 			}
 		} finally {
+			preparedHasRun = true;
+
 			if (readStamp != 0 && !sail.holdsWriteLock(stamp)) {
 				sail.releaseReadlock(readStamp);
 			}
@@ -437,6 +453,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			previousStateConnection.prepare();
 		}
 
+	}
+
+	private void loadCachedNodeShapes() {
+		this.nodeShapes = sail.getNodeShapes();
 	}
 
 	@Override
@@ -604,9 +624,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throw new IllegalStateException("No active transaction!");
 		}
 
-		this.nodeShapes = sail.getNodeShapes();
+		loadCachedNodeShapes();
 
-		List<Tuple> validate = validate(true);
+		List<Tuple> validate = validate(this.nodeShapes, true);
 
 		return new ShaclSailValidationException(validate).getValidationReport();
 	}

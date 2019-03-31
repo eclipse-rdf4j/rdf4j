@@ -17,6 +17,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
@@ -59,4 +61,23 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 		return SourceConstraintComponent.MaxLengthConstraintComponent;
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MaxLengthPropertyShape that = (MaxLengthPropertyShape) o;
+		return maxLength == that.maxLength;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), maxLength);
+	}
 }

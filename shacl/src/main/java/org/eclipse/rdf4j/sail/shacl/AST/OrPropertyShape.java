@@ -176,4 +176,24 @@ public class OrPropertyShape extends PropertyShape {
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.OrConstraintComponent;
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		OrPropertyShape that = (OrPropertyShape) o;
+		return or.equals(that.or);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), or);
+	}
 }
