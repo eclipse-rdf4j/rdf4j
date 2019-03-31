@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -80,5 +81,25 @@ public class AndPropertyShape extends PropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.AndConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		AndPropertyShape that = (AndPropertyShape) o;
+		return and.equals(that.and);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), and);
 	}
 }

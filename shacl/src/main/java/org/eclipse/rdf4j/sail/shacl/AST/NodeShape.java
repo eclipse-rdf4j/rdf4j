@@ -205,4 +205,23 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
 		return parent;
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		NodeShape nodeShape = (NodeShape) o;
+		return id.equals(nodeShape.id) &&
+				propertyShapes.equals(nodeShape.propertyShapes) &&
+				nodeShapes.equals(nodeShape.nodeShapes);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(id, propertyShapes, nodeShapes);
+	}
 }

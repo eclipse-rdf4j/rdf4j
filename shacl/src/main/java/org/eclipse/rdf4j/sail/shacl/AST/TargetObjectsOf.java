@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -110,4 +111,23 @@ public class TargetObjectsOf extends NodeShape {
 				ExternalFilterByPredicate.On.Object);
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		TargetObjectsOf that = (TargetObjectsOf) o;
+		return targetObjectsOf.equals(that.targetObjectsOf);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), targetObjectsOf);
+	}
 }

@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
@@ -58,5 +60,25 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MaxExclusiveConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MaxExclusivePropertyShape that = (MaxExclusivePropertyShape) o;
+		return maxExclusive.equals(that.maxExclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), maxExclusive);
 	}
 }

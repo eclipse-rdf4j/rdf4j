@@ -17,6 +17,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
@@ -56,5 +58,25 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.DatatypeConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		DatatypePropertyShape that = (DatatypePropertyShape) o;
+		return datatype.equals(that.datatype);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), datatype);
 	}
 }

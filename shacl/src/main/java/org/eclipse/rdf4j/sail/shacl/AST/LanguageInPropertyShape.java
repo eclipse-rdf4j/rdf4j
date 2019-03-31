@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -61,5 +62,25 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.LanguageInConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		LanguageInPropertyShape that = (LanguageInPropertyShape) o;
+		return languageIn.equals(that.languageIn);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), languageIn);
 	}
 }
