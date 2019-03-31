@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.results;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -30,9 +31,9 @@ public class ValidationResult implements ModelInterface {
 	private PropertyShape sourceShape;
 	private Path path;
 	private ValidationResult detail;
-	private Resource focusNode;
+	private Value focusNode;
 
-	public ValidationResult(PropertyShape sourceShape, Resource focusNode) {
+	public ValidationResult(PropertyShape sourceShape, Value focusNode) {
 		this.sourceShape = sourceShape;
 		this.focusNode = focusNode;
 		this.sourceConstraintComponent = sourceShape.getSourceConstraintComponent();
@@ -108,7 +109,7 @@ public class ValidationResult implements ModelInterface {
 	/**
 	 * @return the focus node, aka. the subject, that caused the violation
 	 */
-	private Resource getFocusNode() {
+	private Value getFocusNode() {
 		return focusNode;
 	}
 

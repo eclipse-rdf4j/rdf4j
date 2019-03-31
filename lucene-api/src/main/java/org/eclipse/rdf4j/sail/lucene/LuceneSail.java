@@ -201,7 +201,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * need separate threads? Leo: we have separate threads, but we don't care much for now.
 	 */
 
-	final private Logger logger = LoggerFactory.getLogger(this.getClass());
+	final static private Logger logger = LoggerFactory.getLogger(LuceneSail.class);
 
 	/**
 	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is "SELECT ?s ?p ?o ?c

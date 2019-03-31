@@ -8,15 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 public class Sort implements PlanNode {
 
@@ -37,6 +37,8 @@ public class Sort implements PlanNode {
 
 			Iterator<Tuple> sortedTuplesIterator;
 
+			ValueComparator valueComparator = new ValueComparator();
+
 			@Override
 			public void close() throws SailException {
 				iterator.close();
@@ -55,7 +57,7 @@ public class Sort implements PlanNode {
 						sortedTuples.add(iterator.next());
 					}
 
-					Collections.sort(sortedTuples, Comparator.comparing(a -> a.line.get(0).stringValue()));
+					sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
 
 					sortedTuplesIterator = sortedTuples.iterator();
 
@@ -106,5 +108,22 @@ public class Sort implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Sort)) {
+			return false;
+		}
+		Sort sort = (Sort) o;
+		return parent.equals(sort.parent);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent);
 	}
 }

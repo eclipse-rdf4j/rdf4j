@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An implementation of the Sail interface that stores its data in main memory and that can use a file for persistent
@@ -44,6 +46,8 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
  * @author jeen
  */
 public class MemoryStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+
+	private static final Logger logger = LoggerFactory.getLogger(MemoryStore.class);
 
 	/*-----------*
 	 * Constants *

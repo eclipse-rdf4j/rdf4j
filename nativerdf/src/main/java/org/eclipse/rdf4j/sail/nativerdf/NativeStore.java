@@ -29,10 +29,13 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A SAIL implementation using B-Tree indexing on disk for storing and querying its data.
@@ -45,6 +48,8 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
  * @author jeen
  */
 public class NativeStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+
+	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
 
 	/*-----------*
 	 * Variables *

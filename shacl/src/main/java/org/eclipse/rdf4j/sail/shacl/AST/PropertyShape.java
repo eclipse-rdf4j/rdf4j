@@ -31,17 +31,19 @@ import java.util.stream.Stream;
  * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should
  * be extended by other nodes.
  *
- * @author Heshan Jayasinghe
+ * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
  */
 public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
+	final boolean deactivated;
 	private Resource id;
 
 	NodeShape nodeShape;
 
-	PropertyShape(Resource id, NodeShape nodeShape) {
+	PropertyShape(Resource id, NodeShape nodeShape, boolean deactivated) {
 		this.id = id;
 		this.nodeShape = nodeShape;
+		this.deactivated = deactivated;
 	}
 
 	@Override
@@ -51,12 +53,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -67,6 +71,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
@@ -142,15 +150,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 			try (Stream<Statement> stream = Iterations
 					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
-				return stream
-						.map(Statement::getObject)
-						.map(v -> (Resource) v)
-						.flatMap(propertyShapeId -> {
-							List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
-									propertyShapeId);
-							return propertyShapes.stream();
-						})
-						.collect(Collectors.toList());
+				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
+					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);
+					return propertyShapes.stream();
+				}).collect(Collectors.toList());
 			}
 
 		}
@@ -162,60 +165,82 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
 			if (shaclProperties.minCount != null) {
-				propertyShapes.add(
-						new MinCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minCount));
+				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minCount));
 			}
 			if (shaclProperties.maxCount != null) {
-				propertyShapes.add(
-						new MaxCountPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxCount));
+				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxCount));
 			}
 			if (shaclProperties.datatype != null) {
-				propertyShapes.add(
-						new DatatypePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.datatype));
+				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.datatype));
 			}
-			if (shaclProperties.or != null) {
-				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.or));
+			if (!shaclProperties.or.isEmpty()) {
+				shaclProperties.or.forEach(or -> {
+					propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape,
+							shaclProperties.deactivated, or));
+				});
 			}
 			if (shaclProperties.minLength != null) {
-				propertyShapes.add(
-						new MinLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minLength));
+				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minLength));
 			}
 			if (shaclProperties.maxLength != null) {
-				propertyShapes.add(
-						new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.maxLength));
+				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxLength));
 			}
-			if (shaclProperties.pattern != null) {
-				propertyShapes
-						.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.pattern));
+			if (!shaclProperties.pattern.isEmpty()) {
+				shaclProperties.pattern.forEach(pattern -> {
+					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
+							shaclProperties.deactivated, shaclProperties.path, pattern, shaclProperties.flags));
+				});
 			}
 			if (shaclProperties.languageIn != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.languageIn));
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.languageIn));
 			}
 			if (shaclProperties.nodeKind != null) {
-				propertyShapes.add(
-						new NodeKindPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.nodeKind));
+				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.nodeKind));
 			}
 			if (shaclProperties.minExclusive != null) {
 				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.minExclusive));
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minExclusive));
 			}
 			if (shaclProperties.maxExclusive != null) {
 				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.maxExclusive));
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxExclusive));
 			}
 			if (shaclProperties.maxInclusive != null) {
 				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.maxInclusive));
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxInclusive));
 			}
 			if (shaclProperties.minInclusive != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.minInclusive));
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minInclusive));
+			}
+			if (!shaclProperties.clazz.isEmpty()) {
+				shaclProperties.clazz.forEach(clazz -> {
+					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
+							shaclProperties.deactivated, shaclProperties.path, clazz));
+				});
+			}
+			if (!shaclProperties.and.isEmpty()) {
+				shaclProperties.and.forEach(and -> {
+					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
+							shaclProperties.deactivated, and));
+				});
+			}
+			if (shaclProperties.in != null) {
+				propertyShapes.add(new InPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.in));
+			}
+			if (shaclProperties.uniqueLang) {
+				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, shaclProperties.path, shaclProperties.uniqueLang));
 			}
 
-			if (shaclProperties.clazz != null) {
-				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape));
-			}
 			return propertyShapes;
 		}
 	}

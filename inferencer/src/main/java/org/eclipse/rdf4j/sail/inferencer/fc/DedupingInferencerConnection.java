@@ -27,7 +27,7 @@ public class DedupingInferencerConnection extends InferencerConnectionWrapper {
 
 	private static final int MAX_SIZE = 10000;
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(DedupingInferencerConnection.class);
 
 	private final ValueFactory valueFactory;
 

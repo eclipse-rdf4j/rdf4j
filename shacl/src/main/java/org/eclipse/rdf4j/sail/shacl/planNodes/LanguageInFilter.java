@@ -11,25 +11,28 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.model.Literal;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInFilter extends FilterPlanNode {
 
-	private final List<String> languageIn;
+	private final Set<String> languageIn;
 
-	public LanguageInFilter(PlanNode parent, List<String> languageIn) {
+	public LanguageInFilter(PlanNode parent, Set<String> languageIn) {
 		super(parent);
 		this.languageIn = languageIn;
 	}
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if (!(t.line.get(1) instanceof Literal))
+		if (!(t.line.get(1) instanceof Literal)) {
 			return false;
+		}
 
 		Optional<String> language = ((Literal) t.line.get(1)).getLanguage();
 		return language.filter(languageIn::contains).isPresent();

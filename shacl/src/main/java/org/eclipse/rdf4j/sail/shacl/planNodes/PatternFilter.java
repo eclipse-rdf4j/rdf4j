@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Value;
 
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -20,39 +19,37 @@ public class PatternFilter extends FilterPlanNode {
 
 	private final Pattern pattern;
 
-	public PatternFilter(PlanNode parent, String pattern, Optional<String> flags) {
+	public PatternFilter(PlanNode parent, String pattern, String flags) {
 		super(parent);
-		if (flags.isPresent()) {
+		if (flags.length() > 0) {
 
 			int flag = 0b0;
 
-			String flagsString = flags.get();
-
-			if (flagsString.contains("i")) {
+			if (flags.contains("i")) {
 				flag = flag | Pattern.CASE_INSENSITIVE;
 			}
 
-			if (flagsString.contains("d")) {
+			if (flags.contains("d")) {
 				flag = flag | Pattern.UNIX_LINES;
 			}
 
-			if (flagsString.contains("m")) {
+			if (flags.contains("m")) {
 				flag = flag | Pattern.MULTILINE;
 			}
 
-			if (flagsString.contains("s")) {
+			if (flags.contains("s")) {
 				flag = flag | Pattern.DOTALL;
 			}
 
-			if (flagsString.contains("u")) {
+			if (flags.contains("u")) {
 				flag = flag | Pattern.UNICODE_CASE;
 			}
 
-			if (flagsString.contains("x")) {
+			if (flags.contains("x")) {
 				flag = flag | Pattern.COMMENTS;
 			}
 
-			if (flagsString.contains("U")) {
+			if (flags.contains("U")) {
 				flag = flag | Pattern.UNICODE_CHARACTER_CLASS;
 			}
 

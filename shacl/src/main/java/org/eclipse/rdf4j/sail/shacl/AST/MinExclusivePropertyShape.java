@@ -28,8 +28,8 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
 	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			Literal minExclusive) {
-		super(id, connection, nodeShape);
+			boolean deactivated, Resource path, Literal minExclusive) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.minExclusive = minExclusive;
 
@@ -38,6 +38,9 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
 				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,

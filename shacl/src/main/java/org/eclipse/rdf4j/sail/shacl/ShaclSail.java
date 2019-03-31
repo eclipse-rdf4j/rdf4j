@@ -134,9 +134,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
 	private static String SH_OR_UPDATE_QUERY;
-	private static String SH_OR_NODE_SHAPE_UPDATE_QUERY;
 	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
 	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
+	private static String PROPERTY_SHAPE_WITH_TARGET;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -157,11 +157,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	static {
 		try {
 			SH_OR_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or.rq");
-			SH_OR_NODE_SHAPE_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or_node_shape.rq");
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
 					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
 			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
 					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
+					"shacl-sparql-inference/propertyShapeWithTarget.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -193,6 +194,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.PATH,
 				SHACL.PROPERTY,
 				SHACL.OR,
+				SHACL.AND,
 				SHACL.MIN_COUNT,
 				SHACL.MAX_COUNT,
 				SHACL.MIN_LENGTH,
@@ -207,7 +209,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.MAX_EXCLUSIVE,
 				SHACL.MAX_INCLUSIVE,
 				SHACL.CLASS,
-				SHACL.TARGET_NODE);
+				SHACL.TARGET_NODE,
+				SHACL.DEACTIVATED,
+				SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN,
+				SHACL.UNIQUE_LANG,
+				SHACL.TARGET_OBJECTS_OF);
 	}
 
 	@Override
@@ -353,7 +360,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
-			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
+			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 

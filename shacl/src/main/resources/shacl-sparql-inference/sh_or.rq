@@ -11,8 +11,10 @@ insert {
 
 } where {
 
+
+
 ?a sh:path ?path;
-        sh:or ?or.
+        sh:or|sh:and ?or.
 
 ?or rdf:rest*/rdf:first ?sub.
 

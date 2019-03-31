@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Forward-chaining RDF Schema inferencer, using the rules from the
@@ -32,6 +34,9 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  */
 @Deprecated
 class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInferencerConnection {
+
+	static private final Logger logger = LoggerFactory.getLogger(ForwardChainingRDFSInferencerConnection.class);
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/

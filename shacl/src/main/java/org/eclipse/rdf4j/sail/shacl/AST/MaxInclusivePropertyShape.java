@@ -28,8 +28,8 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxInclusivePropertyShape.class);
 
 	MaxInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			Literal maxInclusive) {
-		super(id, connection, nodeShape);
+			boolean deactivated, Resource path, Literal maxInclusive) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.maxInclusive = maxInclusive;
 
@@ -38,6 +38,9 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
 				(parent) -> new LiteralComparatorFilter(parent, maxInclusive, value -> value >= 0), this,

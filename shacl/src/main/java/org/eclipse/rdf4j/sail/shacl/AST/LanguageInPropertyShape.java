@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -26,19 +28,23 @@ import java.util.stream.Collectors;
  */
 public class LanguageInPropertyShape extends PathPropertyShape {
 
-	private final List<String> languageIn;
+	private final Set<String> languageIn;
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
-	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
+	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
 			Resource languageIn) {
-		super(id, connection, nodeShape);
+		super(id, connection, nodeShape, deactivated, path);
 
-		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toList());
+		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
 	}
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
 				(parent) -> new LanguageInFilter(parent, languageIn), this, overrideTargetNode);

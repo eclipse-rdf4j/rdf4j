@@ -65,7 +65,7 @@ import org.slf4j.LoggerFactory;
  */
 public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(DirectTypeHierarchyInferencer.class);
 
 	/*-----------*
 	 * Constants * 

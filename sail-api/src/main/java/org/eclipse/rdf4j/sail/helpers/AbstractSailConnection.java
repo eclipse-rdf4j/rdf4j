@@ -52,7 +52,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	private static final int BLOCK_SIZE = 1000;
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(AbstractSailConnection.class);
 
 	/*-----------*
 	 * Variables *

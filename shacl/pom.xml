@@ -8,7 +8,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-storage-parent</artifactId>
-		<version>2.5-SNAPSHOT</version>
+        <version>3.0-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-shacl</artifactId>
@@ -18,8 +18,12 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>commons-lang</groupId>
-			<artifactId>commons-lang</artifactId>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-text</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

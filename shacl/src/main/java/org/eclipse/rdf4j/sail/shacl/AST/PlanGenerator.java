@@ -21,9 +21,11 @@ public interface PlanGenerator {
 	PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode);
 
-	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
+	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper);
 
-	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
+	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper);
 
 	List<Path> getPaths();
 

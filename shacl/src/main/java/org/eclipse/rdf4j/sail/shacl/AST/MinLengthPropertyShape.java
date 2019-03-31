@@ -25,8 +25,10 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	private final long minLength;
 	private static final Logger logger = LoggerFactory.getLogger(MinLengthPropertyShape.class);
 
-	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minLength) {
-		super(id, connection, nodeShape);
+	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			Resource path,
+			Long minLength) {
+		super(id, connection, nodeShape, deactivated, path);
 
 		this.minLength = minLength;
 
@@ -35,6 +37,9 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
 				(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode);

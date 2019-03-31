@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
+import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -25,13 +26,13 @@ import java.util.Arrays;
 public class ExternalTypeFilterNode implements PlanNode {
 
 	private SailConnection connection;
-	private Resource filterOnType;
+	private Set<Resource> filterOnType;
 	PlanNode parent;
 	int index = 0;
 	private final boolean returnMatching;
 	private boolean printed = false;
 
-	public ExternalTypeFilterNode(SailConnection connection, Resource filterOnType, PlanNode parent, int index,
+	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index,
 			boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnType = filterOnType;
@@ -54,26 +55,31 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 					Value subject = temp.line.get(index);
 
+					Resource matchedType = isType(subject);
+
 					if (returnMatching) {
-						if (isType(subject)) {
+						if (matchedType != null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, matchedType)));
 						}
 					} else {
-						if (!isType(subject)) {
+						if (matchedType == null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+							next.addHistory(new Tuple(Arrays.asList(subject)));
 						}
 					}
 
 				}
 			}
 
-			private boolean isType(Value subject) {
+			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
-					return connection.hasStatement((Resource) subject, RDF.TYPE, filterOnType, true);
+					return filterOnType.stream()
+							.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
+							.findFirst()
+							.orElse(null);
 				}
-				return false;
+				return null;
 			}
 
 			@Override
@@ -111,8 +117,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -131,7 +138,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" + "filterOnType=" + filterOnType + '}';
+		return "ExternalTypeFilterNode{" + "filterOnType=" + Arrays.toString(filterOnType.toArray()) + '}';
 	}
 
 	@Override

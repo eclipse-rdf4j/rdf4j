@@ -19,11 +19,14 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -39,11 +42,15 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	private Resource id;
 
-	private List<PropertyShape> propertyShapes;
+	private List<PropertyShape> propertyShapes = Collections.emptyList();
+	private List<PropertyShape> nodeShapes = Collections.emptyList();
 
-	public NodeShape(Resource id, SailRepositoryConnection connection) {
+	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
-		propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
+		if (!deactivated) {
+			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
+			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id);
+		}
 	}
 
 	@Override
@@ -53,16 +60,18 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection
-				.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode node = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection
-				.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode node = shaclSailConnection.getCachedNodeFor(
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
@@ -72,11 +81,58 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
-			boolean printPlans) {
-		return propertyShapes.stream()
-				.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(),
-						shaclSailConnection.getRemovedStatements()))
-				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
+			boolean printPlans, boolean validateEntireBaseSail) {
+
+		BufferedSplitter overrideTargetNodeBufferedSplitter;
+		SailConnection addedStatements;
+		SailConnection removedStatements;
+
+		if (validateEntireBaseSail) {
+			PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
+			overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
+
+			addedStatements = shaclSailConnection;
+			removedStatements = shaclSailConnection;
+		} else {
+			overrideTargetNodeBufferedSplitter = null;
+			addedStatements = shaclSailConnection.getAddedStatements();
+			removedStatements = shaclSailConnection.getRemovedStatements();
+		}
+
+		List<PlanNode> propertyShapesPlans = convertToPlan(propertyShapes, shaclSailConnection, nodeShape, printPlans,
+				validateEntireBaseSail, overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
+
+		List<PlanNode> nodeShapesPlans = convertToPlan(this.nodeShapes, shaclSailConnection, nodeShape, printPlans,
+				validateEntireBaseSail, overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
+
+		nodeShapesPlans.addAll(propertyShapesPlans);
+
+		return nodeShapesPlans;
+	}
+
+	private List<PlanNode> convertToPlan(List<PropertyShape> propertyShapes, ShaclSailConnection shaclSailConnection,
+			NodeShape nodeShape, boolean printPlans, boolean validateEntireBaseSail,
+			BufferedSplitter overrideTargetNodeBufferedSplitter, SailConnection addedStatements,
+			SailConnection removedStatements) {
+		return propertyShapes
+				.stream()
+				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements,
+						removedStatements))
+				.map(propertyShape -> {
+					if (validateEntireBaseSail) {
+						if (shaclSailConnection.sail.isCacheSelectNodes()) {
+							PlanNode overrideTargetNode = overrideTargetNodeBufferedSplitter.getPlanNode();
+							return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
+									overrideTargetNode);
+						} else {
+							PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
+							return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
+									overrideTargetNode);
+						}
+					}
+					return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null);
+
+				})
 				.collect(Collectors.toList());
 	}
 
@@ -100,21 +156,41 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
 			try (Stream<Statement> stream = Iterations
 					.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
-				return stream.map(Statement::getSubject).map(shapeId -> {
+				return stream.map(Statement::getSubject).flatMap(shapeId -> {
+
+					List<NodeShape> propertyShapes = new ArrayList<>(2);
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
-					if (shaclProperties.targetClass != null) {
-						return new TargetClass(shapeId, connection, shaclProperties.targetClass);
-					} else if (!shaclProperties.targetNode.isEmpty()) {
-						return new TargetNode(shapeId, connection, shaclProperties.targetNode);
-					} else {
-						if (sail.isUndefinedTargetValidatesAllSubjects()) {
-							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported
-																		// nodeShapes
-						}
+					if (!shaclProperties.targetClass.isEmpty()) {
+						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetClass));
 					}
-					return null;
+					if (!shaclProperties.targetNode.isEmpty()) {
+						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetNode));
+					}
+					if (!shaclProperties.targetSubjectsOf.isEmpty()) {
+						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetSubjectsOf));
+					}
+					if (!shaclProperties.targetObjectsOf.isEmpty()) {
+						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated,
+								shaclProperties.targetObjectsOf));
+					}
+
+					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
+						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target
+						// class
+						// nodeShapes
+						// are
+						// the
+						// only
+						// supported
+						// nodeShapes
+					}
+
+					return propertyShapes.stream();
 				}).filter(Objects::nonNull).collect(Collectors.toList());
 			}
 		}

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 
 import java.util.ArrayDeque;
@@ -31,8 +32,14 @@ public class Tuple implements Comparable<Tuple> {
 
 	public List<Value> line = new ArrayList<>(3);
 
+	private ValueComparator valueComparator = new ValueComparator();
+
 	public Tuple(List<Value> list) {
 		line = list;
+	}
+
+	public Tuple(Value... list) {
+		line = Arrays.asList(list);
 	}
 
 	public Tuple(List<Value> list, Tuple historyTuple) {
@@ -118,7 +125,8 @@ public class Tuple implements Comparable<Tuple> {
 	public int compareTo(Tuple o) {
 
 		for (int i = 0; i < Math.min(o.line.size(), line.size()); i++) {
-			int compareTo = line.get(i).toString().compareTo(o.line.get(i).toString());
+
+			int compareTo = valueComparator.compare(line.get(i), o.line.get(i));
 
 			if (compareTo != 0) {
 				return compareTo;

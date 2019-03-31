@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -8,17 +9,21 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
 
-	Resource clazz;
-	Resource or;
+	List<Resource> clazz = new ArrayList<>(0);
+	List<Resource> or = new ArrayList<>(0);
+	List<Resource> and = new ArrayList<>(0);
 	Long minCount;
 	Long maxCount;
 
 	Resource datatype;
+	Resource in;
 
 	Long minLength;
 	Long maxLength;
@@ -26,15 +31,24 @@ public class ShaclProperties {
 	Resource languageIn;
 	Resource nodeKind;
 
+	Resource path;
+
 	Literal minExclusive;
 	Literal maxExclusive;
 	Literal minInclusive;
 	Literal maxInclusive;
 
-	String pattern;
+	List<String> pattern = new ArrayList<>(0);
+	String flags = "";
 
-	Resource targetClass;
-	List<Value> targetNode = new ArrayList<>(0);
+	Set<Resource> targetClass = new HashSet<>(0);
+	Set<Value> targetNode = new HashSet<>(0);
+	Set<IRI> targetSubjectsOf = new HashSet<>(0);
+	Set<IRI> targetObjectsOf = new HashSet<>(0);
+
+	boolean deactivated = false;
+
+	boolean uniqueLang = false;
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
@@ -44,10 +58,10 @@ public class ShaclProperties {
 				Value object = statement.getObject();
 				switch (predicate) {
 				case "http://www.w3.org/ns/shacl#or":
-					if (or != null) {
-						throw new IllegalStateException("sh:or already populated");
-					}
-					or = (Resource) object;
+					or.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#and":
+					and.add((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
@@ -116,25 +130,43 @@ public class ShaclProperties {
 					maxInclusive = (Literal) object;
 					break;
 				case "http://www.w3.org/ns/shacl#pattern":
-					if (pattern != null) {
-						throw new IllegalStateException("sh:pattern aleady populated");
-					}
-					pattern = object.stringValue();
+					pattern.add(object.stringValue());
 					break;
 				case "http://www.w3.org/ns/shacl#class":
-					if (clazz != null) {
-						throw new IllegalStateException("sh:class aleady populated");
-					}
-					clazz = (Resource) object;
+					clazz.add((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#targetNode":
 					targetNode.add(object);
 					break;
 				case "http://www.w3.org/ns/shacl#targetClass":
-					if (targetClass != null) {
-						throw new IllegalStateException("sh:targetClass aleady populated");
+					targetClass.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetSubjectsOf":
+					targetSubjectsOf.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#targetObjectsOf":
+					targetObjectsOf.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#deactivated":
+					deactivated = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#uniqueLang":
+					uniqueLang = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#flags":
+					flags += object.stringValue();
+					break;
+				case "http://www.w3.org/ns/shacl#path":
+					if (path != null) {
+						throw new IllegalStateException("sh:path aleady populated");
 					}
-					targetClass = (Resource) object;
+					path = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#in":
+					if (in != null) {
+						throw new IllegalStateException("sh:in aleady populated");
+					}
+					in = (Resource) object;
 					break;
 				}
 

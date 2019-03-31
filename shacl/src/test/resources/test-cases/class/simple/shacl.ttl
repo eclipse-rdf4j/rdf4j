@@ -8,7 +8,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetClass ex:Person ;
+	sh:targetClass ex:Person, ex:SecondTarget ;
 	sh:property [
 		sh:path ex:knows ;
 		sh:class ex:Person ;

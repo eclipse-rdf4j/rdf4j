@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
 
@@ -28,14 +30,16 @@ import java.util.Objects;
  */
 public class Select implements PlanNode {
 
+	private static final Logger logger = LoggerFactory.getLogger(Select.class);
+
 	private final SailConnection connection;
 
 	private final String query;
 	private boolean printed = false;
 
-	public Select(SailConnection connection, String query) {
+	public Select(SailConnection connection, String query, String... variables) {
 		this.connection = connection;
-		this.query = "select * where { " + query + "} order by ?a";
+		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
 	}
 
 	@Override

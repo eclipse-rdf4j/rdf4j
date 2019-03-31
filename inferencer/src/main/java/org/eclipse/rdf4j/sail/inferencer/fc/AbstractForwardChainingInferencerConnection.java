@@ -28,7 +28,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	* Constants *
 	*-----------*/
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	static private final Logger logger = LoggerFactory.getLogger(AbstractForwardChainingInferencerConnection.class);
 
 	/*-----------*
 	* Variables *

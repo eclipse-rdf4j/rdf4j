@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.spin.function.spif;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.lang.text.StrSubstitutor;
+import org.apache.commons.text.StringSubstitutor;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -39,7 +39,7 @@ public class BuildURI implements Function {
 		for (int i = 1; i < args.length; i++) {
 			mappings.put(Integer.toString(i), args[i].stringValue());
 		}
-		String newValue = StrSubstitutor.replace(tmpl, mappings, "{?", "}");
+		String newValue = StringSubstitutor.replace(tmpl, mappings, "{?", "}");
 		if (tmpl.charAt(0) == '<' && tmpl.charAt(tmpl.length() - 1) == '>') {
 			return valueFactory.createURI(newValue.substring(1, newValue.length() - 1));
 		}

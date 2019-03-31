@@ -50,14 +50,14 @@ public class RdfsSubClassOfReasoner {
 
 	public Set<Resource> backwardsChain(Resource type) {
 		if (backwardsChainCache.isEmpty()) {
-			return Collections.emptySet();
+			return Collections.singleton(type);
 		}
 
 		Set<Resource> resources = backwardsChainCache.get(type);
 		if (resources != null) {
 			return resources;
 		}
-		return Collections.emptySet();
+		return Collections.singleton(type);
 	}
 
 	private void addSubClassOfStatement(Statement st) {

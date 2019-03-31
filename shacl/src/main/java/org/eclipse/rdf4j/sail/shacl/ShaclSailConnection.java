@@ -34,8 +34,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,6 +44,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
@@ -79,7 +80,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private SailRepositoryConnection shapesConnection;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
-	private Map<Select, BufferedSplitter> selectNodeCache;
+	private Map<PlanNode, BufferedSplitter> selectNodeCache;
 
 	// used to indicate if the transaction is in the validating phase
 	boolean validating;
@@ -243,7 +244,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return nodeShapes;
 	}
 
-	private List<Tuple> validate() {
+	private List<Tuple> validate(boolean validateEntireBaseSail) {
 
 		if (!sail.isValidationEnabled()) {
 			return Collections.emptyList();
@@ -261,13 +262,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			try {
 				Stream<PlanNode> planNodeStream = sail.getNodeShapes()
 						.stream()
-						.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans())
+						.flatMap(nodeShape -> nodeShape
+								.generatePlans(this, nodeShape, sail.isLogValidationPlans(), validateEntireBaseSail)
 								.stream());
 				if (sail.isParallelValidation()) {
 					planNodeStream = planNodeStream.parallel();
 				}
 
-				return planNodeStream.flatMap(planNode -> {
+				return planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
 					try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 						if (LoggingNode.loggingEnabled) {
 							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
@@ -314,42 +316,50 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
-		if (addedStatements != null) {
-			addedStatements.shutDown();
-			addedStatements = null;
-		}
-		if (removedStatements != null) {
-			removedStatements.shutDown();
-			removedStatements = null;
-		}
+		Stream.of(addedStatementsSet, removedStatementsSet)
+				.parallel()
+				.forEach(set -> {
+					Set<Statement> otherSet;
+					MemoryStore repository;
+					if (set == addedStatementsSet) {
+						otherSet = removedStatementsSet;
 
-		addedStatements = getNewMemorySail();
-		removedStatements = getNewMemorySail();
+						if (addedStatements != null) {
+							addedStatements.shutDown();
+							addedStatements = null;
+						}
 
-		addedStatementsSet.forEach(stats::added);
-		removedStatementsSet.forEach(stats::removed);
+						addedStatements = getNewMemorySail();
+						repository = addedStatements;
 
-		try (SailConnection connection = addedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			addedStatementsSet.stream()
-					.filter(statement -> !removedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+						set.forEach(stats::added);
 
-		try (SailConnection connection = removedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			removedStatementsSet.stream()
-					.filter(statement -> !addedStatementsSet.contains(statement))
-					.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-							: rdfsSubClassOfReasoner.forwardChain(statement))
-					.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), statement.getContext()));
-			connection.commit();
-		}
+					} else {
+						otherSet = addedStatementsSet;
+
+						if (removedStatements != null) {
+							removedStatements.shutDown();
+							removedStatements = null;
+						}
+
+						removedStatements = getNewMemorySail();
+						repository = removedStatements;
+
+						set.forEach(stats::removed);
+					}
+
+					try (SailConnection connection = repository.getConnection()) {
+						connection.begin(IsolationLevels.NONE);
+						set.stream()
+								.filter(statement -> !otherSet.contains(statement))
+								.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
+										: rdfsSubClassOfReasoner.forwardChain(statement))
+								.forEach(statement -> connection.addStatement(statement.getSubject(),
+										statement.getPredicate(), statement.getObject(), statement.getContext()));
+						connection.commit();
+					}
+
+				});
 
 		selectNodeCache = new HashMap<>();
 
@@ -386,7 +396,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new NoShapesLoadedException();
 			}
 
-			List<Tuple> invalidTuples = validate();
+			List<Tuple> invalidTuples = validate(false);
 			boolean valid = invalidTuples.isEmpty();
 
 			if (!valid) {
@@ -423,7 +433,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	synchronized public PlanNode getCachedNodeFor(Select select) {
+	synchronized public PlanNode getCachedNodeFor(PlanNode select) {
 
 		if (!sail.isCacheSelectNodes()) {
 			return select;
@@ -556,6 +566,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.orElse(false);
 		}
 		return hasStatement;
+	}
+
+	public ValidationReport revalidate() {
+
+		if (!isActive()) {
+			throw new IllegalStateException("No active transaction!");
+		}
+
+		List<Tuple> validate = validate(true);
+
+		return new ValidationReport(validate.isEmpty());
 	}
 
 }

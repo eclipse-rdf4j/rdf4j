@@ -73,14 +73,17 @@ public class ComplexBenchmark {
 	@Setup(Level.Iteration)
 	public void setUp() {
 		System.gc();
-		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
-		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
+		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
 	@Benchmark
 	public void shaclParallelCache() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
@@ -180,6 +183,8 @@ public class ComplexBenchmark {
 	public void shaclParallelCacheSingleTransactionNoIsolation() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
@@ -200,6 +205,7 @@ public class ComplexBenchmark {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

@@ -121,7 +121,7 @@ class TripleStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
 
 	/**
 	 * The directory that is used to store the index files.

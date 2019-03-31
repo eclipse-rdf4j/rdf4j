@@ -41,7 +41,7 @@ public class TestPlanNodeOrdering {
 			connection.addStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
-			Select select = new Select(connection, "?a <" + RDF.TYPE + "> []");
+			Select select = new Select(connection, "?a <" + RDF.TYPE + "> []", "*");
 			List<Tuple> tuples = new MockConsumePlanNode(select).asList();
 
 			String actual = Arrays.toString(tuples.toArray());
