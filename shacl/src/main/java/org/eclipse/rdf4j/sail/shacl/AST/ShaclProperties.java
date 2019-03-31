@@ -7,6 +7,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,6 +18,8 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
+
+	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
 	List<Resource> clazz = new ArrayList<>(0);
 	List<Resource> or = new ArrayList<>(0);
@@ -168,6 +173,14 @@ public class ShaclProperties {
 					}
 					in = (Resource) object;
 					break;
+				case "http://www.w3.org/ns/shacl#property":
+					break;
+				default:
+					if (predicate.startsWith("http://www.w3.org/ns/shacl#")) {
+						logger.debug("Unsupported SHACL feature detected {} in statement {}",
+								predicate.replace("http://www.w3.org/ns/shacl#", "sh:"),
+								statement);
+					}
 				}
 
 			});
