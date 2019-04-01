@@ -1,0 +1,25 @@
+# Output file for SeRQL CfwQuery test
+# description: query with nested optional path expressions
+<foo:docA> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+
+<foo:docB> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+<foo:docB> <foo:author> <foo:authorB> .
+
+<foo:docC> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+<foo:docC> <foo:author> <foo:authorC> .
+<foo:authorC> <foo:name> "Author C" .
+
+<foo:docD> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+<foo:docD> <foo:author> <foo:authorD> .
+<foo:authorD> <foo:address> "Address D" .
+
+<foo:docE> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+<foo:docE> <foo:author> <foo:authorE> .
+<foo:authorE> <foo:name> "Author E" .
+<foo:authorE> <foo:address> "Address E" .
+
+<foo:docF> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <foo:Document> .
+<foo:docF> <foo:author> <foo:authorF1> .
+<foo:authorF1> <foo:name> "Author F1" .
+<foo:docF> <foo:author> <foo:authorF2> .
+<foo:authorF2> <foo:address> "Address F2" .

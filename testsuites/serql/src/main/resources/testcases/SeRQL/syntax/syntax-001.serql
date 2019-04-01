@@ -1,0 +1,4 @@
+SELECT
+  P, O
+FROM
+  {<http://example.org/foo>} P {O}

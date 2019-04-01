@@ -1,0 +1,9 @@
+@prefix rdfs:	<http://www.w3.org/2000/01/rdf-schema#> .
+@prefix geo:     <http://www.opengis.net/ont/geosparql#> .
+@prefix wkt: <http://www.opengis.net/ont/geosparql#> .
+
+[] geo:asWKT "POINT (48.8582 2.2945)"^^wkt:wktLiteral;
+	rdfs:label "Eiffel tower".
+	
+[] geo:asWKT "POINT (48.8738 2.2950)"^^wkt:wktLiteral;
+	rdfs:label "Arc de Triomphe".

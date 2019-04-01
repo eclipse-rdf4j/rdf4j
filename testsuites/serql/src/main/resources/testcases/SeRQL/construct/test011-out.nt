@@ -1,0 +1,4 @@
+# Output file for SeRQL CfwQuery test
+# description: query direct subclasses.
+<foo:Paper> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <foo:Document> .
+<foo:TechReport> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <foo:Document> .

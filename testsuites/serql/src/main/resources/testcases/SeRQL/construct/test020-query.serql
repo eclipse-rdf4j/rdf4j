@@ -1,0 +1,6 @@
+CONSTRUCT 
+	*
+FROM
+	{x} rdfs:label {"foo"}
+WHERE
+	namespace(x) = <http://www.foo.com/>

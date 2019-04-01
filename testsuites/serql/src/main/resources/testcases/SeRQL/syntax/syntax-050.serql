@@ -1,0 +1,6 @@
+SELECT
+  *
+FROM
+  {S} P {O}
+ORDER BY
+  S, localName(P) desc, label(O) asc

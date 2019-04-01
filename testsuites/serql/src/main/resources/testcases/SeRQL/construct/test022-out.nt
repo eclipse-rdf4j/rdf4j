@@ -1,0 +1,4 @@
+<http://www.example.org/classB> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://www.example.org/classA>.
+<http://www.example.org/classC> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://www.example.org/classB>.
+<http://www.example.org/classD> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://www.example.org/classB>.
+<http://www.example.org/classE> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://www.example.org/classB>.

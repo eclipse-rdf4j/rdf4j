@@ -1,0 +1,4 @@
+SELECT
+  *
+FROM
+  {S} P {O}
