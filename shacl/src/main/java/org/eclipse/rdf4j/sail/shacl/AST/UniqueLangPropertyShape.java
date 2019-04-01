@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NonUniqueTargetLang;
@@ -54,7 +54,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode relevantTargetsWithPath = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+			PlanNode relevantTargetsWithPath = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode,
 					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
@@ -81,7 +81,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		PlanNode allRelevantTargets = new LoggingNode(new Unique(trimmed), "");
 
 		PlanNode relevantTargetsWithPath = new LoggingNode(
-				new BulkedExternalLeftOuterJoin(allRelevantTargets, shaclSailConnection,
+				new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
 						path.getQuery("?a", "?c", null), false),
 				"");
 
