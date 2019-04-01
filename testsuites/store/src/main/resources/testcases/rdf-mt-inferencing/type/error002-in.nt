@@ -1,0 +1,10 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: Only predicates of the form rdf:_N with N a positive number with
+# no leading zeros are instances of rdfs:ContainerMembershipProperty.
+# Relevant inferencing rules: X1
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#_> <http://example.org/obj>.
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#_X> <http://example.org/obj>.
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#_01> <http://example.org/obj>.
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#_-1> <http://example.org/obj>.

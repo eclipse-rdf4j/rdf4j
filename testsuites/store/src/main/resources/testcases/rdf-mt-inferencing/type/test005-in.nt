@@ -1,0 +1,9 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: Each predicate of the form rdf:_N, with N an arbitrary (positive)
+# number with no leading zeros, should be an instance of
+# rdfs:ContainerMembershipProperty.
+# Relevant inferencing rules: X1
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#_1> <http://example.org/obj>.
+_:subj <http://www.w3.org/1999/02/22-rdf-syntax-ns#_11> "Hello World!".

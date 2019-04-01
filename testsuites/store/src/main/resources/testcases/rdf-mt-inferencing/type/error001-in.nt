@@ -1,0 +1,11 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: Instance inheritance does not apply when the superclass is a
+# literal.
+# Relevant inferencing rules: rdfs9
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/inst> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/SubClass>.
+<http://example.org/SubClass> <http://www.w3.org/2000/01/rdf-schema#subClassOf> "Hello World!".
+
+<http://example.org/inst> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> _:SubClass.
+_:SubClass <http://www.w3.org/2000/01/rdf-schema#subClassOf> "Hello World!".

@@ -70,6 +70,7 @@
 		<module>spin</module>
 		<module>shacl</module>
 		<module>storage</module>
+                <module>testsuites</module>
 	</modules>
 
 	<profiles>
