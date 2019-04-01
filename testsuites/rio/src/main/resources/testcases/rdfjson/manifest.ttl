@@ -1,0 +1,400 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt:     <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+@prefix rdft:   <http://www.w3.org/ns/rdftest#> .
+
+<>  rdf:type mf:Manifest ;
+    rdfs:comment "RDF/JSON tests" ;
+    mf:entries
+    (
+    <#rdfjson-syntax-file-01>
+    <#rdfjson-syntax-file-02>
+    <#rdfjson-syntax-file-03>
+    <#rdfjson-syntax-file-04>
+    <#rdfjson-syntax-file-05>
+    <#rdfjson-syntax-file-06>
+    <#rdfjson-syntax-file-07>
+    <#rdfjson-syntax-file-08>
+    <#rdfjson-syntax-file-09>
+    <#rdfjson-syntax-file-10>
+    <#rdfjson-syntax-file-11>
+    <#rdfjson-syntax-file-12>
+    <#rdfjson-syntax-file-13>
+    <#rdfjson-syntax-file-14>
+    <#rdfjson-syntax-file-15>
+    <#rdfjson-syntax-bad-01>
+    <#rdfjson-syntax-bad-02>
+    <#rdfjson-syntax-bad-03>
+    <#rdfjson-syntax-bad-04>
+    <#rdfjson-syntax-bad-05>
+    <#rdfjson-syntax-bad-06>
+    <#rdfjson-syntax-bad-07>
+    <#rdfjson-syntax-bad-08>
+    <#rdfjson-syntax-bad-09>
+    <#rdfjson-syntax-bad-10>
+    <#rdfjson-syntax-bad-11>
+    <#rdfjson-syntax-bad-12>
+    <#rdfjson-syntax-bad-13>
+    <#rdfjson-syntax-bad-14>
+    <#rdfjson-syntax-bad-15>
+    <#rdfjson-syntax-bad-16>
+    <#rdfjson-syntax-bad-17>
+    <#rdfjson-syntax-bad-18>
+    <#rdfjson-syntax-bad-19>
+    <#rdfjson-syntax-bad-20>
+    <#rdfjson-syntax-bad-21>
+    <#rdfjson-eval-file-01>
+    <#rdfjson-eval-file-02>
+    <#rdfjson-eval-file-03>
+    <#rdfjson-eval-file-04>
+    <#rdfjson-eval-file-05>
+    <#rdfjson-eval-file-06>
+    <#rdfjson-eval-file-07>
+    <#rdfjson-eval-file-08>
+    <#rdfjson-eval-file-09>
+    <#rdfjson-eval-file-10>
+    <#rdfjson-eval-file-11>
+    <#rdfjson-eval-file-12>
+    <#rdfjson-eval-file-13>
+    <#rdfjson-eval-file-14>
+    <#rdfjson-eval-file-15>
+    ) .
+
+<#rdfjson-syntax-file-01> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-01" ;
+   rdfs:comment "Empty file" ;
+   mf:action    <rdfjson-syntax-file-01.rj> ;
+   .
+
+<#rdfjson-syntax-file-02> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-02" ;
+   rdfs:comment "Plain literal" ;
+   mf:action    <rdfjson-syntax-file-02.rj> ;
+   .
+
+<#rdfjson-syntax-file-03> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-03" ;
+   rdfs:comment "Language literal" ;
+   mf:action    <rdfjson-syntax-file-03.rj> ;
+   .
+
+<#rdfjson-syntax-file-04> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-04" ;
+   rdfs:comment "XML Schema String typed literal" ;
+   mf:action    <rdfjson-syntax-file-04.rj> ;
+   .
+
+<#rdfjson-syntax-file-05> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-05" ;
+   rdfs:comment "RDF XML Literal typed literal" ;
+   mf:action    <rdfjson-syntax-file-05.rj> ;
+   .
+
+<#rdfjson-syntax-file-06> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-06" ;
+   rdfs:comment "Blank node subject with URI object" ;
+   mf:action    <rdfjson-syntax-file-06.rj> ;
+   .
+
+<#rdfjson-syntax-file-07> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-07" ;
+   rdfs:comment "Blank node subject with Blank node object" ;
+   mf:action    <rdfjson-syntax-file-07.rj> ;
+   .
+
+<#rdfjson-syntax-file-08> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-08" ;
+   rdfs:comment "URI subject with URI object" ;
+   mf:action    <rdfjson-syntax-file-08.rj> ;
+   .
+
+<#rdfjson-syntax-file-09> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-09" ;
+   rdfs:comment "URI subject with Blank node object" ;
+   mf:action    <rdfjson-syntax-file-09.rj> ;
+   .
+
+<#rdfjson-syntax-file-10> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-10" ;
+   rdfs:comment "Multiple subject URIs" ;
+   mf:action    <rdfjson-syntax-file-10.rj> ;
+   .
+
+<#rdfjson-syntax-file-11> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-11" ;
+   rdfs:comment "Multiple subject Blank Nodes" ;
+   mf:action    <rdfjson-syntax-file-11.rj> ;
+   .
+
+<#rdfjson-syntax-file-12> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-12" ;
+   rdfs:comment "Single subject multiple predicates" ;
+   mf:action    <rdfjson-syntax-file-12.rj> ;
+   .
+
+<#rdfjson-syntax-file-13> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-13" ;
+   rdfs:comment "Multiple subject multiple predicates" ;
+   mf:action    <rdfjson-syntax-file-13.rj> ;
+   .
+
+<#rdfjson-syntax-file-14> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-14" ;
+   rdfs:comment "Single subject single predicate multiple objects" ;
+   mf:action    <rdfjson-syntax-file-14.rj> ;
+   .
+
+<#rdfjson-syntax-file-15> rdf:type rdft:TestRDFJSONPositiveSyntax ;
+   mf:name    "rdfjson-syntax-file-15" ;
+   rdfs:comment "Single subject multiple predicates multiple objects" ;
+   mf:action    <rdfjson-syntax-file-15.rj> ;
+   .
+
+<#rdfjson-syntax-bad-01> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-01" ;
+   rdfs:comment "No subject in file" ;
+   mf:action    <rdfjson-syntax-bad-01.rj> ;
+   .
+
+<#rdfjson-syntax-bad-02> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-02" ;
+   rdfs:comment "Subject with no predicate" ;
+   mf:action    <rdfjson-syntax-bad-02.rj> ;
+   .
+
+<#rdfjson-syntax-bad-03> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-03" ;
+   rdfs:comment "Subject with predicate and no objects" ;
+   mf:action    <rdfjson-syntax-bad-03.rj> ;
+   .
+
+<#rdfjson-syntax-bad-04> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-04" ;
+   rdfs:comment "Object value without type" ;
+   mf:action    <rdfjson-syntax-bad-04.rj> ;
+   .
+
+<#rdfjson-syntax-bad-05> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-05" ;
+   rdfs:comment "Object value and language without type" ;
+   mf:action    <rdfjson-syntax-bad-05.rj> ;
+   .
+
+<#rdfjson-syntax-bad-06> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-06" ;
+   rdfs:comment "Object value and datatype without type" ;
+   mf:action    <rdfjson-syntax-bad-06.rj> ;
+   .
+
+<#rdfjson-syntax-bad-07> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-07" ;
+   rdfs:comment "Object literal without value" ;
+   mf:action    <rdfjson-syntax-bad-07.rj> ;
+   .
+
+<#rdfjson-syntax-bad-08> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-08" ;
+   rdfs:comment "Object literal and language without value" ;
+   mf:action    <rdfjson-syntax-bad-08.rj> ;
+   .
+
+<#rdfjson-syntax-bad-09> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-09" ;
+   rdfs:comment "Object literal and datatype without value" ;
+   mf:action    <rdfjson-syntax-bad-09.rj> ;
+   .
+
+<#rdfjson-syntax-bad-10> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-10" ;
+   rdfs:comment "Object bnode without value" ;
+   mf:action    <rdfjson-syntax-bad-10.rj> ;
+   .
+
+<#rdfjson-syntax-bad-11> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-11" ;
+   rdfs:comment "Object bnode with language without value" ;
+   mf:action    <rdfjson-syntax-bad-11.rj> ;
+   .
+
+<#rdfjson-syntax-bad-12> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-12" ;
+   rdfs:comment "Object bnode with datatype without value" ;
+   mf:action    <rdfjson-syntax-bad-12.rj> ;
+   .
+
+<#rdfjson-syntax-bad-13> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-13" ;
+   rdfs:comment "Object uri without value" ;
+   mf:action    <rdfjson-syntax-bad-13.rj> ;
+   .
+
+<#rdfjson-syntax-bad-14> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-14" ;
+   rdfs:comment "Object uri with language without value" ;
+   mf:action    <rdfjson-syntax-bad-14.rj> ;
+   .
+
+<#rdfjson-syntax-bad-15> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-15" ;
+   rdfs:comment "Object uri with datatype without value" ;
+   mf:action    <rdfjson-syntax-bad-15.rj> ;
+   .
+
+<#rdfjson-syntax-bad-16> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-16" ;
+   rdfs:comment "Object uri with value and language" ;
+   mf:action    <rdfjson-syntax-bad-16.rj> ;
+   .
+
+<#rdfjson-syntax-bad-17> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-17" ;
+   rdfs:comment "Object uri with value and datatype" ;
+   mf:action    <rdfjson-syntax-bad-17.rj> ;
+   .
+
+<#rdfjson-syntax-bad-18> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-18" ;
+   rdfs:comment "Object uri with value and datatype and language" ;
+   mf:action    <rdfjson-syntax-bad-18.rj> ;
+   .
+
+<#rdfjson-syntax-bad-19> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-19" ;
+   rdfs:comment "Object bnode with value and language" ;
+   mf:action    <rdfjson-syntax-bad-19.rj> ;
+   .
+
+<#rdfjson-syntax-bad-20> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-20" ;
+   rdfs:comment "Object bnode with value and datatype" ;
+   mf:action    <rdfjson-syntax-bad-20.rj> ;
+   .
+
+<#rdfjson-syntax-bad-21> rdf:type rdft:TestRDFJSONNegativeSyntax ;
+   mf:name    "rdfjson-syntax-bad-21" ;
+   rdfs:comment "Object bnode with value and datatype and language" ;
+   mf:action    <rdfjson-syntax-bad-21.rj> ;
+   .
+
+<#rdfjson-eval-file-01> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-01" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-01> ;
+   mf:action    <rdfjson-syntax-file-01.rj> ;
+   mf:result    <rdfjson-eval-file-01.nt> ;
+   .
+
+<#rdfjson-eval-file-02> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-02" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-02> ;
+   mf:action    <rdfjson-syntax-file-02.rj> ;
+   mf:result    <rdfjson-eval-file-02.nt> ;
+   .
+
+<#rdfjson-eval-file-03> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-03" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-03> ;
+   mf:action    <rdfjson-syntax-file-03.rj> ;
+   mf:result    <rdfjson-eval-file-03.nt> ;
+   .
+
+<#rdfjson-eval-file-04> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-04" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-04> ;
+   mf:action    <rdfjson-syntax-file-04.rj> ;
+   mf:result    <rdfjson-eval-file-04.nt> ;
+   .
+
+<#rdfjson-eval-file-05> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-05" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-05> ;
+   mf:action    <rdfjson-syntax-file-05.rj> ;
+   mf:result    <rdfjson-eval-file-05.nt> ;
+   .
+
+<#rdfjson-eval-file-06> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-06" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-06> ;
+   mf:action    <rdfjson-syntax-file-06.rj> ;
+   mf:result    <rdfjson-eval-file-06.nt> ;
+   .
+
+<#rdfjson-eval-file-07> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-07" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-07> ;
+   mf:action    <rdfjson-syntax-file-07.rj> ;
+   mf:result    <rdfjson-eval-file-07.nt> ;
+   .
+
+<#rdfjson-eval-file-08> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-08" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-08> ;
+   mf:action    <rdfjson-syntax-file-08.rj> ;
+   mf:result    <rdfjson-eval-file-08.nt> ;
+   .
+
+<#rdfjson-eval-file-09> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-09" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-09> ;
+   mf:action    <rdfjson-syntax-file-09.rj> ;
+   mf:result    <rdfjson-eval-file-09.nt> ;
+   .
+
+<#rdfjson-eval-file-10> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-10" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-10> ;
+   mf:action    <rdfjson-syntax-file-10.rj> ;
+   mf:result    <rdfjson-eval-file-10.nt> ;
+   .
+
+<#rdfjson-eval-file-11> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-11" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-11> ;
+   mf:action    <rdfjson-syntax-file-11.rj> ;
+   mf:result    <rdfjson-eval-file-11.nt> ;
+   .
+
+<#rdfjson-eval-file-12> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-12" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-12> ;
+   mf:action    <rdfjson-syntax-file-12.rj> ;
+   mf:result    <rdfjson-eval-file-12.nt> ;
+   .
+
+<#rdfjson-eval-file-13> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-13" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-13> ;
+   mf:action    <rdfjson-syntax-file-13.rj> ;
+   mf:result    <rdfjson-eval-file-13.nt> ;
+   .
+
+<#rdfjson-eval-file-14> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-14" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-14> ;
+   mf:action    <rdfjson-syntax-file-14.rj> ;
+   mf:result    <rdfjson-eval-file-14.nt> ;
+   .
+
+<#rdfjson-eval-file-15> rdf:type rdft:TestRDFJSONEval ;
+   mf:name    "rdfjson-eval-file-15" ;
+   rdfs:comment "Empty file" ;
+   rdfs:seeAlso <#rdfjson-syntax-file-15> ;
+   mf:action    <rdfjson-syntax-file-15.rj> ;
+   mf:result    <rdfjson-eval-file-15.nt> ;
+   .
+
+
