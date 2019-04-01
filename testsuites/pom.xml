@@ -19,19 +19,10 @@
 	<modules>
 		<module>store</module>
 		<module>lucene</module>
-                <module>sparql</module>
-                <module>geosparql</module>
-                <module>serql</module>
-                <module>shacl</module>
+		<module>sparql</module>
+		<module>geosparql</module>
+		<module>serql</module>
+		<module>shacl</module>
 	</modules>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>com.github.siom79.japicmp</groupId>
-				<artifactId>japicmp-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
-	</build>
 </project>
 

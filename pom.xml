@@ -70,7 +70,8 @@
 		<module>spin</module>
 		<module>shacl</module>
 		<module>storage</module>
-                <module>testsuites</module>
+        <module>testsuites</module>
+        <module>compliance</module>
 	</modules>
 
 	<profiles>
@@ -192,17 +193,6 @@
 				<skipITs>true</skipITs>
 				<maven.test.skip>true</maven.test.skip>
 			</properties>
-		</profile>
-		<profile>
-			<id>compliance</id>
-			<activation>
-				<property>
-					<name>!skipTests</name>
-				</property>
-			</activation>
-			<modules>
-				<module>compliance</module>
-			</modules>
 		</profile>
 		<profile>
 			<id>doclint-java8-disable</id>
