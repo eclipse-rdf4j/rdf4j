@@ -100,6 +100,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/propertyShapeWithTarget/simple"
 	)
 		.distinct()
+		.sorted()
 		.collect(Collectors.toList());
 
 	// @formatter:on
