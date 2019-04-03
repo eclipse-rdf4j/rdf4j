@@ -62,12 +62,10 @@ public class BulkedBenchmark {
 	private final static int SIZE = 10000;
 	private static final String QUERY = "?a <" + RDFS.LABEL + "> ?c";
 
-
 	private final SailRepository repository = new SailRepository(new MemoryStore());
 	private final List<Tuple> subjects;
 
-
-	public BulkedBenchmark(){
+	public BulkedBenchmark() {
 
 		repository.init();
 
@@ -76,10 +74,10 @@ public class BulkedBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			ValueFactory vf = connection.getValueFactory();
-			for(int i = 0; i<SIZE; i++){
+			for (int i = 0; i < SIZE; i++) {
 				IRI iri = vf.createIRI("http://example.com/" + i);
 				connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
-				connection.add(iri, RDFS.LABEL, vf.createLiteral("label_"+i));
+				connection.add(iri, RDFS.LABEL, vf.createLiteral("label_" + i));
 				subjects.add(iri);
 			}
 
@@ -101,18 +99,19 @@ public class BulkedBenchmark {
 	}
 
 	@Benchmark
-	public int innerJoin(){
+	public int innerJoin() {
 		try (SailConnection connection = repository.getSail().getConnection()) {
-			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(new MockInputPlanNode(subjects), connection, QUERY, false);
+			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(new MockInputPlanNode(subjects), connection,
+					QUERY, false);
 			return new MockConsumePlanNode(bulkedExternalInnerJoin).asList().size();
 		}
 	}
 
-
 	@Benchmark
-	public int outerJoin(){
+	public int outerJoin() {
 		try (SailConnection connection = repository.getSail().getConnection()) {
-			PlanNode bulkedExternalInnerJoin = new BulkedExternalLeftOuterJoin(new MockInputPlanNode(subjects), connection, QUERY, false);
+			PlanNode bulkedExternalInnerJoin = new BulkedExternalLeftOuterJoin(new MockInputPlanNode(subjects),
+					connection, QUERY, false);
 			return new MockConsumePlanNode(bulkedExternalInnerJoin).asList().size();
 		}
 	}
