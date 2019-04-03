@@ -73,11 +73,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 			private void calculateNext() {
 
-				boolean empty = !connection.hasStatement((Resource) null, (IRI) null, null, true);
-				if (empty) {
-					return;
-				}
-
 				if (!left.isEmpty()) {
 					return;
 				}
