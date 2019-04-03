@@ -60,8 +60,6 @@ public abstract class RDFXMLParserTestCase {
 
 	private static String W3C_MANIFEST_FILE = W3C_TESTS_DIR + "Manifest.rdf";
 
-	private static String OPENRDF_MANIFEST_FILE = LOCAL_TESTS_DIR + "openrdf/Manifest.rdf";
-
 	/*--------------------*
 	 * Static initializer *
 	 *--------------------*/
@@ -75,10 +73,6 @@ public abstract class RDFXMLParserTestCase {
 		// Add W3C's manifest
 		URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);
 		con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);
-
-		// Add our own manifest
-		URL localManifest = resolveURL(OPENRDF_MANIFEST_FILE);
-		con.add(localManifest, base(localManifest.toString()), RDFFormat.RDFXML);
 
 		// Create test suite
 		TestSuite suite = new TestSuite(RDFXMLParserTestCase.class.getName());
