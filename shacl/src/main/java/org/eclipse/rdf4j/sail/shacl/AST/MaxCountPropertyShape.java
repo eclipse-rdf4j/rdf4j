@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -61,9 +61,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode,
 					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
-			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
+			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
 
 			PlanNode directTupleFromFilter = new LoggingNode(
 					new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class), "");
@@ -96,21 +96,27 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		PlanNode validValues = maxCountFilter.getTrueNode(BufferedPlanNode.class);
 		PlanNode invalidValues = maxCountFilter.getFalseNode(BufferedPlanNode.class);
 
-		PlanNode trimmed = new LoggingNode(new TrimTuple(validValues, 0, 1), "");
+		PlanNode mergeNode1;
+		if (!shaclSailConnection.stats.isBaseSailEmpty()) {
 
-		PlanNode unique = new LoggingNode(new Unique(trimmed), "");
+			PlanNode trimmed = new LoggingNode(new TrimTuple(validValues, 0, 1), "");
 
-		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(
-				new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), false),
-				"");
+			PlanNode unique = new LoggingNode(new Unique(trimmed), "");
 
-		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
+			PlanNode bulkedExternalInnerJoin = new LoggingNode(
+					new BulkedExternalInnerJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), true),
+					"");
 
-		PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
-				.getFalseNode(UnBufferedPlanNode.class);
+			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
 
-		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""),
-				new LoggingNode(invalidValues, ""));
+			PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
+					.getFalseNode(UnBufferedPlanNode.class);
+
+			mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""),
+					new LoggingNode(invalidValues, ""));
+		} else {
+			mergeNode1 = invalidValues;
+		}
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(mergeNode1, shaclSailConnection);
