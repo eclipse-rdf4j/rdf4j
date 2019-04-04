@@ -10,13 +10,17 @@ package org.eclipse.rdf4j.sparqlbuilder.core;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
-/**
- * Construct property paths for use with the {@link SparqlBuilder}
- * 
- * <p><b>Example:</b> {@code subject.has(Path.of(zeroOrMore(property)), object)}.<p>
- */
-public class Path {
-	public static RdfPredicate of(QueryElement... aElements) {
+public class PropertyPath {
+	/**
+	 * Construct property paths for use with the {@link SparqlBuilder}
+	 * 
+	 * <p><b>Example:</b> {@code subject.has(Path.of(zeroOrMore(property)), object)}.<p>
+	 * 
+	 * @param aElements 
+	 *        the path elements
+	 * @return a property path
+	 */
+	public static RdfPredicate of(RdfPredicate... aElements) {
 		return () -> {
 			StringBuilder sb = new StringBuilder();
 			for (QueryElement element : aElements) {
@@ -29,11 +33,11 @@ public class Path {
 		};
 	}
 
-	public static QueryElement zeroOrMore(QueryElement aElement) {
+	public static RdfPredicate zeroOrMore(RdfPredicate aElement) {
 		return () -> aElement.getQueryString() + "*";
 	}
 
-	public static QueryElement oneOrMore(QueryElement aElement) {
+	public static RdfPredicate oneOrMore(RdfPredicate aElement) {
 		return () -> aElement.getQueryString() + "+";
 	}
 }
