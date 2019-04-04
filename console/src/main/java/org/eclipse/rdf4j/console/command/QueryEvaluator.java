@@ -317,7 +317,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		// add namespace prefixes
-		String queryString = addRepositoryQueryPrefixes(str);
+		String queryString = addQueryPrefixes(str);
 
 		try {
 			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
@@ -448,19 +448,18 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Add namespace prefixes to SPARQL or SERQL query from repository connection
+	 * Add namespace prefixes to SPARQL or SERQL query
 	 * 
 	 * @param queryString query string
 	 * @return query string with prefixes
 	 */
-	private String addRepositoryQueryPrefixes(String queryString) {
+	private String addQueryPrefixes(String queryString) {
 		StringBuffer result = new StringBuffer(queryString.length() + 512);
 		result.append(queryString);
 
 		String upperCaseQuery = queryString.toUpperCase(Locale.ENGLISH);
-		Repository repository = state.getRepository();
 
-		if (repository != null && getQueryPrefix() && !hasQueryPrefixes(upperCaseQuery)) {
+		if (getQueryPrefix() && !hasQueryPrefixes(upperCaseQuery)) {
 			addQueryPrefixes(result, getPrefixes());
 		}
 		return result.toString();
