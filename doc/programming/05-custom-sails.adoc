@@ -340,6 +340,8 @@ alternative paths, inverse paths and the like are not supported.
 `sh:or` is limited to statement based restrictions, such as `sh:datatype`, or aggregate based restrictions, such as `sh:minCount`,
 but not both at the same time.
 
+Predicates that are not supported are logged at the `DEBUG` logging level.
+
 === Validation results
 
 On `commit()` the ShaclSail will validate your changes and throw an exception if there are
@@ -387,7 +389,7 @@ There is no support for `sh:severity`, all violations will trigger an exception.
 
 === Logging and debugging
 
-By default there is no logging enabled in the ShaclSail. There are three methods for enabling
+By default there is very little logging enabled in the ShaclSail. There are three methods for enabling
 logging:
 
  - `shaclSail.setLogValidationPlans(true);`
@@ -397,6 +399,8 @@ logging:
 All these will log as `INFO`.
 
 First step to debugging and understanding an unexpected violation is to enable `shaclSail.setLogValidationViolations(true);`.
+
+Logging for unsupported SHACL features and for internal processes in the SHACL sail are logged at `DEBUG`.
 
 ==== Log validation plans
 
