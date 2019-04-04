@@ -134,15 +134,15 @@ public class SparqlTest extends AbstractCommandTest {
 	public final void testInputOutputFilePrefix() throws IOException {
 		File f = LOCATION.newFile("select-prefix.qr");
 		copyFromResource("sparql/select-prefix.qr", f);
-		
+
 		sparql.executeQuery("sparql infile=\"select-prefix.qr\" outfile=\"out.srj\"", "sparql");
-	
+
 		verify(mockConsoleIO, never()).writeError(anyString());
-		
+
 		String dir = LOCATION.getRoot().toString();
 		File srj = Paths.get(dir, "out.srj").toFile();
-		
-        assertTrue("File does not exist", srj.exists());
+
+		assertTrue("File does not exist", srj.exists());
 		assertTrue("Empty file", srj.length() > 0);
 	}
 }
