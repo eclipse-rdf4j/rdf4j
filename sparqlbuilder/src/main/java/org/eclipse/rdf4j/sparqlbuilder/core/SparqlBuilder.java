@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
 /**
  * A class to with static methods to create SPARQL query elements.
@@ -250,21 +249,5 @@ public class SparqlBuilder {
 	 */
 	public static TriplesTemplate triplesTemplate(TriplePattern... triples) {
 		return new TriplesTemplate(triples);
-	}
-	
-	/**
-	 * Construct a property path.
-	 * 
-	 * <p><b>Example:</b> {@code subject.has(path(zeroOrMore(property)), object)}.<p>
-	 *
-	 * @param aElements 
-	 *        the path elements
-	 * @return a property path
-	 * 
-	 * @see PropertyPath
-	 */
-	public static RdfPredicate path(RdfPredicate... aElements)
-	{
-		return PropertyPath.of(aElements);
 	}
 }

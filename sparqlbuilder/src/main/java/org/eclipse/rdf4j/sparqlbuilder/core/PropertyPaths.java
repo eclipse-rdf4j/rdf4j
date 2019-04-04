@@ -10,17 +10,17 @@ package org.eclipse.rdf4j.sparqlbuilder.core;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
-public class PropertyPath {
+public class PropertyPaths {
 	/**
 	 * Construct property paths for use with the {@link SparqlBuilder}
 	 * 
-	 * <p><b>Example:</b> {@code subject.has(Path.of(zeroOrMore(property)), object)}.<p>
+	 * <p><b>Example:</b> {@code subject.has(path(zeroOrMore(property)), object)}.<p>
 	 * 
 	 * @param aElements 
 	 *        the path elements
 	 * @return a property path
 	 */
-	public static RdfPredicate of(RdfPredicate... aElements) {
+	public static RdfPredicate path(RdfPredicate... aElements) {
 		return () -> {
 			StringBuilder sb = new StringBuilder();
 			for (QueryElement element : aElements) {
