@@ -19,11 +19,11 @@ The Dockerfile exposes two volumes:
 ## Building a docker images
 
 The RDF4J version can be selected by setting the `VERSION` build argument
-(default version is 2.4.1).
+(default version is 2.5.1).
 
 Example:
 ```
-docker build --build-arg VERSION=2.4.1 -t eclipse/rdf4j .
+docker build --build-arg VERSION=2.5.1 -t eclipse/rdf4j .
 ```
 
 ## Running the docker container 

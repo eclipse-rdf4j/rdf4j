@@ -1,7 +1,7 @@
 FROM tomcat:8.5-jre8-alpine
 MAINTAINER Bart Hanssens (bart.hanssens@bosa.fgov.be)
 
-ARG VERSION="2.4.2"
+ARG VERSION="2.5.1"
 
 ENV JAVA_OPTS="-Xmx2g"
 ENV CATALINA_OPTS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j"
