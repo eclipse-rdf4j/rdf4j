@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -15,11 +19,15 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.List;
 
+import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertTrue;
 
 public class ModifyShapesPostInitTest {
@@ -462,6 +470,156 @@ public class ModifyShapesPostInitTest {
 			connection.commit();
 		}
 
+	}
+
+	@Test
+	public void testRemoveShapes() throws IOException {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:minCount 1 ;",
+					"        ] ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			connection.begin();
+			connection.remove((Resource) null, null, null, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			StringReader extraShaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."));
+
+			connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+			add(connection, "ex:pete a ex:Person .");
+
+		}
+	}
+
+	@Ignore // we don't support updating shapes through SPARQL at the moment
+	@Test
+	public void testUpdateShapesSparql() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:minCount 1 ;",
+					"        ] ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			connection.begin();
+
+			Update update = connection.prepareUpdate(String.join("\n", "",
+					"DELETE {",
+					"	graph ?g {",
+					"		?a ?b ?c .",
+					"	}",
+
+					"} WHERE {",
+					"	graph ?g {",
+					"		?a ?b ?c .",
+					"	}",
+					"}"));
+			update.execute();
+
+			connection.commit();
+
+			add(connection, "ex:pete a ex:Person .");
+
+		}
+	}
+
+	@Test
+	public void testReadShapes() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property ex:prop .",
+					"",
+					"ex:prop    sh:path ex:age ;",
+					"                sh:minCount 1 ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			List<Statement> shapesStatements = Iterations
+					.asList(connection.getStatements(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH));
+			List<Statement> shapesStatementsInferred = Iterations
+					.asList(connection.getStatements(null, null, null, true, RDF4J.SHACL_SHAPE_GRAPH));
+			List<Statement> allStatements = Iterations.asList(connection.getStatements(null, null, null));
+
+			boolean hasShapes = connection.hasStatement(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH);
+			boolean hasAnyStatements = connection.hasStatement(null, null, null, false);
+
+			assertEquals(5, shapesStatements.size());
+			assertEquals(5, shapesStatementsInferred.size());
+			assertEquals(0, allStatements.size());
+
+			assertTrue(hasShapes);
+			assertFalse(hasAnyStatements);
+		}
 	}
 
 	private void add(SailRepositoryConnection connection, String data) throws IOException {
