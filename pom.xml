@@ -183,11 +183,6 @@
 		</profile>
 		<profile>
 			<id>quick</id>
-			<activation>
-				<property>
-					<name>skipTests</name>
-				</property>
-			</activation>
 			<properties>
 				<skipTests>true</skipTests>
 				<skipITs>true</skipITs>
