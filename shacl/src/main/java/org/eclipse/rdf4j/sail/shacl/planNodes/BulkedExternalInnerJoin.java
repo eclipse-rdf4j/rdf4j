@@ -38,11 +38,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+								   boolean skipBasedOnPreviousConnection) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select distinct * where { VALUES (?a) {}" + query + "} order by ?a", null);
+			.parseQuery("select distinct * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -57,6 +57,9 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 			ArrayDeque<Tuple> right = new ArrayDeque<>();
 
+			ArrayDeque<Tuple> joined = new ArrayDeque<>();
+
+
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
@@ -66,7 +69,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 				}
 
 				while (left.size() < 200 && leftNodeIterator.hasNext()) {
-					left.addFirst(leftNodeIterator.next());
+					Tuple next = leftNodeIterator.next();
+					if (next.toString().contains("http://data.gov.be/dist/vlaanderen/4b4d326eefdeeec2dd0eab83396e1ded")) {
+						System.out.println();
+					}
+					left.addFirst(next);
 				}
 
 				if (left.isEmpty()) {
@@ -74,6 +81,51 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 				}
 
 				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+
+				while (!right.isEmpty()) {
+
+					Tuple leftPeek = left.peekLast();
+
+					Tuple rightPeek = right.peekLast();
+
+					if (rightPeek.line.get(0) == leftPeek.line.get(0)
+						|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+						// we have a join !
+						joined.addLast(TupleHelper.join(leftPeek, rightPeek));
+						right.removeLast();
+
+						Tuple rightPeek2 = right.peekLast();
+
+						if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
+							// no more to join from right, pop left so we don't print it again.
+
+							left.removeLast();
+						}
+					} else {
+						int compare = rightPeek.line.get(0)
+							.stringValue()
+							.compareTo(leftPeek.line.get(0).stringValue());
+
+						if (compare < 0) {
+							if (right.isEmpty()) {
+								throw new IllegalStateException();
+							}
+
+							right.removeLast();
+
+						} else {
+							if (left.isEmpty()) {
+								throw new IllegalStateException();
+							}
+							left.removeLast();
+
+						}
+					}
+
+
+				}
+
+				left.clear();
 
 			}
 
@@ -85,60 +137,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			@Override
 			public boolean hasNext() throws SailException {
 				calculateNext();
-				return !left.isEmpty() && !right.isEmpty();
+				return !joined.isEmpty();
 			}
 
 			@Override
 			public Tuple next() throws SailException {
 				calculateNext();
-
-				Tuple joined = null;
-
-				while (joined == null) {
-
-					Tuple leftPeek = left.peekLast();
-
-					if (!right.isEmpty()) {
-						Tuple rightPeek = right.peekLast();
-
-						if (rightPeek.line.get(0) == leftPeek.line.get(0)
-								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
-							// we have a join !
-							joined = TupleHelper.join(leftPeek, rightPeek);
-							right.removeLast();
-
-							Tuple rightPeek2 = right.peekLast();
-
-							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
-								// no more to join from right, pop left so we don't print it again.
-
-								left.removeLast();
-							}
-						} else {
-							int compare = rightPeek.line.get(0)
-									.stringValue()
-									.compareTo(leftPeek.line.get(0).stringValue());
-
-							if (compare < 0) {
-								if (right.isEmpty()) {
-									throw new IllegalStateException();
-								}
-
-								right.removeLast();
-
-							} else {
-								if (left.isEmpty()) {
-									throw new IllegalStateException();
-								}
-								left.removeLast();
-
-							}
-						}
-
-					}
-				}
-
-				return joined;
+				return joined.removeFirst();
 
 			}
 
@@ -156,19 +161,20 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"right\"]").append("\n");
+				+ getId() + " [label=\"right\"]").append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
-					.append("\n");
+				.append("\n");
 		}
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
