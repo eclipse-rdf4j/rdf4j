@@ -68,14 +68,16 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 			return new EnrichWithShape(new LoggingNode(planNode, ""), this);
 		}
 
+		if (shaclSailConnection.stats.isBaseSailEmpty()) {
+			PlanNode addedTargets = new LoggingNode(
+					nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
+					"");
 
-		if(shaclSailConnection.stats.isBaseSailEmpty()){
-			PlanNode addedTargets = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
-				"");
+			PlanNode addedByPath = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
+					"");
 
-			PlanNode addedByPath = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape, null), "");
-
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class), "");
+			PlanNode innerJoin = new LoggingNode(
+					new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class), "");
 
 			PlanNode planNode = new NonUniqueTargetLang(innerJoin);
 
