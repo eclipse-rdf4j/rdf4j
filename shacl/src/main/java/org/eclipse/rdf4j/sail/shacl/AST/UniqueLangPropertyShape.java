@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NonUniqueTargetLang;
@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -52,7 +54,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode relevantTargetsWithPath = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+			PlanNode relevantTargetsWithPath = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode,
 					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
@@ -79,7 +81,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		PlanNode allRelevantTargets = new LoggingNode(new Unique(trimmed), "");
 
 		PlanNode relevantTargetsWithPath = new LoggingNode(
-				new BulkedExternalLeftOuterJoin(allRelevantTargets, shaclSailConnection,
+				new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
 						path.getQuery("?a", "?c", null), false),
 				"");
 
@@ -97,5 +99,25 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.UniqueLangConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		UniqueLangPropertyShape that = (UniqueLangPropertyShape) o;
+		return uniqueLang == that.uniqueLang;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), uniqueLang);
 	}
 }

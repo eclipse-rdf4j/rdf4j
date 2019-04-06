@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -243,5 +244,23 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 			return propertyShapes;
 		}
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		PropertyShape that = (PropertyShape) o;
+		return deactivated == that.deactivated &&
+				id.equals(that.id);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(deactivated, id);
 	}
 }

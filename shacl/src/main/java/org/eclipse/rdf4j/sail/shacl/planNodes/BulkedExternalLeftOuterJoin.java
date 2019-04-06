@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.Collections;
-import java.util.LinkedList;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  *         External means that this plan node can join the iterator from a plan node with an external source (Repository
  *         or SailConnection) based on a query or a predicate.
  */
-public class BulkedExternalLeftOuterJoin implements PlanNode {
+public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	private final SailConnection connection;
 	private final PlanNode leftNode;
@@ -50,7 +50,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+				.parseQuery("select distinct * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -61,9 +61,9 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			LinkedList<Tuple> left = new LinkedList<>();
+			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
-			LinkedList<Tuple> right = new LinkedList<>();
+			ArrayDeque<Tuple> right = new ArrayDeque<>();
 
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
@@ -73,7 +73,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
-				while (left.size() < 100 && leftNodeIterator.hasNext()) {
+				while (left.size() < 200 && leftNodeIterator.hasNext()) {
 					left.addFirst(leftNodeIterator.next());
 				}
 
@@ -81,44 +81,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
-				List<BindingSet> newBindindingset = left.stream()
-						.map(tuple -> tuple.line.get(0))
-						.map(v -> (Resource) v)
-						.filter(r -> {
-							if (!skipBasedOnPreviousConnection) {
-								return true;
-							}
-
-							if (connection instanceof ShaclSailConnection) {
-								return ((ShaclSailConnection) connection).getPreviousStateConnection()
-										.hasStatement(r, null, null, true);
-							}
-							return true;
-
-						})
-						.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-						.collect(Collectors.toList());
-
-				if (!newBindindingset.isEmpty()) {
-					try {
-						parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
-							@Override
-							public void meet(BindingSetAssignment node) throws Exception {
-								node.setBindingSets(newBindindingset);
-							}
-						});
-					} catch (Exception e) {
-						throw new RuntimeException(e);
-					}
-
-					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
-							.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
-						while (evaluate.hasNext()) {
-							BindingSet next = evaluate.next();
-							right.addFirst(new Tuple(next));
-						}
-					}
-				}
+				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
 
 			}
 

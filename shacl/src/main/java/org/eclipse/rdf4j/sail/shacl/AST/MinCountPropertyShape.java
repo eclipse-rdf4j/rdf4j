@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * The AST (Abstract Syntax Tree) node that represents a sh:minCount property nodeShape restriction.
  *
@@ -147,5 +149,25 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MinCountConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MinCountPropertyShape that = (MinCountPropertyShape) o;
+		return minCount == that.minCount;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), minCount);
 	}
 }

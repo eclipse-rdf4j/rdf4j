@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
@@ -92,5 +93,25 @@ public class PathPropertyShape extends PropertyShape {
 
 	public Path getPath() {
 		return path;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		PathPropertyShape that = (PathPropertyShape) o;
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), path);
 	}
 }
