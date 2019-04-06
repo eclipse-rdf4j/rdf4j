@@ -1,0 +1,14 @@
+{
+  "http://example.org/anna" : {
+      "http://xmlns.com/foaf/0.1/homepage" : [ { "value" : ":_anna", 
+                                                 "type" : "bnode" },
+                                               { "value" : "http://example.org/bob", 
+                                                 "type" : "uri" }  ],
+      "http://xmlns.com/foaf/0.1/name" : [ { "value" : "Anna", 
+                                             "type" : "literal" },
+                                             { "value" : "Bob", 
+                                             "type" : "literal",
+                                             "lang" : "de" }  ]
+                                                  
+  }
+}                                                        

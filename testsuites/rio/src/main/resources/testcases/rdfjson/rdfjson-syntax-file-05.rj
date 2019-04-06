@@ -1,0 +1,7 @@
+{
+  "http://example.org/about" : {
+      "http://purl.org/dc/terms/title" : [ { "value" : "<p xmlns=\"http://www.w3.org/1999/xhtml\"><b>Anna's</b> Homepage>/p>", 
+                                             "type" : "literal", 
+                                             "datatype" : "http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral" } ] 
+  }
+}
