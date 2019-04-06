@@ -1,0 +1,12 @@
+PREFIX : <http://foo.org/bar#>
+
+CONSTRUCT 
+{ 
+	?p :relatesTo :Cryptography 
+} 
+WHERE 
+{ 
+	{ :Bob ?p :Alice } 
+	UNION 
+	{ :Alice ?p :Bob } 
+}

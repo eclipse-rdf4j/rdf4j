@@ -1,0 +1,10 @@
+@prefix : <http://example.org/> .
+
+{
+  :a :p :b .
+  :b :lit "b" .
+  :a :diff :d .
+  :d :p :c .
+  :c :lit "c" .
+}
+

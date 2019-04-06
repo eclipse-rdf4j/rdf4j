@@ -1,0 +1,4 @@
+CONSTRUCT
+  *
+FROM
+  {S} <http://purl.org/dc/elements/1.1/description> {T}

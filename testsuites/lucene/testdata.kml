@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<Placemark>
+  <name>Eiffel tower</name>
+  <Point>
+    <coordinates>2.2945,48.8582</coordinates>
+  </Point>
+</Placemark>
+<Placemark>
+  <name>Arc Triomphe</name>
+  <Point>
+    <coordinates>2.2950,48.8738</coordinates>
+  </Point>
+</Placemark>
+<Placemark>
+  <name>Notre Dame</name>
+  <Point>
+    <coordinates>2.3465,48.8547</coordinates>
+  </Point>
+</Placemark>
+<Placemark>
+  <name>Poly 1</name>
+  <LinearRing>
+    <coordinates>
+		2.3294,48.8726
+		2.2719,48.8643
+		2.3370,48.8398
+		2.3294,48.8726
+    </coordinates>
+  </LinearRing>
+</Placemark>
+<Placemark>
+  <name>Poly 2</name>
+  <LinearRing>
+    <coordinates>
+		2.3509,48.8429
+		2.3785,48.8385
+		2.3576,48.8487
+		2.3509,48.8429
+	</coordinates>
+  </LinearRing>
+</Placemark>
+<Placemark>
+  <name>Test Poly</name>
+  <LinearRing>
+    <coordinates>
+		2.315,48.855
+		2.360,48.835
+		2.370,48.850
+		2.315,48.855
+	</coordinates>
+  </LinearRing>
+</Placemark>
+</Document>
+</kml>

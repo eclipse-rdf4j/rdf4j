@@ -1,0 +1,14 @@
+SELECT
+    *
+FROM	
+   {S} rdf:type {O1};
+       rdfs:subClassOf {O2};
+       owl:sameAs {O3};
+       P {xsd:integer};
+       serql:directType {O4}
+USING NAMESPACE
+    rdf = <http://example.org/rdf/>,
+    rdfs = <http://example.org/rdfs/>,
+    owl = <http://example.org/owl/>,
+    xsd = <http://example.org/xsd/>,
+    serql = <http://example.org/serql/>

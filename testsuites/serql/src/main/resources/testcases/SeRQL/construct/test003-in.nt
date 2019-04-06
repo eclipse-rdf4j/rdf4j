@@ -1,0 +1,6 @@
+# Input file for SeRQL CfwQuery test
+# description: query for english literals.
+<http://example.org/A> <http://example.org/propA> "Hello World!"@en.
+<http://example.org/A> <http://example.org/propA> "Bonjour le Monde!"@fr.
+<http://example.org/A> <http://example.org/propA> "Dag Wereld!".
+<http://example.org/B> <http://example.org/propA> <http://example.org/B>.

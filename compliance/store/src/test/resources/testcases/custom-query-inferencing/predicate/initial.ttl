@@ -1,0 +1,4 @@
+@prefix : <http://foo.org/bar#> .
+:John01 :parentOf  :John02, :Peter .
+:Jason  :brotherOf :John01 .
+:Matt   :brotherOf :John01 .

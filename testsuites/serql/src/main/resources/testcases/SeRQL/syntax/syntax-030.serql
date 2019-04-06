@@ -1,0 +1,7 @@
+SELECT
+   S, P, O1, O2 
+FROM
+  {S} P {O1};
+      Q {O2} R {O3},
+  {P} U {V} X {W};
+            Y {Z}
