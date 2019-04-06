@@ -63,17 +63,12 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 			private void calculateNext() {
 
-				if (!left.isEmpty()) {
+				if (!joined.isEmpty()) {
 					return;
 				}
 
 				while (left.size() < 200 && leftNodeIterator.hasNext()) {
-					Tuple next = leftNodeIterator.next();
-					if (next.toString()
-							.contains("http://data.gov.be/dist/vlaanderen/4b4d326eefdeeec2dd0eab83396e1ded")) {
-						System.out.println();
-					}
-					left.addFirst(next);
+					left.addFirst(leftNodeIterator.next());
 				}
 
 				if (left.isEmpty()) {
