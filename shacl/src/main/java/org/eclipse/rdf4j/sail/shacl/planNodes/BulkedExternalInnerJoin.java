@@ -57,54 +57,34 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 			ArrayDeque<Tuple> right = new ArrayDeque<>();
 
+			ArrayDeque<Tuple> joined = new ArrayDeque<>();
+
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
-				if (!left.isEmpty()) {
+				if (!joined.isEmpty()) {
 					return;
 				}
 
-				while (left.size() < 200 && leftNodeIterator.hasNext()) {
-					left.addFirst(leftNodeIterator.next());
-				}
+				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
-				if (left.isEmpty()) {
-					return;
-				}
+					while (left.size() < 200 && leftNodeIterator.hasNext()) {
+						left.addFirst(leftNodeIterator.next());
+					}
 
-				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
 
-			}
+					while (!right.isEmpty()) {
 
-			@Override
-			public void close() throws SailException {
-				leftNodeIterator.close();
-			}
+						Tuple leftPeek = left.peekLast();
 
-			@Override
-			public boolean hasNext() throws SailException {
-				calculateNext();
-				return !left.isEmpty() && !right.isEmpty();
-			}
-
-			@Override
-			public Tuple next() throws SailException {
-				calculateNext();
-
-				Tuple joined = null;
-
-				while (joined == null) {
-
-					Tuple leftPeek = left.peekLast();
-
-					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
 
 						if (rightPeek.line.get(0) == leftPeek.line.get(0)
 								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
 							// we have a join !
-							joined = TupleHelper.join(leftPeek, rightPeek);
+							joined.addLast(TupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();
 
 							Tuple rightPeek2 = right.peekLast();
@@ -136,9 +116,27 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						}
 
 					}
+
+					left.clear();
 				}
 
-				return joined;
+			}
+
+			@Override
+			public void close() throws SailException {
+				leftNodeIterator.close();
+			}
+
+			@Override
+			public boolean hasNext() throws SailException {
+				calculateNext();
+				return !joined.isEmpty();
+			}
+
+			@Override
+			public Tuple next() throws SailException {
+				calculateNext();
+				return joined.removeFirst();
 
 			}
 
@@ -156,8 +154,9 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
