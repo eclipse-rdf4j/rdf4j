@@ -67,59 +67,58 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 					return;
 				}
 
-				while (left.size() < 200 && leftNodeIterator.hasNext()) {
-					left.addFirst(leftNodeIterator.next());
-				}
+				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
-				if (left.isEmpty()) {
-					return;
-				}
-
-				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
-
-				while (!right.isEmpty()) {
-
-					Tuple leftPeek = left.peekLast();
-
-					Tuple rightPeek = right.peekLast();
-
-					if (rightPeek.line.get(0) == leftPeek.line.get(0)
-							|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
-						// we have a join !
-						joined.addLast(TupleHelper.join(leftPeek, rightPeek));
-						right.removeLast();
-
-						Tuple rightPeek2 = right.peekLast();
-
-						if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
-							// no more to join from right, pop left so we don't print it again.
-
-							left.removeLast();
-						}
-					} else {
-						int compare = rightPeek.line.get(0)
-								.stringValue()
-								.compareTo(leftPeek.line.get(0).stringValue());
-
-						if (compare < 0) {
-							if (right.isEmpty()) {
-								throw new IllegalStateException();
-							}
-
-							right.removeLast();
-
-						} else {
-							if (left.isEmpty()) {
-								throw new IllegalStateException();
-							}
-							left.removeLast();
-
-						}
+					while (left.size() < 200 && leftNodeIterator.hasNext()) {
+						left.addFirst(leftNodeIterator.next());
 					}
 
-				}
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
 
-				left.clear();
+					while (!right.isEmpty()) {
+
+						Tuple leftPeek = left.peekLast();
+
+						Tuple rightPeek = right.peekLast();
+
+						if (rightPeek.line.get(0) == leftPeek.line.get(0)
+								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+							// we have a join !
+							joined.addLast(TupleHelper.join(leftPeek, rightPeek));
+							right.removeLast();
+
+							Tuple rightPeek2 = right.peekLast();
+
+							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
+								// no more to join from right, pop left so we don't print it again.
+
+								left.removeLast();
+							}
+						} else {
+							int compare = rightPeek.line.get(0)
+									.stringValue()
+									.compareTo(leftPeek.line.get(0).stringValue());
+
+							if (compare < 0) {
+								if (right.isEmpty()) {
+									throw new IllegalStateException();
+								}
+
+								right.removeLast();
+
+							} else {
+								if (left.isEmpty()) {
+									throw new IllegalStateException();
+								}
+								left.removeLast();
+
+							}
+						}
+
+					}
+
+					left.clear();
+				}
 
 			}
 
