@@ -347,16 +347,14 @@ public class ModelsTest {
 		try {
 			Models.getProperty(model1, foo, null).orElse(null);
 			fail("should have resulted in exception");
-		}
-		catch (NullPointerException e) {
+		} catch (NullPointerException e) {
 			// expected
 		}
 
 		try {
 			Models.getProperty(model1, null, bar).orElse(null);
 			fail("should have resulted in exception");
-		}
-		catch (NullPointerException e) {
+		} catch (NullPointerException e) {
 			// expected
 		}
 	}

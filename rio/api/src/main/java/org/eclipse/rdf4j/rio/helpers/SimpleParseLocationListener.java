@@ -27,16 +27,16 @@ public class SimpleParseLocationListener implements ParseLocationListener {
 	}
 
 	/**
-	 * @return The last reported line number, -1 if the line number was not available when the location was
-	 *         updated, or 0 if none have been reported.
+	 * @return The last reported line number, -1 if the line number was not available when the location was updated, or
+	 *         0 if none have been reported.
 	 */
 	public long getLineNo() {
 		return lineNo;
 	}
 
 	/**
-	 * @return The last reported column number, -1 if the column number was not available when the location
-	 *         was updated, or 0 if none have been reported.
+	 * @return The last reported column number, -1 if the column number was not available when the location was updated,
+	 *         or 0 if none have been reported.
 	 */
 	public long getColumnNo() {
 		return columnNo;

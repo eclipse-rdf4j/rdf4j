@@ -32,21 +32,16 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 	 *---------*/
 
 	@Override
-	public void startTag(String tagName, Map<String, String> atts, String text)
-		throws SAXException
-	{
+	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
 		if (BOOLEAN_TAG.equals(tagName)) {
 			if (BOOLEAN_TRUE.equalsIgnoreCase(text)) {
 				value = true;
-			}
-			else if (BOOLEAN_FALSE.equalsIgnoreCase(text)) {
+			} else if (BOOLEAN_FALSE.equalsIgnoreCase(text)) {
 				value = false;
-			}
-			else {
+			} else {
 				throw new SAXException("Illegal value for element " + BOOLEAN_TAG + ": " + text);
 			}
-		}
-		else if (RESULT_SET_TAG.equals(tagName) || RESULT_TAG.equals(tagName)) {
+		} else if (RESULT_SET_TAG.equals(tagName) || RESULT_TAG.equals(tagName)) {
 			QueryResultParseException realException = new QueryResultParseException(
 					"Found tuple results in boolean parser");
 			throw new SAXException(realException);
@@ -54,9 +49,7 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 	}
 
 	@Override
-	public void endDocument()
-		throws SAXException
-	{
+	public void endDocument() throws SAXException {
 		if (value == null) {
 			throw new SAXException("Malformed document, " + BOOLEAN_TAG + " element not found");
 		}

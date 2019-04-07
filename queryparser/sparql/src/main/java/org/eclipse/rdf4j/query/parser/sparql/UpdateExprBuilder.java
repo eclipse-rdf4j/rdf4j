@@ -64,23 +64,18 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public UpdateExpr visit(ASTUpdate node, Object data)
-		throws VisitorException
-	{
+	public UpdateExpr visit(ASTUpdate node, Object data) throws VisitorException {
 		if (node instanceof ASTModify) {
-			return this.visit((ASTModify)node, data);
-		}
-		else if (node instanceof ASTInsertData) {
-			return this.visit((ASTInsertData)node, data);
+			return this.visit((ASTModify) node, data);
+		} else if (node instanceof ASTInsertData) {
+			return this.visit((ASTInsertData) node, data);
 		}
 
 		return null;
 	}
 
 	@Override
-	public InsertData visit(ASTInsertData node, Object data)
-		throws VisitorException
-	{
+	public InsertData visit(ASTInsertData node, Object data) throws VisitorException {
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
 		InsertData insertData = new InsertData(dataBlock.getDataBlock());
 
@@ -89,9 +84,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public DeleteData visit(ASTDeleteData node, Object data)
-		throws VisitorException
-	{
+	public DeleteData visit(ASTDeleteData node, Object data) throws VisitorException {
 
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
 		DeleteData deleteData = new DeleteData(dataBlock.getDataBlock());
@@ -102,13 +95,11 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public TupleExpr visit(ASTQuadsNotTriples node, Object data)
-		throws VisitorException
-	{
+	public TupleExpr visit(ASTQuadsNotTriples node, Object data) throws VisitorException {
 		GraphPattern parentGP = graphPattern;
 		graphPattern = new GraphPattern();
 
-		ValueExpr contextNode = (ValueExpr)node.jjtGetChild(0).jjtAccept(this, data);
+		ValueExpr contextNode = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);
 
 		Var contextVar = mapValueExprToVar(contextNode);
 		graphPattern.setContextVar(contextVar);
@@ -127,9 +118,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Modify visit(ASTDeleteWhere node, Object data)
-		throws VisitorException
-	{
+	public Modify visit(ASTDeleteWhere node, Object data) throws VisitorException {
 		// Collect delete clause triples
 		GraphPattern parentGP = graphPattern;
 		graphPattern = new GraphPattern();
@@ -163,16 +152,14 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Load visit(ASTLoad node, Object data)
-		throws VisitorException
-	{
+	public Load visit(ASTLoad node, Object data) throws VisitorException {
 
-		ValueConstant source = (ValueConstant)node.jjtGetChild(0).jjtAccept(this, data);
+		ValueConstant source = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, data);
 
 		Load load = new Load(source);
 		load.setSilent(node.isSilent());
 		if (node.jjtGetNumChildren() > 1) {
-			ValueConstant graph = (ValueConstant)node.jjtGetChild(1).jjtAccept(this, data);
+			ValueConstant graph = (ValueConstant) node.jjtGetChild(1).jjtAccept(this, data);
 			load.setGraph(graph);
 		}
 
@@ -180,23 +167,19 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Clear visit(ASTClear node, Object data)
-		throws VisitorException
-	{
+	public Clear visit(ASTClear node, Object data) throws VisitorException {
 		Clear clear = new Clear();
 		clear.setSilent(node.isSilent());
 
 		ASTGraphRefAll graphRef = node.jjtGetChild(ASTGraphRefAll.class);
 
 		if (graphRef.jjtGetNumChildren() > 0) {
-			ValueConstant graph = (ValueConstant)graphRef.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant graph = (ValueConstant) graphRef.jjtGetChild(0).jjtAccept(this, data);
 			clear.setGraph(graph);
-		}
-		else {
+		} else {
 			if (graphRef.isDefault()) {
 				clear.setScope(Scope.DEFAULT_CONTEXTS);
-			}
-			else if (graphRef.isNamed()) {
+			} else if (graphRef.isNamed()) {
 				clear.setScope(Scope.NAMED_CONTEXTS);
 			}
 		}
@@ -204,9 +187,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Clear visit(ASTDrop node, Object data)
-		throws VisitorException
-	{
+	public Clear visit(ASTDrop node, Object data) throws VisitorException {
 		// implementing drop as a synonym of clear, in Sesame this is really the
 		// same thing, as empty
 		// graphs are not recorded.
@@ -217,14 +198,12 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		ASTGraphRefAll graphRef = node.jjtGetChild(ASTGraphRefAll.class);
 
 		if (graphRef.jjtGetNumChildren() > 0) {
-			ValueConstant graph = (ValueConstant)graphRef.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant graph = (ValueConstant) graphRef.jjtGetChild(0).jjtAccept(this, data);
 			clear.setGraph(graph);
-		}
-		else {
+		} else {
 			if (graphRef.isDefault()) {
 				clear.setScope(Scope.DEFAULT_CONTEXTS);
-			}
-			else if (graphRef.isNamed()) {
+			} else if (graphRef.isNamed()) {
 				clear.setScope(Scope.NAMED_CONTEXTS);
 			}
 		}
@@ -232,10 +211,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Create visit(ASTCreate node, Object data)
-		throws VisitorException
-	{
-		ValueConstant graph = (ValueConstant)node.jjtGetChild(0).jjtAccept(this, data);
+	public Create visit(ASTCreate node, Object data) throws VisitorException {
+		ValueConstant graph = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, data);
 
 		Create create = new Create(graph);
 		create.setSilent(node.isSilent());
@@ -243,92 +220,81 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public Copy visit(ASTCopy node, Object data)
-		throws VisitorException
-	{
+	public Copy visit(ASTCopy node, Object data) throws VisitorException {
 		Copy copy = new Copy();
 		copy.setSilent(node.isSilent());
 
-		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault)node.jjtGetChild(0);
+		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault) node.jjtGetChild(0);
 		if (sourceNode.jjtGetNumChildren() > 0) {
-			ValueConstant sourceGraph = (ValueConstant)sourceNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant sourceGraph = (ValueConstant) sourceNode.jjtGetChild(0).jjtAccept(this, data);
 			copy.setSourceGraph(sourceGraph);
 		}
 
-		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
+		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault) node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
-					data);
+			ValueConstant destinationGraph = (ValueConstant) destinationNode.jjtGetChild(0).jjtAccept(this, data);
 			copy.setDestinationGraph(destinationGraph);
 		}
 		return copy;
 	}
 
 	@Override
-	public Move visit(ASTMove node, Object data)
-		throws VisitorException
-	{
+	public Move visit(ASTMove node, Object data) throws VisitorException {
 		Move move = new Move();
 		move.setSilent(node.isSilent());
 
-		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault)node.jjtGetChild(0);
+		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault) node.jjtGetChild(0);
 		if (sourceNode.jjtGetNumChildren() > 0) {
-			ValueConstant sourceGraph = (ValueConstant)sourceNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant sourceGraph = (ValueConstant) sourceNode.jjtGetChild(0).jjtAccept(this, data);
 			move.setSourceGraph(sourceGraph);
 		}
 
-		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
+		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault) node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
-					data);
+			ValueConstant destinationGraph = (ValueConstant) destinationNode.jjtGetChild(0).jjtAccept(this, data);
 			move.setDestinationGraph(destinationGraph);
 		}
 		return move;
 	}
 
 	@Override
-	public Add visit(ASTAdd node, Object data)
-		throws VisitorException
-	{
+	public Add visit(ASTAdd node, Object data) throws VisitorException {
 		Add add = new Add();
 		add.setSilent(node.isSilent());
 
-		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault)node.jjtGetChild(0);
+		ASTGraphOrDefault sourceNode = (ASTGraphOrDefault) node.jjtGetChild(0);
 		if (sourceNode.jjtGetNumChildren() > 0) {
-			ValueConstant sourceGraph = (ValueConstant)sourceNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant sourceGraph = (ValueConstant) sourceNode.jjtGetChild(0).jjtAccept(this, data);
 			add.setSourceGraph(sourceGraph);
 		}
 
-		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
+		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault) node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
-					data);
+			ValueConstant destinationGraph = (ValueConstant) destinationNode.jjtGetChild(0).jjtAccept(this, data);
 			add.setDestinationGraph(destinationGraph);
 		}
 		return add;
 	}
 
 	@Override
-	public Modify visit(ASTModify node, Object data)
-		throws VisitorException
-	{
+	public Modify visit(ASTModify node, Object data) throws VisitorException {
 		ASTWhereClause whereClause = node.getWhereClause();
 
 		TupleExpr where = null;
 		if (whereClause != null) {
-			where = (TupleExpr)whereClause.jjtAccept(this, data);
+			where = (TupleExpr) whereClause.jjtAccept(this, data);
 		}
 
 		TupleExpr delete = null;
 		ASTDeleteClause deleteNode = node.getDeleteClause();
 		if (deleteNode != null) {
-			delete = (TupleExpr)deleteNode.jjtAccept(this, data);
+			delete = (TupleExpr) deleteNode.jjtAccept(this, data);
 		}
 
 		TupleExpr insert = null;
 		ASTInsertClause insertNode = node.getInsertClause();
 		if (insertNode != null) {
-			insert = (TupleExpr)insertNode.jjtAccept(this, data);
+			insert = (TupleExpr) insertNode.jjtAccept(this, data);
 		}
 
 		Modify modifyExpr = new Modify(delete, insert, where);
@@ -337,10 +303,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public TupleExpr visit(ASTDeleteClause node, Object data)
-		throws VisitorException
-	{
-		TupleExpr result = (TupleExpr)data;
+	public TupleExpr visit(ASTDeleteClause node, Object data) throws VisitorException {
+		TupleExpr result = (TupleExpr) data;
 
 		// Collect construct triples
 		GraphPattern parentGP = graphPattern;
@@ -375,10 +339,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public TupleExpr visit(ASTInsertClause node, Object data)
-		throws VisitorException
-	{
-		TupleExpr result = (TupleExpr)data;
+	public TupleExpr visit(ASTInsertClause node, Object data) throws VisitorException {
+		TupleExpr result = (TupleExpr) data;
 
 		// Collect insert clause triples
 		GraphPattern parentGP = graphPattern;

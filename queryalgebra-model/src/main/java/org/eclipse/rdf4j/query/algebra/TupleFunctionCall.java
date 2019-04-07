@@ -101,16 +101,12 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meetOther(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
@@ -126,11 +122,9 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (replaceNodeInList(args, current, replacement)) {
 			return;
-		}
-		else if (replaceNodeInList(resultVars, current, replacement)) {
+		} else if (replaceNodeInList(resultVars, current, replacement)) {
 			return;
-		}
-		else {
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -147,7 +141,7 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof TupleFunctionCall) {
-			TupleFunctionCall o = (TupleFunctionCall)other;
+			TupleFunctionCall o = (TupleFunctionCall) other;
 			return uri.equals(o.getURI()) && args.equals(o.getArgs()) && resultVars.equals(o.getResultVars());
 		}
 		return false;
@@ -160,7 +154,7 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 
 	@Override
 	public TupleFunctionCall clone() {
-		TupleFunctionCall clone = (TupleFunctionCall)super.clone();
+		TupleFunctionCall clone = (TupleFunctionCall) super.clone();
 
 		clone.args = new ArrayList<>(getArgs().size());
 		for (ValueExpr arg : getArgs()) {

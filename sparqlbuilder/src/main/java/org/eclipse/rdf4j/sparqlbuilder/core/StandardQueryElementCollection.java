@@ -15,19 +15,18 @@ import java.util.function.Function;
 /**
  * A {@link QueryElementCollection} that follows a more standard way of converting to a query string
  *
- * @param <T>
- * 		the type of {@link QueryElement}s in the collection
+ * @param <T> the type of {@link QueryElement}s in the collection
  */
-public abstract class StandardQueryElementCollection<T extends QueryElement>
-		extends QueryElementCollection<T> {
+public abstract class StandardQueryElementCollection<T extends QueryElement> extends QueryElementCollection<T> {
 	private Optional<String> operatorName = Optional.empty();
 	private Function<String, String> wrapperMethod = Function.identity();
-	
+
 	private boolean printBodyIfEmpty = false;
 	private boolean printNameIfEmpty = true;
 
-	protected StandardQueryElementCollection() { }
-	
+	protected StandardQueryElementCollection() {
+	}
+
 	protected StandardQueryElementCollection(String delimeter) {
 		super(delimeter);
 	}
@@ -36,11 +35,11 @@ public abstract class StandardQueryElementCollection<T extends QueryElement>
 		super(delimeter);
 		setOperatorName(operatorName);
 	}
-	
+
 	protected StandardQueryElementCollection(String delimeter, Collection<T> collection) {
 		super(delimeter, collection);
 	}
-	
+
 	protected StandardQueryElementCollection(String operatorName, Function<String, String> wrapperMethod) {
 		super();
 		setOperatorName(operatorName);
@@ -52,8 +51,8 @@ public abstract class StandardQueryElementCollection<T extends QueryElement>
 		setOperatorName(operatorName);
 	}
 
-	protected StandardQueryElementCollection(String operatorName, String delimiter, Function<String, String> wrapperMethod,
-			Collection<T> collection) {
+	protected StandardQueryElementCollection(String operatorName, String delimiter,
+			Function<String, String> wrapperMethod, Collection<T> collection) {
 		super(delimiter, collection);
 		setOperatorName(operatorName);
 		setWrapperMethod(wrapperMethod);
@@ -66,11 +65,11 @@ public abstract class StandardQueryElementCollection<T extends QueryElement>
 	protected void setOperatorName(String operatorName, boolean pad) {
 		this.operatorName = Optional.of(operatorName + (pad ? " " : ""));
 	}
-	
+
 	protected void setWrapperMethod(Function<String, String> wrapperMethod) {
 		this.wrapperMethod = wrapperMethod;
 	}
-	
+
 	protected void resetWrapperMethod() {
 		this.wrapperMethod = Function.identity();
 	}
@@ -87,7 +86,7 @@ public abstract class StandardQueryElementCollection<T extends QueryElement>
 	public String getQueryString() {
 		StringBuilder queryString = new StringBuilder();
 
-		if(printNameIfEmpty || !isEmpty()) {
+		if (printNameIfEmpty || !isEmpty()) {
 			operatorName.ifPresent(queryString::append);
 		}
 		if (printBodyIfEmpty || !isEmpty()) {

@@ -44,9 +44,7 @@ public class AddStatementOperation extends StatementOperation implements Seriali
 	}
 
 	@Override
-	public void execute(RepositoryConnection con)
-		throws RepositoryException
-	{
+	public void execute(RepositoryConnection con) throws RepositoryException {
 		con.add(getSubject(), getPredicate(), getObject(), getContexts());
 	}
 

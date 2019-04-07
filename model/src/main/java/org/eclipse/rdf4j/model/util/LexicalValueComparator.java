@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
- * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a
- * SPARQL compliant comparator.
+ * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
+ * compliant comparator.
  * 
  * @author james
  * @author Arjohn Kampman
@@ -48,7 +48,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		boolean b1 = o1 instanceof BNode;
 		boolean b2 = o2 instanceof BNode;
 		if (b1 && b2) {
-			return compareBNodes((BNode)o1, (BNode)o2);
+			return compareBNodes((BNode) o1, (BNode) o2);
 		}
 		if (b1) {
 			return -1;
@@ -61,7 +61,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		boolean u1 = o1 instanceof IRI;
 		boolean u2 = o2 instanceof IRI;
 		if (u1 && u2) {
-			return compareURIs((IRI)o1, (IRI)o2);
+			return compareURIs((IRI) o1, (IRI) o2);
 		}
 		if (u1) {
 			return -1;
@@ -71,7 +71,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		}
 
 		// 4. RDF literals
-		return compareLiterals((Literal)o1, (Literal)o2);
+		return compareLiterals((Literal) o1, (Literal) o2);
 	}
 
 	private int compareBNodes(BNode leftBNode, BNode rightBNode) {
@@ -96,12 +96,10 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
 				result = compareDatatypes(leftDatatype, rightDatatype);
-			}
-			else {
+			} else {
 				result = 1;
 			}
-		}
-		else if (rightDatatype != null) {
+		} else if (rightDatatype != null) {
 			result = -1;
 		}
 
@@ -114,12 +112,10 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 			if (leftLanguage.isPresent()) {
 				if (rightLanguage.isPresent()) {
 					result = leftLanguage.get().compareTo(rightLanguage.get());
-				}
-				else {
+				} else {
 					result = 1;
 				}
-			}
-			else if (rightLanguage.isPresent()) {
+			} else if (rightLanguage.isPresent()) {
 				result = -1;
 			}
 		}
@@ -134,37 +130,30 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 	}
 
 	/**
-	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm
-	 * ensures that compatible ordered datatypes (numeric and date/time) are grouped together so that
-	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive
-	 * ordering steps.
+	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm ensures
+	 * that compatible ordered datatypes (numeric and date/time) are grouped together so that
+	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive ordering steps.
 	 */
 	private int compareDatatypes(IRI leftDatatype, IRI rightDatatype) {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 				// both are numeric datatypes
 				return compareURIs(leftDatatype, rightDatatype);
-			}
-			else {
+			} else {
 				return -1;
 			}
-		}
-		else if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+		} else if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 			return 1;
-		}
-		else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)) {
+		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 				// both are calendar datatypes
 				return compareURIs(leftDatatype, rightDatatype);
-			}
-			else {
+			} else {
 				return -1;
 			}
-		}
-		else if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+		} else if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 			return 1;
-		}
-		else {
+		} else {
 			// incompatible or unordered datatypes
 			return compareURIs(leftDatatype, rightDatatype);
 		}

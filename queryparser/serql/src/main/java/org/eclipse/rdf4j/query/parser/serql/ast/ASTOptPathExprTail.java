@@ -18,9 +18,7 @@ public class ASTOptPathExprTail extends ASTPathExprTail {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -30,7 +28,7 @@ public class ASTOptPathExprTail extends ASTPathExprTail {
 	 * @return The optional tail part of the path expression.
 	 */
 	public ASTBasicPathExprTail getOptionalTail() {
-		return (ASTBasicPathExprTail)children.get(0);
+		return (ASTBasicPathExprTail) children.get(0);
 	}
 
 	public boolean hasWhereClause() {
@@ -47,7 +45,7 @@ public class ASTOptPathExprTail extends ASTPathExprTail {
 			Node node = children.get(1);
 
 			if (node instanceof ASTWhere) {
-				return (ASTWhere)node;
+				return (ASTWhere) node;
 			}
 		}
 
@@ -60,7 +58,7 @@ public class ASTOptPathExprTail extends ASTPathExprTail {
 			Node node = children.get(children.size() - 1);
 
 			if (node instanceof ASTPathExprTail) {
-				return (ASTPathExprTail)node;
+				return (ASTPathExprTail) node;
 			}
 		}
 

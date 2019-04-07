@@ -20,15 +20,13 @@ import org.eclipse.rdf4j.rio.RDFParser;
  * @deprecated Use {@link org.eclipse.rdf4j.query.impl.BackgroundGraphResult} instead.
  */
 @Deprecated
-public class BackgroundGraphResult extends org.eclipse.rdf4j.query.impl.BackgroundGraphResult
-{
+public class BackgroundGraphResult extends org.eclipse.rdf4j.query.impl.BackgroundGraphResult {
 	public BackgroundGraphResult(RDFParser parser, InputStream in, Charset charset, String baseURI) {
 		this(new QueueCursor<Statement>(10), parser, in, charset, baseURI);
 	}
 
-	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in,
-			Charset charset, String baseURI)
-	{
+	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,
+			String baseURI) {
 		super(queue, parser, in, charset, baseURI);
 	}
 

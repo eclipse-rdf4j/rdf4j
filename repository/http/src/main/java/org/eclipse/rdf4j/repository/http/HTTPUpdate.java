@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Update specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException
- * subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
+ * Update specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
+ * UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Jeen Broekstra
@@ -36,32 +36,25 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 	}
 
 	@Override
-	public void execute()
-		throws UpdateExecutionException
-	{
+	public void execute() throws UpdateExecutionException {
 		try {
 			if (httpCon.getRepository().useCompatibleMode()) {
 				if (httpCon.isAutoCommit()) {
 					// execute update immediately
 					SPARQLProtocolSession client = getHttpClient();
 					try {
-						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
-								includeInferred, getMaxExecutionTime(), getBindingsArray());
-					}
-					catch (UnauthorizedException e) {
+						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
+								getMaxExecutionTime(), getBindingsArray());
+					} catch (UnauthorizedException e) {
+						throw new HTTPUpdateExecutionException(e.getMessage(), e);
+					} catch (QueryInterruptedException e) {
+						throw new HTTPUpdateExecutionException(e.getMessage(), e);
+					} catch (MalformedQueryException e) {
+						throw new HTTPUpdateExecutionException(e.getMessage(), e);
+					} catch (IOException e) {
 						throw new HTTPUpdateExecutionException(e.getMessage(), e);
 					}
-					catch (QueryInterruptedException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					}
-					catch (MalformedQueryException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					}
-					catch (IOException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					}
-				}
-				else {
+				} else {
 					// defer execution as part of transaction.
 					httpCon.scheduleUpdate(this);
 				}
@@ -71,23 +64,18 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 			SPARQLProtocolSession client = getHttpClient();
 			try {
 				httpCon.flushTransactionState(Action.UPDATE);
-				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
-						includeInferred, getMaxExecutionTime(), getBindingsArray());
-			}
-			catch (UnauthorizedException e) {
+				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
+						getMaxExecutionTime(), getBindingsArray());
+			} catch (UnauthorizedException e) {
+				throw new HTTPUpdateExecutionException(e.getMessage(), e);
+			} catch (QueryInterruptedException e) {
+				throw new HTTPUpdateExecutionException(e.getMessage(), e);
+			} catch (MalformedQueryException e) {
+				throw new HTTPUpdateExecutionException(e.getMessage(), e);
+			} catch (IOException e) {
 				throw new HTTPUpdateExecutionException(e.getMessage(), e);
 			}
-			catch (QueryInterruptedException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			}
-			catch (MalformedQueryException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			}
-			catch (IOException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			throw new HTTPUpdateExecutionException(e.getMessage(), e);
 		}
 

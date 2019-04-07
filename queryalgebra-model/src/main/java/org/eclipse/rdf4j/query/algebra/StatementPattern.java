@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A tuple expression that matches a statement pattern against an RDF graph. Statement patterns can be
- * targeted at one of three context scopes: all contexts, null context only, or named contexts only.
+ * A tuple expression that matches a statement pattern against an RDF graph. Statement patterns can be targeted at one
+ * of three context scopes: all contexts, null context only, or named contexts only.
  */
 public class StatementPattern extends AbstractQueryModelNode implements TupleExpr {
 
@@ -60,32 +60,32 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements
-	 * from all contexts.
+	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements from all
+	 * contexts.
 	 */
 	public StatementPattern(Var subject, Var predicate, Var object) {
 		this(Scope.DEFAULT_CONTEXTS, subject, predicate, object);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements
-	 * from the specified context scope.
+	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements from the
+	 * specified context scope.
 	 */
 	public StatementPattern(Scope scope, Var subject, Var predicate, Var object) {
 		this(scope, subject, predicate, object, null);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against
-	 * statements from all contexts.
+	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against statements
+	 * from all contexts.
 	 */
 	public StatementPattern(Var subject, Var predicate, Var object, Var context) {
 		this(Scope.DEFAULT_CONTEXTS, subject, predicate, object, context);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against
-	 * statements from the specified context scope.
+	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against statements
+	 * from the specified context scope.
 	 */
 	public StatementPattern(Scope scope, Var subjVar, Var predVar, Var objVar, Var conVar) {
 		setScope(scope);
@@ -208,16 +208,12 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (subjectVar != null) {
 			subjectVar.visit(visitor);
 		}
@@ -237,18 +233,14 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subjectVar == current) {
-			setSubjectVar((Var)replacement);
-		}
-		else if (predicateVar == current) {
-			setPredicateVar((Var)replacement);
-		}
-		else if (objectVar == current) {
-			setObjectVar((Var)replacement);
-		}
-		else if (contextVar == current) {
-			setContextVar((Var)replacement);
-		}
-		else {
+			setSubjectVar((Var) replacement);
+		} else if (predicateVar == current) {
+			setPredicateVar((Var) replacement);
+		} else if (objectVar == current) {
+			setObjectVar((Var) replacement);
+		} else if (contextVar == current) {
+			setContextVar((Var) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -269,7 +261,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof StatementPattern) {
-			StatementPattern o = (StatementPattern)other;
+			StatementPattern o = (StatementPattern) other;
 			return subjectVar.equals(o.getSubjectVar()) && predicateVar.equals(o.getPredicateVar())
 					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
 					&& scope.equals(o.getScope());
@@ -293,7 +285,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	@Override
 	public StatementPattern clone() {
-		StatementPattern clone = (StatementPattern)super.clone();
+		StatementPattern clone = (StatementPattern) super.clone();
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPredicateVar(getPredicateVar().clone());
 		clone.setObjectVar(getObjectVar().clone());

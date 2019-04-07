@@ -28,9 +28,7 @@ public class Exists extends SubQueryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -46,6 +44,6 @@ public class Exists extends SubQueryValueOperator {
 
 	@Override
 	public Exists clone() {
-		return (Exists)super.clone();
+		return (Exists) super.clone();
 	}
 }

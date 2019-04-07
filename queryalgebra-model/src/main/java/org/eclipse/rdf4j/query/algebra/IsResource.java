@@ -25,9 +25,7 @@ public class IsResource extends UnaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -43,6 +41,6 @@ public class IsResource extends UnaryValueOperator {
 
 	@Override
 	public IsResource clone() {
-		return (IsResource)super.clone();
+		return (IsResource) super.clone();
 	}
 }

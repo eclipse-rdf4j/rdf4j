@@ -50,8 +50,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded
- * Jetty server running Sesame, which functions as the SPARQL endpoint to test against.
+ * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded Jetty
+ * server running Sesame, which functions as the SPARQL endpoint to test against.
  * 
  * @author Jeen Broekstra
  */
@@ -79,24 +79,19 @@ public class SPARQLServiceEvaluationTest {
 	 * @throws java.lang.Exception
 	 */
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
 	}
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		remoteRepository = new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 		remoteRepository.initialize();
 		loadDataSet(remoteRepository, "/testdata-query/graph1.ttl");
@@ -108,9 +103,7 @@ public class SPARQLServiceEvaluationTest {
 		prepareLocalRepository();
 	}
 
-	private void prepareLocalRepository()
-		throws IOException
-	{
+	private void prepareLocalRepository() throws IOException {
 		loadDataSet(localRepository, "/testdata-query/defaultgraph.ttl");
 
 		f = localRepository.getValueFactory();
@@ -121,17 +114,15 @@ public class SPARQLServiceEvaluationTest {
 	}
 
 	protected void loadDataSet(Repository rep, String datasetFile)
-		throws RDFParseException, RepositoryException, IOException
-	{
+			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset...");
 		InputStream dataset = SPARQLServiceEvaluationTest.class.getResourceAsStream(datasetFile);
 
 		RepositoryConnection con = rep.getConnection();
 		try {
-			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
-					Rio.unsupportedFormat(datasetFile)));
-		}
-		finally {
+			con.add(dataset, "",
+					Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
+		} finally {
 			dataset.close();
 			con.close();
 		}
@@ -142,24 +133,18 @@ public class SPARQLServiceEvaluationTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		localRepository.shutDown();
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 		server = null;
 	}
 
 	@Test
-	public void testSimpleServiceQuery()
-		throws RepositoryException
-	{
+	public void testSimpleServiceQuery() throws RepositoryException {
 		StringBuilder qb = new StringBuilder();
 		qb.append(" SELECT * \n");
 		qb.append(" WHERE { \n");
@@ -190,19 +175,16 @@ public class SPARQLServiceEvaluationTest {
 				assertTrue(bob.equals(x) || alice.equals(x));
 				if (bob.equals(x)) {
 					f.createLiteral("Bob").equals(y);
-				}
-				else if (alice.equals(x)) {
+				} else if (alice.equals(x)) {
 					f.createLiteral("Alice").equals(y);
 				}
 			}
 
 			assertEquals(2, count);
 
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			fail(e.getMessage());
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
@@ -211,9 +193,7 @@ public class SPARQLServiceEvaluationTest {
 	 * The provided FederatedServiceResolver should finds it way to the {@link EvaluationStrategy}
 	 */
 	@Test
-	public void testRepositoryConfigurationSetup()
-		throws Exception
-	{
+	public void testRepositoryConfigurationSetup() throws Exception {
 		tearDown();
 		MemoryStoreFactory factory = new MemoryStoreFactory();
 		MemoryStoreConfig config = new MemoryStoreConfig();

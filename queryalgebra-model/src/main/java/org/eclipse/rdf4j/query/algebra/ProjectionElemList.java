@@ -91,16 +91,12 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ProjectionElem pe : elements) {
 			pe.visit(visitor);
 		}
@@ -119,7 +115,7 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ProjectionElemList) {
-			ProjectionElemList o = (ProjectionElemList)other;
+			ProjectionElemList o = (ProjectionElemList) other;
 			return elements.equals(o.getElements());
 		}
 		return false;
@@ -132,7 +128,7 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 
 	@Override
 	public ProjectionElemList clone() {
-		ProjectionElemList clone = (ProjectionElemList)super.clone();
+		ProjectionElemList clone = (ProjectionElemList) super.clone();
 
 		clone.elements = new ArrayList<>(getElements().size());
 		for (ProjectionElem pe : getElements()) {

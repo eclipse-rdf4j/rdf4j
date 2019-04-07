@@ -28,30 +28,23 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 	private static HTTPMemServer server;
 
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 	}
 
 	@Override
-	protected Repository newRepository()
-		throws Exception
-	{
+	protected Repository newRepository() throws Exception {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
@@ -65,9 +58,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 	}
 
 	@Test
-	public void testBindingsInUpdateTransaction()
-		throws Exception
-	{
+	public void testBindingsInUpdateTransaction() throws Exception {
 		// See issue SES-1889
 		logger.debug("executing test testBindingsInUpdateTransaction");
 
@@ -91,8 +82,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 			assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
 
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			if (con.isActive()) {
 				con.rollback();
 			}

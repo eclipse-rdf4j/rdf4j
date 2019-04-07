@@ -152,8 +152,7 @@ public class ContextAwareRepository extends RepositoryWrapper {
 	}
 
 	/**
-	 * @param baseURI
-	 *        The default baseURI to set.
+	 * @param baseURI The default baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;
@@ -174,9 +173,7 @@ public class ContextAwareRepository extends RepositoryWrapper {
 	}
 
 	@Override
-	public ContextAwareConnection getConnection()
-		throws RepositoryException
-	{
+	public ContextAwareConnection getConnection() throws RepositoryException {
 		ContextAwareConnection con = new ContextAwareConnection(this, super.getConnection());
 		con.setIncludeInferred(isIncludeInferred());
 		con.setMaxQueryTime(getMaxQueryTime());

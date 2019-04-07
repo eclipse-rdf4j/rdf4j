@@ -72,8 +72,7 @@ class ArrangedWriter implements RDFWriter {
 			IRI p2 = s2.getPredicate();
 			if (p1.equals(RDF.TYPE) && !p2.equals(RDF.TYPE)) {
 				return -1;
-			}
-			else if (!p1.equals(RDF.TYPE) && p2.equals(RDF.TYPE)) {
+			} else if (!p1.equals(RDF.TYPE) && p2.equals(RDF.TYPE)) {
 				return 1;
 			}
 			int cmp = p1.stringValue().compareTo(p2.stringValue());
@@ -86,14 +85,12 @@ class ArrangedWriter implements RDFWriter {
 			}
 			if (!(o1 instanceof BNode) && o2 instanceof BNode) {
 				return -1;
-			}
-			else if (o1 instanceof BNode && !(o2 instanceof BNode)) {
+			} else if (o1 instanceof BNode && !(o2 instanceof BNode)) {
 				return 1;
 			}
 			if (!(o1 instanceof IRI) && o2 instanceof IRI) {
 				return -1;
-			}
-			else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
+			} else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
 				return 1;
 			}
 			int str_cmp = o1.stringValue().compareTo(o2.stringValue());
@@ -150,57 +147,44 @@ class ArrangedWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		if (getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES)) {
 			targetQueueSize = -1;
 			repeatBlankNodes = true;
-		}
-		else if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+		} else if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
 			targetQueueSize = DEFAULT_QUEUE_SIZE;
 		}
 		delegate.startRDF();
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		trimNamespaces();
 		flushStatements();
 		delegate.endRDF();
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		flushStatements();
 		if (targetQueueSize == 0) {
 			delegate.handleNamespace(prefix, uri);
-		}
-		else if (!prefixes.containsKey(uri)) {
+		} else if (!prefixes.containsKey(uri)) {
 			prefixes.put(uri, prefix);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		flushStatements();
 		delegate.handleComment(comment);
 	}
 
 	@Override
-	public synchronized void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public synchronized void handleStatement(Statement st) throws RDFHandlerException {
 		if (targetQueueSize == 0) {
 			delegate.handleStatement(st);
-		}
-		else {
+		} else {
 			queueStatement(st);
 		}
 		while (targetQueueSize >= 0 && queueSize > targetQueueSize) {
@@ -218,19 +202,15 @@ class ArrangedWriter implements RDFWriter {
 		while (stmts == null) {
 			SubjectInContext last = stack.peekLast();
 			stmts = stmtBySubject.get(last);
-			if (stmts == null && last != null
-					&& blanks.contains(last.getSubject(), null, null, last.getContext()))
-			{
+			if (stmts == null && last != null && blanks.contains(last.getSubject(), null, null, last.getContext())) {
 				stmts = queueBlankStatements(last);
-			}
-			else if (stmts == null) {
+			} else if (stmts == null) {
 				stack.pollLast();
 			}
 			if (stack.isEmpty() && stmtBySubject.isEmpty()) {
 				Statement st = blanks.iterator().next();
 				stmts = queueBlankStatements(new SubjectInContext(st));
-			}
-			else if (stack.isEmpty()) {
+			} else if (stack.isEmpty()) {
 				stmts = stmtBySubject.values().iterator().next();
 			}
 		}
@@ -248,15 +228,14 @@ class ArrangedWriter implements RDFWriter {
 		Value obj = next.getObject();
 		if (obj instanceof BNode) {
 			// follow blank nodes before continuing with this subject
-			SubjectInContext bkey = new SubjectInContext((BNode)obj, next.getContext());
+			SubjectInContext bkey = new SubjectInContext((BNode) obj, next.getContext());
 			if (stack.contains(bkey)) {
 				// cycle detected
 				if (repeatBlankNodes) {
 					throw new RDFHandlerException("Blank node cycle detected. Try disabling "
 							+ BasicWriterSettings.INLINE_BLANK_NODES.getKey());
 				}
-			}
-			else {
+			} else {
 				stack.addLast(bkey);
 			}
 		}
@@ -265,8 +244,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private synchronized Set<Statement> queueBlankStatements(SubjectInContext key) {
 		Model firstMatch = blanks.filter(key.getSubject(), null, null, key.getContext());
-		Model matches = firstMatch.isEmpty()
-				? blankReferences.filter(key.getSubject(), null, null, key.getContext())
+		Model matches = firstMatch.isEmpty() ? blankReferences.filter(key.getSubject(), null, null, key.getContext())
 				: firstMatch;
 		if (matches.isEmpty()) {
 			return null;
@@ -279,8 +257,7 @@ class ArrangedWriter implements RDFWriter {
 		if (firstMatch.isEmpty()) {
 			// repeat blank node values
 			queueSize += matches.size();
-		}
-		else {
+		} else {
 			if (repeatBlankNodes && key.getSubject() instanceof BNode && isStillReferenced(key)) {
 				blankReferences.addAll(matches);
 			}
@@ -297,9 +274,7 @@ class ArrangedWriter implements RDFWriter {
 			Set<Statement> stmts = stmtBySubject.get(subj);
 			if (stmts != null) {
 				for (Statement st : stmts) {
-					if (st.getObject().equals(key.getSubject())
-							|| Objects.equals(st.getContext(), key.getContext()))
-					{
+					if (st.getObject().equals(key.getSubject()) || Objects.equals(st.getContext(), key.getContext())) {
 						return true;
 					}
 				}
@@ -313,8 +288,7 @@ class ArrangedWriter implements RDFWriter {
 		Set<Statement> stmts = stmtBySubject.get(key);
 		if (stmts == null && st.getSubject() instanceof BNode && !stack.contains(key)) {
 			blanks.add(st);
-		}
-		else {
+		} else {
 			if (stmts == null) {
 				stmtBySubject.put(key, stmts = new TreeSet<>(comparator));
 			}
@@ -323,9 +297,7 @@ class ArrangedWriter implements RDFWriter {
 		queueSize++;
 	}
 
-	private synchronized void flushStatements()
-		throws RDFHandlerException
-	{
+	private synchronized void flushStatements() throws RDFHandlerException {
 		if (!stmtBySubject.isEmpty() || !blanks.isEmpty()) {
 			flushNamespaces();
 			Statement st;
@@ -336,9 +308,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 	}
 
-	private synchronized void flushNamespaces()
-		throws RDFHandlerException
-	{
+	private synchronized void flushNamespaces() throws RDFHandlerException {
 		Map<String, String> namespaces = new TreeMap<>();
 		for (Map.Entry<String, String> e : prefixes.entrySet()) {
 			namespaces.put(e.getValue(), e.getKey());
@@ -364,11 +334,10 @@ class ArrangedWriter implements RDFWriter {
 		for (Statement st : stmts) {
 			used.add(st.getPredicate().getNamespace());
 			if (st.getObject() instanceof IRI) {
-				IRI uri = (IRI)st.getObject();
+				IRI uri = (IRI) st.getObject();
 				used.add(uri.getNamespace());
-			}
-			else if (st.getObject() instanceof Literal) {
-				Literal lit = (Literal)st.getObject();
+			} else if (st.getObject() instanceof Literal) {
+				Literal lit = (Literal) st.getObject();
 				if (lit.getDatatype() != null) {
 					used.add(lit.getDatatype().getNamespace());
 				}
@@ -404,8 +373,7 @@ class ArrangedWriter implements RDFWriter {
 		public String toString() {
 			if (context == null) {
 				return subject.toString();
-			}
-			else {
+			} else {
 				return subject.toString() + " [" + context.toString() + "]";
 			}
 		}
@@ -427,14 +395,13 @@ class ArrangedWriter implements RDFWriter {
 				return false;
 			if (getClass() != obj.getClass())
 				return false;
-			SubjectInContext other = (SubjectInContext)obj;
+			SubjectInContext other = (SubjectInContext) obj;
 			if (!subject.equals(other.subject))
 				return false;
 			if (context == null) {
 				if (other.context != null)
 					return false;
-			}
-			else if (!context.equals(other.context))
+			} else if (!context.equals(other.context))
 				return false;
 			return true;
 		}

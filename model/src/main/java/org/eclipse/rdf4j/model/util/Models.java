@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -45,11 +46,10 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Value} from the statements in the given model. If more than one possible
-	 * object value exists, any one value is picked and returned.
+	 * Retrieves an object {@link Value} from the statements in the given model. If more than one possible object value
+	 * exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
+	 * @param m the model from which to retrieve an object value.
 	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Value> object(Model m) {
@@ -65,31 +65,30 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one
-	 * possible Literal value exists, any one Literal value is picked and returned.
+	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one possible
+	 * Literal value exists, any one Literal value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object Literal value.
-	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value
-	 * exists.
+	 * @param m the model from which to retrieve an object Literal value.
+	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Literal> objectLiteral(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(
-				l -> (Literal)l).findAny();
+		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(l -> (Literal) l).findAny();
 	}
 
 	/**
 	 * Retrieves all object {@link Literal} values from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve all object {@link Literal} values.
-	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be
-	 * empty if no such value exists.
+	 * @param m the model from which to retrieve all object {@link Literal} values.
+	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be empty if no
+	 *         such value exists.
 	 * @see Model#objects()
 	 */
 	public static Set<Literal> objectLiterals(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(
-				l -> (Literal)l).collect(Collectors.toSet());
+		return m.stream()
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -101,31 +100,31 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Resource} value from the statements in the given model. If more than one
-	 * possible Resource value exists, any one Resource value is picked and returned.
+	 * Retrieves an object {@link Resource} value from the statements in the given model. If more than one possible
+	 * Resource value exists, any one Resource value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object Resource value.
-	 * @return an {@link Optional} object Resource value from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve an object Resource value.
+	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
 	 */
 	public static Optional<Resource> objectResource(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(
-				r -> (Resource)r).findAny();
+		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(r -> (Resource) r).findAny();
 	}
 
 	/**
 	 * Retrieves all object {@link Resource} values from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve all object {@link Resource} values.
-	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be
-	 * empty if no such value exists.
+	 * @param m the model from which to retrieve all object {@link Resource} values.
+	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be empty if no
+	 *         such value exists.
 	 * @see Model#objects()
 	 */
 	public static Set<Resource> objectResources(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(
-				r -> (Resource)r).collect(Collectors.toSet());
+		return m.stream()
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -137,40 +136,40 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link IRI} value from the statements in the given model. If more than one possible
-	 * IRI value exists, any one value is picked and returned.
+	 * Retrieves an object {@link IRI} value from the statements in the given model. If more than one possible IRI value
+	 * exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object IRI value.
-	 * @return an {@link Optional} object IRI value from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve an object IRI value.
+	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
 	 */
 	public static Optional<IRI> objectIRI(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI)r).findAny();
+		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI) r).findAny();
 	}
 
 	/**
 	 * Retrieves all object {@link IRI} values from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve all object IRI values.
-	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no
-	 * such value exists.
+	 * @param m the model from which to retrieve all object IRI values.
+	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no such value
+	 *         exists.
 	 * @see Model#objects()
 	 */
 	public static Set<IRI> objectIRIs(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI)r).collect(
-				Collectors.toSet());
+		return m.stream()
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
-	 * Retrieves an object value as a String from the statements in the given model. If more than one possible
-	 * object value exists, any one value is picked and returned.
+	 * Retrieves an object value as a String from the statements in the given model. If more than one possible object
+	 * value exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object String value.
-	 * @return an {@link Optional} object String value from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve an object String value.
+	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
 	 */
 	public static Optional<String> objectString(Model m) {
 		return m.stream().map(st -> st.getObject().stringValue()).findAny();
@@ -179,10 +178,9 @@ public class Models {
 	/**
 	 * Retrieves all object String values from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve all object String values.
-	 * @return a {@link Set} containing object String values from the given model, which will be empty if no
-	 * such value exists.
+	 * @param m the model from which to retrieve all object String values.
+	 * @return a {@link Set} containing object String values from the given model, which will be empty if no such value
+	 *         exists.
 	 * @see Model#objects()
 	 */
 	public static Set<String> objectStrings(Model m) {
@@ -198,13 +196,12 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link Resource} from the statements in the given model. If more than one possible
-	 * resource value exists, any one resource value is picked and returned.
+	 * Retrieves a subject {@link Resource} from the statements in the given model. If more than one possible resource
+	 * value exists, any one resource value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a subject Resource.
-	 * @return an {@link Optional} subject resource from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve a subject Resource.
+	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
 	 */
 	public static Optional<Resource> subject(Model m) {
 		return m.stream().map(st -> st.getSubject()).findAny();
@@ -219,28 +216,25 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link IRI} from the statements in the given model. If more than one possible IRI
-	 * value exists, any one IRI value is picked and returned.
+	 * Retrieves a subject {@link IRI} from the statements in the given model. If more than one possible IRI value
+	 * exists, any one IRI value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a subject IRI value.
-	 * @return an {@link Optional} subject IRI value from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve a subject IRI value.
+	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
 	 */
 	public static Optional<IRI> subjectIRI(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI)s).findAny();
+		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI) s).findAny();
 	}
 
 	/**
 	 * Retrieves all subject {@link IRI}s from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a subject IRI value.
+	 * @param m the model from which to retrieve a subject IRI value.
 	 * @return a {@link Set} of subject IRI values from the given model. The returned Set may be empty.
 	 */
 	public static Set<IRI> subjectIRIs(Model m) {
-		return m.subjects().stream().filter(s -> s instanceof IRI).map(s -> (IRI)s).collect(
-				Collectors.toSet());
+		return m.subjects().stream().filter(s -> s instanceof IRI).map(s -> (IRI) s).collect(Collectors.toSet());
 	}
 
 	/**
@@ -252,29 +246,25 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link BNode} from the statements in the given model. If more than one possible
-	 * blank node value exists, any one blank node value is picked and returned.
+	 * Retrieves a subject {@link BNode} from the statements in the given model. If more than one possible blank node
+	 * value exists, any one blank node value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a subject BNode value.
-	 * @return an {@link Optional} subject BNode value from the given model, which will be
-	 * {@link Optional#empty() empty} if no such value exists.
+	 * @param m the model from which to retrieve a subject BNode value.
+	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
 	 */
 	public static Optional<BNode> subjectBNode(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(
-				s -> (BNode)s).findAny();
+		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(s -> (BNode) s).findAny();
 	}
 
 	/**
 	 * Retrieves all subject {@link BNode}s from the statements in the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a subject IRI value.
+	 * @param m the model from which to retrieve a subject IRI value.
 	 * @return a {@link Set} of subject {@link BNode} values from the given model. The returned Set may be empty.
 	 */
 	public static Set<BNode> subjectBNodes(Model m) {
-		return m.subjects().stream().filter(s -> s instanceof BNode).map(s -> (BNode)s).collect(
-				Collectors.toSet());
+		return m.subjects().stream().filter(s -> s instanceof BNode).map(s -> (BNode) s).collect(Collectors.toSet());
 	}
 
 	/**
@@ -286,13 +276,12 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a predicate from the statements in the given model. If more than one possible predicate value
-	 * exists, any one value is picked and returned.
+	 * Retrieves a predicate from the statements in the given model. If more than one possible predicate value exists,
+	 * any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve a predicate value.
-	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty()
-	 * empty} if no such value exists.
+	 * @param m the model from which to retrieve a predicate value.
+	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
+	 *         no such value exists.
 	 */
 	public static Optional<IRI> predicate(Model m) {
 		return m.stream().map(st -> st.getPredicate()).findAny();
@@ -307,26 +296,18 @@ public class Models {
 	}
 
 	/**
-	 * Sets the property value for the given subject to the given object value, replacing any existing
-	 * value(s) for the subject's property. This method updates the original input Model and then returns that
-	 * same Model object.
+	 * Sets the property value for the given subject to the given object value, replacing any existing value(s) for the
+	 * subject's property. This method updates the original input Model and then returns that same Model object.
 	 *
-	 * @param m
-	 * 		the model in which to set the property value. May not be null.
-	 * @param subject
-	 * 		the subject for which to set/replace the property value. May not be null.
-	 * @param property
-	 * 		the property for which to set/replace the value. May not be null.
-	 * @param value
-	 * 		the value to set for the given subject and property. May not be null.
-	 * @param contexts
-	 * 		the context(s) in which to set/replace the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model in which to set the property value. May not be null.
+	 * @param subject  the subject for which to set/replace the property value. May not be null.
+	 * @param property the property for which to set/replace the value. May not be null.
+	 * @param value    the value to set for the given subject and property. May not be null.
+	 * @param contexts the context(s) in which to set/replace the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return the Model object, containing the updated property value.
 	 */
-	public static Model setProperty(Model m, Resource subject, IRI property, Value value,
-			Resource... contexts)
-	{
+	public static Model setProperty(Model m, Resource subject, IRI property, Value value, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -343,15 +324,11 @@ public class Models {
 	 * Retrieve a property value for the supplied subject from the given model. If more than one property value exists,
 	 * any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
-	 * @param subject
-	 * 		the subject resource for which to retrieve a property value.
-	 * @param property
-	 * 		the property for which to retrieve a value.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve an object value.
+	 * @param subject  the subject resource for which to retrieve a property value.
+	 * @param property the property for which to retrieve a value.
+	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a property value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Value> getProperty(Model m, Resource subject, IRI property, Resource... contexts) {
@@ -364,15 +341,11 @@ public class Models {
 	/**
 	 * Retrieve all property values for the supplied subject and property from the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve the property values.
-	 * @param subject
-	 * 		the subject resource for which to retrieve all property values.
-	 * @param property
-	 * 		the property for which to retrieve all values.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property values. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve the property values.
+	 * @param subject  the subject resource for which to retrieve all property values.
+	 * @param property the property for which to retrieve all values.
+	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a Set of all property values for the supplied input. The resulting set may be empty.
 	 */
 	public static Set<Value> getProperties(Model m, Resource subject, IRI property, Resource... contexts) {
@@ -383,23 +356,18 @@ public class Models {
 	}
 
 	/**
-	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property value exists,
-	 * any one value is picked and returned.
+	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property
+	 * value exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
-	 * @param subject
-	 * 		the subject resource for which to retrieve a property value.
-	 * @param property
-	 * 		the property for which to retrieve a value.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve an object value.
+	 * @param subject  the subject resource for which to retrieve a property value.
+	 * @param property the property for which to retrieve a value.
+	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a property value Resource from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Resource> getPropertyResource(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+			Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -409,20 +377,14 @@ public class Models {
 	/**
 	 * Retrieve all property Resource values for the supplied subject and property from the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve the property Resource values.
-	 * @param subject
-	 * 		the subject resource for which to retrieve all property Resource values.
-	 * @param property
-	 * 		the property for which to retrieve all Resource values.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property values. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve the property Resource values.
+	 * @param subject  the subject resource for which to retrieve all property Resource values.
+	 * @param property the property for which to retrieve all Resource values.
+	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a Set of all property Resource values for the supplied input. The resulting set may be empty.
 	 */
-	public static Set<Resource> getPropertyResources(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+	public static Set<Resource> getPropertyResources(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -430,22 +392,17 @@ public class Models {
 	}
 
 	/**
-	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property value exists,
-	 * any one value is picked and returned.
+	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property
+	 * value exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
-	 * @param subject
-	 * 		the subject resource for which to retrieve a property value.
-	 * @param property
-	 * 		the property for which to retrieve a value.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve an object value.
+	 * @param subject  the subject resource for which to retrieve a property value.
+	 * @param property the property for which to retrieve a value.
+	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a property value IRI from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<IRI> getPropertyIRI(Model m, Resource subject, IRI property, Resource... contexts)
-	{
+	public static Optional<IRI> getPropertyIRI(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -455,15 +412,11 @@ public class Models {
 	/**
 	 * Retrieve all property IRI values for the supplied subject and property from the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve the property IRI values.
-	 * @param subject
-	 * 		the subject resource for which to retrieve all property IRI values.
-	 * @param property
-	 * 		the property for which to retrieve all IRI values.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property values. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve the property IRI values.
+	 * @param subject  the subject resource for which to retrieve all property IRI values.
+	 * @param property the property for which to retrieve all IRI values.
+	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a Set of all property IRI values for the supplied input. The resulting set may be empty.
 	 */
 	public static Set<IRI> getPropertyIRIs(Model m, Resource subject, IRI property, Resource... contexts) {
@@ -474,23 +427,17 @@ public class Models {
 	}
 
 	/**
-	 * Retrieve a property value as a {@link Literal} for the supplied subject from the given model. If more
-	 * than one property value exists, any one value is picked and returned.
+	 * Retrieve a property value as a {@link Literal} for the supplied subject from the given model. If more than one
+	 * property value exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
-	 * @param subject
-	 * 		the subject resource for which to retrieve a property literal value.
-	 * @param property
-	 * 		the property for which to retrieve a value.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve an object value.
+	 * @param subject  the subject resource for which to retrieve a property literal value.
+	 * @param property the property for which to retrieve a value.
+	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a property value Literal from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<Literal> getPropertyLiteral(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+	public static Optional<Literal> getPropertyLiteral(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -500,20 +447,14 @@ public class Models {
 	/**
 	 * Retrieve all property Literal values for the supplied subject and property from the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve the property Literal values.
-	 * @param subject
-	 * 		the subject resource for which to retrieve all property Literal values.
-	 * @param property
-	 * 		the property for which to retrieve all Literal values.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property values. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve the property Literal values.
+	 * @param subject  the subject resource for which to retrieve all property Literal values.
+	 * @param property the property for which to retrieve all Literal values.
+	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a Set of all property IRI values for the supplied input. The resulting set may be empty.
 	 */
-	public static Set<Literal> getPropertyLiterals(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+	public static Set<Literal> getPropertyLiterals(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -521,23 +462,17 @@ public class Models {
 	}
 
 	/**
-	 * Retrieve a property value as a String for the supplied subject from the given model. If more
-	 * than one property value exists, any one value is picked and returned.
+	 * Retrieve a property value as a String for the supplied subject from the given model. If more than one property
+	 * value exists, any one value is picked and returned.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve an object value.
-	 * @param subject
-	 * 		the subject resource for which to retrieve a property literal value.
-	 * @param property
-	 * 		the property for which to retrieve a value.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property value. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve an object value.
+	 * @param subject  the subject resource for which to retrieve a property literal value.
+	 * @param property the property for which to retrieve a value.
+	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a property value String from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<String> getPropertyString(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+	public static Optional<String> getPropertyString(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -547,20 +482,14 @@ public class Models {
 	/**
 	 * Retrieve all property values as Strings for the supplied subject and property from the given model.
 	 *
-	 * @param m
-	 * 		the model from which to retrieve the property values as Strings.
-	 * @param subject
-	 * 		the subject resource for which to retrieve all property values as Strings.
-	 * @param property
-	 * 		the property for which to retrieve all values as Strings.
-	 * @param contexts
-	 * 		the contexts from which to retrieve the property values. Optional vararg argument. If not
-	 * 		specified the operations works on the entire Model.
+	 * @param m        the model from which to retrieve the property values as Strings.
+	 * @param subject  the subject resource for which to retrieve all property values as Strings.
+	 * @param property the property for which to retrieve all values as Strings.
+	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+	 *                 specified the operations works on the entire Model.
 	 * @return a Set of all property values as Strings for the supplied input. The resulting set may be empty.
 	 */
-	public static Set<String> getPropertyStrings(Model m, Resource subject, IRI property,
-			Resource... contexts)
-	{
+	public static Set<String> getPropertyStrings(Model m, Resource subject, IRI property, Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -568,22 +497,19 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the
-	 * isomorphic graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from
-	 * one graphs can be mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not
-	 * considered mapped when having an identical internal id, but are mapped from one graph to the other by
-	 * looking at the statements in which the blank nodes occur.
-	 * A Model can consist of more than one graph (denoted by context identifiers). Two models are considered
-	 * isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model, and
-	 * the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on
-	 * each other.
+	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the isomorphic graph
+	 * identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be mapped
+	 * 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when having an
+	 * identical internal id, but are mapped from one graph to the other by looking at the statements in which the blank
+	 * nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models are
+	 * considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model, and
+	 * the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on each
+	 * other.
 	 *
-	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract
-	 * Syntax, section 3.6 (Graph Comparison)</a>
+	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract Syntax, section
+	 *      3.6 (Graph Comparison)</a>
 	 */
-	public static boolean isomorphic(Iterable<? extends Statement> model1,
-			Iterable<? extends Statement> model2)
-	{
+	public static boolean isomorphic(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
 		Model set1 = toModel(model1);
 		Model set2 = toModel(model2);
 		// Compare the number of statements in both sets
@@ -595,24 +521,22 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, defined by two statement collections, and returns <tt>true</tt> if they are
-	 * equal. Models are equal if they contain the same set of statements. Blank node IDs are not relevant for
-	 * model equality, they are mapped from one model to the other by using the attached properties.
+	 * Compares two RDF models, defined by two statement collections, and returns <tt>true</tt> if they are equal.
+	 * Models are equal if they contain the same set of statements. Blank node IDs are not relevant for model equality,
+	 * they are mapped from one model to the other by using the attached properties.
 	 *
 	 * @deprecated since 2.8.0. Use {@link Models#isomorphic(Iterable, Iterable)} instead.
 	 */
 	@Deprecated
-	public static boolean equals(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2)
-	{
+	public static boolean equals(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
 		return isomorphic(model1, model2);
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model,
-	 * using graph isomorphism to map statements between models.
+	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model, using
+	 * graph isomorphism to map statements between models.
 	 */
-	public static boolean isSubset(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2)
-	{
+	public static boolean isSubset(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
 		// Filter duplicates
 		Model set1 = toModel(model1);
 		Model set2 = toModel(model2);
@@ -621,8 +545,8 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model,
-	 * using graph isomorphism to map statements between models.
+	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model, using
+	 * graph isomorphism to map statements between models.
 	 */
 	public static boolean isSubset(Set<? extends Statement> model1, Set<? extends Statement> model2) {
 		// Compare the number of statements in both sets
@@ -633,8 +557,7 @@ public class Models {
 		return isSubsetInternal(toModel(model1), toModel(model2));
 	}
 
-	private static boolean isSubsetInternal(Model model1, Model model2)
-	{
+	private static boolean isSubsetInternal(Model model1, Model model2) {
 		// try to create a full blank node mapping
 		return matchModels(model1, model2);
 	}
@@ -646,8 +569,7 @@ public class Models {
 		for (Statement st : model1) {
 			if (isBlank(st.getSubject()) || isBlank(st.getObject()) || isBlank(st.getContext())) {
 				model1BNodes.add(st);
-			}
-			else {
+			} else {
 				if (!model2.contains(st)) {
 					return false;
 				}
@@ -658,9 +580,8 @@ public class Models {
 	}
 
 	/**
-	 * A recursive method for finding a complete mapping between blank nodes in model1 and blank nodes in
-	 * model2. The algorithm does a depth-first search trying to establish a mapping for each blank node
-	 * occurring in model1.
+	 * A recursive method for finding a complete mapping between blank nodes in model1 and blank nodes in model2. The
+	 * algorithm does a depth-first search trying to establish a mapping for each blank node occurring in model1.
 	 *
 	 * @param model1
 	 * @param model2
@@ -669,8 +590,7 @@ public class Models {
 	 * @return true if a complete mapping has been found, false otherwise.
 	 */
 	private static boolean matchModels(List<? extends Statement> model1, Model model2,
-			Map<Resource, Resource> bNodeMapping, int idx)
-	{
+			Map<Resource, Resource> bNodeMapping, int idx) {
 		boolean result = false;
 
 		if (idx < model1.size()) {
@@ -687,7 +607,7 @@ public class Models {
 				}
 
 				if (isBlank(st1.getObject()) && isBlank(st2.getObject())) {
-					newBNodeMapping.put((Resource)st1.getObject(), (Resource)st2.getObject());
+					newBNodeMapping.put((Resource) st1.getObject(), (Resource) st2.getObject());
 				}
 
 				if (isBlank(st1.getContext()) && isBlank(st2.getContext())) {
@@ -705,8 +625,7 @@ public class Models {
 					break;
 				}
 			}
-		}
-		else {
+		} else {
 			// All statements have been mapped successfully
 			result = true;
 		}
@@ -715,13 +634,11 @@ public class Models {
 	}
 
 	private static List<Statement> findMatchingStatements(Statement st, Model model,
-			Map<Resource, Resource> bNodeMapping)
-	{
+			Map<Resource, Resource> bNodeMapping) {
 		Resource s = isBlank(st.getSubject()) ? null : st.getSubject();
 		IRI p = st.getPredicate();
 		Value o = isBlank(st.getObject()) ? null : st.getObject();
-		Resource[] g = isBlank(st.getContext()) ? new Resource[0]
-				: new Resource[] { st.getContext() };
+		Resource[] g = isBlank(st.getContext()) ? new Resource[0] : new Resource[] { st.getContext() };
 		List<Statement> result = new ArrayList<>();
 
 		for (Statement modelSt : model.filter(s, p, o, g)) {
@@ -755,8 +672,7 @@ public class Models {
 					// 'subj1' and 'subj2' do not match
 					return false;
 				}
-			}
-			else {
+			} else {
 				// 'subj1' was not yet mapped. we need to check if 'subj2' is a
 				// possible mapping candidate
 				if (bNodeMapping.containsValue(subj2)) {
@@ -764,8 +680,7 @@ public class Models {
 					return false;
 				}
 			}
-		}
-		else {
+		} else {
 			// subjects are not (both) bNodes
 			if (!subj1.equals(subj2)) {
 				return false;
@@ -784,8 +699,7 @@ public class Models {
 					// 'obj1' and 'obj2' do not match
 					return false;
 				}
-			}
-			else {
+			} else {
 				// 'obj1' was not yet mapped. we need to check if 'obj2' is a
 				// possible mapping candidate
 				if (bNodeMapping.containsValue(obj2)) {
@@ -793,8 +707,7 @@ public class Models {
 					return false;
 				}
 			}
-		}
-		else {
+		} else {
 			// objects are not (both) bNodes
 			if (!obj1.equals(obj2)) {
 				return false;
@@ -807,8 +720,7 @@ public class Models {
 		// no match if in different contexts
 		if (context1 == null) {
 			return context2 == null;
-		}
-		else if (context2 == null) {
+		} else if (context2 == null) {
 			return false;
 		}
 
@@ -821,8 +733,7 @@ public class Models {
 					// 'context1' and 'context2' do not match
 					return false;
 				}
-			}
-			else {
+			} else {
 				// 'context1' was not yet mapped. we need to check if 'context2' is
 				// a
 				// possible mapping candidate
@@ -831,8 +742,7 @@ public class Models {
 					return false;
 				}
 			}
-		}
-		else {
+		} else {
 			// contexts are not (both) bNodes
 			if (!context1.equals(context1)) {
 				return false;
@@ -845,22 +755,17 @@ public class Models {
 	private static boolean isBlank(Value value) {
 		if (value instanceof IRI) {
 			return value.stringValue().indexOf("/.well-known/genid/") > 0;
-		}
-		else {
+		} else {
 			return value instanceof BNode;
 		}
 	}
 
 	private static Model toModel(Iterable<? extends Statement> iterable) {
-		Model set = null;
 		if (iterable instanceof Model) {
-			set = (Model)iterable;
+			return (Model) iterable;
 		}
-		else {
-			// Filter duplicates
-			set = new TreeModel();
-			Iterators.addAll(iterable.iterator(), set);
-		}
+		final Model set = new TreeModel();
+		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(st -> set.add(st));
 		return set;
 	}
 
@@ -868,8 +773,7 @@ public class Models {
 	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
 	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
 	 *
-	 * @param message
-	 * 		The message to be used for the exception
+	 * @param message The message to be used for the exception
 	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
 	 */
 	public static Supplier<ModelException> modelException(String message) {

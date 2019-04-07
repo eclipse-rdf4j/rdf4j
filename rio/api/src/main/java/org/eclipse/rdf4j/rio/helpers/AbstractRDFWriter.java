@@ -40,9 +40,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		namespaceTable.put(prefix, uri);
 	}
 
@@ -58,8 +56,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	}
 
 	/*
-	 * Default implementation. Implementing classes must override this to specify that they support given
-	 * settings.
+	 * Default implementation. Implementing classes must override this to specify that they support given settings.
 	 */
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {

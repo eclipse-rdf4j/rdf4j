@@ -21,27 +21,25 @@ import org.eclipse.rdf4j.query.parser.serql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Processes projection aliases, verifying that the specified aliases are unique and generating aliases for
- * the elements for which no alias has been specified but that do require one.
+ * Processes projection aliases, verifying that the specified aliases are unique and generating aliases for the elements
+ * for which no alias has been specified but that do require one.
  * 
  * @author Arjohn Kampman
  */
 class ProjectionAliasProcessor extends AbstractASTVisitor {
 
 	@Override
-	public Object visit(ASTSelect node, Object data)
-		throws VisitorException
-	{
+	public Object visit(ASTSelect node, Object data) throws VisitorException {
 		// Iterate over all projection elements to retrieve the defined aliases
 		Set<String> aliases = new HashSet<>();
 		List<Node> unaliasedNodes = new ArrayList<>();
 
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			ASTProjectionElem projElem = (ASTProjectionElem)node.jjtGetChild(i);
+			ASTProjectionElem projElem = (ASTProjectionElem) node.jjtGetChild(i);
 
 			String alias = projElem.getAlias();
 			if (alias == null && projElem.getValueExpr() instanceof ASTVar) {
-				alias = ((ASTVar)projElem.getValueExpr()).getName();
+				alias = ((ASTVar) projElem.getValueExpr()).getName();
 			}
 
 			if (alias != null) {
@@ -50,8 +48,7 @@ class ProjectionAliasProcessor extends AbstractASTVisitor {
 				if (!isUnique) {
 					throw new VisitorException("Duplicate projection element names: '" + alias + "'");
 				}
-			}
-			else {
+			} else {
 				unaliasedNodes.add(projElem);
 			}
 		}

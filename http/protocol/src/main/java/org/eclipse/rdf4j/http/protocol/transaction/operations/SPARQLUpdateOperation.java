@@ -44,9 +44,8 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 		super();
 	}
 
-	public SPARQLUpdateOperation(String updateString, String baseURI, boolean includeInferred,
-			Dataset dataset, Binding... bindings)
-	{
+	public SPARQLUpdateOperation(String updateString, String baseURI, boolean includeInferred, Dataset dataset,
+			Binding... bindings) {
 		this.setUpdateString(updateString);
 		this.setBaseURI(baseURI);
 		this.setIncludeInferred(includeInferred);
@@ -55,9 +54,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	@Override
-	public void execute(RepositoryConnection con)
-		throws RepositoryException
-	{
+	public void execute(RepositoryConnection con) throws RepositoryException {
 		try {
 			Update preparedUpdate = con.prepareUpdate(QueryLanguage.SPARQL, getUpdateString(), getBaseURI());
 			preparedUpdate.setIncludeInferred(isIncludeInferred());
@@ -70,11 +67,9 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 			}
 
 			preparedUpdate.execute();
-		}
-		catch (MalformedQueryException e) {
+		} catch (MalformedQueryException e) {
 			throw new RepositoryException(e);
-		}
-		catch (UpdateExecutionException e) {
+		} catch (UpdateExecutionException e) {
 			throw new RepositoryException(e);
 		}
 
@@ -88,8 +83,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	/**
-	 * @param updateString
-	 *        The updateString to set.
+	 * @param updateString The updateString to set.
 	 */
 	public void setUpdateString(String updateString) {
 		this.updateString = updateString;
@@ -103,8 +97,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	/**
-	 * @param baseURI
-	 *        The baseURI to set.
+	 * @param baseURI The baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;
@@ -118,8 +111,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	/**
-	 * @param includeInferred
-	 *        The includeInferred to set.
+	 * @param includeInferred The includeInferred to set.
 	 */
 	public void setIncludeInferred(boolean includeInferred) {
 		this.includeInferred = includeInferred;
@@ -133,8 +125,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	/**
-	 * @param dataset
-	 *        The dataset to set.
+	 * @param dataset The dataset to set.
 	 */
 	public void setDataset(Dataset dataset) {
 		this.dataset = dataset;
@@ -148,8 +139,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	/**
-	 * @param bindings
-	 *        The bindings to set.
+	 * @param bindings The bindings to set.
 	 */
 	public void setBindings(Binding[] bindings) {
 		this.bindings = bindings;

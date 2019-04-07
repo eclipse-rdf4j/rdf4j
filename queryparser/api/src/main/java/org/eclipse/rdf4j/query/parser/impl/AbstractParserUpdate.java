@@ -36,20 +36,17 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 	}
 
 	/**
-	 * Determines the active dataset by appropriately merging the pre-set dataset and the dataset defined in
-	 * the SPARQL operation itself. If the SPARQL operation contains WITH, USING, or USING NAMED clauses,
-	 * these should override whatever is preset.
+	 * Determines the active dataset by appropriately merging the pre-set dataset and the dataset defined in the SPARQL
+	 * operation itself. If the SPARQL operation contains WITH, USING, or USING NAMED clauses, these should override
+	 * whatever is preset.
 	 * 
-	 * @param sparqlDefinedDataset
-	 *        the dataset as defined in the SPARQL update itself.
-	 * @return a {@link Dataset} comprised of a merge between the pre-set dataset and the SPARQL-defined
-	 *         dataset.
+	 * @param sparqlDefinedDataset the dataset as defined in the SPARQL update itself.
+	 * @return a {@link Dataset} comprised of a merge between the pre-set dataset and the SPARQL-defined dataset.
 	 */
 	protected Dataset getMergedDataset(Dataset sparqlDefinedDataset) {
 		if (sparqlDefinedDataset == null) {
 			return dataset;
-		}
-		else if (dataset == null) {
+		} else if (dataset == null) {
 			return sparqlDefinedDataset;
 		}
 
@@ -90,8 +87,8 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 
 		// if there are default graphs in the SPARQL update but it's not a WITH
 		// clause, it's a USING clause
-		final boolean hasUsingClause = !hasWithClause && sparqlDefaultGraphs != null
-				? sparqlDefaultGraphs.size() > 0 : false;
+		final boolean hasUsingClause = !hasWithClause && sparqlDefaultGraphs != null ? sparqlDefaultGraphs.size() > 0
+				: false;
 
 		final Set<IRI> sparqlNamedGraphs = sparqlDefinedDataset.getNamedGraphs();
 		final boolean hasUsingNamedClause = sparqlNamedGraphs != null ? sparqlNamedGraphs.size() > 0 : false;
@@ -102,8 +99,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 			for (IRI graphURI : sparqlDefaultGraphs) {
 				mergedDataset.addDefaultGraph(graphURI);
 			}
-		}
-		else {
+		} else {
 			for (IRI graphURI : dataset.getDefaultGraphs()) {
 				mergedDataset.addDefaultGraph(graphURI);
 			}
@@ -115,8 +111,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 			for (IRI graphURI : sparqlNamedGraphs) {
 				mergedDataset.addNamedGraph(graphURI);
 			}
-		}
-		else if (!hasUsingClause) {
+		} else if (!hasUsingClause) {
 			// we only merge in the pre-specified named graphs if the SPARQL
 			// update itself did not have any USING clauses. This is to ensure
 			// that a GRAPH-clause in the update can not override a USING

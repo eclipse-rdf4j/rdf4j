@@ -1,0 +1,2 @@
+_:anna <http://xmlns.com/foaf/0.1/name> "Anna" .
+_:anna <http://xmlns.com/foaf/0.1/homepage> <http://example.org/anna> .

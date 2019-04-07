@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format
- * is defined in <a href="http://www.dajobe.org/2004/01/turtle/">in this document</a>.
+ * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined
+ * in <a href="http://www.dajobe.org/2004/01/turtle/">in this document</a>.
  */
 public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
@@ -99,8 +99,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the Turtle document to.
+	 * @param out The OutputStream to write the Turtle document to.
 	 */
 	public TurtleWriter(OutputStream out) {
 		this(out, null);
@@ -109,8 +108,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the Turtle document to.
+	 * @param out The OutputStream to write the Turtle document to.
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
 		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
@@ -119,8 +117,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the Turtle document to.
+	 * @param writer The Writer to write the Turtle document to.
 	 */
 	public TurtleWriter(Writer writer) {
 		this(writer, null);
@@ -129,8 +126,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the Turtle document to.
+	 * @param writer The Writer to write the Turtle document to.
 	 */
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
@@ -152,9 +148,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		if (writingStarted) {
 			throw new RuntimeException("Document writing has already started");
 		}
@@ -185,16 +179,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			if (!namespaceTable.isEmpty()) {
 				writer.writeEOL();
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet started");
 		}
@@ -202,19 +193,15 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		try {
 			closePreviousStatement();
 			writer.flush();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		}
-		finally {
+		} finally {
 			writingStarted = false;
 		}
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String name)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String name) throws RDFHandlerException {
 		try {
 			if (!namespaceTable.containsKey(name)) {
 				// Namespace not yet mapped to a prefix, try to give it the
@@ -248,16 +235,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					writeNamespace(prefix, name);
 				}
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
@@ -267,16 +251,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			IRI pred = st.getPredicate();
 			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
 				handleList(st);
-			}
-			else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 				handleInlineNode(st);
-			}
-			else {
+			} else {
 				closeHangingResource();
 				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -284,21 +265,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Internal method that differentiates between the pretty-print and streaming writer cases.
 	 * 
-	 * @param st
-	 *        The next statement to write
-	 * @param endRDFCalled
-	 *        True if endRDF has been called before this method is called. This is used to buffer statements
-	 *        for pretty-printing before dumping them when all statements have been delivered to us.
-	 * @param canShortenSubjectBNode
-	 *        True if, in the current context, we may be able to shorten the subject of this statement iff it
-	 *        is an instance of {@link BNode}.
-	 * @param canShortenObjectBNode
-	 *        True if, in the current context, we may be able to shorten the object of this statement iff it
-	 *        is an instance of {@link BNode}.
+	 * @param st                     The next statement to write
+	 * @param endRDFCalled           True if endRDF has been called before this method is called. This is used to buffer
+	 *                               statements for pretty-printing before dumping them when all statements have been
+	 *                               delivered to us.
+	 * @param canShortenSubjectBNode True if, in the current context, we may be able to shorten the subject of this
+	 *                               statement iff it is an instance of {@link BNode}.
+	 * @param canShortenObjectBNode  True if, in the current context, we may be able to shorten the object of this
+	 *                               statement iff it is an instance of {@link BNode}.
 	 */
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubjectBNode,
-			boolean canShortenObjectBNode)
-	{
+			boolean canShortenObjectBNode) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -309,8 +286,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					// Identical subject and predicate
 					writer.write(",");
 					wrapLine(prettyPrint);
-				}
-				else {
+				} else {
 					// Identical subject, new predicate
 					writer.write(";");
 					writer.writeEOL();
@@ -324,8 +300,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					path.addLast(pred);
 					lastWrittenPredicate = pred;
 				}
-			}
-			else {
+			} else {
 				// New subject
 				closePreviousStatement();
 				stack.addLast(subj);
@@ -353,16 +328,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 			// Don't close the line just yet. Maybe the next
 			// statement has the same subject and/or predicate.
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		try {
 			closePreviousStatement();
 
@@ -374,36 +346,28 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				while (st.hasMoreTokens()) {
 					writeCommentLine(st.nextToken());
 				}
-			}
-			else {
+			} else {
 				writeCommentLine(comment);
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
-	protected void writeCommentLine(String line)
-		throws IOException
-	{
+	protected void writeCommentLine(String line) throws IOException {
 		writer.write("# ");
 		writer.write(line);
 		writer.writeEOL();
 	}
 
-	protected void writeBase(String baseURI)
-		throws IOException
-	{
+	protected void writeBase(String baseURI) throws IOException {
 		writer.write("@base <");
 		writer.write(TurtleUtil.encodeURIString(baseURI));
 		writer.write("> .");
 		writer.writeEOL();
 	}
 
-	protected void writeNamespace(String prefix, String name)
-		throws IOException
-	{
+	protected void writeNamespace(String prefix, String name) throws IOException {
 		writer.write("@prefix ");
 		writer.write(prefix);
 		writer.write(": <");
@@ -412,98 +376,74 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		writer.writeEOL();
 	}
 
-	protected void writePredicate(IRI predicate)
-		throws IOException
-	{
+	protected void writePredicate(IRI predicate) throws IOException {
 		if (predicate.equals(RDF.TYPE)) {
 			// Write short-cut for rdf:type
 			writer.write("a");
-		}
-		else {
+		} else {
 			writeURI(predicate);
 		}
 	}
 
 	/**
-	 * @param val
-	 *        The {@link Value} to write.
+	 * @param val The {@link Value} to write.
 	 * @throws IOException
 	 * @deprecated Use {@link #writeValue(Value, boolean)} instead.
 	 */
 	@Deprecated
-	protected void writeValue(Value val)
-		throws IOException
-	{
+	protected void writeValue(Value val) throws IOException {
 		writeValue(val, false);
 	}
 
 	/**
-	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is
-	 * suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able
-	 * to be shortened in this context.
+	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is suitable
+	 * for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be shortened in
+	 * this context.
 	 * 
-	 * @param val
-	 *        The {@link Value} to write.
-	 * @param canShorten
-	 *        True if, in the current context, we can shorten this value if it is an instance of {@link BNode}
-	 *        .
+	 * @param val        The {@link Value} to write.
+	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
+	 *                   {@link BNode} .
 	 * @throws IOException
 	 */
-	protected void writeValue(Value val, boolean canShorten)
-		throws IOException
-	{
-		if (val instanceof BNode && canShorten && !val.equals(stack.peekLast())
-				&& !val.equals(lastWrittenSubject))
-		{
-			stack.addLast((BNode)val);
-		}
-		else if (val instanceof Resource) {
-			writeResource((Resource)val, canShorten);
-		}
-		else {
-			writeLiteral((Literal)val);
+	protected void writeValue(Value val, boolean canShorten) throws IOException {
+		if (val instanceof BNode && canShorten && !val.equals(stack.peekLast()) && !val.equals(lastWrittenSubject)) {
+			stack.addLast((BNode) val);
+		} else if (val instanceof Resource) {
+			writeResource((Resource) val, canShorten);
+		} else {
+			writeLiteral((Literal) val);
 		}
 	}
 
 	/**
-	 * @param res
-	 *        The {@link Resource} to write.
+	 * @param res The {@link Resource} to write.
 	 * @throws IOException
 	 * @deprecated Use {@link #writeResource(Resource, boolean)} instead.
 	 */
 	@Deprecated
-	protected void writeResource(Resource res)
-		throws IOException
-	{
+	protected void writeResource(Resource res) throws IOException {
 		writeResource(res, false);
 	}
 
 	/**
-	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace
-	 * definition that is suitable for use in this context for shortening or a {@link BNode} that has been
-	 * confirmed to be able to be shortened in this context.
+	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace definition that
+	 * is suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be
+	 * shortened in this context.
 	 * 
-	 * @param res
-	 *        The {@link Resource} to write.
-	 * @param canShorten
-	 *        True if, in the current context, we can shorten this value if it is an instance of {@link BNode}
-	 *        .
+	 * @param res        The {@link Resource} to write.
+	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
+	 *                   {@link BNode} .
 	 * @throws IOException
 	 */
-	protected void writeResource(Resource res, boolean canShorten)
-		throws IOException
-	{
+	protected void writeResource(Resource res, boolean canShorten) throws IOException {
 		if (res instanceof IRI) {
-			writeURI((IRI)res);
-		}
-		else {
-			writeBNode((BNode)res, canShorten);
+			writeURI((IRI) res);
+		} else {
+			writeBNode((BNode) res, canShorten);
 		}
 	}
 
-	protected void writeURI(IRI uri)
-		throws IOException
-	{
+	protected void writeURI(IRI uri) throws IOException {
 		String uriString = uri.toString();
 
 		// Try to find a prefix for the URI's namespace
@@ -520,14 +460,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write(prefix);
 			writer.write(":");
 			writer.write(uriString.substring(splitIdx));
-		}
-		else if (baseIRI != null) {
+		} else if (baseIRI != null) {
 			// Write relative URI
 			writer.write("<");
 			writer.write(TurtleUtil.encodeURIString(baseIRI.relativize(uriString)));
 			writer.write(">");
-		}
-		else {
+		} else {
 			// Write full URI
 			writer.write("<");
 			writer.write(TurtleUtil.encodeURIString(uriString));
@@ -536,21 +474,16 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * @param bNode
-	 *        The {@link BNode} to write.
+	 * @param bNode The {@link BNode} to write.
 	 * @throws IOException
 	 * @deprecated Use {@link #writeBNode(BNode, boolean)} instead.
 	 */
 	@Deprecated
-	protected void writeBNode(BNode bNode)
-		throws IOException
-	{
+	protected void writeBNode(BNode bNode) throws IOException {
 		writeBNode(bNode, false);
 	}
 
-	protected void writeBNode(BNode bNode, boolean canShorten)
-		throws IOException
-	{
+	protected void writeBNode(BNode bNode, boolean canShorten) throws IOException {
 		if (canShorten) {
 			writer.write("[]");
 			return;
@@ -561,60 +494,50 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		if (id.isEmpty()) {
 			if (this.getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS)) {
-				throw new IOException(
-						"Cannot consistently write blank nodes with empty internal identifiers");
+				throw new IOException("Cannot consistently write blank nodes with empty internal identifiers");
 			}
 			writer.write("genid-hash-");
 			writer.write(Integer.toHexString(System.identityHashCode(bNode)));
-		}
-		else {
+		} else {
 			if (!TurtleUtil.isNameStartChar(id.charAt(0))) {
 				writer.write("genid-start-");
 				writer.write(Integer.toHexString(id.charAt(0)));
-			}
-			else {
+			} else {
 				writer.write(id.charAt(0));
 			}
 			for (int i = 1; i < id.length() - 1; i++) {
 				if (TurtleUtil.isPN_CHARS(id.charAt(i))) {
 					writer.write(id.charAt(i));
-				}
-				else {
+				} else {
 					writer.write(Integer.toHexString(id.charAt(i)));
 				}
 			}
 			if (id.length() > 1) {
 				if (!TurtleUtil.isNameEndChar(id.charAt(id.length() - 1))) {
 					writer.write(Integer.toHexString(id.charAt(id.length() - 1)));
-				}
-				else {
+				} else {
 					writer.write(id.charAt(id.length() - 1));
 				}
 			}
 		}
 	}
 
-	protected void writeLiteral(Literal lit)
-		throws IOException
-	{
+	protected void writeLiteral(Literal lit) throws IOException {
 		String label = lit.getLabel();
 		IRI datatype = lit.getDatatype();
 
 		if (prettyPrint) {
 			if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
-					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype))
-			{
+					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype)) {
 				try {
 					String normalized = XMLDatatypeUtil.normalize(label, datatype);
 					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
 							&& !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)
-							&& !normalized.equals(XMLDatatypeUtil.NaN))
-					{
+							&& !normalized.equals(XMLDatatypeUtil.NaN)) {
 						writer.write(normalized);
 						return; // done
 					}
-				}
-				catch (IllegalArgumentException e) {
+				} catch (IllegalArgumentException e) {
 					// not a valid numeric typed literal. ignore error and write
 					// as
 					// quoted string instead.
@@ -627,8 +550,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write("\"\"\"");
 			writer.write(TurtleUtil.encodeLongString(label));
 			writer.write("\"\"\"");
-		}
-		else {
+		} else {
 			// Write label as normal string
 			writer.write("\"");
 			writer.write(TurtleUtil.encodeString(label));
@@ -639,8 +561,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
-		}
-		else if (!xsdStringToPlainLiteral || !XMLSchema.STRING.equals(datatype)) {
+		} else if (!xsdStringToPlainLiteral || !XMLSchema.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
 			writer.write("^^");
@@ -648,9 +569,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	protected void closePreviousStatement()
-		throws IOException
-	{
+	protected void closePreviousStatement() throws IOException {
 		closeNestedResources(null);
 		if (!statementClosed) {
 			// The previous statement still needs to be closed:
@@ -673,24 +592,19 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		return !stack.isEmpty() && lastWrittenSubject != null && !lastWrittenSubject.equals(stack.peekLast());
 	}
 
-	private void closeHangingResource()
-		throws IOException
-	{
+	private void closeHangingResource() throws IOException {
 		if (isHanging()) {
 			Value val = stack.pollLast();
 			if (val instanceof Resource) {
-				writeResource((Resource)val, inlineBNodes);
-			}
-			else {
-				writeLiteral((Literal)val);
+				writeResource((Resource) val, inlineBNodes);
+			} else {
+				writeLiteral((Literal) val);
 			}
 			assert lastWrittenSubject.equals(stack.peekLast());
 		}
 	}
 
-	private void closeNestedResources(Resource subj)
-		throws IOException
-	{
+	private void closeNestedResources(Resource subj) throws IOException {
 		closeHangingResource();
 		while (stack.size() > 1 && !stack.peekLast().equals(subj)) {
 			if (prettyPrint) {
@@ -707,9 +621,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	private void handleInlineNode(Statement st)
-		throws IOException
-	{
+	private void handleInlineNode(Statement st) throws IOException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		if (isHanging() && subj.equals(stack.peekLast())) {
@@ -718,8 +630,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write("[");
 			if (prettyPrint && !RDF.TYPE.equals(pred)) {
 				writer.writeEOL();
-			}
-			else {
+			} else {
 				wrapLine(prettyPrint);
 			}
 			writer.increaseIndentation();
@@ -731,19 +642,15 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			path.addLast(pred);
 			lastWrittenPredicate = pred;
 			writeValue(st.getObject(), inlineBNodes);
-		}
-		else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+		} else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 			closeNestedResources(subj);
 			handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
-		}
-		else {
+		} else {
 			assert false;
 		}
 	}
 
-	private void handleList(Statement st)
-		throws IOException
-	{
+	private void handleList(Statement st) throws IOException {
 		Resource subj = st.getSubject();
 		boolean first = RDF.FIRST.equals(st.getPredicate());
 		boolean rest = RDF.REST.equals(st.getPredicate()) && !RDF.NIL.equals(st.getObject());
@@ -757,15 +664,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			path.addLast(FIRST);
 			lastWrittenPredicate = FIRST;
 			writeValue(st.getObject(), inlineBNodes);
-		}
-		else if (first && REST == lastWrittenPredicate) {
+		} else if (first && REST == lastWrittenPredicate) {
 			// item in existing collection
 			lastWrittenSubject = subj;
 			path.addLast(FIRST);
 			lastWrittenPredicate = FIRST;
 			writeValue(st.getObject(), inlineBNodes);
-		}
-		else {
+		} else {
 			closeNestedResources(subj);
 			if (rest && FIRST == lastWrittenPredicate) {
 				// next item
@@ -774,8 +679,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				path.addLast(REST);
 				lastWrittenPredicate = REST;
 				writeValue(st.getObject(), inlineBNodes);
-			}
-			else if (nil && FIRST == lastWrittenPredicate) {
+			} else if (nil && FIRST == lastWrittenPredicate) {
 				writer.decreaseIndentation();
 				writer.write(")");
 				path.removeLast(); // RDF.FIRST
@@ -786,8 +690,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					lastWrittenSubject = stack.peekLast();
 					lastWrittenPredicate = path.peekLast();
 				}
-			}
-			else {
+			} else {
 				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
 			}
 		}

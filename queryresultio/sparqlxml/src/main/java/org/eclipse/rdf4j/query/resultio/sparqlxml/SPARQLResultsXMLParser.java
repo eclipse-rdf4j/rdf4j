@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 /**
  * Parser for reading tuple query results formatted as SPARQL Results Documents. See
- * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of
- * this format. The parser assumes that the XML is wellformed.
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of this
+ * format. The parser assumes that the XML is wellformed.
  */
 public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements TupleQueryResultParser {
 
@@ -40,8 +40,8 @@ public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements T
 	}
 
 	/**
-	 * Creates a new parser for the SPARQL Query Results XML Format that will use the supplied ValueFactory to
-	 * create Value objects.
+	 * Creates a new parser for the SPARQL Query Results XML Format that will use the supplied ValueFactory to create
+	 * Value objects.
 	 */
 	public SPARQLResultsXMLParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -68,16 +68,13 @@ public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements T
 
 	@Override
 	public void parseQueryResult(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
-	{
+			throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		try {
 			parseQueryResultInternal(in, false, true);
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			if (e instanceof TupleQueryResultHandlerException) {
-				throw (TupleQueryResultHandlerException)e;
-			}
-			else {
+				throw (TupleQueryResultHandlerException) e;
+			} else {
 				throw new TupleQueryResultHandlerException(e);
 			}
 		}
@@ -85,9 +82,7 @@ public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements T
 
 	@Override
 	@Deprecated
-	public void parse(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
-	{
+	public void parse(InputStream in) throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		parseQueryResult(in);
 	}
 }

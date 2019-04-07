@@ -28,9 +28,7 @@ public class Not extends UnaryValueOperator {
 	 *---------*/
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -46,6 +44,6 @@ public class Not extends UnaryValueOperator {
 
 	@Override
 	public Not clone() {
-		return (Not)super.clone();
+		return (Not) super.clone();
 	}
 }

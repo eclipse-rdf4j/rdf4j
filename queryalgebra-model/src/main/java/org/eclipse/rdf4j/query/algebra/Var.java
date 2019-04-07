@@ -75,9 +75,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -105,9 +103,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Var) {
-			Var o = (Var)other;
-			return name.equals(o.getName()) && nullEquals(value, o.getValue())
-					&& anonymous == o.isAnonymous();
+			Var o = (Var) other;
+			return name.equals(o.getName()) && nullEquals(value, o.getValue()) && anonymous == o.isAnonymous();
 		}
 		return false;
 	}
@@ -126,7 +123,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		return (Var)super.clone();
+		return (Var) super.clone();
 	}
 
 	/**
@@ -137,8 +134,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	/**
-	 * @param constant
-	 *        The constant to set.
+	 * @param constant The constant to set.
 	 */
 	public void setConstant(boolean constant) {
 		this.constant = constant;

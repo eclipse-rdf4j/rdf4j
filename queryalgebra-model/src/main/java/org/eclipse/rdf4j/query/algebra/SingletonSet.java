@@ -26,9 +26,7 @@ public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -44,6 +42,6 @@ public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 
 	@Override
 	public SingletonSet clone() {
-		return (SingletonSet)super.clone();
+		return (SingletonSet) super.clone();
 	}
 }

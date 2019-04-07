@@ -17,9 +17,7 @@ import org.eclipse.rdf4j.rio.EarlReport;
  */
 public class TurtleEarlReport {
 
-	public static void main(String[] args)
-		throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		new EarlReport().generateReport(new TurtleParserTest().createTestSuite(), EarlReport.ANSELL,
 				SimpleValueFactory.getInstance().createIRI("http://www.w3.org/TR/turtle/"));
 	}

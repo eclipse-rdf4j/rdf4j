@@ -24,10 +24,9 @@ public class VocabulariesTest {
 
 	@Test
 	public void testVocabAllIRI() throws Exception {
-		Set<IRI> dcIRIs = new HashSet<>(Arrays.asList(
-			DC.CONTRIBUTOR, DC.COVERAGE, DC.CREATOR, DC.DATE, DC.DESCRIPTION,
-			DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION,
-			DC.RIGHTS, DC.SOURCE, DC.SUBJECT, DC.TITLE, DC.TYPE));
+		Set<IRI> dcIRIs = new HashSet<>(Arrays.asList(DC.CONTRIBUTOR, DC.COVERAGE, DC.CREATOR, DC.DATE, DC.DESCRIPTION,
+				DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION, DC.RIGHTS, DC.SOURCE, DC.SUBJECT,
+				DC.TITLE, DC.TYPE));
 
 		Set<IRI> allIRIs = Vocabularies.getIRIs(DC.class);
 

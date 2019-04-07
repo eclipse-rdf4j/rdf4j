@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * A SPARQL Filter Clause
  * 
- * @see <a href="http://www.w3.org/TR/sparql11-query/#termConstraint"> SPARQL
- *      Filter</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#termConstraint"> SPARQL Filter</a>
  */
 class Filter implements QueryElement {
 	private static final String FILTER = "FILTER";
@@ -35,8 +34,7 @@ class Filter implements QueryElement {
 	/**
 	 * Set the constraint for this Filter clause
 	 * 
-	 * @param expression
-	 *            the constraint to set
+	 * @param expression the constraint to set
 	 * @return this
 	 */
 	public Filter filter(Expression<?> expression) {

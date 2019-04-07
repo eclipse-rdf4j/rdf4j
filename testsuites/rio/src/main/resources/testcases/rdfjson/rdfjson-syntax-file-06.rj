@@ -1,0 +1,6 @@
+{
+  "_:anna" : {
+      "http://xmlns.com/foaf/0.1/homepage" : [ { "value" : "http://example.org/anna", 
+                                                 "type" : "uri" } ] 
+  }
+}

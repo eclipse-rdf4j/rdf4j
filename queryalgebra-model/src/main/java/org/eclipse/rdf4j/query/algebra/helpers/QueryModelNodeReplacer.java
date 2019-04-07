@@ -45,14 +45,12 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	public void meet(Filter node) {
 		if (replacement == null) {
 			replaceNode(node, node.getArg());
-		}
-		else if (replacement instanceof ValueExpr) {
+		} else if (replacement instanceof ValueExpr) {
 			assert former == node.getCondition();
-			node.setCondition((ValueExpr)replacement);
-		}
-		else {
+			node.setCondition((ValueExpr) replacement);
+		} else {
 			assert former == node.getArg();
-			node.setArg((TupleExpr)replacement);
+			node.setArg((TupleExpr) replacement);
 		}
 	}
 
@@ -61,18 +59,15 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 		if (node.getLeftArg() == former) {
 			if (replacement == null) {
 				replaceNode(node, node.getRightArg());
+			} else {
+				node.setLeftArg((TupleExpr) replacement);
 			}
-			else {
-				node.setLeftArg((TupleExpr)replacement);
-			}
-		}
-		else {
+		} else {
 			assert former == node.getRightArg();
 			if (replacement == null) {
 				replaceNode(node, node.getLeftArg());
-			}
-			else {
-				node.setRightArg((TupleExpr)replacement);
+			} else {
+				node.setRightArg((TupleExpr) replacement);
 			}
 		}
 	}
@@ -82,18 +77,15 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 		if (former == node.getLeftArg()) {
 			if (replacement == null) {
 				replaceNode(node, node.getRightArg());
+			} else {
+				node.setLeftArg((ValueExpr) replacement);
 			}
-			else {
-				node.setLeftArg((ValueExpr)replacement);
-			}
-		}
-		else {
+		} else {
 			assert former == node.getRightArg();
 			if (replacement == null) {
 				replaceNode(node, node.getLeftArg());
-			}
-			else {
-				node.setRightArg((ValueExpr)replacement);
+			} else {
+				node.setRightArg((ValueExpr) replacement);
 			}
 		}
 	}
@@ -103,9 +95,8 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 		assert former == node.getArg();
 		if (replacement == null) {
 			removeNode(node);
-		}
-		else {
-			node.setArg((TupleExpr)replacement);
+		} else {
+			node.setArg((TupleExpr) replacement);
 		}
 	}
 
@@ -114,9 +105,8 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 		assert former == node.getArg();
 		if (replacement == null) {
 			removeNode(node);
-		}
-		else {
-			node.setArg((ValueExpr)replacement);
+		} else {
+			node.setArg((ValueExpr) replacement);
 		}
 	}
 

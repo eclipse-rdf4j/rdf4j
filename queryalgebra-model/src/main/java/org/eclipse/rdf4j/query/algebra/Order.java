@@ -74,16 +74,12 @@ public class Order extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (OrderElem elem : elements) {
 			elem.visit(visitor);
 		}
@@ -102,7 +98,7 @@ public class Order extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Order && super.equals(other)) {
-			Order o = (Order)other;
+			Order o = (Order) other;
 			return elements.equals(o.getElements());
 		}
 		return false;
@@ -115,7 +111,7 @@ public class Order extends UnaryTupleOperator {
 
 	@Override
 	public Order clone() {
-		Order clone = (Order)super.clone();
+		Order clone = (Order) super.clone();
 
 		clone.elements = new ArrayList<>(getElements().size());
 		for (OrderElem elem : getElements()) {

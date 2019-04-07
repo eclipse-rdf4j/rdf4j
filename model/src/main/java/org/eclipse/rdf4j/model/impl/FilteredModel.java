@@ -81,8 +81,7 @@ public abstract class FilteredModel extends AbstractModel {
 				iter.next();
 			}
 			return size;
-		}
-		finally {
+		} finally {
 			closeIterator(iter);
 		}
 	}
@@ -168,9 +167,7 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	@Override
-	public final void removeTermIteration(Iterator<Statement> iter, Resource s, IRI p, Value o,
-			Resource... c)
-	{
+	public final void removeTermIteration(Iterator<Statement> iter, Resource s, IRI p, Value o, Resource... c) {
 		if (s == null) {
 			s = subj;
 		}
@@ -190,22 +187,17 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	/**
-	 * Called by aggregate sets when a term has been removed from a term iterator. At least one of the last
-	 * four terms will be non-empty.
+	 * Called by aggregate sets when a term has been removed from a term iterator. At least one of the last four terms
+	 * will be non-empty.
 	 * 
-	 * @param iter
-	 *        The iterator used to navigate the live set (never null)
-	 * @param subj
-	 *        the subject term to be removed or null
-	 * @param pred
-	 *        the predicate term to be removed or null
-	 * @param obj
-	 *        the object term to be removed or null
-	 * @param contexts
-	 *        an array of one context term to be removed or an empty array
+	 * @param iter     The iterator used to navigate the live set (never null)
+	 * @param subj     the subject term to be removed or null
+	 * @param pred     the predicate term to be removed or null
+	 * @param obj      the object term to be removed or null
+	 * @param contexts an array of one context term to be removed or an empty array
 	 */
-	protected abstract void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
-			Value obj, Resource... contexts);
+	protected abstract void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+			Resource... contexts);
 
 	private boolean accept(Resource s, IRI p, Value o, Resource... c) {
 		if (subj != null && !subj.equals(s)) {
@@ -239,8 +231,7 @@ public abstract class FilteredModel extends AbstractModel {
 		if (contexts != null && contexts.length == 0) {
 			// Any context matches
 			return stContext == null || stContext instanceof Resource;
-		}
-		else {
+		} else {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			// Accept if one of the contexts from the pattern matches
 			for (Resource context : contexts) {

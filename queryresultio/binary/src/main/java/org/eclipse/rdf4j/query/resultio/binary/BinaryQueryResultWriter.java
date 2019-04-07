@@ -68,8 +68,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	private CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
 
 	/**
-	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using
-	 * the concerning namespace (Strings).
+	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using the
+	 * concerning namespace (Strings).
 	 */
 	private Map<String, Integer> namespaceTable = new HashMap<>(32);
 
@@ -106,23 +106,18 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	}
 
 	@Override
-	public void startDocument()
-		throws TupleQueryResultHandlerException
-	{
+	public void startDocument() throws TupleQueryResultHandlerException {
 		documentStarted = true;
 		try {
 			out.write(MAGIC_NUMBER);
 			out.writeInt(FORMAT_VERSION);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		tupleVariablesFound = true;
 
 		if (!documentStarted) {
@@ -140,37 +135,30 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 				writeString(bindingName);
 			}
 
-			List<Value> nullTuple = Collections.nCopies(this.bindingNames.size(), (Value)null);
+			List<Value> nullTuple = Collections.nCopies(this.bindingNames.size(), (Value) null);
 			previousBindings = new ListBindingSet(this.bindingNames, nullTuple);
 			nextNamespaceID = 0;
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		if (!tupleVariablesFound) {
-			throw new IllegalStateException(
-					"Could not end query result as startQueryResult was not called first.");
+			throw new IllegalStateException("Could not end query result as startQueryResult was not called first.");
 		}
 
 		try {
 			out.writeByte(TABLE_END_RECORD_MARKER);
 			endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (!tupleVariablesFound) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}
@@ -178,68 +166,50 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		try {
 			if (bindingSet.size() == 0) {
 				writeEmptyRow();
-			}
-			else {
+			} else {
 				for (String bindingName : bindingNames) {
 					Value value = bindingSet.getValue(bindingName);
 
 					if (value == null) {
 						writeNull();
-					}
-					else if (value.equals(previousBindings.getValue(bindingName))) {
+					} else if (value.equals(previousBindings.getValue(bindingName))) {
 						writeRepeat();
-					}
-					else if (value instanceof IRI) {
-						writeQName((IRI)value);
-					}
-					else if (value instanceof BNode) {
-						writeBNode((BNode)value);
-					}
-					else if (value instanceof Literal) {
-						writeLiteral((Literal)value);
-					}
-					else {
-						throw new TupleQueryResultHandlerException(
-								"Unknown Value object type: " + value.getClass());
+					} else if (value instanceof IRI) {
+						writeQName((IRI) value);
+					} else if (value instanceof BNode) {
+						writeBNode((BNode) value);
+					} else if (value instanceof Literal) {
+						writeLiteral((Literal) value);
+					} else {
+						throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
 					}
 				}
 
 				previousBindings = bindingSet;
 			}
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
-	private void writeNull()
-		throws IOException
-	{
+	private void writeNull() throws IOException {
 		out.writeByte(NULL_RECORD_MARKER);
 	}
 
-	private void writeRepeat()
-		throws IOException
-	{
+	private void writeRepeat() throws IOException {
 		out.writeByte(REPEAT_RECORD_MARKER);
 	}
 
-	private void writeEmptyRow()
-		throws IOException
-	{
+	private void writeEmptyRow() throws IOException {
 		out.writeByte(EMPTY_ROW_RECORD_MARKER);
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// Binary format does not support explicit setting of namespace prefixes.
 	}
 
-	private void writeQName(IRI uri)
-		throws IOException
-	{
+	private void writeQName(IRI uri) throws IOException {
 		// Check if the URI has a new namespace
 		String namespace = uri.getNamespace();
 
@@ -255,16 +225,12 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		writeString(uri.getLocalName());
 	}
 
-	private void writeBNode(BNode bnode)
-		throws IOException
-	{
+	private void writeBNode(BNode bnode) throws IOException {
 		out.writeByte(BNODE_RECORD_MARKER);
 		writeString(bnode.getID());
 	}
 
-	private void writeLiteral(Literal literal)
-		throws IOException
-	{
+	private void writeLiteral(Literal literal) throws IOException {
 		String label = literal.getLabel();
 		IRI datatype = literal.getDatatype();
 
@@ -272,8 +238,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 		if (Literals.isLanguageLiteral(literal)) {
 			marker = LANG_LITERAL_RECORD_MARKER;
-		}
-		else {
+		} else {
 			String namespace = datatype.getNamespace();
 
 			if (!namespaceTable.containsKey(namespace)) {
@@ -289,8 +254,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 		if (Literals.isLanguageLiteral(literal)) {
 			writeString(literal.getLanguage().get());
-		}
-		else {
+		} else {
 			writeQName(datatype);
 		}
 	}
@@ -298,31 +262,23 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	/**
 	 * Writes an error msg to the stream.
 	 * 
-	 * @param errType
-	 *        The error type.
-	 * @param msg
-	 *        The error message.
-	 * @throws IOException
-	 *         When the error could not be written to the stream.
+	 * @param errType The error type.
+	 * @param msg     The error message.
+	 * @throws IOException When the error could not be written to the stream.
 	 */
-	public void error(QueryErrorType errType, String msg)
-		throws IOException
-	{
+	public void error(QueryErrorType errType, String msg) throws IOException {
 		out.writeByte(ERROR_RECORD_MARKER);
 
 		if (errType == QueryErrorType.MALFORMED_QUERY_ERROR) {
 			out.writeByte(MALFORMED_QUERY_ERROR);
-		}
-		else {
+		} else {
 			out.writeByte(QUERY_EVALUATION_ERROR);
 		}
 
 		writeString(msg);
 	}
 
-	private Integer writeNamespace(String namespace)
-		throws IOException
-	{
+	private Integer writeNamespace(String namespace) throws IOException {
 		out.writeByte(NAMESPACE_RECORD_MARKER);
 		out.writeInt(nextNamespaceID);
 		writeString(namespace);
@@ -335,53 +291,39 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		return result;
 	}
 
-	private void writeString(String s)
-		throws IOException
-	{
+	private void writeString(String s) throws IOException {
 		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
 		out.writeInt(byteBuf.remaining());
 		out.write(byteBuf.array(), 0, byteBuf.remaining());
 	}
 
 	@Override
-	public void handleStylesheet(String stylesheetUrl)
-		throws QueryResultHandlerException
-	{
+	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
 		// Ignored by Binary Query Results format
 	}
 
 	@Override
-	public void startHeader()
-		throws QueryResultHandlerException
-	{
+	public void startHeader() throws QueryResultHandlerException {
 		// Ignored by Binary Query Results format
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		// Ignored by Binary Query Results format
 	}
 
 	@Override
-	public void endHeader()
-		throws QueryResultHandlerException
-	{
+	public void endHeader() throws QueryResultHandlerException {
 		// Ignored by Binary Query Results format
 	}
 
-	private void endDocument()
-		throws IOException
-	{
+	private void endDocument() throws IOException {
 		out.flush();
 		documentStarted = false;
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle boolean results");
 	}
 }

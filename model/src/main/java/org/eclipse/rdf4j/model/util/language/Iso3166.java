@@ -43,12 +43,11 @@ public class Iso3166 {
 	/**
 	 * Look a country code up in the list.
 	 * 
-	 * @param countryId
-	 *        The country code to look up.
+	 * @param countryId The country code to look up.
 	 * @return The corresponding Iso3166 object, or null if not in the list.
 	 */
 	static public Iso3166 find(String countryId) {
-		return (Iso3166)all.get(countryId);
+		return (Iso3166) all.get(countryId);
 	}
 
 	/**

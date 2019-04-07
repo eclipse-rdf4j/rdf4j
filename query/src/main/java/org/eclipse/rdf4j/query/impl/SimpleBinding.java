@@ -26,10 +26,8 @@ public class SimpleBinding implements Binding {
 	/**
 	 * Creates a binding object with the supplied name and value.
 	 * 
-	 * @param name
-	 *        The binding's name.
-	 * @param value
-	 *        The binding's value.
+	 * @param name  The binding's name.
+	 * @param value The binding's value.
 	 */
 	public SimpleBinding(String name, Value value) {
 		assert name != null : "name must not be null";
@@ -52,7 +50,7 @@ public class SimpleBinding implements Binding {
 	@Override
 	public boolean equals(Object o) {
 		if (o instanceof Binding) {
-			Binding other = (Binding)o;
+			Binding other = (Binding) o;
 
 			return name.equals(other.getName()) && value.equals(other.getValue());
 		}

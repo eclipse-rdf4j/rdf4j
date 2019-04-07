@@ -42,9 +42,7 @@ public class InterceptorTest {
 	static class InvocationHandlerStub implements InvocationHandler {
 
 		@Override
-		public Object invoke(Object proxy, Method method, Object[] args)
-			throws Throwable
-		{
+		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
 			if (Boolean.TYPE.equals(method.getReturnType()))
 				return false;
 			return null;
@@ -54,14 +52,12 @@ public class InterceptorTest {
 	static class RepositoryStub extends RepositoryWrapper {
 
 		@Override
-		public RepositoryConnection getConnection()
-			throws RepositoryException
-		{
+		public RepositoryConnection getConnection() throws RepositoryException {
 			ClassLoader cl = InterceptorTest.class.getClassLoader();
 			Class<?>[] classes = new Class[] { RepositoryConnection.class };
 			InvocationHandlerStub handler = new InvocationHandlerStub();
 			Object proxy = Proxy.newProxyInstance(cl, classes, handler);
-			return (RepositoryConnection)proxy;
+			return (RepositoryConnection) proxy;
 		}
 
 		@Override
@@ -87,9 +83,7 @@ public class InterceptorTest {
 			return false;
 		}
 
-		public RepositoryConnectionStub()
-			throws RepositoryException
-		{
+		public RepositoryConnectionStub() throws RepositoryException {
 			super(new RepositoryStub());
 			setDelegate(getRepository().getConnection());
 		}
@@ -98,22 +92,16 @@ public class InterceptorTest {
 	static class UpdateStub extends AbstractUpdate implements Update {
 
 		@Override
-		public void execute()
-			throws UpdateExecutionException
-		{
+		public void execute() throws UpdateExecutionException {
 		}
 	}
 
 	@Test
-	public void testUpdate()
-		throws Exception
-	{
+	public void testUpdate() throws Exception {
 		final Update updateStub = new UpdateStub() {
 
 			@Override
-			public void execute()
-				throws UpdateExecutionException
-			{
+			public void execute() throws UpdateExecutionException {
 				fail();
 			}
 		};
@@ -121,8 +109,7 @@ public class InterceptorTest {
 
 			@Override
 			public Update prepareUpdate(QueryLanguage ql, String query, String baseURI)
-				throws MalformedQueryException, RepositoryException
-			{
+					throws MalformedQueryException, RepositoryException {
 				return updateStub;
 			}
 		};
@@ -132,8 +119,7 @@ public class InterceptorTest {
 
 			@Override
 			public boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-					Update operation)
-			{
+					Update operation) {
 				assertEquals(stub, conn);
 				assertEquals(SPARQL, ql);
 				assertEquals("DELETE DATA { <> <> <> }", update);
@@ -147,18 +133,14 @@ public class InterceptorTest {
 	}
 
 	@Test
-	public void testRemove()
-		throws Exception
-	{
+	public void testRemove() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		final IRI uri = vf.createIRI("http://example.com/");
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
 			@Override
-			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object,
-					Resource... contexts)
-				throws RepositoryException
-			{
+			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+					throws RepositoryException {
 				fail();
 			}
 		};
@@ -168,8 +150,7 @@ public class InterceptorTest {
 
 			@Override
 			public boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-					Resource... contexts)
-			{
+					Resource... contexts) {
 				assertEquals(stub, conn);
 				assertEquals(uri, subject);
 				assertEquals(uri, predicate);

@@ -12,8 +12,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 /**
  * Generic JSON settings, mostly related to Jackson Features.
  * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
  *
  * @author Peter Ansell
  */
@@ -46,8 +45,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers}.
 	 */
 	public static final RioSetting<Boolean> ALLOW_NON_NUMERIC_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers", "Allow non-numeric numbers", Boolean.FALSE);
@@ -57,8 +55,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros}.
 	 */
 	public static final RioSetting<Boolean> ALLOW_NUMERIC_LEADING_ZEROS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros", "Allow numeric leading zeros", Boolean.FALSE);
@@ -78,20 +75,17 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars}.
 	 */
 	public static final RioSetting<Boolean> ALLOW_UNQUOTED_CONTROL_CHARS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars", "Allow unquoted control chars",
-			Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars", "Allow unquoted control chars", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for JSON parsers to determine if unquoted field names are allowed.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.allow_unquoted_field_names}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_field_names}.
 	 */
 	public static final RioSetting<Boolean> ALLOW_UNQUOTED_FIELD_NAMES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_unquoted_field_names", "Allow unquoted field names", Boolean.FALSE);
@@ -121,20 +115,18 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.include_source_in_location}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.include_source_in_location}.
 	 */
 	public static final RioSetting<Boolean> INCLUDE_SOURCE_IN_LOCATION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.include_source_in_location", "Include Source in Location", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for JSON parsers to determine if strict duplicate detection is allowed for JSON Object
-	 * field names.
+	 * Boolean setting for JSON parsers to determine if strict duplicate detection is allowed for JSON Object field
+	 * names.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.json.strict_duplicate_detection}.
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.strict_duplicate_detection}.
 	 */
 	public static final RioSetting<Boolean> STRICT_DUPLICATE_DETECTION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.strict_duplicate_detection", "Strict duplicate detection", Boolean.FALSE);

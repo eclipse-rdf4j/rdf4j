@@ -52,10 +52,8 @@ public class QueryStringUtilTest {
 	public void testTypedLiteral() {
 		Literal literal = VF.createLiteral("typed \"literal\"", VF.createIRI("http://example.com/test"));
 
-		assertEquals("\"typed \\\"literal\\\"\"^^<http://example.com/test>",
-				QueryStringUtil.valueToString(literal));
-		assertEquals("\"typed \\\"literal\\\"\"^^<http://example.com/test>",
-				valueToStringWithStringBuilder(literal));
+		assertEquals("\"typed \\\"literal\\\"\"^^<http://example.com/test>", QueryStringUtil.valueToString(literal));
+		assertEquals("\"typed \\\"literal\\\"\"^^<http://example.com/test>", valueToStringWithStringBuilder(literal));
 	}
 
 	@Test
@@ -69,16 +67,14 @@ public class QueryStringUtilTest {
 		try {
 			QueryStringUtil.valueToString(VF.createBNode());
 			fail("Must throw exception");
-		}
-		catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException e) {
 			// ok
 		}
 
 		try {
 			valueToStringWithStringBuilder(VF.createBNode());
 			fail("Must throw exception");
-		}
-		catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException e) {
 			// ok
 		}
 	}

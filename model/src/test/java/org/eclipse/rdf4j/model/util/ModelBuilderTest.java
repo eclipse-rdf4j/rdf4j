@@ -20,9 +20,7 @@ public class ModelBuilderTest {
 	private Model model;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		model = new LinkedHashModel();
 		testBuilder = new ModelBuilder(model);
 	}
@@ -32,8 +30,7 @@ public class ModelBuilderTest {
 		try {
 			testBuilder.add(RDF.TYPE, RDFS.CLASS);
 			fail("add should have failed with model exception: subject not set");
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			// fall through, expected
 		}
 	}
@@ -57,8 +54,7 @@ public class ModelBuilderTest {
 	public void testAddWithUnknownStringSubject() {
 		testBuilder.add("ex:Person", RDF.TYPE, RDFS.CLASS);
 
-		assertTrue(model.contains(SimpleValueFactory.getInstance().createIRI("ex:Person"), RDF.TYPE,
-				RDFS.CLASS));
+		assertTrue(model.contains(SimpleValueFactory.getInstance().createIRI("ex:Person"), RDF.TYPE, RDFS.CLASS));
 	}
 
 	@Test
@@ -66,51 +62,48 @@ public class ModelBuilderTest {
 		try {
 			testBuilder.add("Johnny", RDF.TYPE, RDFS.CLASS);
 			fail("should have failed on illegal IRI for subject");
-		}
-		catch (ModelException e) {
+		} catch (ModelException e) {
 			// fall through, expected
 		}
 
 	}
-	
+
 	@Test
 	public void testAddInteger() {
 		testBuilder.subject(FOAF.PERSON).add("rdfs:label", 9);
-		
+
 		assertTrue(model.contains(FOAF.PERSON, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(9)));
 	}
-	
+
 	@Test
 	public void testAddObjectStringIRI() {
 		testBuilder.subject(FOAF.PERSON).add("rdf:type", "rdfs:Class");
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDFS.CLASS));
 	}
-	
+
 	@Test
 	public void testAddNamedGraph() {
 		testBuilder.namedGraph(RDF.ALT).subject(FOAF.PERSON).add("rdf:type", RDFS.CLASS);
-		
+
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.ALT));
-		
+
 		testBuilder.add(RDF.TYPE, RDF.PROPERTY);
-		
 
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDF.PROPERTY, RDF.ALT));
-		
+
 		testBuilder.defaultGraph().add(FOAF.PERSON, RDF.TYPE, RDF.BAG);
-		
+
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDF.BAG));
 		assertFalse(model.contains(FOAF.PERSON, RDF.TYPE, RDF.BAG, RDF.ALT));
 	}
-	
+
 	@Test
 	public void testAddNamedGraph2() {
 		testBuilder.namedGraph("rdf:Alt").subject(FOAF.PERSON).add("rdf:type", RDFS.CLASS);
-		
+
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.ALT));
-		
+
 		testBuilder.add(RDF.TYPE, RDF.PROPERTY);
-		
 
 		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDF.PROPERTY, RDF.ALT));
 	}

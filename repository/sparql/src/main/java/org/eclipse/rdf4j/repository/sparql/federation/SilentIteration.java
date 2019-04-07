@@ -27,15 +27,12 @@ public class SilentIteration extends LookAheadIteration<BindingSet, QueryEvaluat
 	}
 
 	@Override
-	protected BindingSet getNextElement()
-		throws QueryEvaluationException
-	{
+	protected BindingSet getNextElement() throws QueryEvaluationException {
 
 		try {
 			if (iter.hasNext())
 				return iter.next();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			// suppress
 		}
 

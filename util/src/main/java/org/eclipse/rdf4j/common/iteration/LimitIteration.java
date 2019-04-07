@@ -11,9 +11,8 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 
 /**
- * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed
- * amount. This class returns the first <tt>limit</tt> elements from the underlying Iteration and drops the
- * rest.
+ * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed amount. This
+ * class returns the first <tt>limit</tt> elements from the underlying Iteration and drops the rest.
  */
 public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
@@ -38,10 +37,8 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	/**
 	 * Creates a new LimitIteration.
 	 * 
-	 * @param iter
-	 *        The underlying Iteration, must not be <tt>null</tt>.
-	 * @param limit
-	 *        The number of query answers to return, must be &gt;= 0.
+	 * @param iter  The underlying Iteration, must not be <tt>null</tt>.
+	 * @param limit The number of query answers to return, must be &gt;= 0.
 	 */
 	public LimitIteration(Iteration<? extends E, X> iter, long limit) {
 		super(iter);
@@ -58,9 +55,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	 *---------*/
 
 	@Override
-	public boolean hasNext()
-		throws X
-	{
+	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -73,9 +68,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	}
 
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}

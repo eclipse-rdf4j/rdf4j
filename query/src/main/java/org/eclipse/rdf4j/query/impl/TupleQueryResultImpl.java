@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class TupleQueryResultImpl extends IteratingTupleQueryResult {
 
 	public TupleQueryResultImpl(List<String> bindingNames,
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter)
-	{
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
 		super(bindingNames, bindingSetIter);
 	}
 

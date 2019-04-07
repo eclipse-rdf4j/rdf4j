@@ -54,8 +54,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 				if (!contains(e.next()))
 					return false;
 			return true;
-		}
-		finally {
+		} finally {
 			closeIterator(c, e);
 		}
 	}
@@ -68,12 +67,10 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			try {
 				while (i.hasNext())
 					modified |= remove(i.next());
-			}
-			finally {
+			} finally {
 				closeIterator(c, i);
 			}
-		}
-		else {
+		} else {
 			Iterator<?> i = iterator();
 			try {
 				while (i.hasNext()) {
@@ -82,8 +79,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 						modified = true;
 					}
 				}
-			}
-			finally {
+			} finally {
 				closeIterator(i);
 			}
 		}
@@ -100,8 +96,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 				r.add(it.next());
 			}
 			return r.toArray();
-		}
-		finally {
+		} finally {
 			closeIterator(it);
 		}
 	}
@@ -116,8 +111,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 				r.add(it.next());
 			}
 			return r.toArray(a);
-		}
-		finally {
+		} finally {
 			closeIterator(it);
 		}
 	}
@@ -132,8 +126,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					modified = true;
 			}
 			return modified;
-		}
-		finally {
+		} finally {
 			closeIterator(c, e);
 		}
 	}
@@ -150,8 +143,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 				}
 			}
 			return modified;
-		}
-		finally {
+		} finally {
 			closeIterator(e);
 		}
 	}
@@ -169,7 +161,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	@Override
 	public boolean remove(Object o) {
 		if (o instanceof Statement) {
-			Statement st = (Statement)o;
+			Statement st = (Statement) o;
 			return remove(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
 		return false;
@@ -178,7 +170,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	@Override
 	public boolean contains(Object o) {
 		if (o instanceof Statement) {
-			Statement st = (Statement)o;
+			Statement st = (Statement) o;
 			return contains(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
 		return false;
@@ -189,15 +181,26 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		return super.hashCode();
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
 		}
 		if (o instanceof Model) {
-			Model model = (Model)o;
+			Model model = (Model) o;
 			return Models.isomorphic(this, model);
+		} else if (o instanceof Set) {
+			if (this.size() != ((Set<?>) o).size()) {
+				return false;
+			}
+			try {
+				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
+			} catch (ClassCastException e) {
+				return false;
+			}
 		}
+
 		return false;
 	}
 
@@ -208,7 +211,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean contains(Object o) {
 				if (o instanceof Resource) {
-					return AbstractModel.this.contains((Resource)o, null, null);
+					return AbstractModel.this.contains((Resource) o, null, null);
 				}
 				return false;
 			}
@@ -216,7 +219,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean remove(Object o) {
 				if (o instanceof Resource) {
-					return AbstractModel.this.remove((Resource)o, null, null);
+					return AbstractModel.this.remove((Resource) o, null, null);
 				}
 				return false;
 			}
@@ -245,7 +248,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean contains(Object o) {
 				if (o instanceof IRI) {
-					return AbstractModel.this.contains(null, (IRI)o, null);
+					return AbstractModel.this.contains(null, (IRI) o, null);
 				}
 				return false;
 			}
@@ -253,7 +256,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean remove(Object o) {
 				if (o instanceof IRI) {
-					return AbstractModel.this.remove(null, (IRI)o, null);
+					return AbstractModel.this.remove(null, (IRI) o, null);
 				}
 				return false;
 			}
@@ -282,7 +285,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean contains(Object o) {
 				if (o instanceof Value) {
-					return AbstractModel.this.contains(null, null, (Value)o);
+					return AbstractModel.this.contains(null, null, (Value) o);
 				}
 				return false;
 			}
@@ -290,7 +293,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean remove(Object o) {
 				if (o instanceof Value) {
-					return AbstractModel.this.remove(null, null, (Value)o);
+					return AbstractModel.this.remove(null, null, (Value) o);
 				}
 				return false;
 			}
@@ -319,7 +322,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean contains(Object o) {
 				if (o instanceof Resource || o == null) {
-					return AbstractModel.this.contains(null, null, null, (Resource)o);
+					return AbstractModel.this.contains(null, null, null, (Resource) o);
 				}
 				return false;
 			}
@@ -327,7 +330,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			@Override
 			public boolean remove(Object o) {
 				if (o instanceof Resource || o == null) {
-					return AbstractModel.this.remove(null, null, null, (Resource)o);
+					return AbstractModel.this.remove(null, null, null, (Resource) o);
 				}
 				return false;
 			}
@@ -436,8 +439,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					set.add(term(iter.next()));
 				}
 				return set.size();
-			}
-			finally {
+			} finally {
 				AbstractModel.this.closeIterator(iter);
 			}
 		}
@@ -449,8 +451,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			try {
 				while (i.hasNext())
 					modified |= remove(i.next());
-			}
-			finally {
+			} finally {
 				closeIterator(c, i);
 			}
 			return modified;
@@ -465,8 +466,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					set.add(term(iter.next()));
 				}
 				return set.toArray();
-			}
-			finally {
+			} finally {
 				AbstractModel.this.closeIterator(iter);
 			}
 		}
@@ -480,8 +480,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					set.add(term(iter.next()));
 				}
 				return set.toArray(a);
-			}
-			finally {
+			} finally {
 				AbstractModel.this.closeIterator(iter);
 			}
 		}
@@ -494,8 +493,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					if (!contains(e.next()))
 						return false;
 				return true;
-			}
-			finally {
+			} finally {
 				closeIterator(c, e);
 			}
 		}
@@ -510,8 +508,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 						modified = true;
 				}
 				return modified;
-			}
-			finally {
+			} finally {
 				closeIterator(c, e);
 			}
 		}
@@ -528,8 +525,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 					}
 				}
 				return modified;
-			}
-			finally {
+			} finally {
 				closeIterator(e);
 			}
 		}
@@ -542,33 +538,27 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		protected abstract void removeIteration(Iterator<Statement> iter, V term);
 
 		protected void closeIterator(Iterator<?> iter) {
-			AbstractModel.this.closeIterator(((ValueSetIterator)iter).iter);
+			AbstractModel.this.closeIterator(((ValueSetIterator) iter).iter);
 		}
 
 		private void closeIterator(Collection<?> c, Iterator<?> e) {
 			if (c instanceof AbstractModel) {
-				((AbstractModel)c).closeIterator(e);
-			}
-			else if (c instanceof ValueSet) {
-				((ValueSet<?>)c).closeIterator(e);
+				((AbstractModel) c).closeIterator(e);
+			} else if (c instanceof ValueSet) {
+				((ValueSet<?>) c).closeIterator(e);
 			}
 		}
 	}
 
 	/**
-	 * Called by aggregate sets when a term has been removed from a term iterator. Exactly one of the last
-	 * four terms will be non-empty.
+	 * Called by aggregate sets when a term has been removed from a term iterator. Exactly one of the last four terms
+	 * will be non-empty.
 	 * 
-	 * @param iter
-	 *        The iterator used to navigate the live set (never null)
-	 * @param subj
-	 *        the subject term to be removed or null
-	 * @param pred
-	 *        the predicate term to be removed or null
-	 * @param obj
-	 *        the object term to be removed or null
-	 * @param contexts
-	 *        an array of one context term to be removed or an empty array
+	 * @param iter     The iterator used to navigate the live set (never null)
+	 * @param subj     the subject term to be removed or null
+	 * @param pred     the predicate term to be removed or null
+	 * @param obj      the object term to be removed or null
+	 * @param contexts an array of one context term to be removed or an empty array
 	 */
 	public abstract void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts);
@@ -576,21 +566,19 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	/**
 	 * Cleans up any resources used by this iterator. After this call the given iterator should not be used.
 	 * 
-	 * @param iter
-	 *        Iterator to clean up
+	 * @param iter Iterator to clean up
 	 */
 	protected void closeIterator(Iterator<?> iter) {
 		if (iter instanceof ValueSet.ValueSetIterator) {
-			closeIterator(((ValueSet.ValueSetIterator)iter).iter);
+			closeIterator(((ValueSet.ValueSetIterator) iter).iter);
 		}
 	}
 
 	private void closeIterator(Collection<?> c, Iterator<?> e) {
 		if (c instanceof AbstractModel) {
-			((AbstractModel)c).closeIterator(e);
-		}
-		else if (c instanceof ValueSet) {
-			((ValueSet<?>)c).closeIterator(e);
+			((AbstractModel) c).closeIterator(e);
+		} else if (c instanceof ValueSet) {
+			((ValueSet<?>) c).closeIterator(e);
 		}
 	}
 

@@ -1,0 +1,116 @@
+<?xml version="1.0"?>
+
+<rdf:RDF
+		xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+		xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+		xmlns:test="http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#"
+>
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test001a">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Empty propery element with parseType="Literal" attribute
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test001a.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test001a.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test001b">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Property element with parseType="Literal" attribute containing only white space characters
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test001b.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test001b.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test002a">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Empty propery element with parseType="Resource" attribute
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test002a.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test002.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test002b">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Property element with parseType="Resource" attribute containing only white space characters
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test002b.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test002.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test003a">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Property element containing only white space characters
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test003a.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test003.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+<test:PositiveParserTest rdf:about="rdfms-empty-property-elements/test003b">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Property element containing white space characters and newline
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="rdfms-empty-property-elements/test003b.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="rdfms-empty-property-elements/test003.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+<test:PositiveParserTest rdf:about="xmlbase/test001">
+   <test:status>APPROVED</test:status>
+   <test:description>
+      Relative datatype URI
+   </test:description>
+
+   <test:inputDocument>
+      <test:RDF-XML-Document rdf:about="xmlbase/test001.rdf" />
+   </test:inputDocument>
+
+   <test:outputDocument>
+      <test:NT-Document rdf:about="xmlbase/test001.nt" />
+   </test:outputDocument>
+</test:PositiveParserTest>
+
+</rdf:RDF>
+

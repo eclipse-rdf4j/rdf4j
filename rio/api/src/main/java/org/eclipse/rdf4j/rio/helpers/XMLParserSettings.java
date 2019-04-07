@@ -16,8 +16,7 @@ import org.xml.sax.XMLReader;
 /**
  * ParserSettings for the XML parser features.
  * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
  * 
  * @author Michael Grove
  * @author Peter Ansell
@@ -31,11 +30,9 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code http://javax.xml.XMLConstants/feature/secure-processing}
+	 * Can be overridden by setting system property {@code http://javax.xml.XMLConstants/feature/secure-processing}
 	 * 
-	 * @see <a href=
-	 *      "http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
+	 * @see <a href= "http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
 	 *      XMLConstants.FEATURE_SECURE_PROCESSING</a>
 	 */
 	public static final RioSetting<Boolean> SECURE_PROCESSING = new BooleanRioSetting(
@@ -44,17 +41,16 @@ public final class XMLParserSettings {
 	/**
 	 * Parser setting specifying whether DOCTYPE declaration should be disallowed.
 	 * <p>
-	 * Defaults to false.
-	 * Can be overridden by setting system property {@code http://apache.org/xml/features/disallow-doctype-decl}
+	 * Defaults to false. Can be overridden by setting system property
+	 * {@code http://apache.org/xml/features/disallow-doctype-decl}
 	 * <p>
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
-	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
-	 *      Prevention Cheat Sheet</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
+	 *      Cheat Sheet</a>
 	 */
 	public static final RioSetting<Boolean> DISALLOW_DOCTYPE_DECL = new BooleanRioSetting(
-			"http://apache.org/xml/features/disallow-doctype-decl", "Disallow DOCTYPE declaration in document",
-			false);
+			"http://apache.org/xml/features/disallow-doctype-decl", "Disallow DOCTYPE declaration in document", false);
 
 	/**
 	 * Parser setting specifying whether external DTDs should be loaded.
@@ -74,12 +70,11 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code http://xml.org/sax/features/external-general-entities}
+	 * Can be overridden by setting system property {@code http://xml.org/sax/features/external-general-entities}
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
-	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
-	 *      Prevention Cheat Sheet</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
+	 *      Cheat Sheet</a>
 	 */
 	public static final RioSetting<Boolean> EXTERNAL_GENERAL_ENTITIES = new BooleanRioSetting(
 			"http://xml.org/sax/features/external-general-entities", "Include external general entities", false);
@@ -89,22 +84,20 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code http://xml.org/sax/features/external-parameter-entities}
+	 * Can be overridden by setting system property {@code http://xml.org/sax/features/external-parameter-entities}
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
-	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
-	 *      Prevention Cheat Sheet</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
+	 *      Cheat Sheet</a>
 	 */
 	public static final RioSetting<Boolean> EXTERNAL_PARAMETER_ENTITIES = new BooleanRioSetting(
-			"http://xml.org/sax/features/external-parameter-entities", "Include external parameter entities",
-			false);
+			"http://xml.org/sax/features/external-parameter-entities", "Include external parameter entities", false);
 
 	/**
 	 * Parser setting to customise the XMLReader that is used by an XML based Rio parser.
 	 * <p>
-	 * IMPORTANT: The XMLReader must not be shared across different readers, so this setting must be reset for
-	 * each parse operation.
+	 * IMPORTANT: The XMLReader must not be shared across different readers, so this setting must be reset for each
+	 * parse operation.
 	 * <p>
 	 * Defaults to null, This settings is only useful if {@link RioConfig#isSet(RioSetting)} returns true.
 	 */
@@ -126,8 +119,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * <p>
-	 * Can be overridden by setting system property
-	 * {@code org.eclipse.rdf4j.rio.fail_on_non_standard_attributes}
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_non_standard_attributes}
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_NON_STANDARD_ATTRIBUTES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_non_standard_attributes", "Fail on non-standard attributes", true);
@@ -173,8 +165,8 @@ public final class XMLParserSettings {
 			"org.eclipse.rdf4j.rio.fail_on_mismatched_tags", "Fail on mismatched tags", true);
 
 	/**
-	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the
-	 * rdf:RDF element is optional if it contains just one element.
+	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the rdf:RDF
+	 * element is optional if it contains just one element.
 	 * <p>
 	 * Defaults to true
 	 * <p>

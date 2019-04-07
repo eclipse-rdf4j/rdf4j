@@ -20,14 +20,12 @@ public class ASTQueryContainer extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTQuery getQuery() {
-		return (ASTQuery)children.get(0);
+		return (ASTQuery) children.get(0);
 	}
 
 	public boolean hasNamespaceDeclList() {

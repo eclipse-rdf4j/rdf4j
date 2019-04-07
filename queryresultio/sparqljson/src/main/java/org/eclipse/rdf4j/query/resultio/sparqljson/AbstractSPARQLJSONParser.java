@@ -35,8 +35,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
 
 /**
- * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and
- * tuple parsing.
+ * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and tuple
+ * parsing.
  * 
  * @author Peter Ansell
  * @author Sebastian Schaffert
@@ -99,19 +99,12 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	@Override
 	public void parseQueryResult(InputStream in)
-		throws IOException,
-		QueryResultParseException,
-		QueryResultHandlerException
-	{
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parseQueryResultInternal(in, true, true);
 	}
 
-	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean,
-			boolean attemptParseTuple)
-		throws IOException,
-		QueryResultParseException,
-		QueryResultHandlerException
-	{
+	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		if (!attemptParseBoolean && !attemptParseTuple) {
 			throw new IllegalArgumentException(
 					"Internal error: Did not specify whether to parse as either boolean and/or tuple");
@@ -124,8 +117,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			jp = configureNewJsonFactory().createParser(in);
 
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
-				throw new QueryResultParseException(
-						"Expected SPARQL Results JSON document to start with an Object",
+				throw new QueryResultParseException("Expected SPARQL Results JSON document to start with an Object",
 						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 			}
 
@@ -150,14 +142,12 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							if (!attemptParseTuple) {
 								throw new QueryResultParseException(
 										"Found tuple results variables when attempting to parse SPARQL Results JSON to boolean result",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getLineNr());
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Expected variable labels to be an array",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getColumnNr());
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -180,13 +170,11 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 								bindings.clear();
 							}
 
-						}
-						else if (headStr.equals(LINK)) {
+						} else if (headStr.equals(LINK)) {
 							List<String> linksList = new ArrayList<>();
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Expected links to be an array",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getColumnNr());
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -197,16 +185,12 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 								handler.handleLinks(linksList);
 							}
 
-						}
-						else {
-							throw new QueryResultParseException(
-									"Found unexpected object in head field: " + headStr,
-									jp.getCurrentLocation().getLineNr(),
-									jp.getCurrentLocation().getColumnNr());
+						} else {
+							throw new QueryResultParseException("Found unexpected object in head field: " + headStr,
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 						}
 					}
-				}
-				else if (baseStr.equals(RESULTS)) {
+				} else if (baseStr.equals(RESULTS)) {
 					if (!attemptParseTuple) {
 						throw new QueryResultParseException(
 								"Found tuple results bindings when attempting to parse SPARQL Results JSON to boolean result",
@@ -222,10 +206,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 						if (jp.getCurrentName().equals(BINDINGS)) {
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
-								throw new QueryResultParseException(
-										"Found unexpected token in bindings object",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getColumnNr());
+								throw new QueryResultParseException("Found unexpected token in bindings object",
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -235,8 +217,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 								if (jp.getCurrentToken() != JsonToken.START_OBJECT) {
 									throw new QueryResultParseException(
 											"Did not find object in bindings array: " + jp.getCurrentName(),
-											jp.getCurrentLocation().getLineNr(),
-											jp.getCurrentLocation().getColumnNr());
+											jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 								}
 
 								while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -250,8 +231,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 									final String bindingStr = jp.getCurrentName();
 
 									if (jp.nextToken() != JsonToken.START_OBJECT) {
-										throw new QueryResultParseException(
-												"Did not find object for binding value",
+										throw new QueryResultParseException("Did not find object for binding value",
 												jp.getCurrentLocation().getLineNr(),
 												jp.getCurrentLocation().getColumnNr());
 									}
@@ -265,8 +245,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 										if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 											throw new QueryResultParseException(
-													"Did not find value attribute under " + bindingStr
-															+ " field",
+													"Did not find value attribute under " + bindingStr + " field",
 													jp.getCurrentLocation().getLineNr(),
 													jp.getCurrentLocation().getColumnNr());
 										}
@@ -278,27 +257,21 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 										// set the appropriate state variable
 										if (TYPE.equals(fieldName)) {
 											type = jp.getText();
-										}
-										else if (XMLLANG.equals(fieldName)) {
+										} else if (XMLLANG.equals(fieldName)) {
 											lang = jp.getText();
-										}
-										else if (DATATYPE.equals(fieldName)) {
+										} else if (DATATYPE.equals(fieldName)) {
 											datatype = jp.getText();
-										}
-										else if (VALUE.equals(fieldName)) {
+										} else if (VALUE.equals(fieldName)) {
 											value = jp.getText();
-										}
-										else {
-											throw new QueryResultParseException(
-													"Unexpected field name: " + fieldName,
+										} else {
+											throw new QueryResultParseException("Unexpected field name: " + fieldName,
 													jp.getCurrentLocation().getLineNr(),
 													jp.getCurrentLocation().getColumnNr());
 
 										}
 									}
 
-									nextBindingSet.addBinding(bindingStr,
-											parseValue(type, value, lang, datatype));
+									nextBindingSet.addBinding(bindingStr, parseValue(type, value, lang, datatype));
 								}
 								// parsing of solution finished, report result return to
 								// bindings state
@@ -308,8 +281,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 									// is
 									// always called before handleSolution
 									bindings.add(nextBindingSet);
-								}
-								else if (handler != null) {
+								} else if (handler != null) {
 									handler.handleSolution(nextBindingSet);
 								}
 							}
@@ -319,20 +291,15 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						}
 						// Backwards compatibility with very old draft of the original
 						// SPARQL spec
-						else if (jp.getCurrentName().equals(DISTINCT)
-								|| jp.getCurrentName().equals(ORDERED))
-						{
+						else if (jp.getCurrentName().equals(DISTINCT) || jp.getCurrentName().equals(ORDERED)) {
 							jp.nextToken();
-						}
-						else {
+						} else {
 							throw new QueryResultParseException(
 									"Found unexpected field in results: " + jp.getCurrentName(),
-									jp.getCurrentLocation().getLineNr(),
-									jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 						}
 					}
-				}
-				else if (baseStr.equals(BOOLEAN)) {
+				} else if (baseStr.equals(BOOLEAN)) {
 					if (!attemptParseBoolean) {
 						throw new QueryResultParseException(
 								"Found boolean results when attempting to parse SPARQL Results JSON to tuple results",
@@ -344,8 +311,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 					if (handler != null) {
 						handler.handleBoolean(result);
 					}
-				}
-				else {
+				} else {
 					logger.debug("Found unexpected object in top level {} field #{}.{}", baseStr,
 							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					// Consume the discovered unexpected object
@@ -354,34 +320,26 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 					if (jp.currentToken() == JsonToken.START_ARRAY) {
 						while (!(jp.getParsingContext().getParent().inRoot()
-								&& (jp.currentToken() == JsonToken.END_ARRAY)))
-						{
+								&& (jp.currentToken() == JsonToken.END_ARRAY))) {
 							if (jp.nextToken() == null) {
 								throw new QueryResultParseException(
-										"An array value of the unexpected " + baseStr
-												+ " field is not closed.",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getLineNr());
+										"An array value of the unexpected " + baseStr + " field is not closed.",
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 						}
-					}
-					else if (jp.currentToken() == JsonToken.START_OBJECT) {
+					} else if (jp.currentToken() == JsonToken.START_OBJECT) {
 						while (!(jp.getParsingContext().getParent().inRoot()
-								&& (jp.currentToken() == JsonToken.END_OBJECT)))
-						{
+								&& (jp.currentToken() == JsonToken.END_OBJECT))) {
 							if (jp.nextToken() == null) {
 								throw new QueryResultParseException(
-										"An object value of the unexpected " + baseStr
-												+ " field is not closed.",
-										jp.getCurrentLocation().getLineNr(),
-										jp.getCurrentLocation().getLineNr());
+										"An object value of the unexpected " + baseStr + " field is not closed.",
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 						}
 					}
 				}
 			}
-		}
-		catch (JsonProcessingException e) {
+		} catch (JsonProcessingException e) {
 			throw new QueryResultParseException("Could not parse SPARQL/JSON", e, e.getLocation().getLineNr(),
 					e.getLocation().getLineNr());
 		}
@@ -392,14 +350,10 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	/**
 	 * Parse a value out of the elements for a binding.
 	 * 
-	 * @param type
-	 *        {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or {@link #URI}
-	 * @param value
-	 *        actual value text
-	 * @param language
-	 *        language tag, if applicable
-	 * @param datatype
-	 *        datatype tag, if applicable
+	 * @param type     {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or {@link #URI}
+	 * @param value    actual value text
+	 * @param language language tag, if applicable
+	 * @param datatype datatype tag, if applicable
 	 * @return the value corresponding to the given parameters
 	 */
 	private Value parseValue(String type, String value, String language, String datatype) {
@@ -413,18 +367,14 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		if (type.equals(LITERAL) || type.equals(TYPED_LITERAL)) {
 			if (language != null) {
 				result = valueFactory.createLiteral(value, language);
-			}
-			else if (datatype != null) {
+			} else if (datatype != null) {
 				result = valueFactory.createLiteral(value, valueFactory.createIRI(datatype));
-			}
-			else {
+			} else {
 				result = valueFactory.createLiteral(value);
 			}
-		}
-		else if (type.equals(BNODE)) {
+		} else if (type.equals(BNODE)) {
 			result = valueFactory.createBNode(value);
-		}
-		else if (type.equals(URI)) {
+		} else if (type.equals(URI)) {
 			result = valueFactory.createIRI(value);
 		}
 

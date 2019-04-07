@@ -13,9 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 /**
  * A SPARQL Prefix declaration
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#prefNames">
- *      SPARQL Prefix</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#prefNames"> SPARQL Prefix</a>
  */
 public class Prefix implements QueryElement {
 	private static final String PREFIX = "PREFIX";
@@ -30,12 +28,10 @@ public class Prefix implements QueryElement {
 	/**
 	 * Create a prefixed IRI reference from this prefix
 	 * 
-	 * @param localName
-	 *            the local part of the prefixed IRI
-	 * @return a prefixed IRI reference, with this prefix's label as the base,
-	 *         and the given string for the local part
+	 * @param localName the local part of the prefixed IRI
+	 * @return a prefixed IRI reference, with this prefix's label as the base, and the given string for the local part
 	 */
-	public Iri iri(String localName) {		
+	public Iri iri(String localName) {
 		return () -> label + ":" + localName;
 	}
 

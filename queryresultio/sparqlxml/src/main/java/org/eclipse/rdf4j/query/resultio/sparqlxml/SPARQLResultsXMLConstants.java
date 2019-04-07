@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 /**
  * Interface defining tags and attribute names that are used in SPARQL Results Documents. See
- * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of
- * this format.
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of this
+ * format.
  * 
  * @author Arjohn Kampman
  */

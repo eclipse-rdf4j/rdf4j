@@ -30,33 +30,32 @@ public class ZipUtilTest {
 	@Test
 	public void testWriteEntryNormal() throws IOException {
 		File f = dir.newFile("testok.zip");
-		
+
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(f))) {
 			ZipEntry e = new ZipEntry("helloworld.txt");
 			out.putNextEntry(e);
 			out.write("hello world".getBytes());
 			out.closeEntry();
 		}
-		
+
 		ZipFile zf = new ZipFile(f);
 		File subdir = dir.newFolder("extract");
 		ZipUtil.extract(zf, subdir);
-		
+
 		assertTrue("File not extracted", new File(subdir, "helloworld.txt").exists());
 	}
-
 
 	@Test
 	public void testWriteEntryPathTraversing() throws IOException {
 		File f = dir.newFile("testnotok.zip");
-		
+
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(f))) {
 			ZipEntry e = new ZipEntry("hello/../../world.txt");
 			out.putNextEntry(e);
 			out.write("hello world".getBytes());
 			out.closeEntry();
 		}
-		
+
 		ZipFile zf = new ZipFile(f);
 		File subdir = dir.newFolder("extract");
 		try {

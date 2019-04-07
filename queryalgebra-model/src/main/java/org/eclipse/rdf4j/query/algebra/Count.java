@@ -22,9 +22,7 @@ public class Count extends AbstractAggregateOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -40,7 +38,7 @@ public class Count extends AbstractAggregateOperator {
 
 	@Override
 	public Count clone() {
-		return (Count)super.clone();
+		return (Count) super.clone();
 	}
 
 	@Override

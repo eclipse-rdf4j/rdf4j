@@ -18,9 +18,7 @@ import junit.framework.Test;
  */
 public class NTriplesParserTest extends AbstractNTriplesParserTest {
 
-	public static Test suite()
-		throws Exception
-	{
+	public static Test suite() throws Exception {
 		return new NTriplesParserTest().createTestSuite();
 	}
 

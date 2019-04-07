@@ -1,0 +1,3 @@
+ {
+  "http://example.org/about" : { "http://xmlns.com/foaf/0.1/name" : ["type" : "bnode", "language" : "en"] }
+ }

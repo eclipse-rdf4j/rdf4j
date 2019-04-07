@@ -23,21 +23,18 @@ public class ASTUpdateContainer extends ASTOperationContainer {
 
 	/** Accept the visitor. **/
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	@Override
 	public void setSourceString(String source) {
-		throw new RuntimeException(
-				"should use setSourceString on parent node of type ASTUpdateSequence instead");
+		throw new RuntimeException("should use setSourceString on parent node of type ASTUpdateSequence instead");
 	}
 
 	@Override
 	public String getSourceString() {
-		ASTUpdateSequence sequence = (ASTUpdateSequence)parent;
+		ASTUpdateSequence sequence = (ASTUpdateSequence) parent;
 		return sequence.getSourceString();
 	}
 

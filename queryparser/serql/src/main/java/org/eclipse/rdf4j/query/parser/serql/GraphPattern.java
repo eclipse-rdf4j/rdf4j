@@ -110,8 +110,7 @@ class GraphPattern {
 
 		if (constraints.isEmpty()) {
 			optTE = new OptionalTupleExpr(tupleExpr);
-		}
-		else {
+		} else {
 			ValueExpr constraint = constraints.get(0);
 			for (int i = 1; i < constraints.size(); i++) {
 				constraint = new And(constraint, constraints.get(i));
@@ -164,8 +163,7 @@ class GraphPattern {
 
 		if (requiredTEs.isEmpty()) {
 			result = new SingletonSet();
-		}
-		else {
+		} else {
 			result = requiredTEs.get(0);
 
 			for (int i = 1; i < requiredTEs.size(); i++) {
@@ -176,8 +174,7 @@ class GraphPattern {
 		for (OptionalTupleExpr optTE : optionalTEs) {
 			if (optTE.hasConstraint()) {
 				result = new LeftJoin(result, optTE.getTupleExpr(), optTE.getConstraint());
-			}
-			else {
+			} else {
 				result = new LeftJoin(result, optTE.getTupleExpr());
 			}
 		}

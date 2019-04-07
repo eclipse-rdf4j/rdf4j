@@ -40,8 +40,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
- * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and
- * SPARQLResultsJSONWriter.
+ * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and SPARQLResultsJSONWriter.
  * 
  * @author Peter Ansell
  */
@@ -81,16 +80,13 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	public AbstractSPARQLJSONWriter(OutputStream out) {
 		try {
 			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new IllegalArgumentException(e);
 		}
 	}
 
 	@Override
-	public void endHeader()
-		throws QueryResultHandlerException
-	{
+	public void endHeader() throws QueryResultHandlerException {
 		if (!headerComplete) {
 			try {
 				jg.writeEndObject();
@@ -103,17 +99,14 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				}
 
 				headerComplete = true;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void startQueryResult(List<String> columnHeaders)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> columnHeaders) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -129,22 +122,17 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeString(nextColumn);
 			}
 			jg.writeEndArray();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -174,22 +162,17 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			}
 
 			jg.writeEndObject();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void endQueryResult()
-		throws TupleQueryResultHandlerException
-	{
+	public void endQueryResult() throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -204,8 +187,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			}
 
 			if (!tupleVariablesFound) {
-				throw new IllegalStateException(
-						"Could not end query result as startQueryResult was not called first.");
+				throw new IllegalStateException("Could not end query result as startQueryResult was not called first.");
 			}
 
 			// bindings array
@@ -213,22 +195,17 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			// results braces
 			jg.writeEndObject();
 			endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		}
-		catch (QueryResultHandlerException e) {
+		} catch (QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
 	@Override
-	public void startDocument()
-		throws QueryResultHandlerException
-	{
+	public void startDocument() throws QueryResultHandlerException {
 		if (!documentOpen) {
 			documentOpen = true;
 			headerOpen = false;
@@ -242,8 +219,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
 				// By default Jackson does not pretty print, so enable this unless
 				// PRETTY_PRINT setting is disabled
-				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
-						indenter).withObjectIndenter(indenter);
+				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
+						.withObjectIndenter(indenter);
 				jg.setPrettyPrinter(pp);
 			}
 
@@ -256,24 +233,19 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 					jg.writeRaw("(");
 				}
 				jg.writeStartObject();
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void handleStylesheet(String stylesheetUrl)
-		throws QueryResultHandlerException
-	{
+	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
 		// Ignore, as JSON does not support stylesheets
 	}
 
 	@Override
-	public void startHeader()
-		throws QueryResultHandlerException
-	{
+	public void startHeader() throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -284,17 +256,14 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeObjectFieldStart("head");
 
 				headerOpen = true;
-			}
-			catch (IOException e) {
+			} catch (IOException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
 	}
 
 	@Override
-	public void handleLinks(List<String> linkUrls)
-		throws QueryResultHandlerException
-	{
+	public void handleLinks(List<String> linkUrls) throws QueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -309,32 +278,26 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeString(nextLink);
 			}
 			jg.writeEndArray();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
 
-	protected void writeValue(Value value)
-		throws IOException, QueryResultHandlerException
-	{
+	protected void writeValue(Value value) throws IOException, QueryResultHandlerException {
 		jg.writeStartObject();
 
 		if (value instanceof IRI) {
 			jg.writeStringField("type", "uri");
-			jg.writeStringField("value", ((IRI)value).toString());
-		}
-		else if (value instanceof BNode) {
+			jg.writeStringField("value", ((IRI) value).toString());
+		} else if (value instanceof BNode) {
 			jg.writeStringField("type", "bnode");
-			jg.writeStringField("value", ((BNode)value).getID());
-		}
-		else if (value instanceof Literal) {
-			Literal lit = (Literal)value;
+			jg.writeStringField("value", ((BNode) value).getID());
+		} else if (value instanceof Literal) {
+			Literal lit = (Literal) value;
 
 			if (Literals.isLanguageLiteral(lit)) {
 				jg.writeObjectField("xml:lang", lit.getLanguage().orElse(null));
-			}
-			else {
+			} else {
 				IRI datatype = lit.getDatatype();
 				boolean ignoreDatatype = datatype.equals(XMLSchema.STRING) && xsdStringToPlainLiteral();
 				if (!ignoreDatatype) {
@@ -345,17 +308,14 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			jg.writeObjectField("type", "literal");
 
 			jg.writeObjectField("value", lit.getLabel());
-		}
-		else {
+		} else {
 			throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
 		}
 		jg.writeEndObject();
 	}
 
 	@Override
-	public void handleBoolean(boolean value)
-		throws QueryResultHandlerException
-	{
+	public void handleBoolean(boolean value) throws QueryResultHandlerException {
 		if (!documentOpen) {
 			startDocument();
 		}
@@ -375,14 +335,12 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		try {
 			if (value) {
 				jg.writeBooleanField("boolean", Boolean.TRUE);
-			}
-			else {
+			} else {
 				jg.writeBooleanField("boolean", Boolean.FALSE);
 			}
 
 			endDocument();
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
@@ -399,15 +357,11 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws QueryResultHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
 		// Ignored by SPARQLJSONWriterBase
 	}
 
-	protected void endDocument()
-		throws IOException
-	{
+	protected void endDocument() throws IOException {
 		jg.writeEndObject();
 		if (getWriterConfig().isSet(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 			jg.writeRaw(");");

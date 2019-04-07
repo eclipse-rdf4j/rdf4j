@@ -13,17 +13,16 @@ import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
 
 /**
- * This class provides utility functions for comparisons operating on <code>xml:dateTime</code> datatypes as
- * specified in <a href="http://www.w3.org/TR/xmlschema11-2/#dateTime">W3C XML Schema Definition Language
- * (XSD) 1.1 Part 2: Datatypes</a>.
+ * This class provides utility functions for comparisons operating on <code>xml:dateTime</code> datatypes as specified
+ * in <a href="http://www.w3.org/TR/xmlschema11-2/#dateTime">W3C XML Schema Definition Language (XSD) 1.1 Part 2:
+ * Datatypes</a>.
  * <p/>
- * Known deviations from the standard: - the range of years in this implementation is limited to
- * Integer.MIN_VALUE to Integer.MAX_VALUE for practical reasons.
+ * Known deviations from the standard: - the range of years in this implementation is limited to Integer.MIN_VALUE to
+ * Integer.MAX_VALUE for practical reasons.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/TR/xmlschema11-2/">W3C XML Schema Definition Language (XSD) 1.1 Part 2:
- *      Datatypes</a>
+ * @see <a href="http://www.w3.org/TR/xmlschema11-2/">W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes</a>
  */
 public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
@@ -104,10 +103,8 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Creates a new XMLDateTime object for the supplied xsd:dateTime string value.
 	 * 
-	 * @param dateTimeString
-	 *        An xsd:dateTime lexical value, for example <tt>1999-05-31T13:20:00-05:00</tt>.
-	 * @throws IllegalArgumentException
-	 *         if the supplied lexical value does not constitute a valid xsd:dateTime.
+	 * @param dateTimeString An xsd:dateTime lexical value, for example <tt>1999-05-31T13:20:00-05:00</tt>.
+	 * @throws IllegalArgumentException if the supplied lexical value does not constitute a valid xsd:dateTime.
 	 */
 	public XMLDateTime(String dateTimeString) {
 		this.dateTimeString = XMLDatatypeUtil.collapseWhiteSpace(dateTimeString);
@@ -158,8 +155,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 				hoursTimezone = st.nextToken();
 				verifyTokenValue(st.nextToken(), ":", errMsg);
 				minutesTimezone = st.nextToken();
-			}
-			else if ("Z".equals(token)) {
+			} else if ("Z".equals(token)) {
 				isNegativeTimezone = false;
 				hoursTimezone = minutesTimezone = "00";
 			}
@@ -167,8 +163,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 			if (st.hasMoreTokens()) {
 				throw new IllegalArgumentException(errMsg);
 			}
-		}
-		catch (NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			throw new IllegalArgumentException(errMsg);
 		}
 	}
@@ -201,8 +196,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 			if (minutesTimezone != null) {
 				iMinutesTimezone = Integer.parseInt(minutesTimezone);
 			}
-		}
-		catch (NumberFormatException e) {
+		} catch (NumberFormatException e) {
 			throw new IllegalArgumentException("All fields must be numbers: " + dateTimeString);
 		}
 	}
@@ -228,12 +222,10 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 		}
 		if (hoursTimezone != null) {
 			if (hoursTimezone.length() != 2) {
-				throw new IllegalArgumentException(
-						"Timezone-hours field must be two digits: " + dateTimeString);
+				throw new IllegalArgumentException("Timezone-hours field must be two digits: " + dateTimeString);
 			}
 			if (minutesTimezone.length() != 2) {
-				throw new IllegalArgumentException(
-						"Timezone-minutes field must be two digits: " + dateTimeString);
+				throw new IllegalArgumentException("Timezone-minutes field must be two digits: " + dateTimeString);
 			}
 		}
 
@@ -259,8 +251,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 				if (!isLeapYear(iYear)) {
 					throw new IllegalArgumentException("invalid dateTime value: " + dateTimeString);
 				}
-			}
-			else {
+			} else {
 				throw new IllegalArgumentException("invalid dateTime value: " + dateTimeString);
 			}
 
@@ -286,8 +277,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Checks if the supplied month is a month with exactly 30 days.
 	 * 
-	 * @param month
-	 *        the month
+	 * @param month the month
 	 * @return {@code true} iff the supplied month has exactly 30 days.
 	 */
 	private boolean is30DayMonth(int month) {
@@ -295,11 +285,10 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	}
 
 	/**
-	 * Checks if the supplied year is a leap year (one in which February 29 occurs) according to the
-	 * definition in <a href="http://www.w3.org/TR/xmlschema11-2/#dateTime">the XML Schema XSD definition</a>
+	 * Checks if the supplied year is a leap year (one in which February 29 occurs) according to the definition in
+	 * <a href="http://www.w3.org/TR/xmlschema11-2/#dateTime">the XML Schema XSD definition</a>
 	 * 
-	 * @param year
-	 *        the year.
+	 * @param year the year.
 	 * @return {@code true} if the supplied year is a leap year according to the XSD definition.
 	 */
 	private boolean isLeapYear(int year) {
@@ -336,8 +325,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 			if (isNegativeTimezone) {
 				cal.add(Calendar.HOUR_OF_DAY, iHoursTimezone);
 				cal.add(Calendar.MINUTE, iMinutesTimezone);
-			}
-			else {
+			} else {
 				cal.add(Calendar.HOUR_OF_DAY, -iHoursTimezone);
 				cal.add(Calendar.MINUTE, -iMinutesTimezone);
 			}
@@ -373,16 +361,14 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 			for (int i = fractionalSeconds.length() - 1; i >= 0; i--) {
 				if (fractionalSeconds.charAt(i) == '0') {
 					zeroCount++;
-				}
-				else {
+				} else {
 					break;
 				}
 			}
 
 			if (zeroCount == fractionalSeconds.length()) {
 				fractionalSeconds = null;
-			}
-			else if (zeroCount > 0) {
+			} else if (zeroCount > 0) {
 				fractionalSeconds = fractionalSeconds.substring(0, fractionalSeconds.length() - zeroCount);
 			}
 		}
@@ -391,8 +377,8 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	}
 
 	/**
-	 * Converts an integer to a string, enforcing the resulting string to have at least <tt>minDigits</tt>
-	 * digits by prepending zeros if it has less than that amount of digits.
+	 * Converts an integer to a string, enforcing the resulting string to have at least <tt>minDigits</tt> digits by
+	 * prepending zeros if it has less than that amount of digits.
 	 */
 	private String int2string(int iValue, int minDigits) {
 		String result = String.valueOf(iValue);
@@ -443,12 +429,10 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 		if (hoursTimezone != null) {
 			if (iHoursTimezone == 0 && iMinutesTimezone == 0) {
 				sb.append("Z");
-			}
-			else {
+			} else {
 				if (isNegativeTimezone) {
 					sb.append('-');
-				}
-				else {
+				} else {
 					sb.append('+');
 				}
 				sb.append(hoursTimezone);
@@ -463,8 +447,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Compares this DateTime object to another DateTime object.
 	 * 
-	 * @throws ClassCastException
-	 *         If <tt>other</tt> is not a DateTime object.
+	 * @throws ClassCastException If <tt>other</tt> is not a DateTime object.
 	 */
 	@Override
 	public int compareTo(XMLDateTime otherDT) {
@@ -472,43 +455,36 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 		if (thisDT.hoursTimezone != null && (thisDT.iHoursTimezone != 0 || thisDT.iMinutesTimezone != 0)) {
 			// Create a normalized copy of this DateTime object
-			thisDT = (XMLDateTime)thisDT.clone();
+			thisDT = (XMLDateTime) thisDT.clone();
 			thisDT.normalize();
 		}
 
 		if (otherDT.hoursTimezone != null && (otherDT.iHoursTimezone != 0 || otherDT.iMinutesTimezone != 0)) {
 			// Create a normalized copy of this DateTime object
-			otherDT = (XMLDateTime)otherDT.clone();
+			otherDT = (XMLDateTime) otherDT.clone();
 			otherDT.normalize();
 		}
 
 		if (thisDT.isNegativeYear && !otherDT.isNegativeYear) {
 			return -1;
-		}
-		else if (!thisDT.isNegativeYear && otherDT.isNegativeYear) {
+		} else if (!thisDT.isNegativeYear && otherDT.isNegativeYear) {
 			return 1;
 		}
 
 		int result = 0;
 		if (thisDT.iYear != otherDT.iYear) {
 			result = thisDT.iYear - otherDT.iYear;
-		}
-		else if (thisDT.iMonths != otherDT.iMonths) {
+		} else if (thisDT.iMonths != otherDT.iMonths) {
 			result = thisDT.iMonths - otherDT.iMonths;
-		}
-		else if (thisDT.iDays != otherDT.iDays) {
+		} else if (thisDT.iDays != otherDT.iDays) {
 			result = thisDT.iDays - otherDT.iDays;
-		}
-		else if (thisDT.iHours != otherDT.iHours) {
+		} else if (thisDT.iHours != otherDT.iHours) {
 			result = thisDT.iHours - otherDT.iHours;
-		}
-		else if (thisDT.iMinutes != otherDT.iMinutes) {
+		} else if (thisDT.iMinutes != otherDT.iMinutes) {
 			result = thisDT.iMinutes - otherDT.iMinutes;
-		}
-		else if (thisDT.iSeconds != otherDT.iSeconds) {
+		} else if (thisDT.iSeconds != otherDT.iSeconds) {
 			result = thisDT.iSeconds - otherDT.iSeconds;
-		}
-		else if (thisDT.iFractionalSeconds != otherDT.iFractionalSeconds) {
+		} else if (thisDT.iFractionalSeconds != otherDT.iFractionalSeconds) {
 			result = (thisDT.iFractionalSeconds < otherDT.iFractionalSeconds) ? -1 : 1;
 		}
 
@@ -525,8 +501,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	public Object clone() {
 		try {
 			return super.clone();
-		}
-		catch (CloneNotSupportedException e) {
+		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException(e);
 		}
 	}

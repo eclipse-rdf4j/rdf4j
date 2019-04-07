@@ -12,6 +12,5 @@ package org.eclipse.rdf4j.query;
  */
 public interface BooleanQuery extends Query {
 
-	public boolean evaluate()
-		throws QueryEvaluationException;
+	public boolean evaluate() throws QueryEvaluationException;
 }

@@ -13,18 +13,17 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * A logical collection of query elements. Provides common functionality for
- * elements which are collections of other elements, especially in printing.
- * Would have loved to have avoided making this public.
+ * A logical collection of query elements. Provides common functionality for elements which are collections of other
+ * elements, especially in printing. Would have loved to have avoided making this public.
  *
- * @param <T>
- *            the type of {@link QueryElement}s in the collection
+ * @param <T> the type of {@link QueryElement}s in the collection
  */
 public abstract class QueryElementCollection<T extends QueryElement> implements QueryElement {
 	protected Collection<T> elements = new LinkedHashSet<>();
 	private String delimiter = "\n";
 
-	protected QueryElementCollection() { }
+	protected QueryElementCollection() {
+	}
 
 	protected QueryElementCollection(String delimiter) {
 		this.delimiter = delimiter;
@@ -46,7 +45,7 @@ public abstract class QueryElementCollection<T extends QueryElement> implements 
 	protected void addElements(T... queryElements) {
 		Collections.addAll(elements, queryElements);
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	protected <O> void addElements(Function<? super O, ? extends T> mapper, O... os) {
 		Arrays.stream(os).map(mapper).forEach(elements::add);

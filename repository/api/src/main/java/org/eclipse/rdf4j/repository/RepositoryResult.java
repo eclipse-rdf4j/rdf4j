@@ -18,17 +18,17 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 
 /**
- * A RepositoryResult is a result collection of objects (for example {@link org.eclipse.rdf4j.model.Statement}
- * , {@link org.eclipse.rdf4j.model.Namespace}, or {@link org.eclipse.rdf4j.model.Resource} objects) that can
- * be iterated over. It keeps an open connection to the backend for lazy retrieval of individual results.
- * Additionally it has some utility methods to fetch all results and add them to a collection.
+ * A RepositoryResult is a result collection of objects (for example {@link org.eclipse.rdf4j.model.Statement} ,
+ * {@link org.eclipse.rdf4j.model.Namespace}, or {@link org.eclipse.rdf4j.model.Resource} objects) that can be iterated
+ * over. It keeps an open connection to the backend for lazy retrieval of individual results. Additionally it has some
+ * utility methods to fetch all results and add them to a collection.
  * <p>
- * By default, a RepositoryResult is not necessarily a (mathematical) set: it may contain duplicate objects.
- * Duplicate filtering can be {@link #enableDuplicateFilter() switched on}, but this should not be used
- * lightly as the filtering mechanism is potentially memory-intensive.
+ * By default, a RepositoryResult is not necessarily a (mathematical) set: it may contain duplicate objects. Duplicate
+ * filtering can be {@link #enableDuplicateFilter() switched on}, but this should not be used lightly as the filtering
+ * mechanism is potentially memory-intensive.
  * <p>
- * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open
- * connections, read locks, etc.) it has on the underlying repository.
+ * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
+ * locks, etc.) it has on the underlying repository.
  * 
  * @see RepositoryConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
  *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource[])
@@ -47,51 +47,39 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	}
 
 	@Override
-	public boolean hasNext()
-		throws RepositoryException
-	{
+	public boolean hasNext() throws RepositoryException {
 		return wrappedIter.hasNext();
 	}
 
 	@Override
-	public T next()
-		throws RepositoryException
-	{
+	public T next() throws RepositoryException {
 		return wrappedIter.next();
 	}
 
 	@Override
-	public void remove()
-		throws RepositoryException
-	{
+	public void remove() throws RepositoryException {
 		wrappedIter.remove();
 	}
 
 	@Override
-	protected void handleClose()
-		throws RepositoryException
-	{
+	protected void handleClose() throws RepositoryException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(wrappedIter);
 		}
 	}
 
 	/**
-	 * Switches on duplicate filtering while iterating over objects. The RepositoryResult will keep track of
-	 * the previously returned objects in a {@link java.util.Set} and on calling next() or hasNext() will
-	 * ignore any objects that already occur in this Set.
+	 * Switches on duplicate filtering while iterating over objects. The RepositoryResult will keep track of the
+	 * previously returned objects in a {@link java.util.Set} and on calling next() or hasNext() will ignore any objects
+	 * that already occur in this Set.
 	 * <P>
 	 * Caution: use of this filtering mechanism is potentially memory-intensive.
 	 * 
-	 * @throws RepositoryException
-	 *         if a problem occurred during initialization of the filter.
+	 * @throws RepositoryException if a problem occurred during initialization of the filter.
 	 */
-	public void enableDuplicateFilter()
-		throws RepositoryException
-	{
+	public void enableDuplicateFilter() throws RepositoryException {
 		if (wrappedIter instanceof DistinctIteration) {
 			return;
 		}
@@ -103,43 +91,36 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 * Returns a {@link List} containing all objects of this RepositoryResult in order of iteration. The
 	 * RepositoryResult is fully consumed and automatically closed by this operation.
 	 * <P>
-	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is
-	 * potentially very memory-intensive.
+	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is potentially
+	 * very memory-intensive.
 	 * 
 	 * @return a List containing all objects of this RepositoryResult.
-	 * @throws RepositoryException
-	 *         if a problem occurred during retrieval of the results.
+	 * @throws RepositoryException if a problem occurred during retrieval of the results.
 	 * @see #addTo(Collection)
 	 * @deprecated Use {@link Iterations#asList(Iteration)} instead.
 	 */
 	@Deprecated
-	public List<T> asList()
-		throws RepositoryException
-	{
+	public List<T> asList() throws RepositoryException {
 		return addTo(new ArrayList<>());
 	}
 
 	/**
-	 * Adds all objects of this RepositoryResult to the supplied collection. The RepositoryResult is fully
-	 * consumed and automatically closed by this operation.
+	 * Adds all objects of this RepositoryResult to the supplied collection. The RepositoryResult is fully consumed and
+	 * automatically closed by this operation.
 	 * 
 	 * @return A reference to the collection that was supplied.
-	 * @throws RepositoryException
-	 *         if a problem occurred during retrieval of the results.
+	 * @throws RepositoryException if a problem occurred during retrieval of the results.
 	 * @deprecated Use {@link Iterations#addAll(Iteration, Collection)} instead.
 	 */
 	@Deprecated
-	public <C extends Collection<T>> C addTo(C collection)
-		throws RepositoryException
-	{
+	public <C extends Collection<T>> C addTo(C collection) throws RepositoryException {
 		try {
 			while (hasNext()) {
 				collection.add(next());
 			}
 
 			return collection;
-		}
-		finally {
+		} finally {
 			close();
 		}
 	}

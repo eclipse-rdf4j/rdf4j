@@ -45,15 +45,14 @@ public abstract class AbstractAggregateOperator extends UnaryValueOperator imple
 		int distHash = (isDistinct() ? 1 : 0);
 		if (arg == null) {
 			return 73 + distHash;
-		}
-		else {
+		} else {
 			return arg.hashCode() + distHash;
 		}
 	}
 
 	@Override
 	public AbstractAggregateOperator clone() {
-		return (AbstractAggregateOperator)super.clone();
+		return (AbstractAggregateOperator) super.clone();
 	}
 
 }

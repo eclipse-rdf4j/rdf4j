@@ -11,9 +11,9 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 public class CustomFunction extends Expression<CustomFunction> {
-    CustomFunction(Iri functionIri) {
-        super(functionIri, ", ");
-        parenthesize();
-        setOperatorName(operator.getQueryString(), false);
-    }
+	CustomFunction(Iri functionIri) {
+		super(functionIri, ", ");
+		parenthesize();
+		setOperatorName(operator.getQueryString(), false);
+	}
 }
