@@ -49,8 +49,8 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-//@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseParallelGC" })
-@Fork(value = 1, jvmArgs = {"-Xms128M", "-Xmx128M", "-XX:+UseParallelGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseParallelGC" })
+//@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseParallelGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NativeStoreBenchmark {
@@ -171,7 +171,6 @@ public class NativeStoreBenchmark {
 
 	}
 
-
 	@Benchmark
 	public void nativeStore() throws IOException {
 
@@ -206,7 +205,7 @@ public class NativeStoreBenchmark {
 
 	}
 
-	//@Benchmark this should always run out of memory, as proof that we need the native store
+	// @Benchmark this should always run out of memory, as proof that we need the native store
 	public void memoryStore() throws IOException {
 
 		NotifyingSail shaclSail = new MemoryStore();
@@ -238,7 +237,7 @@ public class NativeStoreBenchmark {
 
 	private InputStream getFile(String s) {
 		return NativeStoreBenchmark.class.getClassLoader()
-			.getResourceAsStream(s);
+				.getResourceAsStream(s);
 	}
 
 }
