@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
@@ -44,7 +45,7 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		return shaclSailConnection.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection, null,
 				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}

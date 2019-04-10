@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
 import java.util.List;
 
@@ -19,7 +20,7 @@ import java.util.List;
 public interface PlanGenerator {
 
 	PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode);
+			PlanNodeProvider overrideTargetNode);
 
 	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			PlaneNodeWrapper planeNodeWrapper);

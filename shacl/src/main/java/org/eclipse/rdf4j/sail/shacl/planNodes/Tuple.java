@@ -32,7 +32,7 @@ public class Tuple implements Comparable<Tuple> {
 
 	public List<Value> line = new ArrayList<>(3);
 
-	private ValueComparator valueComparator = new ValueComparator();
+	static final private ValueComparator valueComparator = new ValueComparator();
 
 	public Tuple(List<Value> list) {
 		line = list;

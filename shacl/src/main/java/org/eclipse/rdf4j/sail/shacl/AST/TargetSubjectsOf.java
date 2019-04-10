@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
@@ -42,7 +43,7 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection connection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}

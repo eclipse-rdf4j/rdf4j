@@ -23,7 +23,7 @@ import java.util.List;
  *         parent iterator. This will potentially take a fair bit of memory, but maybe be useful for perfomance so that
  *         we don't query the underlying datastores for the same data multiple times.
  */
-public class BufferedSplitter {
+public class BufferedSplitter implements PlanNodeProvider {
 
 	PlanNode parent;
 	private List<Tuple> tuplesBuffer;
@@ -88,8 +88,9 @@ public class BufferedSplitter {
 
 			@Override
 			public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-				if (printed)
+				if (printed) {
 					return;
+				}
 				printed = true;
 				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 						.append("\n");
@@ -114,4 +115,5 @@ public class BufferedSplitter {
 		};
 
 	}
+
 }

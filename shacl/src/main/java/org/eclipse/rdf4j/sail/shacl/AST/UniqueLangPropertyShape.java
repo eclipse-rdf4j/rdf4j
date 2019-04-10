@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NonUniqueTargetLang;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
@@ -49,14 +50,16 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode relevantTargetsWithPath = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode,
-					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
+			PlanNode relevantTargetsWithPath = new LoggingNode(
+					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
+							shaclSailConnection, path.getQuery("?a", "?c", null), false),
+					"");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
