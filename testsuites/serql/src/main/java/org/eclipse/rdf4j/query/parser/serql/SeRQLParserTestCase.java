@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -87,7 +88,7 @@ public abstract class SeRQLParserTestCase extends TestCase {
 	protected void runTest() throws Exception {
 		// Read query from file
 		InputStream stream = url(queryFile).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
+		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		stream.close();
 
 		try {
