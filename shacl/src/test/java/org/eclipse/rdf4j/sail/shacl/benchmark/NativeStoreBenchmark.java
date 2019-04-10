@@ -47,10 +47,10 @@ import java.util.concurrent.TimeUnit;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseParallelGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms128M", "-Xmx128M", "-XX:+UseParallelGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M", "-XX:+UseParallelGC" })
+@Fork(value = 1, jvmArgs = {"-Xms128M", "-Xmx128M", "-XX:+UseParallelGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NativeStoreBenchmark {
@@ -70,7 +70,11 @@ public class NativeStoreBenchmark {
 
 		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
+		// significantly reduce required memory
 		shaclSail.setCacheSelectNodes(false);
+
+		// run validation in parallel as much as possible,
+		// this can be disabled to reduce memory load further
 		shaclSail.setParallelValidation(false);
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
@@ -79,38 +83,29 @@ public class NativeStoreBenchmark {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			System.out.println("1");
 			connection.begin(IsolationLevels.NONE);
-			try (InputStream inputStream = NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/shacl.ttl")) {
+			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			connection.commit();
-			System.out.println("2");
 
 			connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = new BufferedInputStream(NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/generated.ttl"))) {
+			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
 				connection.add(inputStream, "", RDFFormat.TURTLE);
 			}
 			connection.commit();
-
-			System.out.println("3");
 
 		}
 		shaclSail.enableValidation();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			System.out.println("HERE");
-
 			connection.begin(IsolationLevels.NONE);
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
 			connection.commit();
 
 			if (!revalidate.conforms()) {
-				System.out.println("Data is invalid");
 				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
 			}
 
@@ -123,11 +118,66 @@ public class NativeStoreBenchmark {
 	}
 
 	@Benchmark
+	public void shaclParallelNativeStore() throws IOException {
+
+		File file = Files.newTemporaryFolder();
+
+		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+
+		// significantly reduce required memory
+		shaclSail.setCacheSelectNodes(false);
+
+		// run validation in parallel as much as possible,
+		// this can be disabled to reduce memory load further
+		shaclSail.setParallelValidation(true);
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+		shaclSail.disableValidation();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
+				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+			connection.commit();
+
+			connection.begin(IsolationLevels.NONE);
+
+			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
+				connection.add(inputStream, "", RDFFormat.TURTLE);
+			}
+			connection.commit();
+
+		}
+		shaclSail.enableValidation();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+			connection.commit();
+
+			if (!revalidate.conforms()) {
+				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+			}
+
+		}
+
+		sailRepository.shutDown();
+
+		FileUtils.deleteDirectory(file);
+
+	}
+
+
+	@Benchmark
 	public void nativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
 
-		NotifyingSail shaclSail = new NativeStore(file);
+		NotifyingSail shaclSail = new NativeStore(file, "spoc,ospc,psoc");
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
@@ -136,16 +186,14 @@ public class NativeStoreBenchmark {
 
 			connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/shacl.ttl")) {
+			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			connection.commit();
 
 			connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = new BufferedInputStream(NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/generated.ttl"))) {
+			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
 				connection.add(inputStream, "", RDFFormat.TURTLE);
 			}
 			connection.commit();
@@ -158,7 +206,7 @@ public class NativeStoreBenchmark {
 
 	}
 
-	@Benchmark
+	//@Benchmark this should always run out of memory, as proof that we need the native store
 	public void memoryStore() throws IOException {
 
 		NotifyingSail shaclSail = new MemoryStore();
@@ -170,16 +218,14 @@ public class NativeStoreBenchmark {
 
 			connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/shacl.ttl")) {
+			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			connection.commit();
 
 			connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = new BufferedInputStream(NativeStoreBenchmark.class.getClassLoader()
-					.getResourceAsStream("complexBenchmark/generated.ttl"))) {
+			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
 				connection.add(inputStream, "", RDFFormat.TURTLE);
 			}
 			connection.commit();
@@ -188,6 +234,11 @@ public class NativeStoreBenchmark {
 
 		sailRepository.shutDown();
 
+	}
+
+	private InputStream getFile(String s) {
+		return NativeStoreBenchmark.class.getClassLoader()
+			.getResourceAsStream(s);
 	}
 
 }
