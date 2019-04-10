@@ -69,6 +69,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private volatile boolean txnPrepared;
 
+	private int addedCount = 0;
+
 	/**
 	 * Lock used to give the {@link #close()} method exclusive access to a connection.
 	 * <ul>
@@ -431,8 +433,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 			connectionLock.readLock().unlock();
 		}
 	}
-
-	int addedCount = 0;
 
 	@Override
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
