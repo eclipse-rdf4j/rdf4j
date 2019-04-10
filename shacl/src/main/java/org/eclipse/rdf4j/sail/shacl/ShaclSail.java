@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -176,7 +177,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private static String resourceAsString(String s) throws IOException {
-		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), "UTF-8");
+		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), StandardCharsets.UTF_8);
 	}
 
 	public ShaclSail(NotifyingSail baseSail) {

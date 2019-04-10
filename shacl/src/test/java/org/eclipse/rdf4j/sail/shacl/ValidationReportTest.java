@@ -80,7 +80,8 @@ public class ValidationReportTest {
 
 			connection.begin();
 			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader()
-					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8)).execute();
+					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8))
+					.execute();
 			connection.commit();
 
 		} catch (RepositoryException e) {
