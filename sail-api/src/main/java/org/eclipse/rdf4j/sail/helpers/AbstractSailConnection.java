@@ -7,6 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -27,17 +38,6 @@ import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Abstract Class offering base functionality for SailConnection implementations.
@@ -68,8 +68,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private volatile boolean txnActive;
 
 	private volatile boolean txnPrepared;
-
-	private int addedCount = 0;
 
 	/**
 	 * Lock used to give the {@link #close()} method exclusive access to a connection.
@@ -151,8 +149,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (level == null) {
 			level = this.sailBase.getDefaultIsolationLevel();
 		}
-
-		addedCount = 0;
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				this.sailBase.getSupportedIsolationLevels());
@@ -344,7 +340,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void flush() throws SailException {
-		addedCount = 0;
 		if (isActive()) {
 			endUpdate(null);
 			startUpdate(null);
@@ -439,14 +434,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
-
 		addStatement(null, subj, pred, obj, contexts);
-		if (transactionIsolationLevel == IsolationLevels.NONE) {
-			addedCount++;
-			if (addedCount % 10000 == 0) {
-				flushPendingUpdates();
-			}
-		}
 	}
 
 	@Override
