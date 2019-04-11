@@ -73,7 +73,11 @@ public class OrPropertyShape extends PropertyShape {
 					.collect(Collectors.toList())));
 
 		} else {
-			targetNodesToValidate = overrideTargetNode;
+			if(shaclSailConnection.sail.isCacheSelectNodes()){
+				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
+			}else {
+				targetNodesToValidate = overrideTargetNode;
+			}
 		}
 
 		List<List<PlanNode>> plannodes = or
