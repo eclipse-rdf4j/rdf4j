@@ -172,13 +172,15 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 					.append("\n");
 		}
 
-
-		if(skipBasedOnPreviousConnection){
+		if (skipBasedOnPreviousConnection) {
 			if (connection instanceof ShaclSailConnection) {
-				NotifyingSailConnection previousStateConnection = ((ShaclSailConnection) connection).getPreviousStateConnection();
+				NotifyingSailConnection previousStateConnection = ((ShaclSailConnection) connection)
+						.getPreviousStateConnection();
 
-				stringBuilder.append(System.identityHashCode(previousStateConnection) + " -> " + getId() + " [label=\"skip if not present\"]")
-					.append("\n");
+				stringBuilder
+						.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+								+ " [label=\"skip if not present\"]")
+						.append("\n");
 			}
 		}
 

@@ -1,7 +1,13 @@
+/*******************************************************************************
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -18,7 +24,6 @@ public class Formatter {
 		if (in instanceof IRI) {
 
 			String namespace = ((IRI) in).getNamespace();
-
 
 			if (namespace.equals(RDF.NAMESPACE)) {
 				return in.toString().replace(RDF.NAMESPACE, RDF.PREFIX + ":");
@@ -39,7 +44,6 @@ public class Formatter {
 		}
 
 		return in.toString();
-
 
 	}
 
