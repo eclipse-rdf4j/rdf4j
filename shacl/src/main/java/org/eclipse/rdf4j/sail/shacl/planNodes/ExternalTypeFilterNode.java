@@ -138,7 +138,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" + "filterOnType=" + Arrays.toString(filterOnType.toArray()) + '}';
+		return "ExternalTypeFilterNode{" + "filterOnType="
+				+ Arrays.toString(filterOnType.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.geosparql;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 
@@ -21,7 +22,8 @@ public abstract class GeoSPARQLManifestTest {
 	public static Test suite(SPARQLQueryTest.Factory factory) throws Exception {
 		TestSuite suite = new TestSuite(factory.getClass().getName());
 		URL manifestUrl = GeoSPARQLManifestTest.class.getResource("/testcases-geosparql/manifest.txt");
-		BufferedReader reader = new BufferedReader(new InputStreamReader(manifestUrl.openStream(), "UTF-8"));
+		BufferedReader reader = new BufferedReader(
+				new InputStreamReader(manifestUrl.openStream(), StandardCharsets.UTF_8));
 		String line;
 		while ((line = reader.readLine()) != null) {
 			URL url = new URL(manifestUrl, line);

@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
@@ -16,10 +17,12 @@ import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
@@ -32,7 +35,7 @@ public class Tuple implements Comparable<Tuple> {
 
 	public List<Value> line = new ArrayList<>(3);
 
-	private ValueComparator valueComparator = new ValueComparator();
+	static final private ValueComparator valueComparator = new ValueComparator();
 
 	public Tuple(List<Value> list) {
 		line = list;
@@ -51,7 +54,11 @@ public class Tuple implements Comparable<Tuple> {
 	}
 
 	public Tuple(BindingSet bindingset) {
-		bindingset.getBindingNames().stream().sorted().forEach(name -> line.add(bindingset.getValue(name)));
+
+		StreamSupport.stream(bindingset.spliterator(), false)
+				.sorted(Comparator.comparing(Binding::getName))
+				.map(Binding::getValue)
+				.forEachOrdered(value -> line.add(value));
 
 	}
 

@@ -146,7 +146,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByPredicate{" + "filterOnPredicates=" + Arrays.toString(filterOnPredicates.toArray())
+		return "ExternalFilterByPredicate{" + "filterOnPredicates="
+				+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray())
 				+ '}';
 	}
 

@@ -504,6 +504,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
 		}
 		addStatementInternal(subj, pred, obj, contexts);
+
 	}
 
 	@Override

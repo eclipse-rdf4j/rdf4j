@@ -126,9 +126,9 @@ public class UnorderedSelect implements PlanNode {
 	@Override
 	public String toString() {
 		return "UnorderedSelect{" +
-				"subject=" + subject +
-				", predicate=" + predicate +
-				", object=" + object +
+				"subject=" + Formatter.prefix(subject) +
+				", predicate=" + Formatter.prefix(predicate) +
+				", object=" + Formatter.prefix(object) +
 				'}';
 	}
 

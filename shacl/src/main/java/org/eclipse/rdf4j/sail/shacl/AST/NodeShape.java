@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
@@ -55,7 +56,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -83,14 +84,17 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			boolean printPlans, boolean validateEntireBaseSail) {
 
-		BufferedSplitter overrideTargetNodeBufferedSplitter;
+		PlanNodeProvider overrideTargetNodeBufferedSplitter;
 		SailConnection addedStatements;
 		SailConnection removedStatements;
 
 		if (validateEntireBaseSail) {
-			PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
-			overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
-
+			if (shaclSailConnection.sail.isCacheSelectNodes()) {
+				PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
+				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
+			} else {
+				overrideTargetNodeBufferedSplitter = () -> getPlan(shaclSailConnection, nodeShape, printPlans, null);
+			}
 			addedStatements = shaclSailConnection;
 			removedStatements = shaclSailConnection;
 		} else {
@@ -112,27 +116,14 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	private List<PlanNode> convertToPlan(List<PropertyShape> propertyShapes, ShaclSailConnection shaclSailConnection,
 			NodeShape nodeShape, boolean printPlans, boolean validateEntireBaseSail,
-			BufferedSplitter overrideTargetNodeBufferedSplitter, SailConnection addedStatements,
+			PlanNodeProvider overrideTargetNodeBufferedSplitter, SailConnection addedStatements,
 			SailConnection removedStatements) {
+
 		return propertyShapes
 				.stream()
-				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements,
-						removedStatements))
-				.map(propertyShape -> {
-					if (validateEntireBaseSail) {
-						if (shaclSailConnection.sail.isCacheSelectNodes()) {
-							PlanNode overrideTargetNode = overrideTargetNodeBufferedSplitter.getPlanNode();
-							return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
-									overrideTargetNode);
-						} else {
-							PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
-							return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
-									overrideTargetNode);
-						}
-					}
-					return propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null);
-
-				})
+				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements))
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
+						overrideTargetNodeBufferedSplitter))
 				.collect(Collectors.toList());
 	}
 

@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 
@@ -26,19 +27,21 @@ public class StandardisedPlanHelper {
 	}
 
 	static public PlanNode getGenericSingleObjectPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
-			FilterAttacher filterAttacher, PathPropertyShape pathPropertyShape, PlanNode overrideTargetNode) {
+			FilterAttacher filterAttacher, PathPropertyShape pathPropertyShape, PlanNodeProvider overrideTargetNode) {
 		if (overrideTargetNode != null) {
 
 			PlanNode planNode;
 
 			if (pathPropertyShape.path == null) {
-				planNode = new ModifyTuple(overrideTargetNode, t -> {
+				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
 					t.line.add(t.line.get(0));
 					return t;
 				});
 			} else {
-				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection,
-						pathPropertyShape.path.getQuery("?a", "?c", null), false), "");
+				planNode = new LoggingNode(
+						new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
+								pathPropertyShape.path.getQuery("?a", "?c", null), false),
+						"");
 			}
 
 			return new LoggingNode(filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class),

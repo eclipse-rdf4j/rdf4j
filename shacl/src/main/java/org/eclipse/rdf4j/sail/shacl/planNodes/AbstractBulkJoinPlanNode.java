@@ -42,7 +42,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 				connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true))) {
 			stream
 					.map(Tuple::new)
-					.forEach(right::addFirst);
+					.forEachOrdered(right::addFirst);
 		}
 
 	}

@@ -38,6 +38,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -60,10 +61,10 @@ public class ComplexBenchmark {
 		try {
 			transaction1 = IOUtils.toString(
 					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction2 = IOUtils.toString(
 					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException();

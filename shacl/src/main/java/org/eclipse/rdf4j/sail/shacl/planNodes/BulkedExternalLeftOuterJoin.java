@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
@@ -169,6 +170,18 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
 					.append("\n");
+		}
+
+		if (skipBasedOnPreviousConnection) {
+			if (connection instanceof ShaclSailConnection) {
+				NotifyingSailConnection previousStateConnection = ((ShaclSailConnection) connection)
+						.getPreviousStateConnection();
+
+				stringBuilder
+						.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+								+ " [label=\"skip if not present\"]")
+						.append("\n");
+			}
 		}
 
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");

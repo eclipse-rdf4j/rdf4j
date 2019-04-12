@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -240,7 +241,7 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 	private String readQuery() throws IOException {
 		InputStream stream = url(queryFile).openStream();
 		try {
-			return IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
+			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		} finally {
 			stream.close();
 		}

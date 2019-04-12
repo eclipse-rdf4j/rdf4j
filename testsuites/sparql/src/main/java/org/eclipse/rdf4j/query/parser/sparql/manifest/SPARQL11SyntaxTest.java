@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.JarURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -117,7 +118,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 	@Override
 	protected void runTest() throws Exception {
 		InputStream stream = new URL(queryFileURL).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
+		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		stream.close();
 
 		try {
