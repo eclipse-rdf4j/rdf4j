@@ -32,11 +32,6 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public String toString() {
-		return "Path{" + "path=" + path + '}';
-	}
-
-	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 
 		return addedStatements.hasStatement(null, path, null, false)
@@ -70,5 +65,10 @@ public class SimplePath extends Path {
 	@Override
 	public int hashCode() {
 		return Objects.hash(path);
+	}
+
+	@Override
+	public String toString() {
+		return path.toString();
 	}
 }

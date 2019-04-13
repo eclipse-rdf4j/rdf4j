@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
@@ -99,6 +99,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			Tuple next;
 			Tuple nextLeft;
 			Tuple nextRight;
+			Tuple joinedLeft;
 
 			void calculateNext() {
 				if (next != null) {
@@ -137,13 +138,14 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 						if (nextLeft.line.get(0) == nextRight.line.get(0)
 								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
+							joinedLeft = nextLeft;
 							nextRight = null;
 						} else {
 
 							int compareTo = nextLeft.compareTo(nextRight);
 
 							if (compareTo < 0) {
-								if (discardedLeft != null) {
+								if (joinedLeft != nextLeft && discardedLeft != null) {
 									if (LoggingNode.loggingEnabled) {
 										logger.info(leadingSpace() + that.getClass().getSimpleName()
 												+ ";discardedLeft: " + " " + nextLeft.toString());

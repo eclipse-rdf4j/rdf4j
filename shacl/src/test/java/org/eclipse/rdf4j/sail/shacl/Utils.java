@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -77,6 +79,13 @@ public class Utils {
 
 	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
+		sail.init();
+		Utils.loadShapeData(sail, shapeData);
+		return sail;
+	}
+
+	public static ShaclSail getInitializedShaclSailNativeStore(String shapeData) throws IOException {
+		ShaclSail sail = new ShaclSail(new NativeStore(Files.newTemporaryFolder()));
 		sail.init();
 		Utils.loadShapeData(sail, shapeData);
 		return sail;

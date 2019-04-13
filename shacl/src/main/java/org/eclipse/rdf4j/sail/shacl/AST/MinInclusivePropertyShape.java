@@ -81,4 +81,12 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), minInclusive);
 	}
+
+	@Override
+	public String toString() {
+		return "MinInclusivePropertyShape{" +
+				"minInclusive=" + minInclusive +
+				", path=" + path +
+				'}';
+	}
 }

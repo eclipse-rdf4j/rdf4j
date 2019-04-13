@@ -23,6 +23,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
@@ -35,40 +36,26 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENA
 public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public static final boolean PARALLEL_VALIDATION_DEFAULT = false;
-
 	public static final boolean UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT = false;
-
 	public static final boolean LOG_VALIDATION_PLANS_DEFAULT = false;
-
 	public static final boolean LOG_VALIDATION_VIOLATIONS_DEFAULT = false;
-
 	public static final boolean IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT = false;
-
 	public static final boolean VALIDATION_ENABLED_DEFAULT = true;
-
 	public static final boolean CACHE_SELECT_NODES_DEFAULT = true;
-
 	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
-
 	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
+	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
-
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
-
 	private boolean logValidationPlans = LOG_VALIDATION_PLANS_DEFAULT;
-
 	private boolean logValidationViolations = LOG_VALIDATION_VIOLATIONS_DEFAULT;
-
 	private boolean ignoreNoShapesLoadedException = IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
-
 	private boolean validationEnabled = VALIDATION_ENABLED_DEFAULT;
-
 	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;
-
 	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;
-
 	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
+	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -146,6 +133,14 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
 	}
 
+	public boolean isPerformanceLogging() {
+		return performanceLogging;
+	}
+
+	public void setPerformanceLogging(boolean performanceLogging) {
+		this.performanceLogging = performanceLogging;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -161,6 +156,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, CACHE_SELECT_NODES, BooleanLiteral.valueOf(isCacheSelectNodes()));
 		m.add(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
 		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
+		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
 		return implNode;
 	}
 
@@ -187,6 +183,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 					.ifPresent(l -> setGlobalLogValidationExecution(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, RDFS_SUB_CLASS_REASONING, null))
 					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
+			Models.objectLiteral(m.filter(implNode, PERFORMANCE_LOGGING, null))
+					.ifPresent(l -> setPerformanceLogging(l.booleanValue()));
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);
 		}

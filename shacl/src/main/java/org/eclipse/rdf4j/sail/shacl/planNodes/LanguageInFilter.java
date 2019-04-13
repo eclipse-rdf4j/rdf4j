@@ -11,8 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.model.Literal;
 
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 

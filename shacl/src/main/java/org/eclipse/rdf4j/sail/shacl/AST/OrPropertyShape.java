@@ -201,4 +201,11 @@ public class OrPropertyShape extends PropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), or);
 	}
+
+	@Override
+	public String toString() {
+		return "OrPropertyShape{" +
+				"or=" + toString(or) +
+				'}';
+	}
 }

@@ -82,4 +82,12 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), minExclusive);
 	}
+
+	@Override
+	public String toString() {
+		return "MinExclusivePropertyShape{" +
+				"minExclusive=" + minExclusive +
+				", path=" + path +
+				'}';
+	}
 }

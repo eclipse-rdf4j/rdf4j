@@ -103,4 +103,12 @@ public class AndPropertyShape extends PropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), and);
 	}
+
+	@Override
+	public String toString() {
+		return "AndPropertyShape{" +
+				"and=" + toString(and) +
+				'}';
+	}
+
 }
