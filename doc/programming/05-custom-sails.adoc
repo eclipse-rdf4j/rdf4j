@@ -340,6 +340,8 @@ alternative paths, inverse paths and the like are not supported.
 `sh:or` is limited to statement based restrictions, such as `sh:datatype`, or aggregate based restrictions, such as `sh:minCount`,
 but not both at the same time.
 
+Predicates that are not supported are logged at the `DEBUG` logging level.
+
 === Validation results
 
 On `commit()` the ShaclSail will validate your changes and throw an exception if there are
@@ -385,9 +387,141 @@ as a Java object with getters for accessing the report data.
 
 There is no support for `sh:severity`, all violations will trigger an exception.
 
+=== Updating SHACL Shapes
+Starting with RDF4J 3.0.0 the Shapes loaded into the ShaclSail can be updated at any time.
+Shapes can only be updated through the add and remove methods and not through SPARQL.
+Blank nodes are not recommended if you intend to update the Shapes at a later timer.
+
+==== Loading
+You can load your shapes into the ShaclSail by specifying the shapes context:
+
+[source,java]
+----
+ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+SailRepository sailRepository = new SailRepository(shaclSail);
+sailRepository.init();
+
+try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+        StringReader shaclRules = new StringReader(String.join("\n", "",
+        		"@prefix ex: <http://example.com/ns#> .",
+        		"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+        		"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+        		"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+        		"ex:PersonShape",
+        		"        a sh:NodeShape  ;",
+        		"        sh:targetClass ex:Person ;",
+        		"        sh:property [",
+        		"                sh:path ex:age ;",
+        		"                sh:minCount 1 ;",
+        		"        ] ."));
+
+        connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+}
+----
+
+
+==== Clearing
+You can clear the loaded shapes by calling `clear` or `remove`.
+[source,java]
+----
+ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+SailRepository sailRepository = new SailRepository(shaclSail);
+sailRepository.init();
+
+try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+        connection.remove((Resource) null, null, null, RDF4J.SHACL_SHAPE_GRAPH);
+        // OR //
+        connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+}
+----
+
+==== Modifying
+To modify shapes there is the option of calling `remove` with the statements that you want to remove
+and then add the updated statements, or clearing all the shapes and re-adding the updated shapes.
+As long as clearing and added are done in a single transaction only the modified shapes will be re-validated.
+
+==== Recommendations
+ - Do not use blank nodes
+ - Add/remove/update shapes in a single transaction
+ - Do not add/remove/update any other data in the same transaction
+
+==== Automatic re-validation
+To make sure the ShaclSail stays consistent, any modifications to the shapes will trigger a re-validation of all
+data currently in the underlying sail. This is a fairly costly procedure and could easily take
+5 seconds per 100 000 statements and require fairly large amounts of memory. To reduce the amount of memory used
+you can set `shaclSail.setCacheSelectNodes(false)`.
+
+The ShaclSail will attempt to detect which shapes were modified so only those shapes get re-validated.
+
+==== Limitations
+It is not possible to use SPARQL to update the shapes at the moment.
+
+=== Validating large datasets
+Datasets that do not fit in memory can be loaded into a NativeStore backed ShaclSail while validation is disabled.
+To validate the data you can call the `revalidate()` method.
+
+[source,java]
+----
+ShaclSail shaclSail = new ShaclSail(new NativeStore(file,"spoc,ospc,psoc"));
+
+// significantly reduce required memory
+shaclSail.setCacheSelectNodes(false);
+
+// run validation in parallel as much as possible,
+// this can be disabled to reduce memory load further
+shaclSail.setParallelValidation(true);
+
+SailRepository sailRepository = new SailRepository(shaclSail);
+sailRepository.init();
+
+// disable validation before .getConnection()
+shaclSail.disableValidation();
+
+try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+        // load shapes
+	connection.begin(IsolationLevels.NONE);
+	try (InputStream inputStream = ...) {
+		connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+	}
+	connection.commit();
+
+        // load data
+	connection.begin(IsolationLevels.NONE);
+	try (InputStream inputStream = new BufferedInputStream(...)) {
+		connection.add(inputStream, "", RDFFormat.TURTLE);
+	}
+	connection.commit();
+
+}
+
+shaclSail.enableValidation();
+
+try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+        // validate all the data against the shapes
+	connection.begin(IsolationLevels.NONE);
+	ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+	connection.commit();
+
+        // print validation errors
+	if (!revalidate.conforms()) {
+		System.out.println("Data is invalid");
+		Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+	}
+
+}
+
+
+----
+
+
+
 === Logging and debugging
 
-By default there is no logging enabled in the ShaclSail. There are three methods for enabling
+By default there is very little logging enabled in the ShaclSail. There are three methods for enabling
 logging:
 
  - `shaclSail.setLogValidationPlans(true);`
@@ -397,6 +531,8 @@ logging:
 All these will log as `INFO`.
 
 First step to debugging and understanding an unexpected violation is to enable `shaclSail.setLogValidationViolations(true);`.
+
+Logging for unsupported SHACL features and for internal processes in the SHACL sail are logged at `DEBUG`.
 
 ==== Log validation plans
 
