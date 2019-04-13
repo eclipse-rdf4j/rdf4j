@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
@@ -124,5 +125,12 @@ public class TargetNode extends NodeShape {
 	@Override
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), targetNodeSet);
+	}
+
+	@Override
+	public String toString() {
+		return "TargetNode{" +
+				"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
+				'}';
 	}
 }

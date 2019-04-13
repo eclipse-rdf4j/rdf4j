@@ -50,11 +50,6 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public String toString() {
-		return "MaxCountPropertyShape{" + "maxCount=" + maxCount + '}';
-	}
-
-	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
@@ -153,5 +148,13 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	@Override
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), maxCount);
+	}
+
+	@Override
+	public String toString() {
+		return "MaxCountPropertyShape{" +
+				"maxCount=" + maxCount +
+				", path=" + path +
+				'}';
 	}
 }

@@ -49,7 +49,10 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code> */
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
 
-	private static final IRI create(String localName) {
+	/** <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code> */
+	public final static IRI PERFORMANCE_LOGGING = create("performanceLogging");
+
+	private static IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
 	}
 

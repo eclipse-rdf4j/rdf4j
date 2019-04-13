@@ -83,4 +83,13 @@ public class PatternPropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), pattern, flags);
 	}
+
+	@Override
+	public String toString() {
+		return "PatternPropertyShape{" +
+				"pattern='" + pattern + '\'' +
+				", flags='" + flags + '\'' +
+				", path=" + path +
+				'}';
+	}
 }

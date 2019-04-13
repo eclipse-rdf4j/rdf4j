@@ -146,4 +146,12 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), uniqueLang);
 	}
+
+	@Override
+	public String toString() {
+		return "UniqueLangPropertyShape{" +
+				"uniqueLang=" + uniqueLang +
+				", path=" + path +
+				'}';
+	}
 }

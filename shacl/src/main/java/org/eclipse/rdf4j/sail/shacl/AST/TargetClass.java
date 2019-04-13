@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -142,5 +143,12 @@ public class TargetClass extends NodeShape {
 	@Override
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), targetClass);
+	}
+
+	@Override
+	public String toString() {
+		return "TargetClass{" +
+				"targetClass=" + Arrays.asList(targetClass.toArray()) +
+				'}';
 	}
 }

@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.ValueInFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -82,5 +83,13 @@ public class InPropertyShape extends PathPropertyShape {
 	@Override
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), in);
+	}
+
+	@Override
+	public String toString() {
+		return "InPropertyShape{" +
+				"in=" + Arrays.toString(in.toArray()) +
+				", path=" + path +
+				'}';
 	}
 }

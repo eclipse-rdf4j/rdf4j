@@ -260,4 +260,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), classResource);
 	}
+
+	@Override
+	public String toString() {
+		return "ClassPropertyShape{" +
+				"classResource=" + classResource +
+				", path=" + path +
+				'}';
+	}
 }

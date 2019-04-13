@@ -80,4 +80,12 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), datatype);
 	}
+
+	@Override
+	public String toString() {
+		return "DatatypePropertyShape{" +
+				"datatype=" + datatype +
+				", path=" + path +
+				'}';
+	}
 }

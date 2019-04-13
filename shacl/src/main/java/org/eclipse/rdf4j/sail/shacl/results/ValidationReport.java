@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class ValidationReport implements ModelInterface {
@@ -66,5 +67,13 @@ public class ValidationReport implements ModelInterface {
 	 */
 	public List<ValidationResult> getValidationResult() {
 		return validationResult;
+	}
+
+	@Override
+	public String toString() {
+		return "ValidationReport{" +
+				"conforms=" + conforms +
+				", validationResult=" + Arrays.toString(validationResult.toArray()) +
+				'}';
 	}
 }

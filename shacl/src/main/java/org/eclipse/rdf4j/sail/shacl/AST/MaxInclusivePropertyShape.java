@@ -82,4 +82,12 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	public int hashCode() {
 		return Objects.hash(super.hashCode(), maxInclusive);
 	}
+
+	@Override
+	public String toString() {
+		return "MaxInclusivePropertyShape{" +
+				"maxInclusive=" + maxInclusive +
+				", path=" + path +
+				'}';
+	}
 }

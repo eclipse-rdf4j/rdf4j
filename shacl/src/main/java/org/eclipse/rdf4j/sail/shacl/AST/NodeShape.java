@@ -215,4 +215,5 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public int hashCode() {
 		return Objects.hash(id, propertyShapes, nodeShapes);
 	}
+
 }
