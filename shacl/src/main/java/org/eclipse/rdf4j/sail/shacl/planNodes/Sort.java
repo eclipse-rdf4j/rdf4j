@@ -59,16 +59,17 @@ public class Sort implements PlanNode {
 					while (iterator.hasNext()) {
 						Tuple next = iterator.next();
 						sortedTuples.add(next);
-						if(prev != null && valueComparator.compare(prev.line.get(0), next.line.get(0)) > 0){
+						if (prev != null && valueComparator.compare(prev.line.get(0), next.line.get(0)) > 0) {
 							alreadySorted = false;
 						}
 						prev = next;
 					}
 
-					if(!alreadySorted && sortedTuples.size() > 1) {
+					if (!alreadySorted && sortedTuples.size() > 1) {
 						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
 							Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
-							Arrays.parallelSort(objects, (a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+							Arrays.parallelSort(objects,
+									(a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
 							sortedTuples = Arrays.asList(objects);
 						} else {
 							sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
