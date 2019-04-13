@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -146,7 +146,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByPredicate{" + "filterOnPredicates=" + Arrays.toString(filterOnPredicates.toArray())
+		return "ExternalFilterByPredicate{" + "filterOnPredicates="
+				+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray())
 				+ '}';
 	}
 

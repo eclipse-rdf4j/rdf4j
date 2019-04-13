@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -172,7 +173,7 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	public NativeValue getValue(int id) throws IOException {
 		// Check value cache
-		Integer cacheID = new Integer(id);
+		Integer cacheID = id;
 		NativeValue resultValue = valueCache.get(cacheID);
 
 		if (resultValue == null) {
@@ -310,7 +311,7 @@ public class ValueStore extends AbstractValueFactory {
 		nv.setInternalID(id, revision);
 
 		// Update cache
-		valueIDCache.put(nv, new Integer(id));
+		valueIDCache.put(nv, id);
 
 		return id;
 	}
@@ -338,9 +339,7 @@ public class ValueStore extends AbstractValueFactory {
 				writeLock.release();
 			}
 		} catch (InterruptedException e) {
-			IOException ioe = new IOException("Failed to acquire write lock");
-			ioe.initCause(e);
-			throw ioe;
+			throw new IOException("Failed to acquire write lock", e);
 		}
 	}
 
@@ -443,7 +442,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		// Get local name in UTF-8
-		byte[] localNameData = uri.getLocalName().getBytes("UTF-8");
+		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
 		byte[] uriData = new byte[5 + localNameData.length];
@@ -455,7 +454,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] bnode2data(BNode bNode, boolean create) throws IOException {
-		byte[] idData = bNode.getID().getBytes("UTF-8");
+		byte[] idData = bNode.getID().getBytes(StandardCharsets.UTF_8);
 
 		byte[] bNodeData = new byte[1 + idData.length];
 		bNodeData[0] = BNODE_VALUE;
@@ -495,12 +494,12 @@ public class ValueStore extends AbstractValueFactory {
 		byte[] langData = null;
 		int langDataLength = 0;
 		if (lang.isPresent()) {
-			langData = lang.get().getBytes("UTF-8");
+			langData = lang.get().getBytes(StandardCharsets.UTF_8);
 			langDataLength = langData.length;
 		}
 
 		// Get label in UTF-8
-		byte[] labelData = label.getBytes("UTF-8");
+		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
 		byte[] literalData = new byte[6 + langDataLength + labelData.length];
@@ -536,13 +535,13 @@ public class ValueStore extends AbstractValueFactory {
 		int nsID = ByteArrayUtil.getInt(data, 1);
 		String namespace = getNamespace(nsID);
 
-		String localName = new String(data, 5, data.length - 5, "UTF-8");
+		String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
 
 		return new NativeIRI(revision, namespace, localName, id);
 	}
 
 	private NativeBNode data2bnode(int id, byte[] data) throws IOException {
-		String nodeID = new String(data, 1, data.length - 1, "UTF-8");
+		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		return new NativeBNode(revision, nodeID, id);
 	}
 
@@ -558,11 +557,11 @@ public class ValueStore extends AbstractValueFactory {
 		String lang = null;
 		int langLength = data[5];
 		if (langLength > 0) {
-			lang = new String(data, 6, langLength, "UTF-8");
+			lang = new String(data, 6, langLength, StandardCharsets.UTF_8);
 		}
 
 		// Get label
-		String label = new String(data, 6 + langLength, data.length - 6 - langLength, "UTF-8");
+		String label = new String(data, 6 + langLength, data.length - 6 - langLength, StandardCharsets.UTF_8);
 
 		if (lang != null) {
 			return new NativeLiteral(revision, label, lang, id);
@@ -574,16 +573,16 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private String data2namespace(byte[] data) throws UnsupportedEncodingException {
-		return new String(data, "UTF-8");
+		return new String(data, StandardCharsets.UTF_8);
 	}
 
 	private int getNamespaceID(String namespace, boolean create) throws IOException {
 		Integer cacheID = namespaceIDCache.get(namespace);
 		if (cacheID != null) {
-			return cacheID.intValue();
+			return cacheID;
 		}
 
-		byte[] namespaceData = namespace.getBytes("UTF-8");
+		byte[] namespaceData = namespace.getBytes(StandardCharsets.UTF_8);
 
 		int id;
 		if (create) {
@@ -593,14 +592,14 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		if (id != -1) {
-			namespaceIDCache.put(namespace, new Integer(id));
+			namespaceIDCache.put(namespace, id);
 		}
 
 		return id;
 	}
 
 	private String getNamespace(int id) throws IOException {
-		Integer cacheID = new Integer(id);
+		Integer cacheID = id;
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {

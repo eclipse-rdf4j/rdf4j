@@ -1,0 +1,7 @@
+# Input file for SeRQL CfwQuery test
+# description: query with optional match in path. 
+<http://example.org/A> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Foo>.
+<http://example.org/B> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Foo>.
+<http://example.org/A> <http://example.org/propA> "Foo".
+<http://example.org/A> <http://example.org/propB> "Bar".
+<http://example.org/B> <http://example.org/propB> "Baz".

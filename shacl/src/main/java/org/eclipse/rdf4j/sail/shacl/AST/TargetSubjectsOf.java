@@ -18,10 +18,13 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -41,7 +44,7 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection connection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}
@@ -107,4 +110,30 @@ public class TargetSubjectsOf extends NodeShape {
 				ExternalFilterByPredicate.On.Subject);
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		TargetSubjectsOf that = (TargetSubjectsOf) o;
+		return targetSubjectsOf.equals(that.targetSubjectsOf);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), targetSubjectsOf);
+	}
+
+	@Override
+	public String toString() {
+		return "TargetSubjectsOf{" +
+				"targetSubjectsOf=" + Arrays.toString(targetSubjectsOf.toArray()) +
+				'}';
+	}
 }

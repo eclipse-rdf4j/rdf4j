@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
@@ -36,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -54,7 +56,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 
 		if (deactivated) {
 			return null;
@@ -66,14 +68,16 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode planNode;
 
 			if (path == null) {
-				planNode = new ModifyTuple(overrideTargetNode, t -> {
+				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
 					t.line.add(t.line.get(0));
 					return t;
 				});
 
 			} else {
-				planNode = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection,
-						path.getQuery("?a", "?c", null), false), "");
+				planNode = new LoggingNode(
+						new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
+								path.getQuery("?a", "?c", null), false),
+						"");
 			}
 
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in
@@ -201,7 +205,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 						new BulkedExternalInnerJoin(removedTypeStatements, shaclSailConnection, query, false), ""),
 						t -> {
 							List<Value> line = t.line;
-							t.line = new ArrayList<>();
+							t.line = new ArrayList<>(2);
 							t.line.add(line.get(2));
 							t.line.add(line.get(0));
 
@@ -235,5 +239,33 @@ public class ClassPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.ClassConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		ClassPropertyShape that = (ClassPropertyShape) o;
+		return classResource.equals(that.classResource);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), classResource);
+	}
+
+	@Override
+	public String toString() {
+		return "ClassPropertyShape{" +
+				"classResource=" + classResource +
+				", path=" + path +
+				'}';
 	}
 }

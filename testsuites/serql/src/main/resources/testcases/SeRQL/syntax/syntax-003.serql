@@ -1,0 +1,4 @@
+SELECT
+  S, O
+FROM
+  {S} <http://example.org/property> {O}

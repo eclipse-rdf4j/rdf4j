@@ -1,0 +1,1 @@
+<foo:subj> <foo:predA> "A" .

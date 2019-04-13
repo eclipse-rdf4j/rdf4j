@@ -19,11 +19,14 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -43,7 +46,7 @@ public class TargetNode extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection,
 				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
 		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
@@ -104,4 +107,30 @@ public class TargetNode extends NodeShape {
 		return new LoggingNode(new SetFilterNode(targetNodeSet, parent, 0, true), "targetNode filter");
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		TargetNode that = (TargetNode) o;
+		return targetNodeSet.equals(that.targetNodeSet);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), targetNodeSet);
+	}
+
+	@Override
+	public String toString() {
+		return "TargetNode{" +
+				"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
+				'}';
+	}
 }

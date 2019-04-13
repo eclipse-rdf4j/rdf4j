@@ -18,12 +18,15 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a sh:minCount property nodeShape restriction.
@@ -48,19 +51,14 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public String toString() {
-		return "MinCountPropertyShape{" + "minCount=" + minCount + '}';
-	}
-
-	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
 
 		if (overrideTargetNode != null) {
-			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode,
+			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode.getPlanNode(),
 					shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
 
@@ -147,5 +145,33 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MinCountConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MinCountPropertyShape that = (MinCountPropertyShape) o;
+		return minCount == that.minCount;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), minCount);
+	}
+
+	@Override
+	public String toString() {
+		return "MinCountPropertyShape{" +
+				"minCount=" + minCount +
+				", path=" + path +
+				'}';
 	}
 }

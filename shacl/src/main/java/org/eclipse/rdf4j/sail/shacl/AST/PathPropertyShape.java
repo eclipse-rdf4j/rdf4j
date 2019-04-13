@@ -14,11 +14,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
@@ -43,7 +45,7 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		return shaclSailConnection.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection, null,
 				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}
@@ -92,5 +94,25 @@ public class PathPropertyShape extends PropertyShape {
 
 	public Path getPath() {
 		return path;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		PathPropertyShape that = (PathPropertyShape) o;
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), path);
 	}
 }

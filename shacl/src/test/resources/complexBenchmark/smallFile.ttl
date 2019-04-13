@@ -1,0 +1,197 @@
+@prefix sh: <http://www.w3.org/ns/shacl#>.
+@prefix schema: <http://schema.org/> .
+@prefix spdx:  <http://spdx.org/rdf/terms#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix adms:  <http://www.w3.org/ns/adms#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix vcard: <http://www.w3.org/2006/vcard/ns#> .
+@prefix dcat:  <http://www.w3.org/ns/dcat#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<https://data.some.org/catalog661211bb-8001-464b-a9d5-44abacd591e0>
+  a dcat:Catalog ;
+  dct:identifier "https://data.some.org/catalog661211bb-8001-464b-a9d5-44abacd591e0" ;
+  dct:title "An example catalog" ;
+  dct:description "A longer description of what the catalog is, who maintains it, etc. Special characters should be properly handed (if the file is utf8 encoded), for instance for catalogs from Sant Adrià." ;
+  dct:issued "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:modified "2013-05-22T09:38:45Z"^^xsd:dateTime ;
+  dct:language "en" ;
+  foaf:homepage <https://data.some.org/the/actual/catalog> ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dcat:dataset <https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a>, <https://data.some.org/catalog/datasets/2a0e394dd-5db3-40b2-9bfb-839bf72554fe> .
+
+<https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a>
+  a dcat:Dataset ;
+  dct:identifier "https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a" ;
+  dct:title "Example dataset 1" ;
+  dct:description "A longer description of dataset 1: includes three distributions, a CSV file, a PDF file and an API. Some special characters: Θεσσαλονίκη." ;
+  dcat:keyword "stats", "pollution" ;
+  dct:issued "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:modified "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:language "en" ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dct:subject <https://data.some.org/link/subject> ;
+  dct:publisher [
+    a foaf:Organization ;
+    foaf:name "Publishing Organization for dataset 1" ;
+    foaf:mbox "contact@some.org"
+  ] ;
+  dcat:distribution [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a/distribution/1" ;
+    dct:title "A distribution for this dataset in CSV format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/1/resources/1.csv> ;
+    dcat:mediaType "text/csv" ;
+    dct:license <https://data.some.org/link/to/license>
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a/distribution/2" ;
+    dct:title "A distribution for this dataset in PDF format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/1/resources/2.pdf> ;
+    dct:format [
+      a dct:IMT ;
+      rdf:value "application/pdf"
+    ] ;
+    dct:license <https://data.some.org/link/to/license>
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/113f3c759-8c56-4b97-a4b3-d6c88588fe3a/distribution/3" ;
+    dct:title "A distribution for this dataset as an API" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:accessURL <https://data.some.org/the/actual/catalog/link/to/an/api>
+  ] .
+
+<https://data.some.org/catalog/datasets/2a0e394dd-5db3-40b2-9bfb-839bf72554fe>
+  a dcat:Dataset ;
+  dct:identifier "https://data.some.org/catalog/datasets/2a0e394dd-5db3-40b2-9bfb-839bf72554fe" ;
+  dct:title "Example dataset 2" ;
+  dct:description "A longer description of dataset 2: with two distributions, a website and a PDF file. Some special characters: Łódź" ;
+  dcat:keyword "stats", "education", "sloths" ;
+  dct:issued "2012-06-21"^^xsd:date ;
+  dct:modified "2013-04-01"^^xsd:date ;
+  dct:subject <https://data.some.org/link/subject> ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dct:language "en" ;
+  dct:publisher [
+    a foaf:Organization ;
+    foaf:name "Publishing Organization for dataset 2" ;
+    foaf:mbox "contact@another.org"
+  ] ;
+  dcat:distribution [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/2a0e394dd-5db3-40b2-9bfb-839bf72554fe/distribution/1" ;
+    dct:title "A distribution for this dataset as an external website" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://external.site.org/> ;
+
+    dct:format "html"
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/2a0e394dd-5db3-40b2-9bfb-839bf72554fe/distribution/2" ;
+    dct:title "A distribution for this dataset in PDF format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/2/resources/2.pdf> ;
+
+    dct:format [
+      a dct:IMT ;
+      rdf:value "application/pdf"
+    ]
+  ] .
+<https://data.some.org/cataloge054e199-8db5-4861-9a6e-f2a661b3cbc0>
+  a dcat:Catalog ;
+  dct:identifier "https://data.some.org/cataloge054e199-8db5-4861-9a6e-f2a661b3cbc0" ;
+  dct:title "An example catalog" ;
+  dct:description "A longer description of what the catalog is, who maintains it, etc. Special characters should be properly handed (if the file is utf8 encoded), for instance for catalogs from Sant Adrià." ;
+  dct:issued "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:modified "2013-05-22T09:38:45Z"^^xsd:dateTime ;
+  dct:language "en" ;
+  foaf:homepage <https://data.some.org/the/actual/catalog> ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dcat:dataset <https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3>, <https://data.some.org/catalog/datasets/2f0cc41d3-e69c-4385-be2e-397077e4097f> .
+
+<https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3>
+  a dcat:Dataset ;
+  dct:identifier "https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3" ;
+  dct:title "Example dataset 1" ;
+  dct:description "A longer description of dataset 1: includes three distributions, a CSV file, a PDF file and an API. Some special characters: Θεσσαλονίκη." ;
+  dcat:keyword "stats", "pollution" ;
+  dct:issued "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:modified "2013-04-26T00:00:00Z"^^xsd:dateTime ;
+  dct:language "en" ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dct:subject <https://data.some.org/link/subject> ;
+  dct:publisher [
+    a foaf:Organization ;
+    foaf:name "Publishing Organization for dataset 1" ;
+    foaf:mbox "contact@some.org"
+  ] ;
+  dcat:distribution [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3/distribution/1" ;
+    dct:title "A distribution for this dataset in CSV format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/1/resources/1.csv> ;
+    dcat:mediaType "text/csv" ;
+    dct:license <https://data.some.org/link/to/license>
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3/distribution/2" ;
+    dct:title "A distribution for this dataset in PDF format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/1/resources/2.pdf> ;
+    dct:format [
+      a dct:IMT ;
+      rdf:value "application/pdf"
+    ] ;
+    dct:license <https://data.some.org/link/to/license>
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/10ab51170-70fc-48f6-b27e-3195e89cc1f3/distribution/3" ;
+    dct:title "A distribution for this dataset as an API" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:accessURL <https://data.some.org/the/actual/catalog/link/to/an/api>
+  ] .
+
+<https://data.some.org/catalog/datasets/2f0cc41d3-e69c-4385-be2e-397077e4097f>
+  a dcat:Dataset ;
+  dct:identifier "https://data.some.org/catalog/datasets/2f0cc41d3-e69c-4385-be2e-397077e4097f" ;
+  dct:title "Example dataset 2" ;
+  dct:description "A longer description of dataset 2: with two distributions, a website and a PDF file. Some special characters: Łódź" ;
+  dcat:keyword "stats", "education", "sloths" ;
+  dct:issued "2012-06-21"^^xsd:date ;
+  dct:modified "2013-04-01"^^xsd:date ;
+  dct:subject <https://data.some.org/link/subject> ;
+  dct:license <https://data.some.org/link/to/license> ;
+  dct:language "en" ;
+  dct:publisher [
+    a foaf:Organization ;
+    foaf:name "Publishing Organization for dataset 2" ;
+    foaf:mbox "contact@another.org"
+  ] ;
+  dcat:distribution [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/2f0cc41d3-e69c-4385-be2e-397077e4097f/distribution/1" ;
+    dct:title "A distribution for this dataset as an external website" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://external.site.org/> ;
+
+    dct:format "html"
+  ], [
+    a dcat:Distribution ;
+    dct:identifier "https://data.some.org/catalog/datasets/2f0cc41d3-e69c-4385-be2e-397077e4097f/distribution/2" ;
+    dct:title "A distribution for this dataset in PDF format" ;
+    dct:description "A longer description for the distribution" ;
+    dcat:downloadURL <https://data.some.org/the/actual/catalog/datasets/2/resources/2.pdf> ;
+
+    dct:format [
+      a dct:IMT ;
+      rdf:value "application/pdf"
+    ]
+  ] .

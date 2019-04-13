@@ -15,11 +15,12 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
-import java.util.List;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -41,7 +42,7 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
@@ -61,5 +62,33 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.LanguageInConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		LanguageInPropertyShape that = (LanguageInPropertyShape) o;
+		return languageIn.equals(that.languageIn);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), languageIn);
+	}
+
+	@Override
+	public String toString() {
+		return "LanguageInPropertyShape{" +
+				"languageIn=" + Arrays.toString(languageIn.toArray()) +
+				", path=" + path +
+				'}';
 	}
 }

@@ -1,0 +1,5 @@
+CONSTRUCT
+  *
+FROM
+  {X} <http://example.org/propA> {} <http://example.org/propC> {"Hello World!"}; 
+                                    <http://example.org/propB> {<http://example.org/C>}

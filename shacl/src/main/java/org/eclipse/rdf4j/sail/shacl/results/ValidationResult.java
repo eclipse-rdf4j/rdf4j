@@ -124,4 +124,15 @@ public class ValidationResult implements ModelInterface {
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return sourceConstraintComponent;
 	}
+
+	@Override
+	public String toString() {
+		return "ValidationResult{" +
+				"sourceConstraintComponent=" + sourceConstraintComponent +
+				", sourceShape=" + sourceShape +
+				", path=" + path +
+				", detail=" + detail +
+				", focusNode=" + focusNode +
+				'}';
+	}
 }

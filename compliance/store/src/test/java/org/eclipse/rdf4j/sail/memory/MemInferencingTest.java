@@ -12,12 +12,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 
 public class MemInferencingTest extends InferencingTest {
 
 	@Override
 	protected Repository createRepository() {
-		Sail sailStack = new ForwardChainingRDFSInferencer(new MemoryStore());
+		Sail sailStack = new SchemaCachingRDFSInferencer(new MemoryStore());
 		return new SailRepository(sailStack);
 	}
 }

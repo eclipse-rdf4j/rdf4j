@@ -14,8 +14,11 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -38,7 +41,7 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
@@ -58,5 +61,35 @@ public class PatternPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.PatternConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		PatternPropertyShape that = (PatternPropertyShape) o;
+		return pattern.equals(that.pattern) &&
+				Objects.equals(flags, that.flags);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), pattern, flags);
+	}
+
+	@Override
+	public String toString() {
+		return "PatternPropertyShape{" +
+				"pattern='" + pattern + '\'' +
+				", flags='" + flags + '\'' +
+				", path=" + path +
+				'}';
 	}
 }

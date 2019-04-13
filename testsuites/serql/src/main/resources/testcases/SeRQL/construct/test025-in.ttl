@@ -1,0 +1,3 @@
+# Input file for SeRQL CfwQuery test
+
+<http://www.example.org/A> <http://example.org/propB> "liter\"al" .

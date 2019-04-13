@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -51,7 +52,7 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
@@ -64,7 +65,7 @@ public class OrPropertyShape extends PropertyShape {
 				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
-		BufferedSplitter targetNodesToValidate;
+		PlanNodeProvider targetNodesToValidate;
 		if (overrideTargetNode == null) {
 			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
 					.flatMap(Collection::stream)
@@ -72,7 +73,11 @@ public class OrPropertyShape extends PropertyShape {
 					.collect(Collectors.toList())));
 
 		} else {
-			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
+			if (shaclSailConnection.sail.isCacheSelectNodes()) {
+				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
+			} else {
+				targetNodesToValidate = overrideTargetNode;
+			}
 		}
 
 		List<List<PlanNode>> plannodes = or
@@ -84,7 +89,7 @@ public class OrPropertyShape extends PropertyShape {
 								return shape.getPlan(shaclSailConnection, nodeShape, false, null);
 							}
 							return shape.getPlan(shaclSailConnection, nodeShape, false,
-									new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+									targetNodesToValidate);
 						})
 						.filter(Objects::nonNull)
 						.collect(Collectors.toList()))
@@ -175,5 +180,32 @@ public class OrPropertyShape extends PropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.OrConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		OrPropertyShape that = (OrPropertyShape) o;
+		return or.equals(that.or);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), or);
+	}
+
+	@Override
+	public String toString() {
+		return "OrPropertyShape{" +
+				"or=" + toString(or) +
+				'}';
 	}
 }

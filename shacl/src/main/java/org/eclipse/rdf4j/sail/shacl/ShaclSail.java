@@ -11,14 +11,17 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -30,9 +33,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.locks.StampedLock;
 
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
@@ -40,7 +45,7 @@ import java.util.List;
  * The ShaclSail looks for SHACL shape data in a special named graph {@link RDF4J#SHACL_SHAPE_GRAPH}.
  * <h4>Working example</h4>
  * <p>
- * 
+ *
  * <pre>
  * import ch.qos.logback.classic.Level;
  * import ch.qos.logback.classic.Logger;
@@ -143,6 +148,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	private SailRepository shapesRepo;
 
+	// exclusive lock for modifying the shapes.
+	private final StampedLock lock = new StampedLock();
+	transient private Thread threadHoldingWriteLock;
+
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
@@ -151,8 +160,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
-
-	private boolean initializing = false;
+	private boolean performanceLogging = false;
 
 	static {
 		try {
@@ -170,7 +178,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private static String resourceAsString(String s) throws IOException {
-		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), "UTF-8");
+		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), StandardCharsets.UTF_8);
 	}
 
 	public ShaclSail(NotifyingSail baseSail) {
@@ -219,7 +227,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public void initialize() throws SailException {
-		initializing = true;
 		super.initialize();
 
 		if (getDataDir() != null) {
@@ -251,31 +258,32 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.NONE);
-			refreshShapes(shapesRepoConnection);
+			nodeShapes = refreshShapes(shapesRepoConnection);
 			shapesRepoConnection.commit();
 		}
-		initializing = false;
 
 	}
 
-	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
-		if (!initializing) {
-			try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
-				boolean empty = !beforeCommitConnection.hasStatement(null, null, null, false);
-				if (!empty) {
-					// Our inferencer both adds and removes statements.
-					// To support updates I recommend having two graphs, one raw one with the unmodified data.
-					// Then copy all that data into a new graph, run inferencing on that graph and use it to generate
-					// the java objects
-					throw new IllegalStateException(
-							"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
-				}
+	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
+
+		SailRepository shapesRepoCache = new SailRepository(new MemoryStore());
+		shapesRepoCache.init();
+		List<NodeShape> shapes;
+
+		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
+			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+				shapesRepoCacheConnection.add(statements);
 			}
+
+			runInferencingSparqlQueries(shapesRepoCacheConnection);
+			shapesRepoCacheConnection.commit();
+
+			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
 		}
 
-		runInferencingSparqlQueries(shapesRepoConnection);
-		nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection, this);
-		return nodeShapes;
+		shapesRepoCache.shutDown();
+		return shapes;
 	}
 
 	@Override
@@ -290,61 +298,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
 		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
-	}
-
-	/**
-	 * Disable the SHACL validation on commit()
-	 */
-	public void disableValidation() {
-		this.validationEnabled = false;
-	}
-
-	/**
-	 * Enabled the SHACL validation on commit()
-	 */
-	public void enableValidation() {
-		this.validationEnabled = true;
-	}
-
-	/**
-	 * Check if SHACL validation on commit() is enabled.
-	 *
-	 * @return <code>true</code> if validation is enabled, <code>false</code> otherwise.
-	 */
-	public boolean isValidationEnabled() {
-		return validationEnabled;
-	}
-
-	/**
-	 * Check if logging of validation plans is enabled.
-	 *
-	 * @return <code>true</code> if validation plan logging is enabled, <code>false</code> otherwise.
-	 */
-	public boolean isLogValidationPlans() {
-		return this.logValidationPlans;
-	}
-
-	public boolean isIgnoreNoShapesLoadedException() {
-		return this.ignoreNoShapesLoadedException;
-	}
-
-	/**
-	 * Check if shapes have been loaded into the shapes graph before other data is added
-	 *
-	 * @param ignoreNoShapesLoadedException
-	 */
-	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
-		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
-	}
-
-	/**
-	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation with
-	 * setParallelValidation(false)
-	 *
-	 * @param logValidationPlans
-	 */
-	public void setLogValidationPlans(boolean logValidationPlans) {
-		this.logValidationPlans = logValidationPlans;
 	}
 
 	List<NodeShape> getNodeShapes() {
@@ -364,6 +317,55 @@ public class ShaclSail extends NotifyingSailWrapper {
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 
+	}
+
+	/**
+	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is obtained
+	 * or an interrupt signal is received.
+	 *
+	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
+	 */
+	long acquireExclusiveWriteLock(long stamp) {
+		if (lock.validate(stamp)) {
+			return stamp;
+		}
+
+		if (threadHoldingWriteLock == Thread.currentThread()) {
+			throw new SailConflictException(
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection also tries to modify the shapes!");
+		}
+
+		long newStamp = lock.writeLock();
+		threadHoldingWriteLock = Thread.currentThread();
+		return newStamp;
+	}
+
+	boolean holdsWriteLock(long stamp) {
+		return lock.validate(stamp);
+	}
+
+	/**
+	 * Releases the exclusive write lock.
+	 */
+	void releaseExclusiveWriteLock(long stamp) {
+		threadHoldingWriteLock = null;
+		lock.unlockWrite(stamp);
+	}
+
+	long readlock() {
+		if (threadHoldingWriteLock == Thread.currentThread()) {
+			throw new SailConflictException(
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection calls commit()!");
+		}
+		return lock.readLock();
+	}
+
+	void releaseReadlock(long stamp) {
+		lock.unlockRead(stamp);
 	}
 
 	/**
@@ -477,5 +479,84 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
 		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
+	}
+
+	/**
+	 * Disable the SHACL validation on commit()
+	 */
+	public void disableValidation() {
+		this.validationEnabled = false;
+	}
+
+	/**
+	 * Enabled the SHACL validation on commit()
+	 */
+	public void enableValidation() {
+		this.validationEnabled = true;
+	}
+
+	/**
+	 * Check if SHACL validation on commit() is enabled.
+	 *
+	 * @return <code>true</code> if validation is enabled, <code>false</code> otherwise.
+	 */
+	public boolean isValidationEnabled() {
+		return validationEnabled;
+	}
+
+	/**
+	 * Check if logging of validation plans is enabled.
+	 *
+	 * @return <code>true</code> if validation plan logging is enabled, <code>false</code> otherwise.
+	 */
+	public boolean isLogValidationPlans() {
+		return this.logValidationPlans;
+	}
+
+	public boolean isIgnoreNoShapesLoadedException() {
+		return this.ignoreNoShapesLoadedException;
+	}
+
+	/**
+	 * Check if shapes have been loaded into the shapes graph before other data is added
+	 *
+	 * @param ignoreNoShapesLoadedException
+	 */
+	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
+		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
+	}
+
+	/**
+	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation with
+	 * setParallelValidation(false)
+	 *
+	 * @param logValidationPlans
+	 */
+	public void setLogValidationPlans(boolean logValidationPlans) {
+		this.logValidationPlans = logValidationPlans;
+	}
+
+	public boolean isPerformanceLogging() {
+		return performanceLogging;
+	}
+
+	// @formatter:off
+
+	/**
+	 * Log (INFO) the execution time per shape. Recommended to disable the following:
+	 * <ul>
+	 * 		<li>setParallelValidation(false)</li>
+	 * 		<li>setCacheSelectNodes(false)</li>
+	 * </ul>
+	 *
+	 * @param performanceLogging default false
+	 */
+	// @formatter:on
+	public void setPerformanceLogging(boolean performanceLogging) {
+		this.performanceLogging = performanceLogging;
+	}
+
+	public void setNodeShapes(List<NodeShape> nodeShapes) {
+		this.nodeShapes = nodeShapes;
 	}
 }

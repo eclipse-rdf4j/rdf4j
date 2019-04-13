@@ -21,6 +21,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -92,9 +93,9 @@ class FileIO {
 
 	private final ValueFactory vf;
 
-	private final CharsetEncoder charsetEncoder = Charset.forName("UTF-8").newEncoder();
+	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
 
-	private final CharsetDecoder charsetDecoder = Charset.forName("UTF-8").newDecoder();
+	private final CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
 
 	private int formatVersion;
 

@@ -8,14 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -59,7 +58,13 @@ public class Sort implements PlanNode {
 						sortedTuples.add(iterator.next());
 					}
 
-					sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+					if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
+						Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
+						Arrays.parallelSort(objects, (a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+						sortedTuples = Arrays.asList(objects);
+					} else {
+						sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+					}
 
 					sortedTuplesIterator = sortedTuples.iterator();
 
@@ -88,8 +93,9 @@ public class Sort implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");

@@ -14,8 +14,11 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -36,7 +39,7 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
@@ -56,5 +59,33 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MinLengthConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MinLengthPropertyShape that = (MinLengthPropertyShape) o;
+		return minLength == that.minLength;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), minLength);
+	}
+
+	@Override
+	public String toString() {
+		return "MinLengthPropertyShape{" +
+				"minLength=" + minLength +
+				", path=" + path +
+				'}';
 	}
 }

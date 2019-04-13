@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -138,7 +138,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" + "filterOnType=" + Arrays.toString(filterOnType.toArray()) + '}';
+		return "ExternalTypeFilterNode{" + "filterOnType="
+				+ Arrays.toString(filterOnType.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override

@@ -1,0 +1,12 @@
+@prefix ex: <http://example.org/> .
+
+ex:graph1 {
+	ex:a ex:p ex:b . 
+	ex:b ex:q ex:c .
+	
+	ex:i ex:p ex:j .
+	
+	ex:w ex:q ex:z .
+	
+	ex:foo ex:q ex:bar .
+}

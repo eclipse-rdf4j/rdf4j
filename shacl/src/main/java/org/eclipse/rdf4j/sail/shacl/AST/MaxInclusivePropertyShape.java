@@ -16,8 +16,11 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -37,7 +40,7 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+			PlanNodeProvider overrideTargetNode) {
 		if (deactivated) {
 			return null;
 		}
@@ -58,5 +61,33 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MaxInclusiveConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MaxInclusivePropertyShape that = (MaxInclusivePropertyShape) o;
+		return maxInclusive.equals(that.maxInclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), maxInclusive);
+	}
+
+	@Override
+	public String toString() {
+		return "MaxInclusivePropertyShape{" +
+				"maxInclusive=" + maxInclusive +
+				", path=" + path +
+				'}';
 	}
 }

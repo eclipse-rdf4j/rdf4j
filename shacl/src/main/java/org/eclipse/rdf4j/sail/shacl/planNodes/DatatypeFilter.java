@@ -34,6 +34,6 @@ public class DatatypeFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "DatatypeFilter{" + "datatype=" + datatype + '}';
+		return "DatatypeFilter{" + "datatype=" + Formatter.prefix(datatype) + '}';
 	}
 }

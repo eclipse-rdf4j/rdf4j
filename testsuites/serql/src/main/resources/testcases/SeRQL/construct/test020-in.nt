@@ -1,0 +1,5 @@
+# Input file for SeRQL CfwQuery test
+# description: namespace() function test
+<http://www.foo.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "foo".
+<http://www.bar.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "foo".
+<http://www.foo.com#stat1> <http://www.w3.org/2000/01/rdf-schema#label> "foo".

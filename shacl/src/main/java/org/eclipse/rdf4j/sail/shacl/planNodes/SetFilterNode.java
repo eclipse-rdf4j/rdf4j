@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
@@ -108,7 +108,8 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SetFilterNode{" + "targetNodeList=" + Arrays.toString(targetNodeList.toArray()) + ", index=" + index
+		return "SetFilterNode{" + "targetNodeList="
+				+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
 				+ ", returnValid=" + returnValid + '}';
 	}
 }
