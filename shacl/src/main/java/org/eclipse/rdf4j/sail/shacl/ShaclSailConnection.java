@@ -283,10 +283,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
-		if (addedStatements != null && addedStatements != sail.getBaseSail()) {
-			addedStatements.shutDown();
+		if (addedStatements != null) {
+			if (addedStatements != sail.getBaseSail()) {
+				addedStatements.shutDown();
+			}
 			addedStatements = null;
 		}
+
 		if (removedStatements != null) {
 			removedStatements.shutDown();
 			removedStatements = null;
@@ -452,7 +455,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 							if (addedStatements != null && addedStatements != sail.getBaseSail()) {
 								addedStatements.shutDown();
-								addedStatements = null;
 							}
 
 							addedStatements = getNewMemorySail();
