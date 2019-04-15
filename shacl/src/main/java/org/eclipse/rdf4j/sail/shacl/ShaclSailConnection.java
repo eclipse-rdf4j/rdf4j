@@ -422,7 +422,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			flush();
 
-			if (rdfsSubClassOfReasoner.isEmpty() && sail.getBaseSail() instanceof MemoryStore
+			if (rdfsSubClassOfReasoner != null && rdfsSubClassOfReasoner.isEmpty() && sail.getBaseSail() instanceof MemoryStore
 					&& this.getIsolationLevel() == IsolationLevels.NONE) {
 				addedStatements = (MemoryStore) sail.getBaseSail();
 				removedStatements = getNewMemorySail();
