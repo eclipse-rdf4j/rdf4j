@@ -55,6 +55,7 @@ import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
+ * @author Håvard Ottestad
  */
 public class ShaclSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener {
 
@@ -95,6 +96,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	ValueComparator valueComparator = new ValueComparator();
 
+	private boolean connectionListenerActive = false;
+
+	private IsolationLevel currentIsolationLevel = null;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
@@ -102,9 +107,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.shapesRepoConnection = shapesRepoConnection;
 		this.sail = sail;
 
-		if (sail.isValidationEnabled()) {
-			addConnectionListener(this);
-		}
+		setupConnectionListener();
 	}
 
 	public NotifyingSailConnection getPreviousStateConnection() {
@@ -130,7 +133,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
-
+		currentIsolationLevel = level;
 		assert addedStatements == null;
 		assert removedStatements == null;
 		assert connectionsToClose.size() == 0;
@@ -146,7 +149,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		stats.baseSailEmpty = !hasStatement(null, null, null, true);
+		if (stats.baseSailEmpty) {
+			removeConnectionListener(this);
+			connectionListenerActive = false;
+		} else {
+			setupConnectionListener();
+		}
 
+	}
+
+	private void setupConnectionListener() {
+		if (!connectionListenerActive && sail.isValidationEnabled()) {
+			addConnectionListener(this);
+
+		}
 	}
 
 	private MemoryStore getNewMemorySail() {
@@ -162,6 +178,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!preparedHasRun) {
 			prepare();
 		}
+		long before = 0;
+		if (sail.isPerformanceLogging()) {
+			before = System.currentTimeMillis();
+		}
 		previousStateConnection.commit();
 		super.commit();
 		shapesRepoConnection.commit();
@@ -173,6 +193,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			sail.releaseExclusiveWriteLock(stamp);
 		}
 
+		if (sail.isPerformanceLogging()) {
+			logger.info("commit() excluding validation and cleanup took {} ms", System.currentTimeMillis() - before);
+		}
 		cleanup();
 	}
 
@@ -251,14 +274,22 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	void cleanup() {
+		long before = 0;
+		if (sail.isPerformanceLogging()) {
+			before = System.currentTimeMillis();
+		}
+
 		logger.debug("Cleanup");
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
 		if (addedStatements != null) {
-			addedStatements.shutDown();
+			if (addedStatements != sail.getBaseSail()) {
+				addedStatements.shutDown();
+			}
 			addedStatements = null;
 		}
+
 		if (removedStatements != null) {
 			removedStatements.shutDown();
 			removedStatements = null;
@@ -272,6 +303,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		selectNodeCache = null;
 		shapesModifiedInCurrentTransaction = false;
 		stamp = 0;
+		currentIsolationLevel = null;
+		if (sail.isPerformanceLogging()) {
+			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
+		}
 	}
 
 	private List<NodeShape> refreshShapes() {
@@ -298,6 +333,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			validating = true;
 
 			fillAddedAndRemovedStatementRepositories();
+
+			long beforeValidation = 0;
+			if (sail.isPerformanceLogging()) {
+				beforeValidation = System.currentTimeMillis();
+			}
 
 			try {
 				Stream<PlanNode> planNodeStream = nodeShapes
@@ -356,65 +396,110 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			} finally {
 				connectionsToClose.forEach(SailConnection::close);
 				connectionsToClose = new ConcurrentLinkedQueue<>();
+				if (sail.isPerformanceLogging()) {
+					logger.info("Actual validation and generating plans took {} ms",
+							System.currentTimeMillis() - beforeValidation);
+				}
 			}
 		} finally {
 			validating = false;
 			rdfsSubClassOfReasoner = null;
+
 		}
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
 
+		long before = 0;
+		if (sail.isPerformanceLogging()) {
+			before = System.currentTimeMillis();
+		}
+
 		connectionsToClose.forEach(SailConnection::close);
 		connectionsToClose = new ConcurrentLinkedQueue<>();
 
-		Stream.of(addedStatementsSet, removedStatementsSet)
-				.parallel()
-				.forEach(set -> {
-					Set<Statement> otherSet;
-					MemoryStore repository;
-					if (set == addedStatementsSet) {
-						otherSet = removedStatementsSet;
+		if (stats.baseSailEmpty) {
 
-						if (addedStatements != null) {
-							addedStatements.shutDown();
-							addedStatements = null;
-						}
+			flush();
 
-						addedStatements = getNewMemorySail();
-						repository = addedStatements;
+			if ((rdfsSubClassOfReasoner == null || rdfsSubClassOfReasoner.isEmpty())
+					&& sail.getBaseSail() instanceof MemoryStore && this.getIsolationLevel() == IsolationLevels.NONE) {
+				addedStatements = (MemoryStore) sail.getBaseSail();
+				removedStatements = getNewMemorySail();
+			} else {
+				addedStatements = getNewMemorySail();
+				removedStatements = getNewMemorySail();
 
-						set.forEach(stats::added);
-
-					} else {
-						otherSet = addedStatementsSet;
-
-						if (removedStatements != null) {
-							removedStatements.shutDown();
-							removedStatements = null;
-						}
-
-						removedStatements = getNewMemorySail();
-						repository = removedStatements;
-
-						set.forEach(stats::removed);
-					}
-
-					try (SailConnection connection = repository.getConnection()) {
+				try (Stream<? extends Statement> stream = Iterations.stream(getStatements(null, null, null, false))) {
+					try (NotifyingSailConnection connection = addedStatements.getConnection()) {
 						connection.begin(IsolationLevels.NONE);
-						set.stream()
-								.filter(statement -> !otherSet.contains(statement))
+						stream
 								.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
 										: rdfsSubClassOfReasoner.forwardChain(statement))
 								.forEach(statement -> connection.addStatement(statement.getSubject(),
 										statement.getPredicate(), statement.getObject(), statement.getContext()));
 						connection.commit();
 					}
+				}
+			}
 
-				});
+		} else {
 
+			Stream.of(addedStatementsSet, removedStatementsSet)
+					.parallel()
+					.forEach(set -> {
+						Set<Statement> otherSet;
+						MemoryStore repository;
+						if (set == addedStatementsSet) {
+							otherSet = removedStatementsSet;
+
+							if (addedStatements != null && addedStatements != sail.getBaseSail()) {
+								addedStatements.shutDown();
+							}
+
+							addedStatements = getNewMemorySail();
+							repository = addedStatements;
+
+							set.forEach(stats::added);
+
+						} else {
+							otherSet = addedStatementsSet;
+
+							if (removedStatements != null) {
+								removedStatements.shutDown();
+								removedStatements = null;
+							}
+
+							removedStatements = getNewMemorySail();
+							repository = removedStatements;
+
+							set.forEach(stats::removed);
+						}
+
+						try (SailConnection connection = repository.getConnection()) {
+							connection.begin(IsolationLevels.NONE);
+							set.stream()
+									.filter(statement -> !otherSet.contains(statement))
+									.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
+											: rdfsSubClassOfReasoner.forwardChain(statement))
+									.forEach(statement -> connection.addStatement(statement.getSubject(),
+											statement.getPredicate(), statement.getObject(), statement.getContext()));
+							connection.commit();
+						}
+
+					});
+
+		}
 		selectNodeCache = new HashMap<>();
 
+		if (sail.isPerformanceLogging()) {
+			logger.info("fillAddedAndRemovedStatementRepositories() took {} ms", System.currentTimeMillis() - before);
+		}
+
+	}
+
+	private IsolationLevel getIsolationLevel() {
+		return currentIsolationLevel;
 	}
 
 	@Override
@@ -434,6 +519,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		long readStamp = 0;
 
 		try {
+			long before = 0;
+			if (sail.isPerformanceLogging()) {
+				before = System.currentTimeMillis();
+			}
 			if (!sail.holdsWriteLock(stamp)) {
 				readStamp = sail.readlock();
 			}
@@ -447,8 +536,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			// we don't support revalidation of all data when changing the shacl shapes,
 			// so no need to check if the shapes have changed
 			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !shapesModifiedInCurrentTransaction) {
-				logger.debug("Nothing has changed, nothing to validate.");
-				return;
+				boolean currentBaseSailEmpty = !hasStatement(null, null, null, false);
+				if (!(stats.baseSailEmpty && !currentBaseSailEmpty)) {
+					logger.debug("Nothing has changed, nothing to validate.");
+					return;
+				}
 			}
 
 			if (shapesModifiedInCurrentTransaction && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
@@ -465,6 +557,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			List<Tuple> invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			boolean valid = invalidTuples.isEmpty();
+
+			if (sail.isPerformanceLogging()) {
+				logger.info("prepare() including validation excluding locking and super.prepare() took {} ms",
+						System.currentTimeMillis() - before);
+			}
 
 			if (!valid) {
 				throw new ShaclSailValidationException(invalidTuples);
