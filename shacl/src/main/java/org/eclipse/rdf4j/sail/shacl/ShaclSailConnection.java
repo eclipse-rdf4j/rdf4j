@@ -300,6 +300,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		selectNodeCache = null;
 		shapesModifiedInCurrentTransaction = false;
 		stamp = 0;
+		currentIsolationLevel = null;
 		if (sail.isPerformanceLogging()) {
 			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
 		}
