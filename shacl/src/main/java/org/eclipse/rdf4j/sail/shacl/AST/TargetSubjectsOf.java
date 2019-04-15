@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
@@ -56,8 +57,8 @@ public class TargetSubjectsOf extends NodeShape {
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {
 			IRI iri = targetSubjectsOf.stream().findAny().get();
-			select = new UnorderedSelect(connection.getAddedStatements(), null, iri, null,
-					UnorderedSelect.OutputPattern.SubjectPredicateObject);
+			select = new Sort(new UnorderedSelect(connection.getAddedStatements(), null, iri, null,
+					UnorderedSelect.OutputPattern.SubjectPredicateObject));
 		} else {
 			select = new Select(connection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c");
 		}
@@ -74,8 +75,8 @@ public class TargetSubjectsOf extends NodeShape {
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {
 			IRI iri = targetSubjectsOf.stream().findAny().get();
-			select = new UnorderedSelect(connection.getRemovedStatements(), null, iri, null,
-					UnorderedSelect.OutputPattern.SubjectPredicateObject);
+			select = new Sort(new UnorderedSelect(connection.getRemovedStatements(), null, iri, null,
+					UnorderedSelect.OutputPattern.SubjectPredicateObject));
 		} else {
 			select = new Select(connection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c");
 		}

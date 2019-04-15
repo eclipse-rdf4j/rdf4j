@@ -24,8 +24,8 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	PlanNode parent;
 
-	PushablePlanNode trueNode;
-	PushablePlanNode falseNode;
+	private PushablePlanNode trueNode;
+	private PushablePlanNode falseNode;
 
 	private CloseableIteration<Tuple, SailException> iterator;
 

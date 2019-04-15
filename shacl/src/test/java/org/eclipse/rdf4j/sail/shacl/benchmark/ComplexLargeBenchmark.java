@@ -218,6 +218,7 @@ public class ComplexLargeBenchmark {
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -243,6 +244,7 @@ public class ComplexLargeBenchmark {
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);

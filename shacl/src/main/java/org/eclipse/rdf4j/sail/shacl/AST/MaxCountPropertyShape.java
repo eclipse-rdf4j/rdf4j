@@ -9,17 +9,21 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
@@ -72,6 +76,30 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			}
 
 			return new EnrichWithShape(new LoggingNode(directTupleFromFilter, ""), this);
+		}
+
+		if (maxCount == 1 && shaclSailConnection.stats.isBaseSailEmpty()) {
+			String query = nodeShape.getQuery("?a", "?b", null);
+			String query1 = path.getQuery("?a", "?d", null);
+			String query2 = path.getQuery("?a", "?e", null);
+
+			String negationQuery = query + "\n" + query1 + "\n" + query2 + "\nFILTER(?d != ?e)";
+
+			PlanNode select = new Select(shaclSailConnection.getAddedStatements(), negationQuery, "?a");
+			select = new ModifyTuple(select, (a) -> {
+				a.line.add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
+
+				return a;
+			});
+			select = new AggregateIteratorTypeOverride(select);
+
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(select, shaclSailConnection);
+				logger.info(planAsGraphvizDot);
+			}
+
+			return new EnrichWithShape(new LoggingNode(select, ""), this);
+
 		}
 
 		PlanNode planAddedStatements = new LoggingNode(
