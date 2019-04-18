@@ -100,4 +100,20 @@ public class VerifyTest extends AbstractCommandTest {
 		cmd.execute("verify", copyFromRes("wrong_lang.ttl"));
 		assertTrue(io.wasErrorWritten());
 	}
+
+	@Test
+	public final void testShaclInvalid() throws IOException {
+		File report = LOCATION.newFile();
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_invalid.ttl"), report.toString());
+		assertTrue(io.wasErrorWritten());
+		assertTrue(Files.size(report.toPath()) > 0);
+	}
+
+	@Test
+	public final void testShaclValid() throws IOException {
+		File report = LOCATION.newFile();
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
+		assertFalse(Files.size(report.toPath()) > 0);
+		assertFalse(io.wasErrorWritten());
+	}
 }
