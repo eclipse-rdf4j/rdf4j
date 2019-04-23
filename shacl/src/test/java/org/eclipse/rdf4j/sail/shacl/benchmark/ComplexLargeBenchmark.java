@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 import ch.qos.logback.classic.Logger;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -241,6 +243,40 @@ public class ComplexLargeBenchmark {
 
 		try {
 			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getData()) {
+					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
+	public void noPreloadingNonEmptyParallel() {
+
+		try {
+			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).disableValidation();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				SimpleValueFactory vf = SimpleValueFactory.getInstance();
+				connection.add(vf.createBNode(), vf.createIRI("http://fjljfiwoejfoiwefiew/a"), vf.createBNode());
+				connection.commit();
+			}
+			((ShaclSail) repository.getSail()).enableValidation();
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
