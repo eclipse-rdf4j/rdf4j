@@ -54,18 +54,27 @@ public class Sort implements PlanNode {
 			private void sortTuples() {
 				if (sortedTuples == null) {
 					sortedTuples = new ArrayList<>();
+					boolean alreadySorted = true;
+					Tuple prev = null;
 					while (iterator.hasNext()) {
-						sortedTuples.add(iterator.next());
+						Tuple next = iterator.next();
+						sortedTuples.add(next);
+						if (prev != null && valueComparator.compare(prev.line.get(0), next.line.get(0)) > 0) {
+							alreadySorted = false;
+						}
+						prev = next;
 					}
 
-					if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
-						Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
-						Arrays.parallelSort(objects, (a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
-						sortedTuples = Arrays.asList(objects);
-					} else {
-						sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+					if (!alreadySorted && sortedTuples.size() > 1) {
+						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
+							Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
+							Arrays.parallelSort(objects,
+									(a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+							sortedTuples = Arrays.asList(objects);
+						} else {
+							sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+						}
 					}
-
 					sortedTuplesIterator = sortedTuples.iterator();
 
 				}
