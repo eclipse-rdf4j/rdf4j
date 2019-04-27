@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 
@@ -25,7 +24,7 @@ public class SimplePath extends Path {
 
 	private final IRI path;
 
-	SimplePath(IRI id, SailRepositoryConnection connection) {
+	SimplePath(IRI id) {
 		super(id);
 		this.path = id;
 

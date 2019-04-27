@@ -23,7 +23,7 @@ import java.util.Objects;
 /**
  * @author Håvard Ottestad
  */
-public class MaxLengthPropertyShape extends PathPropertyShape {
+public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 
 	private final long maxLength;
 	private static final Logger logger = LoggerFactory.getLogger(MaxLengthPropertyShape.class);
@@ -38,14 +38,16 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
 		}
+		assert !negateSubPlans : "There are no subplans!";
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
-				(parent) -> new MaxLengthFilter(parent, maxLength), this, overrideTargetNode);
+		PlanNode invalidValues = getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new MaxLengthFilter(parent, maxLength), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

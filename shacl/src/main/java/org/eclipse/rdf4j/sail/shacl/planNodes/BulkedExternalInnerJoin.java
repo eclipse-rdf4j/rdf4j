@@ -12,8 +12,7 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -40,14 +39,15 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, String... variables) {
 		this.leftNode = leftNode;
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
-		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+
+		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
+		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.variables = variables;
 
 	}
 
@@ -75,7 +75,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						left.addFirst(leftNodeIterator.next());
 					}
 
-					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
 
 					while (!right.isEmpty()) {
 

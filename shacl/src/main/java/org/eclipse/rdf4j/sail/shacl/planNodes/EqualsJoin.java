@@ -48,16 +48,6 @@ public class EqualsJoin implements PlanNode {
 				}
 
 				if (nextLeft == null) {
-//					if (discardedRight != null) {
-//						while(nextRight != null){
-//							discardedRight.push(nextRight);
-//							if(rightIterator.hasNext()){
-//								nextRight = rightIterator.next();
-//							}else{
-//								nextRight = null;
-//							}
-//						}
-//					}
 					return;
 				}
 
@@ -78,9 +68,6 @@ public class EqualsJoin implements PlanNode {
 							int compareTo = nextLeft.compareTo(nextRight);
 
 							if (compareTo < 0) {
-//								if (discardedLeft != null) {
-//									discardedLeft.push(nextLeft);
-//								}
 								if (leftIterator.hasNext()) {
 									nextLeft = leftIterator.next();
 								} else {
@@ -88,9 +75,6 @@ public class EqualsJoin implements PlanNode {
 									break;
 								}
 							} else {
-//								if (discardedRight != null) {
-//									discardedRight.push(nextRight);
-//								}
 								if (rightIterator.hasNext()) {
 									nextRight = rightIterator.next();
 								} else {
@@ -152,21 +136,6 @@ public class EqualsJoin implements PlanNode {
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
-
-		// if this plan node implements discardedRight/Left, then this is the code to print the plan.
-//		if(discardedRight != null){
-//			if(discardedRight instanceof PlanNode){
-//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];").append("\n");
-//			}
-//
-//		}
-//		if(discardedLeft != null){
-//			if(discardedLeft instanceof PlanNode){
-//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];").append("\n");
-//			}
-//
-//
-//		}
 	}
 
 	@Override

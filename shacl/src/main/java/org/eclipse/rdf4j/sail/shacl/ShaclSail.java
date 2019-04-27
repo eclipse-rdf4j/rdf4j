@@ -221,6 +221,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.TARGET_SUBJECTS_OF,
 				SHACL.IN,
 				SHACL.UNIQUE_LANG,
+				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF);
 	}
 

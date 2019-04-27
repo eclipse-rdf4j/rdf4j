@@ -106,12 +106,21 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 					return;
 				}
 
+				Tuple prevLeft = nextLeft;
 				if (nextLeft == null && leftIterator.hasNext()) {
 					nextLeft = leftIterator.next();
 				}
 
 				if (nextRight == null && rightIterator.hasNext()) {
 					nextRight = rightIterator.next();
+				}
+
+				if (nextRight == null && prevLeft == null && nextLeft != null) {
+					if (discardedLeft != null) {
+						discardedLeft.push(nextLeft);
+					}
+
+					return;
 				}
 
 				if (nextLeft == null) {
@@ -176,6 +185,12 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 						}
 					} else {
+						if (discardedLeft != null) {
+							while (leftIterator.hasNext()) {
+								discardedLeft.push(leftIterator.next());
+							}
+						}
+
 						return;
 					}
 				}

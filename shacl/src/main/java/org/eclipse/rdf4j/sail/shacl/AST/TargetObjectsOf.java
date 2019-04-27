@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Arrays;
@@ -45,15 +46,18 @@ public class TargetObjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		assert !negateSubPlans : "There are no subplans!";
+		assert !negateThisPlan;
+
 		PlanNode parent = shaclSailConnection
 				.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", null), "?a", "?b1", "?c"));
-		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
+		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
@@ -68,12 +72,12 @@ public class TargetObjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(select);
-		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
+		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
 
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
@@ -87,7 +91,7 @@ public class TargetObjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(select);
-		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
+		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
 	}
 
 	@Override
