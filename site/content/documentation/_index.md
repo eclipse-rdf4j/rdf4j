@@ -34,9 +34,9 @@ hide_page_title: "true"
 
 # Javadoc
 
-- [Rdf4j API Javadoc](javadoc/latest/)
-- older versiona: [[2.4](javadoc/2.4/)], [[2.3](javadoc/2.3)]
+- <a href="/javadoc/2.5.0">rdf4j API Javadoc</a>
+- older releases: [<a href="/javadoc/2.4.0">2.4</a>], [<a href="/javadoc/2.3.0">2.3</a>] 
 
 # Project internal documentation
 
-- [Developer workflow and project management](developer/)
+- <a href="developer/">Developer workflow and project managemen</a>
