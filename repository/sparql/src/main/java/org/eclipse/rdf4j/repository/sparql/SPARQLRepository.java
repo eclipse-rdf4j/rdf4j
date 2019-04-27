@@ -149,7 +149,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	@Override
 	public RepositoryConnection getConnection() throws RepositoryException {
 		if (!isInitialized()) {
-			throw new RepositoryException("SPARQLRepository not initialized.");
+			init();
 		}
 		return new SPARQLConnection(this, createHTTPClient(), quadMode);
 	}

@@ -84,7 +84,6 @@ public abstract class RepositoryTest {
 	@Before
 	public void setUp() throws Exception {
 		testRepository = createRepository();
-		testRepository.initialize();
 
 		vf = testRepository.getValueFactory();
 
@@ -117,7 +116,7 @@ public abstract class RepositoryTest {
 
 	@Test
 	public void testShutdownFollowedByInit() throws Exception {
-
+		testRepository.init();
 		RepositoryConnection conn = testRepository.getConnection();
 		try {
 			conn.add(bob, mbox, mboxBob);
@@ -127,12 +126,24 @@ public abstract class RepositoryTest {
 		}
 
 		testRepository.shutDown();
-		testRepository.initialize();
+		testRepository.init();
 
 		conn = testRepository.getConnection();
 		try {
 			conn.add(bob, mbox, mboxBob);
 			assertTrue(conn.hasStatement(bob, mbox, mboxBob, true));
+		} finally {
+			conn.close();
+		}
+	}
+
+	@Test
+	public void testAutoInit() throws Exception {
+		RepositoryConnection conn = testRepository.getConnection();
+		try {
+			conn.add(bob, mbox, mboxBob);
+			assertTrue(conn.hasStatement(bob, mbox, mboxBob, true));
+			assertTrue(testRepository.isInitialized());
 		} finally {
 			conn.close();
 		}
