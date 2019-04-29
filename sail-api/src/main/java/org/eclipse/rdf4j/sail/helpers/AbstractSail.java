@@ -266,12 +266,11 @@ public abstract class AbstractSail implements Sail {
 
 	@Override
 	public SailConnection getConnection() throws SailException {
+		if (!isInitialized()) {
+			init();
+		}
 		initializationLock.readLock().lock();
 		try {
-			if (!isInitialized()) {
-				throw new IllegalStateException("Sail is not initialized or has been shut down");
-			}
-
 			SailConnection connection = getConnectionInternal();
 
 			Throwable stackTrace = debugEnabled() ? new Throwable() : null;
