@@ -75,11 +75,13 @@ public class AbstractSailTest {
 		assertThat(conn).isEqualTo(connDouble);
 	}
 
-	@Test(expected = IllegalStateException.class)
 	public void testExplicitInitTwice() {
 		assertThat(subject.isInitialized()).isFalse();
 		subject.init();
 		subject.init();
+		SailConnection conn = subject.getConnection();
+		assertThat(subject.isInitialized()).isTrue();
+		assertThat(conn).isEqualTo(connDouble);
 	}
 
 }
