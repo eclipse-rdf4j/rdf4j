@@ -181,7 +181,7 @@ public abstract class AbstractSail implements Sail {
 		initializationLock.writeLock().lock();
 		try {
 			if (isInitialized()) {
-				return; // skip silently 
+				return; // skip silently
 			}
 
 			initializeInternal();
