@@ -175,6 +175,9 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	@Override
 	public boolean isWritable() throws RepositoryException {
 		try {
+			if (!isInitialized()) {
+				init();
+			}
 			return sail.isWritable();
 		} catch (SailException e) {
 			throw new RepositoryException("Unable to determine writable status of Sail", e);
@@ -183,11 +186,17 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 
 	@Override
 	public ValueFactory getValueFactory() {
+		if (!isInitialized()) {
+			init();
+		}
 		return sail.getValueFactory();
 	}
 
 	@Override
 	public SailRepositoryConnection getConnection() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
 		try {
 			return new SailRepositoryConnection(this, sail.getConnection());
 		} catch (SailException e) {
