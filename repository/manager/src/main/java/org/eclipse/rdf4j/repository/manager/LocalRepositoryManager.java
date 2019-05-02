@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -400,7 +399,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			upgraded = true;
 			upgrade();
 		}
-		Model model = new TreeModel();
+		Model model = getModelFactory().createEmptyModel();
 		String ns = configFile.toURI().toString() + "#";
 		config.export(model, SimpleValueFactory.getInstance().createIRI(ns, config.getID()));
 		File part = new File(configFile.getParentFile(), configFile.getName() + ".part");

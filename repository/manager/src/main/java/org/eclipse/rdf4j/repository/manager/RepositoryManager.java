@@ -23,8 +23,10 @@ import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -60,6 +62,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/*-----------*
 	 * Variables *
 	 *-----------*/
+
+	private ModelFactory modelFactory = new TreeModelFactory();
 
 	protected Map<String, Repository> initializedRepositories;
 
@@ -112,6 +116,26 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 */
 	@Override
 	public abstract void setHttpClient(HttpClient httpClient);
+
+	/**
+	 * Get the {@link ModelFactory} used for creating new {@link Model} objects in the manager.
+	 * 
+	 * @return the modelFactory
+	 * @since 3.0
+	 */
+	public ModelFactory getModelFactory() {
+		return modelFactory;
+	}
+
+	/**
+	 * Set the {@link ModelFactory} to use for creating new {@link Model} objects in the manager.
+	 * 
+	 * @param modelFactory the modelFactory to set
+	 * @since 3.0
+	 */
+	public void setModelFactory(ModelFactory modelFactory) {
+		this.modelFactory = modelFactory;
+	}
 
 	/**
 	 * Initializes the repository manager.

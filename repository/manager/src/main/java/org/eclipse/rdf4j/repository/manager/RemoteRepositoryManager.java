@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -213,7 +212,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public RepositoryConfig getRepositoryConfig(String id) throws RepositoryException {
-		Model model = new LinkedHashModel();
+		Model model = getModelFactory().createEmptyModel();
 		try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
 			httpClient.setUsernameAndPassword(username, password);
 			httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
@@ -285,7 +284,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 			Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
 			httpClient.setUsernameAndPassword(username, password);
 			httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
-			Model model = new LinkedHashModel();
+			Model model = getModelFactory().createEmptyModel();
 			config.export(model, ctx);
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			Rio.write(model, baos, httpClient.getPreferredRDFFormat());
