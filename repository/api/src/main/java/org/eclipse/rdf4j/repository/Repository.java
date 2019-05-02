@@ -17,9 +17,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
  * repository. Depending on the implementation of the repository, it may or may not support multiple concurrent
  * connections.
  * <p>
- * Please note that a repository needs to be initialized before it can be used and that it should be shut down before it
- * is discarded/garbage collected. Forgetting the latter can result in loss of data (depending on the Repository
- * implementation)!
+ * Please note that a repository should be shut down before it is discarded/garbage collected. Forgetting the latter can
+ * result in loss of data (depending on the Repository implementation)!
  * <p>
  * Repository implementations are thread-safe unless specifically documented otherwise.
  * 
@@ -42,7 +41,7 @@ public interface Repository {
 	public File getDataDir();
 
 	/**
-	 * Initializes this repository. A repository needs to be initialized before it can be used.
+	 * Initializes this repository.
 	 * 
 	 * @throws RepositoryException If the initialization failed.
 	 * @deprecated Use {@link #init()} instead.
@@ -51,7 +50,9 @@ public interface Repository {
 	public void initialize() throws RepositoryException;
 
 	/**
-	 * Initializes this repository. A repository needs to be initialized before it can be used.
+	 * Initializes this repository. A repository needs to be initialized before it can be used, however explicitly
+	 * calling this method is not necessary: the repository will automatically initialize itself if an operation is
+	 * executed on it that requires it to be initialized.
 	 * 
 	 * @throws RepositoryException If the initialization failed.
 	 * @since 2.5
@@ -83,20 +84,17 @@ public interface Repository {
 	/**
 	 * Opens a connection to this repository that can be used for querying and updating the contents of the repository.
 	 * Created connections need to be closed to make sure that any resources they keep hold of are released. The best
-	 * way to do this is to use a try-finally-block as follows:
+	 * way to do this is to use a try-with-resources block, as follows:
 	 * 
 	 * <pre>
-	 * Connection con = repository.getConnection();
-	 * try {
+	 * try (RepositoryConnection conn = repository.getConnection()) {
 	 * 	// perform operations on the connection
-	 * } finally {
-	 * 	con.close();
 	 * }
 	 * </pre>
 	 * 
 	 * Note that {@link RepositoryConnection} is not guaranteed to be thread-safe! The recommended pattern for
-	 * repository access in a multithreaded application is to share the Repository object between threads, but have each
-	 * thread create and use its own {@link RepositoryConnection}s.
+	 * repository access in a multi-threaded application is to share the Repository object between threads, but have
+	 * each thread create and use its own {@link RepositoryConnection}s.
 	 * 
 	 * @return A connection that allows operations on this repository.
 	 * @throws RepositoryException If something went wrong during the creation of the Connection.

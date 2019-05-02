@@ -201,13 +201,16 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	@Override
 	public RepositoryConnection getConnection() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
 		return new HTTPRepositoryConnection(this, createHTTPClient());
 	}
 
 	@Override
 	public boolean isWritable() throws RepositoryException {
 		if (!isInitialized()) {
-			throw new IllegalStateException("HTTPRepository not initialized.");
+			init();
 		}
 
 		boolean isWritable = false;
