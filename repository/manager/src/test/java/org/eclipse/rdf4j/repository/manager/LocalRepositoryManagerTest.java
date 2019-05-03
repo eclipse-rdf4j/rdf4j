@@ -43,12 +43,10 @@ import org.junit.rules.TemporaryFolder;
  * 
  * @author Jeen Broekstra
  */
-public class LocalRepositoryManagerTest {
+public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	private LocalRepositoryManager manager;
 
 	private File datadir;
 
@@ -60,18 +58,19 @@ public class LocalRepositoryManagerTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
+	@Override
 	public void setUp() throws Exception {
-		datadir = tempDir.newFolder("local-repositorymanager-test");
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
+		datadir = tempDir.newFolder("local-repositorysubject-test");
+		subject = new LocalRepositoryManager(datadir);
+		subject.init();
 
 		// Create configurations for the SAIL stack, and the repository
 		// implementation.
-		manager.addRepositoryConfig(
+		subject.addRepositoryConfig(
 				new RepositoryConfig(TEST_REPO, new SailRepositoryConfig(new MemoryStoreConfig(true))));
 
 		// Create configuration for proxy repository to previous repository.
-		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(TEST_REPO)));
+		subject.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(TEST_REPO)));
 	}
 
 	/**
@@ -79,30 +78,30 @@ public class LocalRepositoryManagerTest {
 	 */
 	@After
 	public void tearDown() throws IOException {
-		manager.shutDown();
+		subject.shutDown();
 	}
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.repository.manager.LocalRepositoryManager#getRepository(java.lang.String)} .
+	 * {@link org.eclipse.rdf4j.repository.subject.LocalRepositoryManager#getRepository(java.lang.String)} .
 	 *
 	 * @throws RepositoryException       if a problem occurs accessing the repository
 	 * @throws RepositoryConfigException if a problem occurs accessing the repository
 	 */
 	@Test
 	public void testGetRepository() throws RepositoryConfigException, RepositoryException {
-		Repository rep = manager.getRepository(TEST_REPO);
+		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
 		rep.shutDown();
-		rep = manager.getRepository(TEST_REPO);
+		rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
 	}
 
 	@Test
 	public void testRestartManagerWithoutTransaction() throws Exception {
-		Repository rep = manager.getRepository(TEST_REPO);
+		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
 		try (RepositoryConnection conn = rep.getConnection()) {
@@ -110,26 +109,26 @@ public class LocalRepositoryManagerTest {
 			assertEquals(1, conn.size());
 		} finally {
 			rep.shutDown();
-			manager.shutDown();
+			subject.shutDown();
 		}
 
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
-		Repository rep2 = manager.getRepository(TEST_REPO);
+		subject = new LocalRepositoryManager(datadir);
+		subject.initialize();
+		Repository rep2 = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
 		} finally {
 			rep2.shutDown();
-			manager.shutDown();
+			subject.shutDown();
 		}
 
 	}
 
 	@Test
 	public void testRestartManagerWithTransaction() throws Exception {
-		Repository rep = manager.getRepository(TEST_REPO);
+		Repository rep = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
 		try (RepositoryConnection conn = rep.getConnection()) {
@@ -139,19 +138,19 @@ public class LocalRepositoryManagerTest {
 			assertEquals(1, conn.size());
 		} finally {
 			rep.shutDown();
-			manager.shutDown();
+			subject.shutDown();
 		}
 
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
-		Repository rep2 = manager.getRepository(TEST_REPO);
+		subject = new LocalRepositoryManager(datadir);
+		subject.initialize();
+		Repository rep2 = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
 		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
 		} finally {
 			rep2.shutDown();
-			manager.shutDown();
+			subject.shutDown();
 		}
 
 	}
@@ -164,24 +163,24 @@ public class LocalRepositoryManagerTest {
 	 */
 	@Test
 	public void testIsSafeToRemove() throws RepositoryException, RepositoryConfigException {
-		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
-		assertThat(manager.isSafeToRemove(TEST_REPO)).isFalse();
-		manager.removeRepository(PROXY_ID);
-		assertThat(manager.hasRepositoryConfig(PROXY_ID)).isFalse();
+		assertThat(subject.isSafeToRemove(PROXY_ID)).isTrue();
+		assertThat(subject.isSafeToRemove(TEST_REPO)).isFalse();
+		subject.removeRepository(PROXY_ID);
+		assertThat(subject.hasRepositoryConfig(PROXY_ID)).isFalse();
 		;
-		assertThat(manager.isSafeToRemove(TEST_REPO)).isTrue();
+		assertThat(subject.isSafeToRemove(TEST_REPO)).isTrue();
 		;
 	}
 
 	@Test
 	@Deprecated
 	public void testAddToSystemRepository() {
-		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
-		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		manager.shutDown();
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
-		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
+		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		subject.shutDown();
+		subject = new LocalRepositoryManager(datadir);
+		subject.initialize();
+		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
 			Model model = new TreeModel();
 			config.setID("changed");
 			config.export(model, con.getValueFactory().createBNode());
@@ -189,18 +188,18 @@ public class LocalRepositoryManagerTest {
 			con.add(model, con.getValueFactory().createBNode());
 			con.commit();
 		}
-		assertTrue(manager.hasRepositoryConfig("changed"));
+		assertTrue(subject.hasRepositoryConfig("changed"));
 	}
 
 	@Test
 	@Deprecated
 	public void testModifySystemRepository() {
-		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
-		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		manager.shutDown();
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
-		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
+		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		subject.shutDown();
+		subject = new LocalRepositoryManager(datadir);
+		subject.initialize();
+		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
 			Model model = new TreeModel();
 			config.setTitle("Changed");
 			config.export(model, con.getValueFactory().createBNode());
@@ -210,18 +209,18 @@ public class LocalRepositoryManagerTest {
 			con.add(model, ctx == null ? con.getValueFactory().createBNode() : ctx);
 			con.commit();
 		}
-		assertEquals("Changed", manager.getRepositoryConfig(TEST_REPO).getTitle());
+		assertEquals("Changed", subject.getRepositoryConfig(TEST_REPO).getTitle());
 	}
 
 	@Test
 	@Deprecated
 	public void testRemoveFromSystemRepository() {
-		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
-		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		manager.shutDown();
-		manager = new LocalRepositoryManager(datadir);
-		manager.initialize();
-		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
+		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		subject.shutDown();
+		subject = new LocalRepositoryManager(datadir);
+		subject.initialize();
+		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
 			Model model = new TreeModel();
 			config.setID("changed");
 			config.export(model, con.getValueFactory().createBNode());
@@ -229,13 +228,13 @@ public class LocalRepositoryManagerTest {
 			con.add(model, con.getValueFactory().createBNode());
 			con.commit();
 		}
-		assertTrue(manager.hasRepositoryConfig("changed"));
-		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+		assertTrue(subject.hasRepositoryConfig("changed"));
+		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
 			con.begin();
 			con.clear(RepositoryConfigUtil.getContext(con, config.getID()));
 			con.commit();
 		}
-		assertFalse(manager.hasRepositoryConfig(config.getID()));
+		assertFalse(subject.hasRepositoryConfig(config.getID()));
 	}
 
 	/**
@@ -247,8 +246,8 @@ public class LocalRepositoryManagerTest {
 		new File(datadir, "repositories/SYSTEM").mkdir();
 		try {
 			RepositoryImplConfig cfg = new SailRepositoryConfig(new MemoryStoreConfig());
-			manager.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
-			manager.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
+			subject.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
+			subject.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
 		} catch (RepositoryConfigException e) {
 			fail(e.getMessage());
 		}
