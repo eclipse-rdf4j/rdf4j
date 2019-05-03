@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
@@ -130,10 +131,11 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Set the {@link ModelFactory} to use for creating new {@link Model} objects in the manager.
 	 * 
-	 * @param modelFactory the modelFactory to set
+	 * @param modelFactory the modelFactory to set. May not be <code>null</code>.
 	 * @since 3.0
 	 */
 	public void setModelFactory(ModelFactory modelFactory) {
+		Objects.requireNonNull(modelFactory);
 		this.modelFactory = modelFactory;
 	}
 
