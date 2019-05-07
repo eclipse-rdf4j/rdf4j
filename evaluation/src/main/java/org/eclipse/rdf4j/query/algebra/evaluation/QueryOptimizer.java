@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
  * Interface used by {@link EvaluationStrategy}s to optimize the {@link TupleExpr} prior to evaluating the query.
