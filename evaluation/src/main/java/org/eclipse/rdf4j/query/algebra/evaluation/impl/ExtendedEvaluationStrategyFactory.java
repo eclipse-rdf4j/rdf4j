@@ -36,8 +36,10 @@ public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrateg
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold());
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics) {
+		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold(),
+				evaluationStatistics);
 	}
 
 }

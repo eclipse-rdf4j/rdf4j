@@ -36,7 +36,12 @@ public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyF
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold());
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics) {
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				getQuerySolutionCacheThreshold(), evaluationStatistics);
+		getOptimizerPipeline().ifPresent(pipeline -> strategy.setOptimizerPipeline(pipeline));
+		return strategy;
 	}
+
 }

@@ -30,8 +30,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy {
 
 	public ExtendedEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold) {
-		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold);
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold,
+			EvaluationStatistics evaluationStatistics) {
+		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold, evaluationStatistics);
 	}
 
 	@Override
@@ -40,7 +41,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
-		// return result of non-strict comparison.
+		// return result of non-strict comparisson.
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), false));
 	}
 

@@ -7,8 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -16,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 
 /**
@@ -37,6 +41,28 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 */
 	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException;
+
+	/**
+	 * Set the {@link QueryOptimizerPipeline} to use for optimizing any incoming queries.
+	 * 
+	 * @param pipeline the {@link QueryOptimizerPipeline}.
+	 * @see #optimize(TupleExpr, EvaluationStatistics, BindingSet)
+	 * @since 3.0
+	 */
+	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
+
+	/**
+	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
+	 * 
+	 * @param expr                 the {@link TupleExpr} to optimize.
+	 * @param evaluationStatistics the {@link EvaluationStatistics} of the data source, to be used for query planning.
+	 * @param bindings             a-priori bindings supplied for the query, which can potentially be inlined.
+	 * @return the optimized {@link TupleExpr}.
+	 * @see #setOptimizerPipeline(QueryOptimizerPipeline)
+	 * @since 3.0
+	 */
+	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingSet bindings);
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
