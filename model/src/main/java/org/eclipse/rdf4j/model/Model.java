@@ -26,8 +26,7 @@ import org.eclipse.rdf4j.model.util.Models;
  * @author Jeen Broekstra
  * @see org.eclipse.rdf4j.model.util.Models the Models utility class
  */
-@SuppressWarnings("deprecation")
-public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAware {
+public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 
 	/**
 	 * Returns an unmodifiable view of this model. This method provides "read-only" access to this model. Query
@@ -119,7 +118,6 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @throws UnsupportedOperationException If this Model cannot accept any statements, because it is filtered to the
 	 *                                       empty set.
 	 */
-	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**

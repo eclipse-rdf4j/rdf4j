@@ -8,15 +8,12 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.GraphImpl;
-import org.eclipse.rdf4j.model.util.GraphUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -36,7 +33,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 	private final int bufferSize;
 
-	private final Graph bufferedStatements;
+	private final Model bufferedStatements;
 
 	private final Set<Resource> contexts;
 
@@ -60,7 +57,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 	public BufferedGroupingRDFHandler(int bufferSize, RDFHandler... handlers) {
 		super(handlers);
 		this.bufferSize = bufferSize;
-		this.bufferedStatements = new GraphImpl();
+		this.bufferedStatements = getModelFactory().createEmptyModel();
 		this.contexts = new HashSet<>();
 	}
 
@@ -82,14 +79,13 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 	private void processBuffer() throws RDFHandlerException {
 		// primary grouping per context.
 		for (Resource context : contexts) {
-			Set<Resource> subjects = GraphUtil.getSubjects(bufferedStatements, null, null, context);
+			Model contextData = bufferedStatements.filter(null, null, null, context);
+			Set<Resource> subjects = contextData.subjects();
 			for (Resource subject : subjects) {
 				Set<IRI> processedPredicates = new HashSet<>();
 
 				// give rdf:type preference over other predicates.
-				Iterator<Statement> typeStatements = bufferedStatements.match(subject, RDF.TYPE, null, context);
-				while (typeStatements.hasNext()) {
-					Statement typeStatement = typeStatements.next();
+				for (Statement typeStatement : contextData.filter(subject, RDF.TYPE, null)) {
 					super.handleStatement(typeStatement);
 				}
 
@@ -97,18 +93,15 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 				// retrieve other statement from this context with the same
 				// subject, and output them grouped by predicate
-				Iterator<Statement> subjectStatements = bufferedStatements.match(subject, null, null, context);
-				while (subjectStatements.hasNext()) {
-					Statement subjectStatement = subjectStatements.next();
+				for (Statement subjectStatement : contextData.filter(subject, null, null)) {
 					IRI predicate = subjectStatement.getPredicate();
 					if (!processedPredicates.contains(predicate)) {
-						Iterator<Statement> toWrite = bufferedStatements.match(subject, predicate, null, context);
-						while (toWrite.hasNext()) {
-							Statement toWriteSt = toWrite.next();
-							super.handleStatement(toWriteSt);
+						for (Statement toWrite : contextData.filter(subject, predicate, null)) {
+							super.handleStatement(toWrite);
 						}
 						processedPredicates.add(predicate);
 					}
+
 				}
 			}
 		}

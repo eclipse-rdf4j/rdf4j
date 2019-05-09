@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.dawg;
 
-import org.eclipse.rdf4j.model.Graph;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.GraphImpl;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -40,8 +40,8 @@ public class DAWGTestResultSetUtil {
 		}
 	}
 
-	public static Graph toGraph(TupleQueryResult tqr) throws QueryEvaluationException {
-		Graph graph = new GraphImpl();
+	public static Model toGraph(TupleQueryResult tqr) throws QueryEvaluationException {
+		Model graph = new TreeModel();
 		DAWGTestResultSetWriter writer = new DAWGTestResultSetWriter(new StatementCollector(graph));
 
 		try {
