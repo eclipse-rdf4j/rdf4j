@@ -8,6 +8,11 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 INSERT DATA {
 
 ex:validPerson1 a ex:Person ;
-	ex:age 123, "234"^^xsd:long.
+	ex:age 123 .
+
+
+ex:validPerson2 a ex:Person ;
+	ex:age "234"^^xsd:long.
+
 
 }
