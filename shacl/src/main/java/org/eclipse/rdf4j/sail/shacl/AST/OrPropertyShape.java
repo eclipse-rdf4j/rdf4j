@@ -35,17 +35,17 @@ import java.util.stream.Collectors;
 /**
  * @author Håvard Ottestad
  */
-public class OrPropertyShape extends PropertyShape {
+public class OrPropertyShape extends PathPropertyShape {
 
 	private final List<List<PropertyShape>> or;
 
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource or) {
-		super(id, nodeShape, deactivated);
+					PathPropertyShape parent, Resource path, Resource or) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
 				.collect(Collectors.toList());
 
 	}

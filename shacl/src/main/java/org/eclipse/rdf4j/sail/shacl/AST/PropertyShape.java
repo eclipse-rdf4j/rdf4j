@@ -36,17 +36,19 @@ import java.util.stream.Stream;
  *
  * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
  */
-public class PropertyShape implements PlanGenerator, RequiresEvalutation {
+public abstract class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	final boolean deactivated;
 	private Resource id;
 
 	NodeShape nodeShape;
+	PathPropertyShape parent;
 
-	PropertyShape(Resource id, NodeShape nodeShape, boolean deactivated) {
+	PropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent) {
 		this.id = id;
 		this.nodeShape = nodeShape;
 		this.deactivated = deactivated;
+		this.parent = parent;
 	}
 
 	@Override
@@ -154,94 +156,93 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			try (Stream<Statement> stream = Iterations
 					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
-					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);
+					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId, null);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
 			}
 
 		}
 
-		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
-				Resource propertyShapeId) {
+		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape, Resource propertyShapeId, PathPropertyShape parent) {
 			List<PropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
 			if (shaclProperties.minCount != null) {
 				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minCount));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minCount));
 			}
 			if (shaclProperties.maxCount != null) {
 				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxCount));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxCount));
 			}
 			if (shaclProperties.datatype != null) {
 				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.datatype));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.datatype));
 			}
 			if (!shaclProperties.or.isEmpty()) {
 				shaclProperties.or.forEach(or -> {
 					propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, or));
+							shaclProperties.deactivated, parent, shaclProperties.path, or));
 				});
 			}
 			if (shaclProperties.minLength != null) {
 				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minLength));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minLength));
 			}
 			if (shaclProperties.maxLength != null) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxLength));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxLength));
 			}
 			if (!shaclProperties.pattern.isEmpty()) {
 				shaclProperties.pattern.forEach(pattern -> {
 					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, shaclProperties.path, pattern, shaclProperties.flags));
+							shaclProperties.deactivated, parent, shaclProperties.path, pattern, shaclProperties.flags));
 				});
 			}
 			if (shaclProperties.languageIn != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.languageIn));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.languageIn));
 			}
 			if (shaclProperties.nodeKind != null) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.nodeKind));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.nodeKind));
 			}
 			if (shaclProperties.minExclusive != null) {
 				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minExclusive));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minExclusive));
 			}
 			if (shaclProperties.maxExclusive != null) {
 				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxExclusive));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxExclusive));
 			}
 			if (shaclProperties.maxInclusive != null) {
 				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.maxInclusive));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxInclusive));
 			}
 			if (shaclProperties.minInclusive != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.minInclusive));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minInclusive));
 			}
 			if (!shaclProperties.clazz.isEmpty()) {
 				shaclProperties.clazz.forEach(clazz -> {
 					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, shaclProperties.path, clazz));
+							shaclProperties.deactivated, parent, shaclProperties.path, clazz));
 				});
 			}
 			if (!shaclProperties.and.isEmpty()) {
 				shaclProperties.and.forEach(and -> {
 					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, and));
+							shaclProperties.deactivated, parent, shaclProperties.path, and));
 				});
 			}
 			if (shaclProperties.in != null) {
 				propertyShapes.add(new InPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.in));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.in));
 			}
 			if (shaclProperties.uniqueLang) {
 				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, shaclProperties.path, shaclProperties.uniqueLang));
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.uniqueLang));
 			}
 
 			return propertyShapes;

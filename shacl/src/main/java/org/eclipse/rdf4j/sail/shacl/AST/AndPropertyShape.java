@@ -28,17 +28,16 @@ import java.util.stream.Collectors;
 /**
  * @author Håvard Ottestad
  */
-public class AndPropertyShape extends PropertyShape {
+public class AndPropertyShape extends PathPropertyShape {
 
 	private final List<List<PropertyShape>> and;
 
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
-	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource and) {
-		super(id, nodeShape, deactivated);
+	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Resource path, Resource and) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 		this.and = toList(connection, and).stream()
-				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
 				.collect(Collectors.toList());
 
 	}

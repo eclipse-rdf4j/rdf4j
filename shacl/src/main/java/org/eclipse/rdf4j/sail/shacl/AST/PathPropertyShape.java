@@ -29,11 +29,10 @@ import java.util.Objects;
  */
 public class PathPropertyShape extends PropertyShape {
 
-	Path path;
+	private Path path;
 
-	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path) {
-		super(id, nodeShape, deactivated);
+	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Resource path) {
+		super(id, nodeShape, deactivated, parent);
 
 		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
 		// undefined.
@@ -47,7 +46,7 @@ public class PathPropertyShape extends PropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
 			PlanNodeProvider overrideTargetNode) {
 		return shaclSailConnection.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection, null,
-				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
+				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}
 
 	@Override
@@ -55,7 +54,7 @@ public class PathPropertyShape extends PropertyShape {
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getAddedStatements(), null,
-				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -66,7 +65,7 @@ public class PathPropertyShape extends PropertyShape {
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null,
-				(IRI) path.getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -75,7 +74,7 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public List<Path> getPaths() {
-		return Collections.singletonList(path);
+		return Collections.singletonList(getPath());
 	}
 
 	@Override
@@ -93,6 +92,9 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 	public Path getPath() {
+		if(path == null && parent != null){
+			return parent.getPath();
+		}
 		return path;
 	}
 

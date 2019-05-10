@@ -32,7 +32,7 @@ public class StandardisedPlanHelper {
 
 			PlanNode planNode;
 
-			if (pathPropertyShape.path == null) {
+			if (pathPropertyShape.getPath() == null) {
 				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
 					t.line.add(t.line.get(0));
 					return t;
@@ -40,7 +40,7 @@ public class StandardisedPlanHelper {
 			} else {
 				planNode = new LoggingNode(
 						new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
-								pathPropertyShape.path.getQuery("?a", "?c", null), false),
+								pathPropertyShape.getPath().getQuery("?a", "?c", null), false),
 						"");
 			}
 
@@ -48,7 +48,7 @@ public class StandardisedPlanHelper {
 					"AAAAAA");
 		}
 
-		if (pathPropertyShape.path == null) {
+		if (pathPropertyShape.getPath() == null) {
 
 			PlanNode targets = new ModifyTuple(
 					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""), t -> {
@@ -85,7 +85,7 @@ public class StandardisedPlanHelper {
 
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(
 					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
-					shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), true), "");
+					shaclSailConnection, pathPropertyShape.getPath().getQuery("?a", "?c", null), true), "");
 
 			top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
 

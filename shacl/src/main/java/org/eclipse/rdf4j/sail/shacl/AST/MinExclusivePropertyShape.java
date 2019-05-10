@@ -31,8 +31,8 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
 	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			boolean deactivated, Resource path, Literal minExclusive) {
-		super(id, connection, nodeShape, deactivated, path);
+			boolean deactivated, PathPropertyShape parent, Resource path, Literal minExclusive) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minExclusive = minExclusive;
 
@@ -87,7 +87,7 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "MinExclusivePropertyShape{" +
 				"minExclusive=" + minExclusive +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }
