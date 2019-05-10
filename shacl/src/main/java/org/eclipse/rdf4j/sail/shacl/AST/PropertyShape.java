@@ -156,14 +156,16 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 			try (Stream<Statement> stream = Iterations
 					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
-					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId, null);
+					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId,
+							null);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
 			}
 
 		}
 
-		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape, Resource propertyShapeId, PathPropertyShape parent) {
+		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
+				Resource propertyShapeId, PathPropertyShape parent) {
 			List<PropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);

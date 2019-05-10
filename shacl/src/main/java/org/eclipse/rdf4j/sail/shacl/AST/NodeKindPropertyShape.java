@@ -31,7 +31,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
 	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-						  PathPropertyShape parent, Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource nodeKind) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 

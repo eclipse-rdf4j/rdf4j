@@ -46,7 +46,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-						  PathPropertyShape parent, Resource path,
+			PathPropertyShape parent, Resource path,
 			Long minCount) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
@@ -151,7 +151,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		PlanNode trimTuple = new LoggingNode(new TrimTuple(minCountFilter, 0, 1), "");
 
 		PlanNode bulkedExternalLeftOuterJoin2 = new LoggingNode(
-				new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, getPath().getQuery("?a", "?c", null), false),
+				new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, getPath().getQuery("?a", "?c", null),
+						false),
 				"");
 
 		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2), "");

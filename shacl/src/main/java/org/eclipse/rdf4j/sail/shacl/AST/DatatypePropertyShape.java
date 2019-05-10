@@ -29,7 +29,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
 	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-						  PathPropertyShape parent, Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource datatype) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 

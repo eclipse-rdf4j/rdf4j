@@ -34,7 +34,8 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
-	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Resource path, Resource and) {
+	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path, Resource and) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.and = toList(connection, and).stream()
 				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))

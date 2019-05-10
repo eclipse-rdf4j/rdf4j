@@ -48,7 +48,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(ClassPropertyShape.class);
 
 	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-					   PathPropertyShape parent, Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource classResource) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.classResource = classResource;

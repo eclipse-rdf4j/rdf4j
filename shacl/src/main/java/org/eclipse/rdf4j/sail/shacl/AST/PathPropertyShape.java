@@ -31,7 +31,8 @@ public class PathPropertyShape extends PropertyShape {
 
 	private Path path;
 
-	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Resource path) {
+	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path) {
 		super(id, nodeShape, deactivated, parent);
 
 		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
@@ -92,7 +93,7 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 	public Path getPath() {
-		if(path == null && parent != null){
+		if (path == null && parent != null) {
 			return parent.getPath();
 		}
 		return path;

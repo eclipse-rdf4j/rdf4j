@@ -39,7 +39,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	UniqueLangPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-							PathPropertyShape parent, Resource path,
+			PathPropertyShape parent, Resource path,
 			boolean uniqueLang) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
