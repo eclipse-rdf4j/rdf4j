@@ -150,13 +150,14 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 	static class Factory {
 
-		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
+		static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
 				NodeShape nodeShape) {
 
 			try (Stream<Statement> stream = Iterations
 					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
-					List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId,
+					List<PathPropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
+							propertyShapeId,
 							null);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
@@ -164,9 +165,9 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 		}
 
-		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
+		static List<PathPropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
 				Resource propertyShapeId, PathPropertyShape parent) {
-			List<PropertyShape> propertyShapes = new ArrayList<>(2);
+			List<PathPropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
@@ -269,7 +270,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		return Objects.hash(deactivated, id);
 	}
 
-	protected static String toString(List<List<PropertyShape>> propertyShapes) {
+	protected static String toString(List<List<PathPropertyShape>> propertyShapes) {
 
 		List<String> collect = propertyShapes.stream()
 				.map(l -> Arrays.toString(l.toArray()))

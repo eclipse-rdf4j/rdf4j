@@ -75,6 +75,12 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/nodeKindMinLength",
 		"test-cases/or/implicitAnd",
 		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/or/class",
+		"test-cases/or/classValidateTarget",
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/or/nodeKindValidateTarget",
+		"test-cases/or/datatypeNodeShape",
 		"test-cases/minExclusive/simple",
 		"test-cases/minExclusive/dateVsTime",
 		"test-cases/maxExclusive/simple",
@@ -87,17 +93,13 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/targetNode",
 		"test-cases/class/multipleClass",
 		"test-cases/class/validateTarget",
-		"test-cases/or/class",
-		"test-cases/or/classValidateTarget",
-		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath",
-		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape",
 		"test-cases/in/simple",
 		"test-cases/uniqueLang/simple",
-		"test-cases/propertyShapeWithTarget/simple"
+		"test-cases/propertyShapeWithTarget/simple",
+		"test-cases/and-or/datatypeNodeShape"
 	)
 		.distinct()
 		.sorted()

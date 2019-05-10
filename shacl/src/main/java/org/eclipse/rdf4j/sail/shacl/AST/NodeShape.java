@@ -44,8 +44,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	private Resource id;
 
-	private List<PropertyShape> propertyShapes = Collections.emptyList();
-	private List<PropertyShape> nodeShapes = Collections.emptyList();
+	private List<PathPropertyShape> propertyShapes = Collections.emptyList();
+	private List<PathPropertyShape> nodeShapes = Collections.emptyList();
 
 	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
@@ -113,7 +113,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return Stream.concat(propertyShapesPlans, nodeShapesPlans);
 	}
 
-	private Stream<PlanNode> convertToPlan(List<PropertyShape> propertyShapes, ShaclSailConnection shaclSailConnection,
+	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes,
+			ShaclSailConnection shaclSailConnection,
 			NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
 			SailConnection addedStatements,
 			SailConnection removedStatements) {

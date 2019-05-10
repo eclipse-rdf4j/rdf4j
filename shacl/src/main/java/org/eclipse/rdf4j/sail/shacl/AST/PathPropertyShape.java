@@ -78,6 +78,10 @@ public class PathPropertyShape extends PropertyShape {
 		return Collections.singletonList(getPath());
 	}
 
+	public boolean hasOwnPath() {
+		return path != null;
+	}
+
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		if (deactivated) {
