@@ -45,9 +45,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	private long maxCount;
 
 	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Long maxCount) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxCount = maxCount;
 
@@ -63,7 +63,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		if (overrideTargetNode != null) {
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(
 					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-							shaclSailConnection, path.getQuery("?a", "?c", null), false),
+							shaclSailConnection, getPath().getQuery("?a", "?c", null), false),
 					"");
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
 
@@ -80,8 +80,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		if (maxCount == 1 && shaclSailConnection.stats.isBaseSailEmpty()) {
 			String query = nodeShape.getQuery("?a", "?b", null);
-			String query1 = path.getQuery("?a", "?d", null);
-			String query2 = path.getQuery("?a", "?e", null);
+			String query1 = getPath().getQuery("?a", "?d", null);
+			String query2 = getPath().getQuery("?a", "?e", null);
 
 			String negationQuery = query + "\n" + query1 + "\n" + query2 + "\nFILTER(?d != ?e)";
 
@@ -130,7 +130,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			PlanNode unique = new LoggingNode(new Unique(trimmed), "");
 
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(
-					new BulkedExternalInnerJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), true),
+					new BulkedExternalInnerJoin(unique, shaclSailConnection, getPath().getQuery("?a", "?c", null),
+							true),
 					"");
 
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
@@ -182,7 +183,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "MaxCountPropertyShape{" +
 				"maxCount=" + maxCount +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

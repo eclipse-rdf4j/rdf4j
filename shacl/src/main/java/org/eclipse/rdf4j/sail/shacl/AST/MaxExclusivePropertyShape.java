@@ -31,8 +31,8 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxExclusivePropertyShape.class);
 
 	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			boolean deactivated, Resource path, Literal maxExclusive) {
-		super(id, connection, nodeShape, deactivated, path);
+			boolean deactivated, PathPropertyShape parent, Resource path, Literal maxExclusive) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxExclusive = maxExclusive;
 
@@ -87,7 +87,7 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "MaxExclusivePropertyShape{" +
 				"maxExclusive=" + maxExclusive +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

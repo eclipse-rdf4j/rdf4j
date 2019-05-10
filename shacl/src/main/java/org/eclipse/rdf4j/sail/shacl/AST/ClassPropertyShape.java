@@ -48,9 +48,9 @@ public class ClassPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(ClassPropertyShape.class);
 
 	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource classResource) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 		this.classResource = classResource;
 	}
 
@@ -67,7 +67,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		if (overrideTargetNode != null) {
 			PlanNode planNode;
 
-			if (path == null) {
+			if (getPath() == null) {
 				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
 					t.line.add(t.line.get(0));
 					return t;
@@ -76,7 +76,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			} else {
 				planNode = new LoggingNode(
 						new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
-								path.getQuery("?a", "?c", null), false),
+								getPath().getQuery("?a", "?c", null), false),
 						"");
 			}
 
@@ -98,10 +98,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 			return new EnrichWithShape(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, this);
 		}
 
-		if (path != null && shaclSailConnection.stats.isBaseSailEmpty()) {
+		if (getPath() != null && shaclSailConnection.stats.isBaseSailEmpty()) {
 
 			String query = nodeShape.getQuery("?a", "?b", null);
-			String query1 = path.getQuery("?a", "?d", null);
+			String query1 = getPath().getQuery("?a", "?d", null);
 
 			String negationQuery = query + "\n" + query1 + "\n FILTER(NOT EXISTS{?d a <" + classResource + ">})\n";
 
@@ -114,7 +114,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 		}
 
-		if (path == null) {
+		if (getPath() == null) {
 			PlanNode targets = new ModifyTuple(
 					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
 					t -> {
@@ -181,7 +181,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		// foaf:Person", and ":peter foaf:knows :steve" is already added
 		PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(
 				new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null), ""),
-				shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
+				shaclSailConnection, getPath().getQuery("?a", "?c", null), true), "");
 
 		// only get tuples that came from the first or the innerJoin or bulkedExternalLeftOuter,
 		// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the
@@ -212,7 +212,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			// Build a query to run against the base sail. eg:
 			// ?c foaf:knows ?a.
 			// ?c a foaf:Person.
-			String query = path.getQuery("?c", "?a", null)
+			String query = getPath().getQuery("?c", "?a", null)
 					+ nodeShape.getQuery("?c", "?q", shaclSailConnection.getRdfsSubClassOfReasoner());
 
 			// do bulked external join for the removed class statements again the query above.
@@ -281,7 +281,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "ClassPropertyShape{" +
 				"classResource=" + classResource +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

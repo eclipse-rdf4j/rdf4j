@@ -39,9 +39,9 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	UniqueLangPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			boolean uniqueLang) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.uniqueLang = uniqueLang;
 		assert uniqueLang : "uniqueLang should always be true";
@@ -58,7 +58,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		if (overrideTargetNode != null) {
 			PlanNode relevantTargetsWithPath = new LoggingNode(
 					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-							shaclSailConnection, path.getQuery("?a", "?c", null), false),
+							shaclSailConnection, getPath().getQuery("?a", "?c", null), false),
 					"");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
@@ -108,7 +108,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		PlanNode relevantTargetsWithPath = new LoggingNode(
 				new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
-						path.getQuery("?a", "?c", null), false),
+						getPath().getQuery("?a", "?c", null), false),
 				"");
 
 		PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
@@ -151,7 +151,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "UniqueLangPropertyShape{" +
 				"uniqueLang=" + uniqueLang +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }
