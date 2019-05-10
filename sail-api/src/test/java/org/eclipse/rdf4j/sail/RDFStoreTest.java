@@ -133,12 +133,11 @@ public abstract class RDFStoreTest {
 	 *---------*/
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned repository should already have been initialized.
+	 * Gets an instance of the Sail that should be tested.
 	 * 
-	 * @return an initialized Sail.
-	 * @throws SailException If the initialization of the repository failed.
+	 * @return a Sail.
 	 */
-	protected abstract Sail createSail() throws SailException;
+	protected abstract Sail createSail();
 
 	@Before
 	public void setUp() throws Exception {

@@ -33,9 +33,9 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
 	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource languageIn) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
 	}
@@ -88,7 +88,7 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "LanguageInPropertyShape{" +
 				"languageIn=" + Arrays.toString(languageIn.toArray()) +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

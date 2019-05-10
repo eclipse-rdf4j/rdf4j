@@ -33,9 +33,9 @@ public class InPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(InPropertyShape.class);
 
 	InPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Resource in) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.in = new HashSet<>(toList(connection, in));
 
@@ -89,7 +89,7 @@ public class InPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "InPropertyShape{" +
 				"in=" + Arrays.toString(in.toArray()) +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

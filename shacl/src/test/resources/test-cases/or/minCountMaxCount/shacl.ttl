@@ -13,11 +13,9 @@ ex:PersonShape
 		sh:path ex:age ;
                 sh:or (
                     [
-                    sh:path ex:age ;
                       sh:minCount 4 ;
                     ]
                     [
-                    sh:path ex:age ;
                       sh:maxCount 2 ;
                     ]
                   ) ;

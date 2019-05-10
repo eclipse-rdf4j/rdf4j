@@ -29,9 +29,9 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxLengthPropertyShape.class);
 
 	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Long maxLength) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxLength = maxLength;
 
@@ -86,7 +86,7 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "MaxLengthPropertyShape{" +
 				"maxLength=" + maxLength +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

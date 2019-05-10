@@ -42,8 +42,7 @@ public interface Sail {
 	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
 	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
 	 * 
-	 * @throws SailException         If the Sail could not be initialized.
-	 * @throws IllegalStateException If the Sail has already been initialized.
+	 * @throws SailException If the Sail could not be initialized.
 	 * @deprecated Use {{@link #init()} instead.
 	 */
 	@Deprecated
@@ -53,8 +52,7 @@ public interface Sail {
 	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
 	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
 	 * 
-	 * @throws SailException         If the Sail could not be initialized.
-	 * @throws IllegalStateException If the Sail has already been initialized.
+	 * @throws SailException If the Sail could not be initialized.
 	 * 
 	 * @since 2.5
 	 */
