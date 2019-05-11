@@ -137,8 +137,6 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 			union.replaceWith(rightArg);
 		} else if (rightArg instanceof EmptySet) {
 			union.replaceWith(leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			union.replaceWith(leftArg);
 		}
 	}
 
