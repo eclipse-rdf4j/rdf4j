@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.mock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -40,7 +41,7 @@ public class MockInputPlanNode implements PlanNode {
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
 				.map(Tuple::new)
-				.sorted()
+				.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
 				.collect(Collectors.toList());
 
 	}
