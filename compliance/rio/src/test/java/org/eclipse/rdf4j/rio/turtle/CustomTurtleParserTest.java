@@ -440,7 +440,7 @@ public class CustomTurtleParserTest {
 		assertEquals(1, model.size());
 		model.filter(null, RDF.TYPE, null)
 				.objects()
-				.forEach(obj -> assertEquals("http://purl.bioontology.org/ontology/UATC/%20SERINE%20%20",
+				.forEach(obj -> assertEquals("http://purl.bioontology.org/ontology/UATC/ SERINE  ",
 						obj.stringValue()));
 	}
 
