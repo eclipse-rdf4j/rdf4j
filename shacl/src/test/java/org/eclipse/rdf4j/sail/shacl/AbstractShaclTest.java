@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -167,7 +168,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel, boolean preloadWithDummyData) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -186,6 +187,17 @@ abstract public class AbstractShaclTest {
 
 		boolean exception = false;
 		boolean ran = false;
+
+		if (preloadWithDummyData) {
+			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+				connection.begin(isolationLevel);
+				ValueFactory vf = connection.getValueFactory();
+				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
+						vf.createLiteral("auto-generated!"), vf.createBNode());
+				connection.commit();
+			}
+
+		}
 
 		for (int j = 0; j < 100; j++) {
 
