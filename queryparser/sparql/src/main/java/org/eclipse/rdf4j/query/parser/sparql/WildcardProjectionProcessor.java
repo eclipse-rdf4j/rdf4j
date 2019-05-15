@@ -11,6 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
@@ -142,6 +144,26 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 			} else {
 				return super.visit(node, data);
 			}
+		}
+
+		@Override
+		public Object visit(ASTBind node, Object data) throws VisitorException {
+			// only include the actual alias from a BIND
+			Node aliasNode = node.jjtGetChild(1);
+			String alias = ((ASTVar) aliasNode).getName();
+
+			if (alias != null) {
+				variableNames.add(alias);
+				return null;
+			} else {
+				return super.visit(node, data);
+			}
+		}
+
+		@Override
+		public Object visit(ASTConstraint node, Object data) throws VisitorException {
+			// ignore variables in filter expressions
+			return null;
 		}
 
 		@Override
