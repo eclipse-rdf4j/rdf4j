@@ -110,7 +110,7 @@ public class CreateServlet extends TransformationServlet {
 		return newID;
 	}
 
-	private RepositoryConfig updateRepositoryConfig(final String configString) throws IOException, RDF4JException {
+	RepositoryConfig updateRepositoryConfig(final String configString) throws IOException, RDF4JException {
 		final Model graph = new LinkedHashModel();
 		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 		rdfParser.setRDFHandler(new StatementCollector(graph));
@@ -124,7 +124,7 @@ public class CreateServlet extends TransformationServlet {
 		return repConfig;
 	}
 
-	private ConfigTemplate getConfigTemplate(final String type) throws IOException {
+	static ConfigTemplate getConfigTemplate(final String type) throws IOException {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
 			return new ConfigTemplate(template);
