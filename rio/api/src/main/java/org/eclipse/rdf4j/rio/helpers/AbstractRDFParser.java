@@ -367,38 +367,24 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Resolves a URI-string against the base URI and creates a {@link IRI} object for it.
 	 */
 	protected IRI resolveURI(String uriSpec) throws RDFParseException {
-		// Resolve relative URIs against base URI
-		ParsedIRI uri;
-		try {
-			uri = new ParsedIRI(uriSpec);
-		} catch (URISyntaxException e) {
-			reportError("Invalid IRI '" + uriSpec, BasicParserSettings.VERIFY_URI_SYNTAX);
-			try {
-				uri = ParsedIRI.create(uriSpec);
-			} catch (IllegalArgumentException ex) {
-				if (getParserConfig().isNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX)) {
-					return null;
-				}
-				return valueFactory.createIRI(uriSpec);
-			}
-		}
-
-		if (!uri.isAbsolute()) {
+		if (uriSpec.indexOf(':') < 0) {
+			// Resolve relative URIs against base URI
 			if (baseURI == null) {
 				reportFatalError("Unable to resolve URIs, no base URI has been set");
 			}
 
 			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {
-				if (!uri.isAbsolute() && uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
+				if (uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
 					reportError("Relative URI '" + uriSpec + "' cannot be resolved using the opaque base URI '"
 							+ baseURI + "'", BasicParserSettings.VERIFY_RELATIVE_URIS);
 				}
 			}
 
-			uri = baseURI.resolve(uri);
+			return createURI(baseURI.resolve(uriSpec));
+		} else {
+			// URI is not relative
+			return createURI(uriSpec);
 		}
-
-		return createURI(uri.toString());
 	}
 
 	/**
@@ -410,6 +396,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 				new ParsedIRI(uri);
 			} catch (URISyntaxException e) {
 				reportError(e.getMessage(), BasicParserSettings.VERIFY_URI_SYNTAX);
+				return null;
 			}
 		}
 		try {
