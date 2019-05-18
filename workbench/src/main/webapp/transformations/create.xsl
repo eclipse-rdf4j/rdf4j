@@ -48,6 +48,9 @@
 								<option value="memory-spin-rdfs">
 									Memory Store + RDFS and SPIN support
 								</option>
+								<option value="memory-shacl">
+									Memory Store + SHACL
+								</option>
                                 <!-- disabled pending GH-1304  option value="memory-spin-rdfs-lucene">
                                     In Memory Store with RDFS+SPIN+Lucene support
                                 </option -->
@@ -74,6 +77,9 @@
 								</option>
 								<option value="native-spin-rdfs">
 									Native Store + RDFS and SPIN support
+								</option>
+								<option value="native-shacl">
+									Native Store + SHACL
 								</option>
                                 <!-- disabled pending GH-1304  option value="native-spin-rdfs-lucene">
 									Native Java Store with RDFS+SPIN+Lucene support

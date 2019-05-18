@@ -9,24 +9,42 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.junit.Test;
+
+import java.io.IOException;
+import java.util.HashMap;
 
 /**
  * @author Dale Visser
  */
 public class TestCreateServlet {
 
+	private static final String[] EXPECTED_TEMPLATES = new String[] { "memory-customrule", "memory-rdfs-dt",
+			"memory-rdfs", "memory",
+			"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql", "memory-shacl",
+			"native-shacl" };
+
 	/**
 	 * Regression test for SES-1907.
 	 */
 	@Test
 	public final void testExpectedTemplatesCanBeResolved() {
-		String[] expectedTemplates = { "memory-customrule", "memory-rdfs-dt", "memory-rdfs", "memory",
-				"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql" };
-		for (String template : expectedTemplates) {
+		for (String template : EXPECTED_TEMPLATES) {
+			System.out.println(template);
 			String resource = template + ".ttl";
 			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);
 		}
 	}
+
+	@Test
+	public final void testExpectedTemplatesCanBeLoaded() throws IOException {
+		for (String template : EXPECTED_TEMPLATES) {
+			System.out.println(template);
+			CreateServlet.getConfigTemplate(template);
+		}
+	}
+
 }
