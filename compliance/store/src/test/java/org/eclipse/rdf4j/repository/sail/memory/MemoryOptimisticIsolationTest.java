@@ -32,5 +32,4 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 	}
-
 }

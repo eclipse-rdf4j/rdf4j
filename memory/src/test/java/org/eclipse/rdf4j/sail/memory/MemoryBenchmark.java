@@ -34,17 +34,16 @@ import java.util.stream.Stream;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC" })
+//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MemoryBenchmark {
 
 	@Param({ "NONE", "READ_UNCOMMITTED", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
-//	@Param({  "SNAPSHOT" })
 	public String isolationLevel;
 
-	List<Statement> statementList = getStatements();
+	private List<Statement> statementList = getStatements();
 
 	@Setup(Level.Iteration)
 	public void setUp() {
@@ -52,7 +51,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public void simpleFoafModel() {
+	public void load() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -68,7 +67,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelSize() {
+	public long size() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -86,34 +85,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelDuplicate() {
-
-		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
-
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
-
-			connection.commit();
-
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
-
-			long count = getCount(connection);
-
-			connection.commit();
-
-			return count;
-		}
-
-	}
-
-	@Benchmark
-	public long simpleFoafModelDuplicateMultiple() {
+	public long duplicates() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -144,7 +116,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelDuplicateMultipleFlush() {
+	public long duplicatesFlush() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -177,7 +149,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelDuplicateMultipleWithNewStatement() {
+	public long duplicatesAndNewStatements() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -211,7 +183,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelDuplicateMultipleWithNewStatementGetFirstStatement() {
+	public long duplicatesAndNewStatementsGetFirst() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -220,28 +192,29 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
 
-			long count = 0;
+			long counter = 0;
 			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null, null, false)) {
-					count += statements.next().toString().length();
+				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+						null, null, false)) {
+					counter += statements.next().toString().length();
 				}
 			}
 
 			connection.commit();
 
-			return count;
+			return counter;
 		}
 
 	}
@@ -256,11 +229,12 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null, null, false)) {
+				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+						null, null, false)) {
 					count += statements.next().toString().length();
 				}
 			}
@@ -273,7 +247,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long simpleFoafModelDuplicateMultipleWithNewStatementIteratorMatchesNothing() {
+	public long duplicatesAndNewStatementsIteratorMatchesNothing() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();

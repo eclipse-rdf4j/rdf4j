@@ -7,21 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.UnionIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -30,6 +15,20 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
+
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A view of an {@link SailSource} that is derived from a backing {@link SailDataset}.
@@ -273,7 +272,7 @@ class SailDatasetImpl implements SailDataset {
 		Model approved = changes.getApproved();
 		if (approved != null && iter != null) {
 
-			return distinctModelReducingUnion(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
+			return new DistinctModelReducingUnionIteration(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
 
 		} else if (approved != null) {
 			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
@@ -283,64 +282,6 @@ class SailDatasetImpl implements SailDataset {
 		} else {
 			return new EmptyIteration<>();
 		}
-	}
-
-	interface Filterable {
-		Model filter(Model original);
-	}
-
-	private CloseableIteration<? extends Statement, SailException> distinctModelReducingUnion(
-			CloseableIteration<? extends Statement, SailException> iter, Model originalModel, Filterable filterable) {
-
-		return new CloseableIteration<Statement, SailException>() {
-
-			Statement next;
-			Iterator<Statement> filteredStatementsIterator;
-
-			private void calculateNext() {
-				if (next != null) {
-					return;
-				}
-
-				if (iter.hasNext()) {
-					next = iter.next();
-					originalModel.remove(next);
-				} else {
-					if (filteredStatementsIterator == null) {
-						filteredStatementsIterator = filterable.filter(originalModel).iterator();
-					}
-
-					if (filteredStatementsIterator.hasNext()) {
-						next = filteredStatementsIterator.next();
-					}
-				}
-			}
-
-			@Override
-			public void close() throws SailException {
-				iter.close();
-			}
-
-			@Override
-			public boolean hasNext() throws SailException {
-				calculateNext();
-				return next != null;
-			}
-
-			@Override
-			public Statement next() throws SailException {
-				calculateNext();
-				Statement temp = next;
-				next = null;
-				return temp;
-			}
-
-			@Override
-			public void remove() throws SailException {
-
-			}
-		};
-
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(
@@ -355,17 +296,6 @@ class SailDatasetImpl implements SailDataset {
 				return !excluded.contains(stmt);
 			}
 		};
-	}
-
-	private CloseableIteration<? extends Statement, SailException> union(
-			CloseableIteration<? extends Statement, SailException> result, Iterable<Statement> included) {
-		final Iterator<Statement> iter = included.iterator();
-		if (!iter.hasNext()) {
-			return result;
-		}
-		CloseableIteration<Statement, SailException> incl;
-		incl = new CloseableIteratorIteration<>(iter);
-		return new UnionIteration<>(incl, result);
 	}
 
 }

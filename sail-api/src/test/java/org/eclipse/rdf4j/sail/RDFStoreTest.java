@@ -19,6 +19,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -954,6 +956,79 @@ public abstract class RDFStoreTest {
 		con.addStatement(b2, RDF.VALUE, b2);
 		con.addStatement(b1, RDF.VALUE, b1);
 		assertEquals(3, con.size());
+		con.commit();
+	}
+
+	@Test
+	public void testDuplicateCount() {
+		con.begin();
+
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		con.begin();
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		Assert.assertEquals("Statement should appear once", 1, con.size());
+		con.commit();
+
+	}
+
+	@Test
+	public void testDuplicateGetStatement() {
+		con.begin();
+
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		con.begin();
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		try (Stream<? extends Statement> stream = Iterations
+				.stream(con.getStatements(null, null, null, false))) {
+			long count = stream.count();
+			Assert.assertEquals("Statement should appear once", 1, count);
+		}
+		con.commit();
+	}
+
+	@Test
+	public void testDuplicateGetStatementAfterCommit() {
+		con.begin();
+
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		con.begin();
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		try (Stream<? extends Statement> stream = Iterations
+				.stream(con.getStatements(null, null, null, false))) {
+			long count = stream.count();
+			Assert.assertEquals("Statement should appear once", 1, count);
+
+		}
+	}
+
+	@Test
+	public void testDuplicateCountAfterComit() {
+		con.begin();
+
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		con.begin();
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+
+		Assert.assertEquals("Statement should appear once", 1, con.size());
+	}
+
+	@Test
+	public void testDuplicateCountMultipleTimes() {
+		con.begin();
+
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		con.commit();
+		con.begin();
+		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		Assert.assertEquals("Statement should appear once", 1, con.size());
+		Assert.assertEquals("Statement should appear once", 1, con.size());
+		Assert.assertEquals("Statement should appear once", 1, con.size());
 		con.commit();
 	}
 
