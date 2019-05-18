@@ -107,4 +107,26 @@ public class DuplicateStatementTest {
 		}
 	}
 
+	@Test
+	public void testCountMultipleTimes() {
+
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+
+			connection.begin();
+
+			connection.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+			connection.commit();
+			connection.begin();
+			connection.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+			Assert.assertEquals("Statement should appear once", 1, connection.size());
+			Assert.assertEquals("Statement should appear once", 1, connection.size());
+			Assert.assertEquals("Statement should appear once", 1, connection.size());
+			connection.commit();
+		}
+
+	}
+
 }

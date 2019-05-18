@@ -30,7 +30,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * A view of an {@link SailSource} that is derived from a backing {@link SailDataset}.
@@ -274,9 +273,8 @@ class SailDatasetImpl implements SailDataset {
 		Model approved = changes.getApproved();
 		if (approved != null && iter != null) {
 
-			List<Statement> filteredApproved = getStatementsThatAreNew(approved, subj, pred, obj, contexts);
+			return distinctModelReducingUnion(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
 
-			return union(iter, filteredApproved);
 		} else if (approved != null) {
 			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
 			return new CloseableIteratorIteration<>(i);
@@ -287,18 +285,62 @@ class SailDatasetImpl implements SailDataset {
 		}
 	}
 
-	private List<Statement> getStatementsThatAreNew(Model approved, Resource subj, IRI pred, Value obj,
-			Resource[] contexts) {
-		return approved.filter(subj, pred, obj, contexts)
-				.stream()
-				.filter(statement -> {
-					try (CloseableIteration<? extends Statement, SailException> statements = derivedFrom.getStatements(
-							statement.getSubject(), statement.getPredicate(), statement.getObject(),
-							statement.getContext())) {
-						return !statements.hasNext();
+	interface Filterable {
+		Model filter(Model original);
+	}
+
+	private CloseableIteration<? extends Statement, SailException> distinctModelReducingUnion(
+			CloseableIteration<? extends Statement, SailException> iter, Model originalModel, Filterable filterable) {
+
+		return new CloseableIteration<Statement, SailException>() {
+
+			Statement next;
+			Iterator<Statement> filteredStatementsIterator;
+
+			private void calculateNext() {
+				if (next != null) {
+					return;
+				}
+
+				if (iter.hasNext()) {
+					next = iter.next();
+					originalModel.remove(next);
+				} else {
+					if (filteredStatementsIterator == null) {
+						filteredStatementsIterator = filterable.filter(originalModel).iterator();
 					}
-				})
-				.collect(Collectors.toList());
+
+					if (filteredStatementsIterator.hasNext()) {
+						next = filteredStatementsIterator.next();
+					}
+				}
+			}
+
+			@Override
+			public void close() throws SailException {
+				iter.close();
+			}
+
+			@Override
+			public boolean hasNext() throws SailException {
+				calculateNext();
+				return next != null;
+			}
+
+			@Override
+			public Statement next() throws SailException {
+				calculateNext();
+				Statement temp = next;
+				next = null;
+				return temp;
+			}
+
+			@Override
+			public void remove() throws SailException {
+
+			}
+		};
+
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(
