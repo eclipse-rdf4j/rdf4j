@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 /**
  * Base implementation of {@link QueryModelNode}.
  */
-public abstract class AbstractQueryModelNode implements QueryModelNode {
+public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPatternGroupable {
 
 	/*-----------*
 	 * Variables *
@@ -24,6 +24,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	private static final long serialVersionUID = 3006199552086476178L;
 
 	private QueryModelNode parent;
+
+	private boolean isGraphPatternGroup;
 
 	/*---------*
 	 * Methods *
@@ -39,6 +41,27 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 		this.parent = parent;
 	}
 
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#isGraphPatternGroup()
+	 */
+	@Override
+	public boolean isGraphPatternGroup() {
+		return isGraphPatternGroup;
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#setGraphPatternGroup(boolean)
+	 */
+	@Override
+	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
+		this.isGraphPatternGroup = isGraphPatternGroup;
+	}
+	
 	/**
 	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should override this
 	 * method when they have child nodes.

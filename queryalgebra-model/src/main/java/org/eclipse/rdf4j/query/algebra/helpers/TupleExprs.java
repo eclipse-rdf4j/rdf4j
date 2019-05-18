@@ -15,6 +15,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -51,6 +52,20 @@ public class TupleExprs {
 			} else {
 				queue.addAll(getChildren(n));
 			}
+		}
+		return false;
+	}
+
+	/**
+	 * Verifies if the supplied {@link TupleExpr} represents a group graph pattern.
+	 * 
+	 * @param expr a {@link TupleExpr}
+	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
+	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
+	 */
+	public static boolean isGraphPatternGroup(TupleExpr expr) {
+		if (expr instanceof GraphPatternGroupable) {
+			return ((GraphPatternGroupable) expr).isGraphPatternGroup();
 		}
 		return false;
 	}
