@@ -170,6 +170,10 @@ public class LinkedHashModel extends AbstractModel {
 	@Override
 	public boolean remove(Object o) {
 		if (o instanceof Statement) {
+			if (statements.isEmpty()) {
+				return false;
+			}
+
 			Iterator iter = find((Statement) o);
 			if (iter.hasNext()) {
 				iter.next();
