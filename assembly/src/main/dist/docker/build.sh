@@ -14,6 +14,7 @@ rm -rf ../../../../target/
 
 # go to root of project and do clean, format, install and assembly
 cd ../../../../..
+MVN_VERSION=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)
 mvn clean
 mvn formatter:format
 mvn -Passembly install -DskipTests
@@ -29,3 +30,4 @@ cp $ZIP ./ignore/rdf4j.zip
 # build
 docker-compose build
 
+docker tag docker_rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}

@@ -1,18 +1,9 @@
 # Eclipse RDF4J server and workbench
 
-Dockerfile for RDF4J server and workbench, based on the Tomcat 8.5 Alpine image.
+Docker image for RDF4J server and workbench, based on the Tomcat 8.5 Alpine image.
 
 A slightly modified web.mxl is used to fix a known UTF-8 issue 
 (see also http://docs.rdf4j.org/server-workbench-console)
-
-## Full build
-The simplest way to build RDF4J and the docker image is to run: `./build.sh`
-
-This will
- - clean and build the project, including the one-jar zip file
- - build the docker image
- 
- To run the container, use: `docker-compose up -d`
 
 ## Port
 
@@ -23,13 +14,7 @@ By default port 8080 is exposed.
   * RDF4J data will be stored in `/var/rdf4j`
   * Tomcat server logs in `/usr/local/tomcat/logs`
 
-## Building a docker images
-
-```docker-compose build```
-
 ## Running the docker container 
-
-Easiest way to run up the container is with: `docker-compose up -d`
 
 The default java runtime options (-Xmx2g) can be changed by setting the 
 `JAVA_OPTS` environment variable.
