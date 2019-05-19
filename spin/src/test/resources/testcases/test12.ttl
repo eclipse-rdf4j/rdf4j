@@ -6,14 +6,12 @@
 	sp:text """
 PREFIX ex: <ex:>
 
-SELECT *
+SELECT ?value
 WHERE {
     FILTER NOT EXISTS { ?this ex:firstName ?value }
 }
 """;
-    sp:resultVariables  (
-    	spin:_this 
-    	_:value );
+    sp:resultVariables  ( _:value );
 	sp:where (
     [ a       sp:Filter ;
       sp:expression
