@@ -41,7 +41,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		this.parent = parent;
 	}
 
-
 	/*
 	 * (non-Javadoc)
 	 * 
@@ -61,7 +60,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
 		this.isGraphPatternGroup = isGraphPatternGroup;
 	}
-	
+
 	/**
 	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should override this
 	 * method when they have child nodes.

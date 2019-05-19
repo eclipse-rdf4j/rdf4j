@@ -22,7 +22,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	 * The operator's argument.
 	 */
 	protected TupleExpr arg;
-	
+
 	private boolean isGraphPatternGroup;
 
 	/*--------------*
@@ -44,17 +44,17 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	/*---------*
 	 * Methods *
 	 *---------*/
-	
+
 	@Override
 	public boolean isGraphPatternGroup() {
 		return isGraphPatternGroup;
 	}
-	
+
 	@Override
 	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
 		this.isGraphPatternGroup = isGraphPatternGroup;
 	}
-	
+
 	/**
 	 * Gets the argument of this unary tuple operator.
 	 * 

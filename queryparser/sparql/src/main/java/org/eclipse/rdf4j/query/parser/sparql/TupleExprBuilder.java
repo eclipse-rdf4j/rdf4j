@@ -1024,8 +1024,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
 
-		((GraphPatternGroupable)te).setGraphPatternGroup(true);
-		
+		((GraphPatternGroupable) te).setGraphPatternGroup(true);
+
 		parentGP.addRequiredTE(te);
 
 		graphPattern = parentGP;

@@ -185,7 +185,7 @@ public class GraphPattern {
 		for (ValueExpr constraint : constraints) {
 			result = new Filter(result, constraint);
 		}
-		
+
 		return result;
 	}
 
