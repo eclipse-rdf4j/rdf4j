@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -1022,6 +1023,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// Filters are scoped to the graph pattern group and do not affect
 		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
+
+		((GraphPatternGroupable) te).setGraphPatternGroup(true);
 
 		parentGP.addRequiredTE(te);
 
