@@ -164,13 +164,7 @@ public class GraphPattern {
 
 			for (int i = 1; i < requiredTEs.size(); i++) {
 				TupleExpr te = requiredTEs.get(i);
-				// if (containsProjection(te) || containsProjection(result))
-				// {
-				// result = new BottomUpJoin(result, te);
-				// }
-				// else {
 				result = new Join(result, te);
-				// }
 			}
 		}
 
