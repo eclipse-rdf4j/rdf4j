@@ -608,10 +608,32 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		return levels;
 	}
 
+	/**
+	 * <p>
+	 * Inferred statements can either be added to the default context or to the context that the original inserted
+	 * statement has.
+	 * </p>
+	 **/
+
 	public boolean isAddInferredStatementsToDefaultContext() {
 		return addInferredStatementsToDefaultContext;
 	}
 
+	/**
+	 * <p>
+	 * Inferred statements can either be added to the default context or to the context that the original inserted
+	 * statement has. setAddInferredStatementsToDefaultContext(true) will add all inferred statements to the default
+	 * context.
+	 * </p>
+	 * <p>
+	 * Which context a tbox statement is added to is undefined.
+	 * </p>
+	 * <p>
+	 * Before 3.0 default value for addInferredStatementsToDefaultContext was true. From 3.0 the default value is false.
+	 * </p>
+	 * 
+	 * @param addInferredStatementsToDefaultContext
+	 */
 	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
 		this.addInferredStatementsToDefaultContext = addInferredStatementsToDefaultContext;
 	}
