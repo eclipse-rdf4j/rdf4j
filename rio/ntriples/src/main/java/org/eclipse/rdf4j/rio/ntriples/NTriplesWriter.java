@@ -206,34 +206,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @throws IOException
 	 */
 	private void writeLiteral(Literal lit) throws IOException {
-		// Do some character escaping on the label:
-		writer.append("\"");
-		writeString(lit.getLabel());
-		writer.append("\"");
-
-		if (Literals.isLanguageLiteral(lit)) {
-			// Append the literal's language
-			writer.append("@");
-			writer.append(lit.getLanguage().get());
-		} else {
-			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
-			// language literals we display the type for backwards compatibility
-			IRI datatype = lit.getDatatype();
-			if (!datatype.equals(XMLSchema.STRING) || !xsdStringToPlainLiteral) {
-				writer.append("^^");
-				writeIRI(lit.getDatatype());
-			}
-		}
-	}
-
-	/**
-	 * Writes a Unicode string to an N-Triples compatible character sequence. Any special characters are escaped using
-	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped using
-	 * Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the writer config is enabled.
-	 *
-	 * @throws IOException
-	 */
-	private void writeString(String label) throws IOException {
-		NTriplesUtil.escapeString(label, writer, escapeUnicode);
+		NTriplesUtil.append(lit, writer, getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL),
+				escapeUnicode);
 	}
 }
