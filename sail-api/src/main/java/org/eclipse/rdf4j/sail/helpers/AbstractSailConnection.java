@@ -439,7 +439,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		flushPendingUpdates();
+		if (pendingAdds()) {
+			flushPendingUpdates();
+		}
 		removeStatement(null, subj, pred, obj, contexts);
 	}
 
@@ -663,6 +665,21 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} finally {
 			connectionLock.readLock().unlock();
+		}
+	}
+
+	@Override
+	public boolean pendingRemovals() {
+		synchronized (removed) {
+			Collection<Statement> pending = removed.get(null);
+			return pending != null && !pending.isEmpty();
+		}
+	}
+
+	protected boolean pendingAdds() {
+		synchronized (added) {
+			Collection<Statement> pending = added.get(null);
+			return pending != null && !pending.isEmpty();
 		}
 	}
 
