@@ -186,29 +186,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		this.federatedServiceResolver = resolver;
 	}
 
-	@Override
-	public boolean pendingRemovals() {
-		return explicitSinks.values().stream().anyMatch(v -> {
-			if (v instanceof Changeset) {
-				return ((Changeset) v).hasDeprecated();
-			}
-			return false;
-		});
-
-	}
-
-	@Override
-	protected boolean pendingAdds() {
-		return explicitSinks.values().stream().anyMatch(v -> {
-			if (v instanceof Changeset) {
-				Changeset cs = ((Changeset) v);
-				return cs.getApproved() != null && !cs.getApproved().isEmpty();
-			}
-			return false;
-		});
-
-	}
-
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {

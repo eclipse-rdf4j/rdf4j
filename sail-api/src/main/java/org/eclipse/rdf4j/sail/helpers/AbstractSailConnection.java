@@ -103,6 +103,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
+	private boolean pendingAdds;
+
+	private boolean pendingRemovals;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -434,6 +438,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
+		pendingAdds = true;
 		addStatement(null, subj, pred, obj, contexts);
 	}
 
@@ -442,6 +447,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingAdds()) {
 			flushPendingUpdates();
 		}
+		pendingRemovals = true;
 		removeStatement(null, subj, pred, obj, contexts);
 	}
 
@@ -670,17 +676,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public boolean pendingRemovals() {
-		synchronized (removed) {
-			Collection<Statement> pending = removed.get(null);
-			return pending != null && !pending.isEmpty();
-		}
+		return pendingRemovals;
 	}
 
 	protected boolean pendingAdds() {
-		synchronized (added) {
-			Collection<Statement> pending = added.get(null);
-			return pending != null && !pending.isEmpty();
-		}
+		return pendingAdds;
 	}
 
 	/**
@@ -819,6 +819,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (!isActiveOperation()
 				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 			flush();
+			pendingAdds = false;
+			pendingRemovals = false;
 		}
 	}
 
