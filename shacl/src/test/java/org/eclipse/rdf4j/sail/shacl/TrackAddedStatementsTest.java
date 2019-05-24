@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.Assert.fail;
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -16,6 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
 
@@ -150,14 +153,15 @@ public class TrackAddedStatementsTest {
 
 			try {
 				connection.commit();
-			} catch (Throwable e) {
-				System.out.println(e.getMessage());
+				fail("commit should have failed");
+			} catch (SailException e) {
+				// do nothing, expected
 			}
 
 		}
+
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			assertEquals(0, size(connection));
-
 		}
 
 	}
