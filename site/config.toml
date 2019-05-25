@@ -1,4 +1,4 @@
-baseurl = "https://rdf4j.org/" 
+baseurl = "https://rdf4j.eclipse.org/" 
 DefaultContentLanguage = "en"
 title = "Eclipse rdf4j"
 theme = "hugo-solstice-theme"
