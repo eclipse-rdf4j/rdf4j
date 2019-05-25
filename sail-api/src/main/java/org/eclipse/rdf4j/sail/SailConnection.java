@@ -411,7 +411,9 @@ public interface SailConnection extends AutoCloseable {
 	 * 
 	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
 	 * @see #flush()
+	 * @deprecated 
 	 */
+	@Deprecated
 	boolean pendingRemovals();
 
 }
