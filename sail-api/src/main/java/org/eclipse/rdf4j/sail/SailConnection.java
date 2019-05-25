@@ -405,6 +405,15 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	public void clearNamespaces() throws SailException;
 
+	/**
+	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
+	 * current transaction.
+	 * 
+	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
+	 * @see #flush()
+	 * @deprecated
+	 */
+	@Deprecated
 	boolean pendingRemovals();
 
 }
