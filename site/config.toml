@@ -18,8 +18,8 @@ pygmentsStyle = "github"
   subtitle = "Eclipse Foundation"
   seo_title_suffix = " | The Eclipse Foundation"
   keywords = ["hugo", "solstice", "eclipse foundatiou"]
-  logo = "http://rdf4j.org/images/rdf4j-logo-orange-114.png"
-#  favicon = "images/favicon.ico"
+  logo = "images/rdf4j-logo-orange-114.png"
+  favicon = "images/favicon.png"
 #  styles = "css/styles.css"
 #  js = "js/solstice.js"
   gcse = ""
@@ -41,15 +41,34 @@ pygmentsStyle = "github"
 [permalinks]
   news = "/:sections/:year/:month/:day/:slug/"
 
-[[menu.main]]
-    name = "About"
-    url = "/about/"
-    weight = 2
+
 
 [[menu.main]]
     name = "News"
     url = "/news/"
     weight = 1
+
+[[menu.main]]
+    name = "About"
+    weight = 2
+
+[[menu.main]]
+    name = "Eclipse rdf4j"
+    url = "/about/"
+    parent = "About"
+    weight = 1
+
+[[menu.main]]
+    name = "Rdf4j databases"
+    url = "/databases/"
+    parent = "About"
+    weight = 2
+
+[[menu.main]]
+    name = "Related projects"
+    url = "/related/"
+    parent = "About"
+    weight = 3
 
 [[menu.main]]
     name = "Documentation"

@@ -1,12 +1,15 @@
-<h2>News</h2>
+<h3>News</h3>
   {{ range first 3 (.Site.Taxonomies.categories.news) }}
     <div class="news_item">
       <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
       <div class="news_item_title">
-        <h3><a href="{{.Permalink}}">{{ .Title }}</a></h3>
+        <h4><a href="{{.Permalink}}">{{ .Title }}</a></h4>
       </div>
       <div class="news_item_description">
         {{ .Summary }}
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="{{.Permalink}}">[read more]</a>
       </div>
       <hr>
     </div>
