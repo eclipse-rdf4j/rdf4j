@@ -221,7 +221,7 @@ public class NTriplesUtil {
 		if (value instanceof Resource) {
 			append((Resource) value, appendable);
 		} else if (value instanceof Literal) {
-			append((Literal) value, appendable, xsdStringToPlainLiteral);
+			append((Literal) value, appendable, xsdStringToPlainLiteral, escapeUnicode);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
@@ -323,7 +323,7 @@ public class NTriplesUtil {
 	public static String toNTriplesString(Literal lit, boolean xsdStringToPlainLiteral) {
 		try {
 			StringBuilder sb = new StringBuilder();
-			append(lit, sb, xsdStringToPlainLiteral);
+			append(lit, sb, xsdStringToPlainLiteral, NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
 			return sb.toString();
 		} catch (IOException e) {
 			throw new AssertionError();
@@ -333,7 +333,8 @@ public class NTriplesUtil {
 	public static void append(Literal lit, Appendable appendable) throws IOException {
 		// default to false. Users must call new method directly to remove
 		// xsd:string
-		append(lit, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue());
+		append(lit, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue(),
+				NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
 	}
 
 	/**
@@ -344,12 +345,16 @@ public class NTriplesUtil {
 	 * @param appendable              The object to append to.
 	 * @param xsdStringToPlainLiteral True to omit serialising the xsd:string datatype and false to always serialise the
 	 *                                datatype for literals.
+	 * @param escapeUnicode           True to escape non-ascii/non-printable characters using Unicode escapes
+	 *                                (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>), false to print without
+	 *                                escaping.
 	 * @throws IOException
 	 */
-	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral) throws IOException {
+	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral,
+			boolean escapeUnicode) throws IOException {
 		// Do some character escaping on the label:
 		appendable.append("\"");
-		escapeString(lit.getLabel(), appendable);
+		escapeString(lit.getLabel(), appendable, escapeUnicode);
 		appendable.append("\"");
 
 		if (Literals.isLanguageLiteral(lit)) {
