@@ -103,6 +103,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
+	private boolean pendingAdds;
+
+	private boolean pendingRemovals;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -434,12 +438,16 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
+		pendingAdds = true;
 		addStatement(null, subj, pred, obj, contexts);
 	}
 
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		flushPendingUpdates();
+		if (pendingAdds()) {
+			flushPendingUpdates();
+		}
+		pendingRemovals = true;
 		removeStatement(null, subj, pred, obj, contexts);
 	}
 
@@ -666,6 +674,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	@Override
+	public boolean pendingRemovals() {
+		return pendingRemovals;
+	}
+
+	protected boolean pendingAdds() {
+		return pendingAdds;
+	}
+
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
@@ -802,6 +819,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (!isActiveOperation()
 				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 			flush();
+			pendingAdds = false;
+			pendingRemovals = false;
 		}
 	}
 
