@@ -8,3 +8,13 @@
   padding-top: 20px;
 }
 
+.jumbotron h1 {
+  font-family: "DIN Condensed", "Arial Narrow OS", sans-serif;
+  color: black;
+}
+
+.featured-jumbotron h1:after {
+  /* divider */
+  border-bottom: 3px solid white;
+}
+
