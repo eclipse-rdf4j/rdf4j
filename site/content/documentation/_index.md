@@ -16,6 +16,7 @@ hide_page_title: "true"
 
 # Programming with rdf4j
 
+- <a href="programming/setup/">Setting up your development environment</a>
 - <a href="programming/model/">The RDF Model API</a>
 - <a href="programming/repository/">Accessing RDF databases with the Repository API</a>
 - <a href="programming/rio/">Parsing and Writing RDF with Rio</a>

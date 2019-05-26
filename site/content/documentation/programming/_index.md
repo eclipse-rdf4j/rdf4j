@@ -6,6 +6,7 @@ hide_page_title: "true"
 
 # Programming with rdf4j
 
+- <a href="setup/">Setup</a>
 - <a href="model/">The RDF Model API</a>
 - <a href="repository/">Accessing RDF databases with the Repository API</a>
 - <a href="rio/">Parsing and Writing RDF with Rio</a>
