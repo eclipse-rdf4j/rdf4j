@@ -12,4 +12,4 @@ The rdf4j development team uses the [rdf4j-dev@eclipse.org mailinglist](https://
 
 ## Reporting bugs and requests for improvement
 
-If you think you’ve found a bug in rdf4j, or wish to log a request for a new feature or improvement, please use the [rdf4j issue tracker](.https://github.com/eclipse/rdf4j/issues). Before you add your new issue, though, please have a look around to see if it’s not already there.
+If you think you’ve found a bug in rdf4j, or wish to log a request for a new feature or improvement, please use the [rdf4j issue tracker](https://github.com/eclipse/rdf4j/issues). Before you add your new issue, though, please have a look around to see if it’s not already there.
