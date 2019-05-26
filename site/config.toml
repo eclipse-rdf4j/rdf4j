@@ -77,7 +77,12 @@ pygmentsStyle = "github"
     weight = 3
 
 [[menu.main]]
+    name = "Download"
+    url = "/download/"
+    weight = 4
+
+[[menu.main]]
     name = "Support"
     identifier = "support"
     url = "/support/"
-    weight = 4
+    weight = 5
