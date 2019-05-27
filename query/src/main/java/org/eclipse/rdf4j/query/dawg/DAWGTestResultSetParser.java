@@ -15,17 +15,15 @@ import static org.eclipse.rdf4j.query.dawg.DAWGTestResultSetSchema.VALUE;
 import static org.eclipse.rdf4j.query.dawg.DAWGTestResultSetSchema.VARIABLE;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.GraphImpl;
-import org.eclipse.rdf4j.model.util.GraphUtil;
-import org.eclipse.rdf4j.model.util.GraphUtilException;
+import org.eclipse.rdf4j.model.impl.TreeModelFactory;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
@@ -53,7 +51,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	 * Variables *
 	 *-----------*/
 
-	private Graph graph = new GraphImpl();
+	private Model graph = new TreeModelFactory().createEmptyModel();
 
 	/*--------------*
 	 * Constructors *
@@ -80,15 +78,13 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	@Override
 	public void endRDF() throws RDFHandlerException {
 		try {
-			Resource resultSetNode = GraphUtil.getUniqueSubject(graph, RDF.TYPE, RESULTSET);
+			Resource resultSetNode = Models.subject(graph.filter(null, RDF.TYPE, RESULTSET))
+					.orElseThrow(() -> new RDFHandlerException("no instance of type ResultSet"));
 
 			List<String> bindingNames = getBindingNames(resultSetNode);
 			tqrHandler.startQueryResult(bindingNames);
 
-			Iterator<Value> solIter = GraphUtil.getObjectIterator(graph, resultSetNode, SOLUTION);
-			while (solIter.hasNext()) {
-				Value solutionNode = solIter.next();
-
+			for (Value solutionNode : Models.getProperties(graph, resultSetNode, SOLUTION)) {
 				if (solutionNode instanceof Resource) {
 					reportSolution((Resource) solutionNode, bindingNames);
 				} else {
@@ -97,8 +93,6 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 			}
 
 			tqrHandler.endQueryResult();
-		} catch (GraphUtilException e) {
-			throw new RDFHandlerException(e.getMessage(), e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw new RDFHandlerException(e.getMessage(), e);
 		}
@@ -107,11 +101,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	private List<String> getBindingNames(Resource resultSetNode) throws RDFHandlerException {
 		List<String> bindingNames = new ArrayList<>(16);
 
-		Iterator<Value> varIter = GraphUtil.getObjectIterator(graph, resultSetNode, RESULTVARIABLE);
-
-		while (varIter.hasNext()) {
-			Value varName = varIter.next();
-
+		for (Value varName : Models.getProperties(graph, resultSetNode, RESULTVARIABLE)) {
 			if (varName instanceof Literal) {
 				bindingNames.add(((Literal) varName).getLabel());
 			} else {
@@ -122,14 +112,10 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 		return bindingNames;
 	}
 
-	private void reportSolution(Resource solutionNode, List<String> bindingNames)
-			throws RDFHandlerException, GraphUtilException {
+	private void reportSolution(Resource solutionNode, List<String> bindingNames) throws RDFHandlerException {
 		MapBindingSet bindingSet = new MapBindingSet(bindingNames.size());
 
-		Iterator<Value> bindingIter = GraphUtil.getObjectIterator(graph, solutionNode, BINDING);
-		while (bindingIter.hasNext()) {
-			Value bindingNode = bindingIter.next();
-
+		for (Value bindingNode : Models.getProperties(graph, solutionNode, BINDING)) {
 			if (bindingNode instanceof Resource) {
 				Binding binding = getBinding((Resource) bindingNode);
 				bindingSet.addBinding(binding);
@@ -145,9 +131,11 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 		}
 	}
 
-	private Binding getBinding(Resource bindingNode) throws GraphUtilException {
-		Literal name = GraphUtil.getUniqueObjectLiteral(graph, bindingNode, VARIABLE);
-		Value value = GraphUtil.getUniqueObject(graph, bindingNode, VALUE);
+	private Binding getBinding(Resource bindingNode) {
+		Literal name = Models.getPropertyLiteral(graph, bindingNode, VARIABLE)
+				.orElseThrow(() -> new RDFHandlerException("missing variable name for binding " + bindingNode));
+		Value value = Models.getPropertyLiteral(graph, bindingNode, VALUE)
+				.orElseThrow(() -> new RDFHandlerException("missing variable value for binding " + bindingNode));
 		return new SimpleBinding(name.getLabel(), value);
 	}
 }

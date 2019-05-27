@@ -681,6 +681,7 @@
 							</file>
 						</newVersion>
 						<parameter>
+							<ignoreMissingClasses>true</ignoreMissingClasses>> <!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
 						</parameter>
 					</configuration>
