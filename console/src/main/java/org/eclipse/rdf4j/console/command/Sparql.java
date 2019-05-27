@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
  * @author Bart Hanssens
  */
 public class Sparql extends QueryEvaluator {
+	private static final String PREFIX = "PREFIX";
+
 	@Override
 	public String getName() {
 		return "sparql";
@@ -55,7 +57,7 @@ public class Sparql extends QueryEvaluator {
 
 	@Override
 	protected boolean hasQueryPrefixes(String qry) {
-		return qry.startsWith("prefix");
+		return qry.trim().startsWith(PREFIX);
 	}
 
 	@Override
@@ -63,7 +65,7 @@ public class Sparql extends QueryEvaluator {
 		StringBuilder str = new StringBuilder(512);
 
 		for (Namespace namespace : namespaces) {
-			str.append("PREFIX ").append(namespace.getPrefix()).append(": ");
+			str.append(PREFIX).append(" ").append(namespace.getPrefix()).append(": ");
 			str.append("<").append(SPARQLUtil.encodeString(namespace.getName())).append("> ");
 		}
 		result.insert(0, str);
