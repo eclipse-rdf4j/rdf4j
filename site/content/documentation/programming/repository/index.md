@@ -419,10 +419,10 @@ try (RepositoryConnection conn = repo.getConnection()) {
    TupleQuery tupleQuery = con.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
    try (TupleQueryResult result = tupleQuery.evaluate()) {
       while (result.hasNext()) {  // iterate over the result
-   BindingSet bindingSet = result.next();
-   Value valueOfX = bindingSet.getValue("x");
-   Value valueOfY = bindingSet.getValue("y");
-   // do something interesting with the values here...
+         BindingSet bindingSet = result.next();
+         Value valueOfX = bindingSet.getValue("x");
+         Value valueOfY = bindingSet.getValue("y");
+         // do something interesting with the values here...
       }
    }
 }
