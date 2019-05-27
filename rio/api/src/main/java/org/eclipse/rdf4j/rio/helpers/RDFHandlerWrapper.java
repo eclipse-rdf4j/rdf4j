@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.TreeModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
@@ -47,7 +47,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 *                    <tt>null</tt>.
 	 */
 	public RDFHandlerWrapper(RDFHandler... rdfHandlers) {
-		this(new TreeModelFactory(), rdfHandlers);
+		this(new LinkedHashModelFactory(), rdfHandlers);
 	}
 
 	/**
