@@ -1,4 +1,0 @@
-= The RDF Model
-SparqlBuilder provides a collection of interfaces to model RDF objects in the `org.eclipse.rdf4j.sparqlbuilder.rdf` package. Instances of these interfaces can be used when needed and as expected while creating SPARQL queries. The `Rdf` class contains static factory methods to create RDF objects for use with SparqlBuilder, including IRI's, blank nodes, and RDF literals.
-
-NOTE: Currently SparqlBuilder's set of interfaces for RDF model objects is different from the main RDF4J model interfaces. This will be further integrated in future releases.  
