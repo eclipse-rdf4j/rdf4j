@@ -329,7 +329,7 @@ boolean validateMembers(RepositoryManager manager, boolean readonly,
 
 Now that we have created a Repository, we want to do something with it. In rdf4j, this is achieved through the use of RepositoryConnection objects, which can be created by the Repository.
 
-A RepositoryConnection represents – as the name suggests – a connection to the actual store. We can issue operations over this connection, and close it when we are done to make sure we are not keeping resources unnnecessarily occupied.
+A {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} represents – as the name suggests – a connection to the actual store. We can issue operations over this connection, and close it when we are done to make sure we are not keeping resources unnnecessarily occupied.
 
 In the following sections, we will show some examples of basic operations.
 
@@ -337,7 +337,7 @@ In the following sections, we will show some examples of basic operations.
 
 The Repository API offers various methods for adding data to a repository. Data can be added by specifying the location of a file that contains RDF data, and statements can be added individually or in collections.
 
-We perform operations on a repository by requesting a RepositoryConnection from the repository. On this RepositoryConnection object we can perform various operations, such as query evaluation, getting, adding, or removing statements, etc.
+We perform operations on a repository by requesting a `RepositoryConnection` from the repository. On this RepositoryConnection object we can perform various operations, such as query evaluation, getting, adding, or removing statements, etc.
 
 The following example code adds two files, one local and one available through HTTP, to a repository:
 
@@ -370,7 +370,7 @@ catch (java.io.IOEXception e) {
 }
 {{< / highlight >}}
 
-As you can see, the above code does very explicit exception handling and makes sure resources are properly closed when we are done. A lot of this can be simplified. RepositoryConnection implements AutoCloseable, so a first simple change is to use a try-with-resources construction for handling proper opening and closing of the RepositoryConnection:
+As you can see, the above code does very explicit exception handling and makes sure resources are properly closed when we are done. A lot of this can be simplified. `RepositoryConnection` implements `AutoCloseable`, so a first simple change is to use a try-with-resources construction for handling proper opening and closing of the `RepositoryConnection`:
 
 {{< highlight java "linenos=table" >}}
 File file = new File("/path/to/example.rdf");
@@ -389,7 +389,7 @@ catch (java.io.IOEXception e) {
 }
 {{< / highlight >}}
 
-More information on other available methods can be found in the javadoc reference of the RepositoryConnection interface.
+More information on other available methods can be found in the {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} javadoc.
 
 ### Querying a repository
 
