@@ -138,7 +138,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
-	private static String SH_OR_UPDATE_QUERY;
 	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
 	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
 	private static String PROPERTY_SHAPE_WITH_TARGET;
@@ -164,7 +163,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	static {
 		try {
-			SH_OR_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or.rq");
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
 					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
 			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
@@ -312,7 +310,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			prevSize = currentSize;
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
-			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
 			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);

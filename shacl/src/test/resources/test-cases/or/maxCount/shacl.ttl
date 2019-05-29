@@ -13,11 +13,9 @@ ex:PersonShape
 		sh:path ex:ssn  ;
                 sh:or (
                     [
-                    sh:path ex:ssn  ;
                       sh:maxCount 3 ;
                     ]
                     [
-                    sh:path ex:ssn  ;
                       sh:maxCount 2 ;
                     ]
                   ) ;

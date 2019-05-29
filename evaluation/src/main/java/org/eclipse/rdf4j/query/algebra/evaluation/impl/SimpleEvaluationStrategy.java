@@ -43,7 +43,7 @@ public class SimpleEvaluationStrategy extends StrictEvaluationStrategy {
 	 */
 	public SimpleEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold) {
-		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold);
+		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, new EvaluationStatistics());
 	}
 
 }

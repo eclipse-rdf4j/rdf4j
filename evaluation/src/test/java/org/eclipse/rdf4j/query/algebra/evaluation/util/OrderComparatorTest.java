@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -63,6 +65,18 @@ public class OrderComparatorTest {
 		@Override
 		public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+			// TODO Auto-generated method stub
+
+		}
+
+		@Override
+		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+			// TODO Auto-generated method stub
+			return null;
 		}
 	}
 

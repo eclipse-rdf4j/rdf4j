@@ -10,13 +10,13 @@ ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
 	sh:property [
+	       sh:path ex:iriOr10LengthEnglishNorwegianLiteral ;
+
                 sh:or (
                     [
-                    sh:path ex:iriOr10LengthEnglishNorwegianLiteral ;
                       sh:nodeKind sh:IRI ;
                     ]
                     [
-                    sh:path ex:iriOr10LengthEnglishNorwegianLiteral ;
                       sh:minLength 10 ;
                       sh:nodeKind sh:Literal ;
                       sh:languageIn ("no" "en") ;

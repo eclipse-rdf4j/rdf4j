@@ -12,6 +12,9 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * @author Håvard Ottestad
  */
@@ -29,6 +32,10 @@ public class Unique implements PlanNode {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
+			Set<Tuple> multiCardinalityDedupeSet;
+
+			boolean useMultiCardinalityDedupeSet;
+
 			Tuple next;
 			Tuple previous;
 
@@ -40,12 +47,29 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
+					if (temp.line.size() > 1) {
+						useMultiCardinalityDedupeSet = true;
+					}
+
 					if (previous == null) {
 						next = temp;
 					} else {
-						if (!(previous == temp || previous.equals(temp))) {
-							next = temp;
+						if (useMultiCardinalityDedupeSet) {
+							if (multiCardinalityDedupeSet == null || !previous.line.get(0).equals(temp.line.get(0))) {
+								multiCardinalityDedupeSet = new HashSet<>();
+							}
+
+							if (!multiCardinalityDedupeSet.contains(temp)) {
+								next = temp;
+								multiCardinalityDedupeSet.add(next);
+							}
+
+						} else {
+							if (!(previous == temp || previous.equals(temp))) {
+								next = temp;
+							}
 						}
+
 					}
 
 					if (next != null) {
@@ -58,6 +82,7 @@ public class Unique implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
+				multiCardinalityDedupeSet = null;
 				parentIterator.close();
 			}
 
@@ -90,8 +115,9 @@ public class Unique implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");

@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -75,6 +76,12 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/nodeKindMinLength",
 		"test-cases/or/implicitAnd",
 		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/or/class",
+		"test-cases/or/classValidateTarget",
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/or/nodeKindValidateTarget",
+		"test-cases/or/datatypeNodeShape",
 		"test-cases/minExclusive/simple",
 		"test-cases/minExclusive/dateVsTime",
 		"test-cases/maxExclusive/simple",
@@ -87,17 +94,13 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/targetNode",
 		"test-cases/class/multipleClass",
 		"test-cases/class/validateTarget",
-		"test-cases/or/class",
-		"test-cases/or/classValidateTarget",
-		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath",
-		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape",
 		"test-cases/in/simple",
 		"test-cases/uniqueLang/simple",
-		"test-cases/propertyShapeWithTarget/simple"
+		"test-cases/propertyShapeWithTarget/simple",
+		"test-cases/and-or/datatypeNodeShape"
 	)
 		.distinct()
 		.sorted()
@@ -165,7 +168,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel, boolean preloadWithDummyData) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -184,6 +187,17 @@ abstract public class AbstractShaclTest {
 
 		boolean exception = false;
 		boolean ran = false;
+
+		if (preloadWithDummyData) {
+			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+				connection.begin(isolationLevel);
+				ValueFactory vf = connection.getValueFactory();
+				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
+						vf.createLiteral("auto-generated!"), vf.createBNode());
+				connection.commit();
+			}
+
+		}
 
 		for (int j = 0; j < 100; j++) {
 

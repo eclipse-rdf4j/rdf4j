@@ -10,13 +10,12 @@ ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
 	sh:property [
+	        sh:path ex:iriOrMinLength5String ;
                 sh:or (
                     [
-                    sh:path ex:iriOrMinLength5String ;
                       sh:nodeKind sh:IRI ;
                     ]
                     [
-                    sh:path ex:iriOrMinLength5String ;
                       sh:minLength 100 ;
                     ]
                   ) ;

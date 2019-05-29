@@ -29,9 +29,9 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinLengthPropertyShape.class);
 
 	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			Resource path,
+			PathPropertyShape parent, Resource path,
 			Long minLength) {
-		super(id, connection, nodeShape, deactivated, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minLength = minLength;
 
@@ -85,7 +85,7 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "MinLengthPropertyShape{" +
 				"minLength=" + minLength +
-				", path=" + path +
+				", path=" + getPath() +
 				'}';
 	}
 }

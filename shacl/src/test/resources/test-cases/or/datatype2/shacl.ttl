@@ -9,6 +9,7 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
+
         sh:or (
                     ex:personShapeAge1Integer
                     ex:personShapeAge2Long

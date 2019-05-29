@@ -13,7 +13,6 @@ WHERE {
 }
 """;
     sp:resultVariables  (
-    	_:birthYear 
     	_:age );
 	sp:where (
     [ a       sp:Bind ;
