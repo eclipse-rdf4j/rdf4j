@@ -192,7 +192,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
+		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
+				store.getEvaluationStatistics());
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
@@ -227,21 +228,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 
-			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
-			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
-			// The regex as string function optimizer works better if the constants are resolved
-			new RegexAsStringFunctionOptimizer(vf).optimize(tupleExpr, dataset, bindings);
-			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
-			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
-			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
-			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(store.getEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
-			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
-			// bindings);
-			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
-			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 
