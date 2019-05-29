@@ -65,7 +65,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 
-
 	/*-----------*
 	 * Variables *
 	 *-----------*/
