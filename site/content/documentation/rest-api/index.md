@@ -253,6 +253,13 @@ Parameters:
 - `baseURI` (optional): Specifies the base URI to resolve any relative URIs found in uploaded data against. This parameter only applies to the PUT and POST method.
 - `timeout` (optional): specifies a maximum update execution time, in whole seconds. The value should be an integer. A setting of 0 or a negative number indicates unlimited execution time (the default). This parameter only applies to SPARQL update operations.
 
+Optionally, update operations can specify a custom dataset on which the operation is to be executed. Dataset parameters:
+
+- `using-graph-uri` (optional): one or more named graph URIs to be used as the default graph(s) for retrieving statements
+- `using-named-graph-uri` (optional): one or more named graph URIs to be used as named graphs for retrieving statements
+- `remove-graph-uri` (optional): one or more named graph URIs to be used as the default graph(s) for removing statements
+- `insert-graph-uri` (optional): one or more named graph URIs to be used as the default graph(s) for inserting statements
+
 Request headers:
 
 -    `Accept`: Relevant values for GET requests are the MIME types of supported RDF formats.
@@ -467,7 +474,7 @@ Response:
 
 # Namespace declaration lists
 
-Namespace declaration lists for a repository with ID <ID> are available at: <RDF4J_URL>/repositories/<ID>/namespaces.
+Namespace declaration lists for a repository with ID `<ID>` are available at:`<RDF4J_URL>/repositories/<ID>/namespaces`.
 
 Supported methods on this URL are:
 
