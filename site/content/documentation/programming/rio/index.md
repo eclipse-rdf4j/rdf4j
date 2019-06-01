@@ -14,32 +14,32 @@ If you use rdf4j via the Repository API, then typically you will not need to use
 
 The Rio parsers all work with a set of Listener interfaces that they report results to: {{< javadoc "ParseErrorListener" "rio/ParseErrorListener.html" >}}, {{< javadoc "ParseLocationListener" "rio/ParseLocationListener.html" >}}, and {{< javadoc "RDFHandler" "rio/RDFHandler.html" >}}. Of these three, `RDFHandler` is the most interesting one: this is the listener that receives parsed RDF triples. So we will concentrate on this interface here.
 
-The RDFHandler interface is quite simple, it contains just five methods: `startRDF`, `handleNamespace`, `handleComment`, `handleStatement`, and `endRDF`. Rio also provides a number of default implementations of RDFHandler, such as `StatementCollector`, which stores all received RDF triples in a Java Collection. Depending on what you want to do with parsed statements, you can either reuse one of the existing RDFHandlers, or, if you have a specific task in mind, you can simply write your own implementation of RDFHandler. Here, I will show you some simple examples of things you can do with RDFHandlers.
+The `RDFHandler` interface contains five methods: `startRDF`, `handleNamespace`, `handleComment`, `handleStatement`, and `endRDF`. Rio also provides a number of default implementations of RDFHandler, such as {{< javadoc "StatementCollector" "rio/helpers/StatementCollector.html" >}}, which stores all received RDF triples in a Java Collection. Depending on what you want to do with parsed statements, you can either reuse one of the existing RDFHandlers, or, if you have a specific task in mind, you can simply write your own implementation of RDFHandler. Here, I will show you some simple examples of things you can do with RDFHandlers.
 
 ## Parsing a file and collecting all triples
 
-As a simple example of how to use Rio, we parse an RDF document and collect all the parsed statements in a Java Collection object (specifically, in a Model object).
+As a simple example of how to use Rio, we parse an RDF document and collect all the parsed statements in a Java Collection object (specifically, in a {{< javadoc "Model" "model/Model.html" >}} object).
 
 Let’s say we have a Turtle file, available at `http://example.org/example.ttl`:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 java.net.URL documentUrl = new URL("http://example.org/example.ttl");
 InputStream inputStream = documentUrl.openStream();
 {{< / highlight >}}
 
 We now have an open `InputStream` to our RDF file. Now we need a {{< javadoc "RDFParser" "rio/RDFParser.html" >}} object that reads this InputStream and creates RDF statements out of it. Since we are reading a Turtle file, we create a RDFParser object for the {{< javadoc "RDFFormat.TURTLE" "rio/RDFFormat.html" >}} syntax format:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 {{< / highlight >}}
 
 Note that all Rio classes and interfaces are in package `org.eclipse.rdf4j.rio` or one of its subpackages.
 
-We also need an RDFHandler which can receive RDF statements from the parser.
+We also need an `RDFHandler` which can receive RDF statements from the parser.
 Since we just want to create a collection of Statements for now, we’ll just use
-Rio's StatementCollector:
+Rio's `StatementCollector`:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 Model model = new LinkedHashModel();
 rdfParser.setRDFHandler(new StatementCollector(model));
 {{< / highlight >}}
@@ -50,7 +50,7 @@ prefer.
 
 Finally, we need to set the parser to work:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 try {
    rdfParser.parse(inputStream, documentURL.toString());
 }
@@ -70,27 +70,27 @@ finally {
 
 After the `parse()` method has executed (and provided no exception has occurred), the collection model will be filled by the StatementCollector. As an aside: you do not have to provide the StatementCollector with a list in advance, you can also use an empty constructor and then just get the collection, using `StatementCollector.getStatements()`.
 
-The `Rio` utility class provides additional helper methods, to make parsing to a Model a single API call:
+The {{< javadoc "Rio" "rio/Rio.html" >}} utility class provides additional helper methods, to make parsing to a `Model` a single API call:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 Model results = Rio.parse(inputStream, documentUrl.toString(), RDFFormat.TURTLE);
 {{< / highlight >}}
 
 
 ## Iterating through all the triples in a file
 
-RDF files can also be parsed in a background thread and iterated through as a query result. This allows files that are too big to fit into memory (at once) to be parsed sequentially using a familiar API (specifically, the `GraphQueryResult` interface).
+RDF files can also be parsed in a background thread and iterated through as a query result. This allows files that are too big to fit into memory (at once) to be parsed sequentially using a familiar API (specifically, the {{< javadoc "GraphQueryResult" "query/GraphQueryResult.html" >}} interface).
 
 Using the same Turtle file from above:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 java.net.URL documentUrl = new URL("http://example.org/example.ttl");
 InputStream inputStream = documentUrl.openStream();
 {{< / highlight >}}
 
-We now have an open InputStream to our RDF file. Instead of using a parser directly, we can use the `QueryResults.parseGraphBackground()` function:
+We now have an open `InputStream` to our RDF file. Instead of using a parser directly, we can use the {{< javadoc "QueryResults.parseGraphBackground()" "query/QueryResults.html" >}} function:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 String baseURI = documentUrl.toString();
 RDFFormat format = RDFFormat.TURTLE;
 try (GraphQueryResult res = QueryResults.parseGraphBackground(inputStream, baseURI, format)) {
@@ -119,15 +119,15 @@ implementation, which just counts the parsed RDF statements and then
 immediately throws them away.
 
 To create your own handler, you can of course create a class that implements
-the RDFHandler interface, but a useful shortcut is to instead create a subclass
-of AbstractRDFHandler. This is a base class that provides dummy implementations
+the `RDFHandler` interface, but a useful shortcut is to instead create a subclass
+of {{< javadoc "AbstractRDFHandler" "rio/helpers/AbstractRDFHandler.html" >}}. This is a base class that provides dummy implementations
 of all interface methods. The advantage is that you only have to override the
 methods in which you need to do something. Since what we want to do is just
 count statements, we only need to override the `handleStatement` method.
 Additionaly, we of course need a way to get back the total number of statements
 found by our counter:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 class StatementCounter extends AbstractRDFHandler {
 
   private int countedStatements = 0;
@@ -143,10 +143,10 @@ class StatementCounter extends AbstractRDFHandler {
 }
 {{< / highlight >}}
 
-Once we have our custom RDFHandler class, we can supply that to the parser
-instead of the StatementCollector we saw earlier:
+Once we have our custom `RDFHandler` class, we can supply that to the parser
+instead of the `StatementCollector` we saw earlier:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 StatementCounter myCounter = new StatementCounter();
 rdfParser.setRDFHandler(myCounter);
 try {
@@ -161,19 +161,18 @@ finally {
 int numberOfStatements = myCounter.getCountedStatements();
 {{< / highlight >}}
 
-## Detecting the file format
+# Detecting the file format
 
 In the examples sofar, we have always assumed that you know what the syntax
 format of your input file is: we assumed Turtle syntax and created a new parser
-using `RDFFormat.TURTLE`. However, you may not always know in advance what
-exact format the RDF file is in. What then? Fortunately, Rio has a couple of
-useful features to help you.
+using {{< javadoc "RDFFormat.TURTLE" "rio/RDFFormat.html" >}}. However, you may not always know in advance what
+exact format the RDF file is in. What then? Fortunately, Rio has a couple of useful features to help you.
 
-The `Rio` utility class has a couple of methods for guessing the correct format,
+The {{< javadoc "Rio" "rio/Rio.html" >}} utility class has a couple of methods for guessing the correct format,
 given either a filename or a MIME-type. For example, to get back the RDF format
 for our Turtle file, we could do the following:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 RDFFormat format = Rio.getParserFormatForFileName(documentURL.toString()).orElse(RDFFormat.RDFXML);
 {{< / highlight >}}
 
@@ -199,17 +198,17 @@ use the same code with a different file (say, a .owl file – which is in RDF/XM
 format), our program would be able to detect the format at runtime and create
 the correct parser for it.
 
-## Writing RDF
+# Writing RDF
 
 Sofar, we’ve seen how to read RDF, but Rio of course also allows you to write
-RDF, using `RDFWriter`s, which are a subclass of RDFHandler that is intended for
+RDF, using {{< javadoc "RDFWriter" "rio/RDFWriter.html" >}}s, which are a subclass of `RDFHandler` that is intended for
 writing RDF in a specific syntax format.
 
-As an example, we start with a Model containing several RDF statements, and we
+As an example, we start with a `Model` containing several RDF statements, and we
 want to write these statements to a file. In this example, we’ll write our
 statements to a file in RDF/XML syntax:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 Model model; // a collection of several RDF statements
 FileOutputStream out = new FileOutputStream("/path/to/file.rdf");
 RDFWriter writer = Rio.createWriter(RDFFormat.RDFXML, out);
@@ -228,12 +227,12 @@ finally {
 }
 {{< / highlight >}}
 
-Again, the Rio helper class provides convenience methods which you can use to
-make this a one step process. If the collection is a Model and the desired
+Again, the `Rio` helper class provides convenience methods which you can use to
+make this a one step process. If the collection is a `Model` and the desired
 output format supports namespaces, then the namespaces from the model will also
 be serialised.
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 Model model; // a collection of several RDF statements
 FileOutputStream out = new FileOutputStream("/path/to/file.rdf")
 try {
@@ -253,12 +252,12 @@ collecting all statements into main memory (in a `Model` object).
 
 Fortunately, there is a shortcut. We can eliminate the need for using a Model
 altogether. If you’ve paid attention, you might have spotted it already:
-RDFWriters are also RDFHandlers. So instead of first using a StatementCollector
-to collect our RDF data and then writing that to our RDFWriter, we can simply
+`RDFWriter`s are also `RDFHandler`s. So instead of first using a `StatementCollector`
+to collect our RDF data and then writing that to our `RDFWriter`, we can 
 use the RDFWriter directly. So if we want to convert our input RDF file from
 Turtle syntax to RDF/XML syntax, we can do that, like so:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 // open our input document
 java.net.URL documentUrl = new URL(“http://example.org/example.ttl”);
 InputStream inputStream = documentUrl.openStream();
@@ -287,7 +286,7 @@ finally {
 }
 {{< / highlight >}}
 
-## Configuring the parser / writer
+# Configuring the parser / writer
 
 The Rio parsers and writers have several configuration options, allowing you to
 tweak their behavior. The configuration of a Rio parser/writer can be modified
@@ -311,7 +310,7 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
-### Programmatic configuration
+## Programmatic configuration
 
 The Rio parser/writer configuration can be retrieved and modified via `RDFParser.getParserConfig()` / `RDFWriter.getWriterConfig()`. This returns a {{< javadoc "RioConfig" "rio/RioConfig.html" >}} object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice.
 
@@ -321,40 +320,40 @@ Lastly, the `RioConfig` also allows you to mark certain types of error as "non-f
 
 Some examples follow:
 
-#### Example: IRI syntax validation
+### Example: IRI syntax validation
 
 By default the Rio parsers validate IRI syntax and produce a fatal error if an IRI can not be parsed. You can disable this as follows:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
 {{< / highlight >}}
 
 If you want to make Rio still report syntax errors, but continue processing the file, you can do so as follows:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
 {{< / highlight >}}
 
-#### Example: blank node preservation
+### Example: blank node preservation
 
 If you want to preserve blank node identifiers as found in the source file (by default the parser creates new identifiers to ensure uniqueness across multiple files), you can reconfigure the parser as follows:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 {{< / highlight >}}
 
-### Configuration via command line switches
+## Configuration via command line switches
 
-To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an Rdf4j Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing -D commandline switches to the JRE in which the application runs.
+To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an Rdf4j Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing `-D` commandline switches to the JRE in which the application runs.
 
 The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, `BasicParserSettings.VERIFY_LANGAGUAGE_TAGS` (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
 
-### A note on parsing RDF/XML and JAXP limits
+## A note on parsing RDF/XML and JAXP limits
 
 Check the documentation on limits and using the `jaxp.properties` file if you get one of the following errors:
 
