@@ -29,7 +29,7 @@ Once the legalities are out of the way you can dig in. Here's how:
 
 1. Fork the `rdf4j-doc` repository on GitHub.
 2. Create a new branch for your changes starting from the `master` branch.
-3. Make your changes. Please make sure you use valid [AsciiDoc syntax](http://asciidoctor.org/docs/asciidoc-syntax-quick-reference/).
+3. Make your changes. Please make sure you know how to [edit content in Hugo](https://gohugo.io/content-management/formats/).
 4. Commit your changes into the branch. Use meaningful commit messages. **Sign off** every commit you do (as explained in the [legal stuff](#legal-stuff).
 5. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
 6. Push your changes to your branch in your forked repository.
@@ -39,4 +39,4 @@ Once the legalities are out of the way you can dig in. Here's how:
 
 Once you've put up a PR, we will review your contribution, possibly make some
 suggestions for improvements, and once everything is complete it will be merged
-into the `master` branch, to be included in the update of our online documentation.
+into the `master` branch, to be included in the update of our website.
