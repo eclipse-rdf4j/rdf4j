@@ -372,7 +372,7 @@ catch (java.io.IOEXception e) {
 
 As you can see, the above code does very explicit exception handling and makes sure resources are properly closed when we are done. A lot of this can be simplified. `RepositoryConnection` implements `AutoCloseable`, so a first simple change is to use a try-with-resources construction for handling proper opening and closing of the `RepositoryConnection`:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 File file = new File("/path/to/example.rdf");
 String baseURI = "http://example.org/example/local";
 try (RepositoryConnection con = repo.getConnection()) {
@@ -405,7 +405,7 @@ The result of boolean queries is a simple boolean value, i.e. true or false. Thi
 
 To evaluate a (SELECT) tuple query we can do the following:
 
-{{< highlight java "linenos=table" >}}
+{{< highlight java >}}
 import java.util.List;
 import org.eclipse.rdf4j.rdf4jException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
