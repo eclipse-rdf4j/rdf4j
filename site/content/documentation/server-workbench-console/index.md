@@ -10,18 +10,20 @@ In this chapter, we explain how you can install Rdf4j Server (the actual databas
 
 ## Required software
 
-Rdf4j Server requires the following software:
+Rdf4j Server and Rdf4j Workbench requires the following software:
 
-- Java 8 Runtime Environment
-- A Java Servlet Container that supports Java Servlet API 2.5 and Java Server Pages (JSP) 2.0, or newer. We recommend using a recent, stable version of Apache Tomcat.
+- Java 8 Runtime Environment (either [OpenJDK](https://openjdk.java.net/) or [Oracle Java](https://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html))
+- A Java Servlet Container that supports Java Servlet API 2.5 and Java Server Pages (JSP) 2.0, or newer. 
 
-## Rdf4j Server and Rdf4j Workbench
+We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) ([version 9.0](https://tomcat.apache.org/download-90.cgi) at the time of writing).
+
+## Deploying Server and Workbench
 
 Rdf4j Server is a database management application: it provides HTTP access to Rdf4j repositories, exposing them as SPARQL endpoints. Rdf4j Server is meant to be accessed by other applications. Apart from some functionality to view the server’s log messages, it doesn’t provide any user oriented functionality. Instead, the user oriented functionality is part of Rdf4j Workbench. The Workbench provides a web interface for querying, updating and exploring the repositories of an Rdf4j Server.
 
-If you have not done so already, you will first need to download the Rdf4j SDK. Both Rdf4j Server and Rdf4j Workbench can be found in the war directory of the SDK. The war-files in this directory need to be deployed in a Java Servlet Container. The deployment process is container-specific, please consult the documentation for your container on how to deploy a web application.
+If you have not done so already, you will first need to <a href="/download">download the Rdf4j SDK</a>. Both Rdf4j Server and Rdf4j Workbench can be found in the `war` directory of the SDK. The war-files in this directory need to be deployed in a Java Servlet Container. The deployment process is container-specific, please consult the documentation for your container on how to deploy a web application. For Apache Tomcat, we recommend using the [Tomcat Manager](https://tomcat.apache.org/tomcat-9.0-doc/manager-howto.html) to make deployment easier.
 
-After you have deployed the Rdf4j Server webapp, you should be able to access it, by default, at path /rdf4j-server. You can point your browser at this location to verify that the deployment succeeded.
+After you have deployed the Rdf4j Workbench webapp, you should be able to access it, by default, at path <a href="http://localhost:8080/rdf4j-workbench">http://localhost:8080/rdf4j-workbench</a>. You can point your browser at this location to verify that the deployment succeeded.
 
 ### Configuring Rdf4j Workbench for UTF-8 Support
 
