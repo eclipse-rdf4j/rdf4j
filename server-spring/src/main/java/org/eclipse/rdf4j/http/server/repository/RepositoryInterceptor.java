@@ -103,8 +103,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		} else if (nextRepositoryID != null) {
 			try {
 				Repository repository = repositoryManager.getRepository(nextRepositoryID);
-
-				if (repository == null) {
+				if (repository == null && !"PUT".equals(request.getMethod())) {
 					throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + nextRepositoryID);
 				}
 
