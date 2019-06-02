@@ -60,8 +60,11 @@ import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.transaction.TransactionWriter;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.Dataset;
@@ -74,10 +77,12 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -275,6 +280,42 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	/**
+	 * Create a new repository or update its configuration.
+	 * 
+	 * @param config the repository configuration
+	 * @throws IOException
+	 * @throws RepositoryException
+	 */
+	public void createRepository(RepositoryConfig config)
+			throws IOException, RepositoryException {
+		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+		setRepository(baseURI);
+		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+		Model model = new LinkedHashModel();
+		config.export(model, ctx);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Rio.write(model, baos, getPreferredRDFFormat());
+
+		HttpEntityEnclosingRequestBase method = null;
+		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
+			HttpEntity entity = new InputStreamEntity(contents, -1,
+					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));
+			method = new HttpPut(baseURI);
+			method.setEntity(entity);
+			executeNoContent((HttpUriRequest) method);
+		} catch (RepositoryException | RDFParseException e) {
+			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		} finally {
+			if (method != null) {
+				method.reset();
+			}
+		}
+
 	}
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {

@@ -77,7 +77,7 @@ public abstract class Protocol {
 	/**
 	 * Protocol version.
 	 */
-	public static final String VERSION = "8";
+	public static final String VERSION = "9";
 
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.
