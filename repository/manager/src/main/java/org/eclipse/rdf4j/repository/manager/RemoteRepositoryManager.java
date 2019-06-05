@@ -284,9 +284,25 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		try (RDF4JProtocolSession httpClient = getSharedHttpClientSessionManager()
 				.createRDF4JProtocolSession(serverURL)) {
 			httpClient.setUsernameAndPassword(username, password);
-			httpClient.createRepository(config);
-		} catch (IOException | QueryEvaluationException | UnauthorizedException ue) {
-			throw new RepositoryException(ue);
+
+			int serverProtocolVersion = Integer.parseInt(httpClient.getServerProtocol());
+			if (serverProtocolVersion < Integer.parseInt(Protocol.VERSION)) {
+				String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+				Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+				httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
+				Model model = getModelFactory().createEmptyModel();
+				config.export(model, ctx);
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				Rio.write(model, baos, httpClient.getPreferredRDFFormat());
+				removeRepository(config.getID());
+				try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
+					httpClient.upload(contents, baseURI, httpClient.getPreferredRDFFormat(), false, true, ctx);
+				}
+			} else {
+				httpClient.createRepository(config);
+			}
+		} catch (IOException | QueryEvaluationException | UnauthorizedException | NumberFormatException e) {
+			throw new RepositoryException(e);
 		}
 	}
 

@@ -289,8 +289,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * @throws IOException
 	 * @throws RepositoryException
 	 */
-	public void createRepository(RepositoryConfig config)
-			throws IOException, RepositoryException {
+	public void createRepository(RepositoryConfig config) throws IOException, RepositoryException {
 		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
 		setRepository(baseURI);
 		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
