@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
+import org.eclipse.rdf4j.sparqlbuilder.core.From;
 import org.eclipse.rdf4j.sparqlbuilder.core.GroupBy;
 import org.eclipse.rdf4j.sparqlbuilder.core.Groupable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Having;
@@ -35,11 +37,36 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	protected static final String LIMIT = "LIMIT";
 	protected static final String OFFSET = "OFFSET";
 
+	protected Optional<Dataset> from = Optional.empty();
 	protected QueryPattern where = SparqlBuilder.where();
 	protected Optional<GroupBy> groupBy = Optional.empty();
 	protected Optional<OrderBy> orderBy = Optional.empty();
 	protected Optional<Having> having = Optional.empty();
 	protected int limit = -1, offset = -1, varCount = -1, bnodeCount = -1;
+
+	/**
+	 * Add datasets to this query
+	 *
+	 * @param graphs the graph specifiers to add
+	 * @return this
+	 */
+	public T from(From... graphs) {
+		from = SparqlBuilderUtils.getOrCreateAndModifyOptional(from, SparqlBuilder::dataset, f -> f.from(graphs));
+
+		return (T) this;
+	}
+
+	/**
+	 * Set the Dataset clause for this query
+	 *
+	 * @param from the {@link Dataset} clause to set
+	 * @return this
+	 */
+	public T from(Dataset from) {
+		this.from = Optional.of(from);
+
+		return (T) this;
+	}
 
 	/**
 	 * Add graph patterns to this query's query pattern
@@ -204,6 +231,9 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 		StringBuilder query = new StringBuilder();
 
 		query.append(getQueryActionString()).append("\n");
+
+		SparqlBuilderUtils.appendAndNewlineIfPresent(from, query);
+
 		query.append(where.getQueryString()).append("\n");
 
 		SparqlBuilderUtils.appendAndNewlineIfPresent(groupBy, query);

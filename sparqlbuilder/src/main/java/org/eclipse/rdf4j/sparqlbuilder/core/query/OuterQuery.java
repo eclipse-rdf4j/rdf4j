@@ -11,8 +11,6 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Base;
-import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
-import org.eclipse.rdf4j.sparqlbuilder.core.From;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
@@ -28,7 +26,6 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	protected Optional<Base> base = Optional.empty();
 	protected Optional<PrefixDeclarations> prefixes = Optional.empty();
-	protected Optional<Dataset> from = Optional.empty();
 
 	/**
 	 * Set the base IRI of this query
@@ -79,37 +76,12 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 		return (T) this;
 	}
 
-	/**
-	 * Add datasets to this query
-	 * 
-	 * @param graphs the graph specifiers to add
-	 * @return this
-	 */
-	public T from(From... graphs) {
-		from = SparqlBuilderUtils.getOrCreateAndModifyOptional(from, SparqlBuilder::dataset, f -> f.from(graphs));
-
-		return (T) this;
-	}
-
-	/**
-	 * Set the Dataset clause for this query
-	 * 
-	 * @param from the {@link Dataset} clause to set
-	 * @return this
-	 */
-	public T from(Dataset from) {
-		this.from = Optional.of(from);
-
-		return (T) this;
-	}
-
 	@Override
 	public String getQueryString() {
 		StringBuilder query = new StringBuilder();
 
 		SparqlBuilderUtils.appendAndNewlineIfPresent(base, query);
 		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);
-		SparqlBuilderUtils.appendAndNewlineIfPresent(from, query);
 
 		query.append(super.getQueryString());
 
