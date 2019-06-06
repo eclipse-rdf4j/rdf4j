@@ -286,7 +286,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 			httpClient.setUsernameAndPassword(username, password);
 
 			int serverProtocolVersion = Integer.parseInt(httpClient.getServerProtocol());
-			if (serverProtocolVersion < Integer.parseInt(Protocol.VERSION)) {
+			if (serverProtocolVersion < 9) { // explicit PUT create operation was introduced in Protocol version 9
 				String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
 				Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
 				httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
