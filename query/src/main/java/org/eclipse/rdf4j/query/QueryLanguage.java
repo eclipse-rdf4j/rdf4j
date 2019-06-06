@@ -41,7 +41,7 @@ public class QueryLanguage {
 	 * SeRQO (Sesame RDF Query Language - Objects) is a Sesame-specific query language using a syntax suited less for
 	 * human editing but for easy transfer over the wire.
 	 * 
-	 * @deprecated since 4.0. This language is no longer actively supported.
+	 * @deprecated since 2.0. This language is no longer actively supported.
 	 */
 	@Deprecated
 	public static final QueryLanguage SERQO = new QueryLanguage("SeRQO");

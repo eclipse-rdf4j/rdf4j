@@ -122,8 +122,7 @@ public interface RDFParser {
 	/**
 	 * Sets whether the parser should verify the data it parses (default value is <tt>true</tt>).
 	 * 
-	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with
-	 *             {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
+	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
 	 *             {@link BasicParserSettings#NORMALIZE_DATATYPE_VALUES} instead.
 	 */
@@ -139,7 +138,7 @@ public interface RDFParser {
 	 * Sets whether the parser should stop immediately if it finds an error in the data (default value is
 	 * <tt>true</tt>).
 	 * 
-	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with {@link ParserConfig#addNonFatalError(RioSetting)} to
+	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link ParserConfig#addNonFatalError(RioSetting)} to
 	 *             select which errors will not always fail the parse prematurely.
 	 */
 	@Deprecated
@@ -153,8 +152,7 @@ public interface RDFParser {
 	 * but also normalized to their canonical representation. The default value is <em>verify</em>.
 	 * 
 	 * @param datatypeHandling A datatype handling option.
-	 * @deprecated Since 2.7.0. Use {@link #getParserConfig()} with
-	 *             {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
+	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
 	 *             {@link BasicParserSettings#NORMALIZE_DATATYPE_VALUES} instead.
 	 */

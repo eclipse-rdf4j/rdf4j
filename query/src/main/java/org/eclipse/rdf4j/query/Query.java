@@ -22,7 +22,7 @@ public interface Query extends Operation {
 	 * 
 	 * @param maxQueryTime The maximum query time, measured in seconds. A negative or zero value indicates an unlimited
 	 *                     query time (which is the default).
-	 * @deprecated since 2.8.0. Use {@link Operation#setMaxExecutionTime(int)} instead.
+	 * @deprecated since 2.0. Use {@link Operation#setMaxExecutionTime(int)} instead.
 	 */
 	@Deprecated
 	public void setMaxQueryTime(int maxQueryTime);
@@ -32,7 +32,7 @@ public interface Query extends Operation {
 	 * 
 	 * @return The maximum query evaluation time, measured in seconds.
 	 * @see #setMaxQueryTime(int)
-	 * @deprecated since 2.8.0. Use {@link Operation#getMaxExecutionTime()} instead.
+	 * @deprecated since 2.0. Use {@link Operation#getMaxExecutionTime()} instead.
 	 */
 	@Deprecated
 	public int getMaxQueryTime();

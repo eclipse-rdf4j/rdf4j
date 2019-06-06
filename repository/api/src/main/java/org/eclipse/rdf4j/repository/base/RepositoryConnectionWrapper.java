@@ -283,7 +283,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	/**
-	 * @deprecated since release 2.7.0. Use {@link #isActive()} instead.
+	 * @deprecated since 2.0. Use {@link #isActive()} instead.
 	 */
 	@Override
 	@Deprecated

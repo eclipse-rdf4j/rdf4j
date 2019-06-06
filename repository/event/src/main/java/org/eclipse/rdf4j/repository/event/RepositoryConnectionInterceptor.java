@@ -35,7 +35,7 @@ public interface RepositoryConnectionInterceptor {
 	public abstract boolean begin(RepositoryConnection conn);
 
 	/**
-	 * @deprecated since 2.7.0. Use {@link #begin(RepositoryConnection)} instead.
+	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
 	 * @param conn       the RepositoryConnection to perform the
 	 *                   {@link RepositoryConnectionInterceptor#setAutoCommit(RepositoryConnection, boolean) }operation
 	 *                   on.

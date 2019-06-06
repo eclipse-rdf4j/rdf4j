@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.impl;
 
 /**
- * @deprecated since 4.0. Use {@link SimpleDataset} instead.
+ * @deprecated since 2.0. Use {@link SimpleDataset} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

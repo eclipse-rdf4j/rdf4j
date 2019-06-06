@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * @deprecated since 4.0. Use {@link IteratingTupleQueryResult} instead.
+ * @deprecated since 2.0. Use {@link IteratingTupleQueryResult} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

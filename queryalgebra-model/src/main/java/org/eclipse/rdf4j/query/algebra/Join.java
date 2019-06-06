@@ -36,7 +36,7 @@ public class Join extends BinaryTupleOperator {
 	 *---------*/
 
 	/**
-	 * @deprecated Since 2.7.3. Use {@link TupleExprs#containsProjection(TupleExpr)} instead.
+	 * @deprecated since 2.0. Use {@link TupleExprs#containsProjection(TupleExpr)} instead.
 	 * @return <code>true</code> if the right argument of this Join contains a projection, <code>false</code> otherwise.
 	 */
 	@Deprecated

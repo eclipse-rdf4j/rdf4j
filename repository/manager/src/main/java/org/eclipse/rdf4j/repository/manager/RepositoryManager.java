@@ -117,7 +117,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Initializes the repository manager.
 	 * 
 	 * @throws RepositoryException If the manager failed to initialize
-	 * @deprecated Since 2.5. Use {@link #init()} instead.
+	 * @deprecated since 2.0. Use {@link #init()} instead.
 	 */
 	@Deprecated
 	public void initialize() throws RepositoryException {
@@ -267,7 +267,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws RepositoryConfigException If the manager doesn't know how to remove a configuration due to inconsistent
 	 *                                   configuration data in the system repository. For example, this happens when
 	 *                                   there are multiple existing configurations with the concerning ID.
-	 * @deprecated since 2.6.7. Use {@link #removeRepository(String repositoryID)} instead.
+	 * @deprecated since 2.0. Use {@link #removeRepository(String repositoryID)} instead.
 	 */
 	@Deprecated
 	public boolean removeRepositoryConfig(String repositoryID) throws RepositoryException, RepositoryConfigException {

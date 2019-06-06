@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.repository.config;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractDelegatingRepositoryImplConfig} instead.
+ * @deprecated since 2.0. Use {@link AbstractDelegatingRepositoryImplConfig} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

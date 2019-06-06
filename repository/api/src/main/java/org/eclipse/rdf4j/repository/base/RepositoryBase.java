@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.repository.base;
  * Abstract base class for Repository implementations.
  * 
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link AbstractRepository} instead.
+ * @deprecated since 2.0. Use {@link AbstractRepository} instead.
  */
 @Deprecated
 public abstract class RepositoryBase extends AbstractRepository {

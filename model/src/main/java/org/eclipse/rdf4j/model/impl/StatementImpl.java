@@ -15,13 +15,13 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleStatement} instead for extension, and {@link ValueFactory} for instantiation.
+ * @deprecated since 2.0. Use {@link SimpleStatement} instead for extension, and {@link ValueFactory} for instantiation.
  */
 @Deprecated
 public class StatementImpl extends SimpleStatement {
 
 	/**
-	 * @deprecated since 4.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value)} instead.
+	 * @deprecated since 2.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value)} instead.
 	 */
 	@Deprecated
 	public StatementImpl(Resource subject, URI predicate, Value object) {
