@@ -16,11 +16,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 @Deprecated
 public abstract class RDFParserBase extends AbstractRDFParser {
 
-	public RDFParserBase() {
+	protected RDFParserBase() {
 		super();
 	}
 
-	public RDFParserBase(ValueFactory factory) {
+	protected RDFParserBase(ValueFactory factory) {
 		super(factory);
 	}
 }
