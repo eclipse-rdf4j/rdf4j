@@ -28,7 +28,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Creates a new empty unary value operator.
 	 */
-	public UnaryValueOperator() {
+	protected UnaryValueOperator() {
 	}
 
 	/**
@@ -36,7 +36,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	 * 
 	 * @param arg The operator's argument, must not be <tt>null</tt>.
 	 */
-	public UnaryValueOperator(ValueExpr arg) {
+	protected UnaryValueOperator(ValueExpr arg) {
 		setArg(arg);
 	}
 

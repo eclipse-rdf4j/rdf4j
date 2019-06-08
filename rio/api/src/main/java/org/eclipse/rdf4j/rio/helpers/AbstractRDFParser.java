@@ -100,7 +100,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Creates a new RDFParserBase that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
-	public AbstractRDFParser() {
+	protected AbstractRDFParser() {
 		this(SimpleValueFactory.getInstance());
 	}
 
@@ -109,7 +109,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * 
 	 * @param valueFactory A ValueFactory.
 	 */
-	public AbstractRDFParser(ValueFactory valueFactory) {
+	protected AbstractRDFParser(ValueFactory valueFactory) {
 		try {
 			md5 = MessageDigest.getInstance("MD5");
 		} catch (NoSuchAlgorithmException e) {

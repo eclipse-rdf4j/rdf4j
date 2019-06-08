@@ -31,7 +31,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	/**
 	 * Creates a new DelayedIteration.
 	 */
-	public DelayedIteration() {
+	protected DelayedIteration() {
 		super();
 	}
 

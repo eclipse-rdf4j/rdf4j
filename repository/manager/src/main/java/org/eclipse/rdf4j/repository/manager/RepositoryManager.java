@@ -72,7 +72,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Creates a new RepositoryManager.
 	 */
-	public RepositoryManager() {
+	protected RepositoryManager() {
 		this(new HashMap<String, Repository>());
 	}
 
@@ -81,7 +81,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * 
 	 * @param initializedRepositories A map that will be used to store repository information.
 	 */
-	public RepositoryManager(Map<String, Repository> initializedRepositories) {
+	protected RepositoryManager(Map<String, Repository> initializedRepositories) {
 		setInitializedRepositories(initializedRepositories);
 	}
 

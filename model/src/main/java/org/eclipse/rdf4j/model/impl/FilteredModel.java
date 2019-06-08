@@ -36,7 +36,7 @@ public abstract class FilteredModel extends AbstractModel {
 
 	protected Resource[] contexts;
 
-	public FilteredModel(AbstractModel model, Resource subj, IRI pred, Value obj, Resource... contexts) {
+	protected FilteredModel(AbstractModel model, Resource subj, IRI pred, Value obj, Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		this.model = model;

@@ -36,7 +36,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Default constructor.
 	 */
-	public AbstractRDFWriter() {
+	protected AbstractRDFWriter() {
 	}
 
 	@Override

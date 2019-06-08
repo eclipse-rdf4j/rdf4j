@@ -35,7 +35,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 * 
 	 * @param iter The source type iteration for this <tt>ConvertingIteration</tt>, must not be <tt>null</tt>.
 	 */
-	public ConvertingIteration(Iteration<? extends S, ? extends X> iter) {
+	protected ConvertingIteration(Iteration<? extends S, ? extends X> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 

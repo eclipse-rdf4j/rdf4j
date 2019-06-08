@@ -51,7 +51,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 
 	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(1024);
 
-	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
+	protected JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
 			BindingSet bindings) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightArg = rightArg;

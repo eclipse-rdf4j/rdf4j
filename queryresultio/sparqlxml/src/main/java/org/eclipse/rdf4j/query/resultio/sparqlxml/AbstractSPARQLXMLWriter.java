@@ -93,11 +93,11 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 * Constructors *
 	 *--------------*/
 
-	public AbstractSPARQLXMLWriter(OutputStream out) {
+	protected AbstractSPARQLXMLWriter(OutputStream out) {
 		this(new XMLWriter(out));
 	}
 
-	public AbstractSPARQLXMLWriter(XMLWriter xmlWriter) {
+	protected AbstractSPARQLXMLWriter(XMLWriter xmlWriter) {
 		this.xmlWriter = xmlWriter;
 		this.xmlWriter.setPrettyPrint(true);
 	}

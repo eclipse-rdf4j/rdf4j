@@ -45,7 +45,7 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	 * @param defaultValue An immutable value specifying the default for this setting. This can be optionally be
 	 *                     overridden by a system property with a name equal to the setting's unique key.
 	 */
-	public AbstractRioSetting(String key, String description, T defaultValue) {
+	protected AbstractRioSetting(String key, String description, T defaultValue) {
 		Objects.requireNonNull(key, "Setting key cannot be null");
 		Objects.requireNonNull(description, "Setting description cannot be null");
 

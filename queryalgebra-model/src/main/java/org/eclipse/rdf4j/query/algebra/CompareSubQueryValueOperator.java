@@ -19,10 +19,10 @@ public abstract class CompareSubQueryValueOperator extends SubQueryValueOperator
 	 * Constructors *
 	 *--------------*/
 
-	public CompareSubQueryValueOperator() {
+	protected CompareSubQueryValueOperator() {
 	}
 
-	public CompareSubQueryValueOperator(ValueExpr valueExpr, TupleExpr subQuery) {
+	protected CompareSubQueryValueOperator(ValueExpr valueExpr, TupleExpr subQuery) {
 		super(subQuery);
 		setArg(valueExpr);
 	}

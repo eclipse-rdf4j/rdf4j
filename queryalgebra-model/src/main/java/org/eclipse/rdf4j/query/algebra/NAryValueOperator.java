@@ -30,7 +30,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	 * Constructors *
 	 *--------------*/
 
-	public NAryValueOperator() {
+	protected NAryValueOperator() {
 	}
 
 	/**
@@ -38,7 +38,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	 * 
 	 * @param args The operator's list of arguments, must not be <tt>null</tt>.
 	 */
-	public NAryValueOperator(List<ValueExpr> args) {
+	protected NAryValueOperator(List<ValueExpr> args) {
 		setArguments(args);
 	}
 

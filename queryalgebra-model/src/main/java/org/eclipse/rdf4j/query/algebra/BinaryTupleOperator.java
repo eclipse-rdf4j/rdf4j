@@ -30,7 +30,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 * Constructors *
 	 *--------------*/
 
-	public BinaryTupleOperator() {
+	protected BinaryTupleOperator() {
 	}
 
 	/**
@@ -39,7 +39,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
 	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
 	 */
-	public BinaryTupleOperator(TupleExpr leftArg, TupleExpr rightArg) {
+	protected BinaryTupleOperator(TupleExpr leftArg, TupleExpr rightArg) {
 		setLeftArg(leftArg);
 		setRightArg(rightArg);
 	}

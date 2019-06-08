@@ -24,21 +24,21 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 	/**
 	 * Create a new DelegatingRepositoryImplConfigBase.
 	 */
-	public AbstractDelegatingRepositoryImplConfig() {
+	protected AbstractDelegatingRepositoryImplConfig() {
 		super();
 	}
 
 	/**
 	 * Create a new DelegatingRepositoryImplConfigBase.
 	 */
-	public AbstractDelegatingRepositoryImplConfig(String type) {
+	protected AbstractDelegatingRepositoryImplConfig(String type) {
 		super(type);
 	}
 
 	/**
 	 * Create a new DelegatingRepositoryImplConfigBase.
 	 */
-	public AbstractDelegatingRepositoryImplConfig(String type, RepositoryImplConfig delegate) {
+	protected AbstractDelegatingRepositoryImplConfig(String type, RepositoryImplConfig delegate) {
 		this(type);
 		setDelegate(delegate);
 	}

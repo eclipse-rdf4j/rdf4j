@@ -35,7 +35,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * 
 	 * @param capacity the capacity of this queue
 	 */
-	public QueueIteration(int capacity) {
+	protected QueueIteration(int capacity) {
 		this(capacity, false);
 	}
 
@@ -46,7 +46,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
 	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
-	public QueueIteration(int capacity, boolean fair) {
+	protected QueueIteration(int capacity, boolean fair) {
 		super();
 		this.queue = new ArrayBlockingQueue<>(capacity, fair);
 	}
@@ -59,7 +59,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
 	 *              implementation for this cursor.
 	 */
-	public QueueIteration(BlockingQueue<E> queue) {
+	protected QueueIteration(BlockingQueue<E> queue) {
 		this.queue = queue;
 	}
 

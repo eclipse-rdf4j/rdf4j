@@ -17,11 +17,11 @@ public abstract class ASTAggregate extends SimpleNode {
 	/**
 	 * @param id
 	 */
-	public ASTAggregate(int id) {
+	protected ASTAggregate(int id) {
 		super(id);
 	}
 
-	public ASTAggregate(SyntaxTreeBuilder p, int id) {
+	protected ASTAggregate(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 

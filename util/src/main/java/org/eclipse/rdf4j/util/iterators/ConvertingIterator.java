@@ -26,7 +26,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 	 * 
 	 * @param iter The source type itertor for this <tt>ConvertingIterator</tt>, must not be <tt>null</tt>.
 	 */
-	public ConvertingIterator(Iterator<? extends S> iter) {
+	protected ConvertingIterator(Iterator<? extends S> iter) {
 		assert iter != null;
 		this.sourceIter = iter;
 	}

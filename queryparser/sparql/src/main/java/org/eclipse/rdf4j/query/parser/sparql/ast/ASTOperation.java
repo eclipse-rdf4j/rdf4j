@@ -17,7 +17,7 @@ public abstract class ASTOperation extends SimpleNode {
 	/**
 	 * @param id
 	 */
-	public ASTOperation(int id) {
+	protected ASTOperation(int id) {
 		super(id);
 	}
 
@@ -25,7 +25,7 @@ public abstract class ASTOperation extends SimpleNode {
 	 * @param p
 	 * @param id
 	 */
-	public ASTOperation(SyntaxTreeBuilder p, int id) {
+	protected ASTOperation(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 

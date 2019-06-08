@@ -77,7 +77,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	private final JsonGenerator jg;
 
-	public AbstractSPARQLJSONWriter(OutputStream out) {
+	protected AbstractSPARQLJSONWriter(OutputStream out) {
 		try {
 			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 		} catch (IOException e) {

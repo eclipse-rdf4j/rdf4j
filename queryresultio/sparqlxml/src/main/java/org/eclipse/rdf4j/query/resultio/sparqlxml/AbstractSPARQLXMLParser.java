@@ -43,14 +43,14 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	/**
 	 * 
 	 */
-	public AbstractSPARQLXMLParser() {
+	protected AbstractSPARQLXMLParser() {
 		super();
 	}
 
 	/**
 	 * 
 	 */
-	public AbstractSPARQLXMLParser(ValueFactory valueFactory) {
+	protected AbstractSPARQLXMLParser(ValueFactory valueFactory) {
 		super(valueFactory);
 	}
 
