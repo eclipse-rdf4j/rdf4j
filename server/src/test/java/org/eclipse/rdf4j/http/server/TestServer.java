@@ -11,7 +11,7 @@ import java.io.File;
 
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.nio.BlockingChannelConnector;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
@@ -52,7 +52,7 @@ public class TestServer {
 
 		jetty = new Server();
 
-		Connector conn = new BlockingChannelConnector();
+		ServerConnector conn = new ServerConnector(jetty);
 		conn.setHost(HOST);
 		conn.setPort(PORT);
 		jetty.addConnector(conn);

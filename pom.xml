@@ -60,7 +60,7 @@
 		<jackson.version>2.9.8</jackson.version>
 		<jsonldjava.version>0.12.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
-		<spring.version>4.3.21.RELEASE</spring.version>
+		<spring.version>5.1.7.RELEASE</spring.version>
 	</properties>
 
 	<modules>
@@ -341,7 +341,7 @@
 			<dependency>
 				<groupId>javax.servlet</groupId>
 				<artifactId>javax.servlet-api</artifactId>
-				<version>3.0.1</version>
+				<version>3.1.0</version>
 				<scope>provided</scope>
 			</dependency>
 			<dependency>
