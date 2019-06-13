@@ -139,11 +139,11 @@ public class SimpleDataset implements Dataset, Serializable {
 			appendURI(sb, getDefaultInsertGraph());
 		}
 		for (IRI uri : getDefaultGraphs()) {
-			sb.append("USING ");
+			sb.append("FROM ");
 			appendURI(sb, uri);
 		}
 		for (IRI uri : getNamedGraphs()) {
-			sb.append("USING NAMED ");
+			sb.append("FROM NAMED ");
 			appendURI(sb, uri);
 		}
 		if (getDefaultGraphs().isEmpty() && getNamedGraphs().isEmpty()) {
