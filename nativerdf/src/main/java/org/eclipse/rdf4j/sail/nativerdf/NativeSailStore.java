@@ -524,7 +524,9 @@ class NativeSailStore implements SailStore {
 				for (Resource context : contexts) {
 					int contextId = context == null ? 0 : valueStore.getID(context);
 					int count = tripleStore.removeTriples(subjID, predID, objID, contextId, explicit);
-					contextStore.decrementBy(context, count);
+					if (context != null) {
+						contextStore.decrementBy(context, count);
+					}
 					removeCount += count;
 				}
 				return removeCount;
