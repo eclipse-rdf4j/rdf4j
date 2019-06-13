@@ -73,12 +73,12 @@ public class ContextStore implements Iterable<Resource> {
 
 	private final ValueFactory valueFactory;
 
-	public ContextStore(NativeSailStore store, File dataDir, ValueFactory valueFactory) throws IOException {
+	public ContextStore(NativeSailStore store, File dataDir) throws IOException {
+		Objects.requireNonNull(store);
 		Objects.requireNonNull(dataDir);
-		Objects.requireNonNull(valueFactory);
 
 		this.file = new File(dataDir, FILE_NAME);
-		this.valueFactory = valueFactory;
+		this.valueFactory = store.getValueFactory();
 
 		contextInfoMap = new HashMap<>(16);
 

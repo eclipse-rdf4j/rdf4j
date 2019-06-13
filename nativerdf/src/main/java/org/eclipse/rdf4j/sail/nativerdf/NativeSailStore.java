@@ -89,7 +89,7 @@ class NativeSailStore implements SailStore {
 			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
 					namespaceIDCacheSize);
 			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
-			contextStore = new ContextStore(this, dataDir, getValueFactory());
+			contextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {
 			if (!initialized) {
