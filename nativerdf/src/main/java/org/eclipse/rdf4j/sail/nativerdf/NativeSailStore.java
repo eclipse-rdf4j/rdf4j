@@ -20,12 +20,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -60,6 +56,8 @@ class NativeSailStore implements SailStore {
 
 	final NamespaceStore namespaceStore;
 
+	final ContextStore contextStore;
+
 	/**
 	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and NamespaceStore.
 	 * Each sink method that directly accesses one of these store obtains the lock and releases it immediately when
@@ -91,6 +89,7 @@ class NativeSailStore implements SailStore {
 			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
 					namespaceIDCacheSize);
 			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
+			contextStore = new ContextStore(this, dataDir, getValueFactory());
 			initialized = true;
 		} finally {
 			if (!initialized) {
@@ -113,14 +112,21 @@ class NativeSailStore implements SailStore {
 				}
 			} finally {
 				try {
-					if (valueStore != null) {
-						valueStore.close();
+					if (contextStore != null) {
+						contextStore.close();
 					}
 				} finally {
-					if (tripleStore != null) {
-						tripleStore.close();
+					try {
+						if (valueStore != null) {
+							valueStore.close();
+						}
+					} finally {
+						if (tripleStore != null) {
+							tripleStore.close();
+						}
 					}
 				}
+
 			}
 		} catch (IOException e) {
 			logger.warn("Failed to close store", e);
@@ -164,6 +170,33 @@ class NativeSailStore implements SailStore {
 		}
 
 		return contextIDs;
+	}
+
+	void initializeContextCache() throws IOException {
+		logger.debug("initializing context cache");
+		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
+		CloseableIteration<? extends Statement, SailException> stIter1;
+		if (btreeIter == null) {
+			// Iterator over all statements
+			stIter1 = createStatementIterator(null, null, null, true);
+		} else {
+			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
+		}
+
+		// Filter statements without context resource
+		try (FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+				stIter1) {
+
+			@Override
+			protected boolean accept(Statement st) {
+				return st.getContext() != null;
+			}
+		}) {
+			while (stIter2.hasNext()) {
+				Statement st = stIter2.next();
+				contextStore.increment(st.getContext());
+			}
+		}
 	}
 
 	/**
@@ -433,6 +466,9 @@ class NativeSailStore implements SailStore {
 					}
 
 					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
+					if (wasNew && context != null) {
+						contextStore.increment(context);
+					}
 					result |= wasNew;
 				}
 			} catch (IOException e) {
@@ -476,30 +512,17 @@ class NativeSailStore implements SailStore {
 					}
 				}
 
-				List<Integer> contextIDList = new ArrayList<>(contexts.length);
 				if (contexts.length == 0) {
-					contextIDList.add(NativeValue.UNKNOWN_ID);
-				} else {
-					for (Resource context : contexts) {
-						if (context == null) {
-							contextIDList.add(0);
-						} else {
-							int contextID = valueStore.getID(context);
-							if (contextID != NativeValue.UNKNOWN_ID) {
-								contextIDList.add(contextID);
-							}
-						}
-					}
+					return tripleStore.removeTriples(subjID, predID, objID, NativeValue.UNKNOWN_ID, explicit);
 				}
 
 				int removeCount = 0;
-
-				for (int i = 0; i < contextIDList.size(); i++) {
-					int contextID = contextIDList.get(i);
-
-					removeCount += tripleStore.removeTriples(subjID, predID, objID, contextID, explicit);
+				for (Resource context : contexts) {
+					int contextId = context == null ? 0 : valueStore.getID(context);
+					int count = tripleStore.removeTriples(subjID, predID, objID, contextId, explicit);
+					contextStore.decrementBy(context, count);
+					removeCount += count;
 				}
-
 				return removeCount;
 			} catch (IOException e) {
 				throw new SailException(e);
@@ -540,108 +563,7 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-			RecordIterator btreeIter = null;
-			CloseableIteration<? extends Statement, SailException> stIter1 = null;
-			CloseableIteration<? extends Statement, SailException> stIter2 = null;
-			CloseableIteration<Resource, SailException> ctxIter1 = null;
-			CloseableIteration<Resource, SailException> ctxIter2 = null;
-			ExceptionConvertingIteration<Resource, SailException> result = null;
-			boolean allGood = false;
-			// Which resources are used as context identifiers is not stored
-			// separately. Iterate over all statements and extract their context.
-			try {
-				btreeIter = tripleStore.getAllTriplesSortedByContext(false);
-				if (btreeIter == null) {
-					// Iterator over all statements
-					stIter1 = createStatementIterator(null, null, null, explicit);
-				} else {
-					stIter1 = new NativeStatementIterator(btreeIter, valueStore);
-				}
-				// Filter statements without context resource
-				stIter2 = new FilterIteration<Statement, SailException>(stIter1) {
-
-					@Override
-					protected boolean accept(Statement st) {
-						return st.getContext() != null;
-					}
-				};
-				// Return the contexts of the statements
-				ctxIter1 = new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
-
-					@Override
-					protected Resource convert(Statement st) {
-						return st.getContext();
-					}
-				};
-				if (btreeIter == null) {
-					// Filtering any duplicates
-					ctxIter2 = new DistinctIteration<>(ctxIter1);
-				} else {
-					// Filtering sorted duplicates
-					ctxIter2 = new ReducedIteration<>(ctxIter1);
-				}
-
-				result = new ExceptionConvertingIteration<Resource, SailException>(ctxIter2) {
-
-					@Override
-					protected SailException convert(Exception e) {
-						if (e instanceof IOException) {
-							return new SailException(e);
-						} else if (e instanceof RuntimeException) {
-							throw (RuntimeException) e;
-						} else if (e == null) {
-							throw new IllegalArgumentException("e must not be null");
-						} else {
-							throw new IllegalArgumentException("Unexpected exception type: " + e.getClass());
-						}
-					}
-				};
-				allGood = true;
-				return result;
-			} catch (IOException e) {
-				throw new SailException(e);
-			} finally {
-				if (!allGood) {
-					try {
-						if (result != null) {
-							result.close();
-						}
-					} finally {
-						try {
-							if (ctxIter2 != null) {
-								ctxIter2.close();
-							}
-						} finally {
-							try {
-								if (ctxIter1 != null) {
-									ctxIter1.close();
-								}
-							} finally {
-								try {
-									if (stIter2 != null) {
-										stIter2.close();
-									}
-								} finally {
-									try {
-										if (stIter1 != null) {
-											stIter1.close();
-										}
-									} finally {
-										if (btreeIter != null) {
-											try {
-												btreeIter.close();
-											} catch (IOException e) {
-												throw new SailException(e);
-											}
-										}
-									}
-								}
-							}
-						}
-
-					}
-				}
-			}
+			return new CloseableIteratorIteration<Resource, SailException>(contextStore.iterator());
 		}
 
 		@Override
@@ -654,4 +576,5 @@ class NativeSailStore implements SailStore {
 			}
 		}
 	}
+
 }
