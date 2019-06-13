@@ -19,11 +19,11 @@ public abstract class ASTOperationContainer extends SimpleNode {
 	/**
 	 * @param id
 	 */
-	public ASTOperationContainer(int id) {
+	protected ASTOperationContainer(int id) {
 		super(id);
 	}
 
-	public ASTOperationContainer(SyntaxTreeBuilder p, int id) {
+	protected ASTOperationContainer(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 

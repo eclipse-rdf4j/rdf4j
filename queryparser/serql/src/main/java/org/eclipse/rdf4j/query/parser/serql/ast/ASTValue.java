@@ -12,11 +12,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
  */
 public abstract class ASTValue extends ASTValueExpr {
 
-	public ASTValue(int i) {
+	protected ASTValue(int i) {
 		super(i);
 	}
 
-	public ASTValue(SyntaxTreeBuilder p, int i) {
+	protected ASTValue(SyntaxTreeBuilder p, int i) {
 		super(p, i);
 	}
 }

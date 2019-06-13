@@ -28,7 +28,7 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	private final static Set<RioSetting<Boolean>> optionalXmlFeatureSettings = new HashSet<>(
 			Arrays.asList(XMLParserSettings.LOAD_EXTERNAL_DTD));
 
-	public XMLReaderBasedParser(ValueFactory f) {
+	protected XMLReaderBasedParser(ValueFactory f) {
 		super(f);
 	}
 

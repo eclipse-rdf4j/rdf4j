@@ -38,7 +38,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * 
 	 * @param iter The wrapped Iteration for this <tt>IterationWrapper</tt>, must not be <tt>null</tt>.
 	 */
-	public IterationWrapper(Iteration<? extends E, ? extends X> iter) {
+	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
 		assert iter != null;
 		wrappedIter = iter;
 	}

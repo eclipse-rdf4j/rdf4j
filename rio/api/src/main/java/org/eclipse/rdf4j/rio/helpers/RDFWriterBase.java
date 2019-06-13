@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.rio.helpers;
 @Deprecated
 public abstract class RDFWriterBase extends AbstractRDFWriter {
 
-	public RDFWriterBase() {
+	protected RDFWriterBase() {
 		super();
 	}
 }

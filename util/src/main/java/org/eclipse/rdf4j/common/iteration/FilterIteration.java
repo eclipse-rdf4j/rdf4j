@@ -29,7 +29,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	/**
 	 * @param iter
 	 */
-	public FilterIteration(Iteration<? extends E, ? extends X> iter) {
+	protected FilterIteration(Iteration<? extends E, ? extends X> iter) {
 		super(iter);
 	}
 

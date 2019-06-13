@@ -16,7 +16,7 @@ public abstract class AggregateOperatorBase extends AbstractAggregateOperator {
 
 	private static final long serialVersionUID = 1L;
 
-	public AggregateOperatorBase(ValueExpr arg) {
+	protected AggregateOperatorBase(ValueExpr arg) {
 		super(arg);
 	}
 

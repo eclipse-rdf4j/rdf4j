@@ -11,11 +11,11 @@ public abstract class ASTPathExprTail extends SimpleNode {
 
 	private boolean isBranch = false;
 
-	public ASTPathExprTail(int id) {
+	protected ASTPathExprTail(int id) {
 		super(id);
 	}
 
-	public ASTPathExprTail(SyntaxTreeBuilder p, int id) {
+	protected ASTPathExprTail(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 

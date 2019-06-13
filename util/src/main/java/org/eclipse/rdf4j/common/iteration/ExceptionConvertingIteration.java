@@ -35,7 +35,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	 * 
 	 * @param iter The Iteration that this <tt>ExceptionConvertingIteration</tt> operates on, must not be <tt>null</tt>.
 	 */
-	public ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
+	protected ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 

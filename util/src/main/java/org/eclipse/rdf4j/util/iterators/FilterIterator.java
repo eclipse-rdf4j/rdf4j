@@ -21,7 +21,7 @@ public abstract class FilterIterator<E> implements Iterator<E> {
 
 	private E nextElement;
 
-	public FilterIterator(Iterator<? extends E> iter) {
+	protected FilterIterator(Iterator<? extends E> iter) {
 		this.filteredIter = iter;
 	}
 

@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTGraphQuery extends ASTQuery {
 
-	public ASTGraphQuery(int i) {
+	protected ASTGraphQuery(int i) {
 		super(i);
 	}
 
-	public ASTGraphQuery(SyntaxTreeBuilder p, int i) {
+	protected ASTGraphQuery(SyntaxTreeBuilder p, int i) {
 		super(p, i);
 	}
 }

@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTPathExpr extends SimpleNode {
 
-	public ASTPathExpr(int id) {
+	protected ASTPathExpr(int id) {
 		super(id);
 	}
 
-	public ASTPathExpr(SyntaxTreeBuilder p, int id) {
+	protected ASTPathExpr(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 }

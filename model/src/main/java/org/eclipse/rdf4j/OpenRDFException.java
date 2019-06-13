@@ -18,19 +18,19 @@ public abstract class OpenRDFException extends RuntimeException {
 
 	private static final long serialVersionUID = 5283957703704198489L;
 
-	public OpenRDFException() {
+	protected OpenRDFException() {
 		super();
 	}
 
-	public OpenRDFException(String msg) {
+	protected OpenRDFException(String msg) {
 		super(msg);
 	}
 
-	public OpenRDFException(Throwable t) {
+	protected OpenRDFException(Throwable t) {
 		super(t);
 	}
 
-	public OpenRDFException(String msg, Throwable t) {
+	protected OpenRDFException(String msg, Throwable t) {
 		super(msg, t);
 
 	}

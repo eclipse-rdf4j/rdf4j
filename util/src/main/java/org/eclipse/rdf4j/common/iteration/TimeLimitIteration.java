@@ -27,7 +27,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
 
-	public TimeLimitIteration(Iteration<? extends E, ? extends X> iter, long timeLimit) {
+	protected TimeLimitIteration(Iteration<? extends E, ? extends X> iter, long timeLimit) {
 		super(iter);
 
 		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;

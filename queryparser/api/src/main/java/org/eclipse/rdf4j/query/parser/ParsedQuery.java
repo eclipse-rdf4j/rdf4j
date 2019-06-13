@@ -36,7 +36,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * Creates a new query object. To complete this query, a tuple expression needs to be supplied to it using
 	 * {@link #setTupleExpr(TupleExpr)}.
 	 */
-	public ParsedQuery() {
+	protected ParsedQuery() {
 		super();
 	}
 
@@ -44,7 +44,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * Creates a new query object. To complete this query, a tuple expression needs to be supplied to it using
 	 * {@link #setTupleExpr(TupleExpr)}.
 	 */
-	public ParsedQuery(String sourceString) {
+	protected ParsedQuery(String sourceString) {
 		super(sourceString);
 	}
 
@@ -53,7 +53,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * 
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
-	public ParsedQuery(String sourceString, TupleExpr tupleExpr) {
+	protected ParsedQuery(String sourceString, TupleExpr tupleExpr) {
 		this(sourceString);
 		setTupleExpr(tupleExpr);
 	}
@@ -63,7 +63,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * 
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
-	public ParsedQuery(TupleExpr tupleExpr) {
+	protected ParsedQuery(TupleExpr tupleExpr) {
 		this(null, tupleExpr);
 	}
 
@@ -72,7 +72,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * 
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
-	public ParsedQuery(TupleExpr tupleExpr, Dataset dataset) {
+	protected ParsedQuery(TupleExpr tupleExpr, Dataset dataset) {
 		this(null, tupleExpr, dataset);
 	}
 
@@ -81,7 +81,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * 
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
-	public ParsedQuery(String sourceString, TupleExpr tupleExpr, Dataset dataset) {
+	protected ParsedQuery(String sourceString, TupleExpr tupleExpr, Dataset dataset) {
 		this(sourceString, tupleExpr);
 		setDataset(dataset);
 	}

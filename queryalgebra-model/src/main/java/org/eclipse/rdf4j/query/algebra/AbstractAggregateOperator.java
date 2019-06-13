@@ -18,11 +18,11 @@ public abstract class AbstractAggregateOperator extends UnaryValueOperator imple
 
 	private boolean distinct = false;
 
-	public AbstractAggregateOperator(ValueExpr arg) {
+	protected AbstractAggregateOperator(ValueExpr arg) {
 		this(arg, false);
 	}
 
-	public AbstractAggregateOperator(ValueExpr arg, boolean distinct) {
+	protected AbstractAggregateOperator(ValueExpr arg, boolean distinct) {
 		super();
 		if (arg != null) {
 			setArg(arg);

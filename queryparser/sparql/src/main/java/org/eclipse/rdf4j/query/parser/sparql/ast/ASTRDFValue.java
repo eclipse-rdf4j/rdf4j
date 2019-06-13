@@ -19,7 +19,7 @@ public abstract class ASTRDFValue extends SimpleNode {
 	/**
 	 * @param id
 	 */
-	public ASTRDFValue(int id) {
+	protected ASTRDFValue(int id) {
 		super(id);
 	}
 
@@ -27,7 +27,7 @@ public abstract class ASTRDFValue extends SimpleNode {
 	 * @param parser
 	 * @param id
 	 */
-	public ASTRDFValue(SyntaxTreeBuilder parser, int id) {
+	protected ASTRDFValue(SyntaxTreeBuilder parser, int id) {
 		super(parser, id);
 	}
 
