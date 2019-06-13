@@ -150,10 +150,14 @@ On a MS-Windows system, forward slashes or double backward slashes are to be use
 
     verify C:\\data\\rdf\\data.jsonld
 
-or
+or:
 
     verify C:/data/rdf/data.jsonld
   
+Validating the file against a set of shapes and constraints in a SHACL file, and storing the validation report to a file, is equally straightforward:   
+
+   verify data.jsonld shacl-file.ttl validation-report.ttl
+
 ### Loading a file into a repository
 
 The `load` command loads a file into the opened repository.  Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name.
