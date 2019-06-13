@@ -110,7 +110,7 @@ public class ContextStore implements Iterable<Resource> {
 	 * @param amount  the number by which to decrease the size
 	 */
 	public void decrementBy(Resource context, int amount) {
-		contextInfoMap.computeIfPresent(context, (c, size) -> size == 1L ? null : size - amount);
+		contextInfoMap.computeIfPresent(context, (c, size) -> size <= amount ? null : size - amount);
 		contentsChanged = true;
 	}
 

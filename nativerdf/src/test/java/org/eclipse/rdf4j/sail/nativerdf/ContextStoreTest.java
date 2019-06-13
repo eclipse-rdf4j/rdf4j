@@ -84,6 +84,15 @@ public class ContextStoreTest {
 	}
 
 	@Test
+	public void testDecrementExistingBySeveral() throws Exception {
+		subject.increment(g1);
+		subject.increment(g1);
+
+		subject.decrementBy(g1, 2);
+		assertThat(countContexts(subject)).isEqualTo(0);
+	}
+
+	@Test
 	public void testDecrementExistingBNode() throws Exception {
 		subject.increment(g2);
 		subject.increment(g2);
