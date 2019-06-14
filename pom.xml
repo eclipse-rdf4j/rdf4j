@@ -202,6 +202,7 @@
 		<jackson.version>2.9.8</jackson.version>
 		<jsonldjava.version>0.12.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
+		<jaxb.version>2.3.2</jaxb.version>
 	</properties>
 
 	<dependencyManagement>
