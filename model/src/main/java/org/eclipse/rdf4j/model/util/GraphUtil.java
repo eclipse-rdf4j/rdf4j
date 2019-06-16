@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.util.iterators.Iterators;
  * is also available (in more convenient form) in the {@link org.eclipse.rdf4j.model.Model} interface, which extends
  * {@link Graph}.
  * 
- * @deprecated since 2.8.0. Use equivalent functionality in {@link Model} and {@link Models} instead.
+ * @deprecated since 2.0. Use equivalent functionality in {@link Model} and {@link Models} instead.
  * @author Arjohn Kampman
  */
 @Deprecated
@@ -39,7 +39,7 @@ public class GraphUtil {
 	 * extracting the subjects of the matching statements from the returned iterator. See
 	 * {@link Graph#match(Resource, IRI, Value, Resource[])} for a description of the parameter values.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjects()}
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjects()}
 	 *             instead.
 	 */
 	@Deprecated
@@ -62,7 +62,7 @@ public class GraphUtil {
 	 * adding the subjects of the matching statements to a set. See
 	 * {@link Graph#match(Resource, IRI, Value, Resource[])} for a description of the parameter values.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjects()}
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjects()}
 	 *             instead.
 	 */
 	@Deprecated
@@ -81,7 +81,7 @@ public class GraphUtil {
 	 * @return The subject of the matched statement(s).
 	 * @throws GraphUtilException If the statements matched by the specified parameters do not have exactly one unique
 	 *                            subject.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
 	 *             {@link Model#subjectResource()} instead.
 	 */
 	@Deprecated
@@ -106,8 +106,8 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getUniqueSubject(Graph, IRI, Value, Resource[])} or if its return value is not
 	 *                            a URI.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
-	 *             {@link Model#subjectIRI()} instead.
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjectIRI()}
+	 *             instead.
 	 */
 	@Deprecated
 	public static IRI getUniqueSubjectURI(Graph graph, IRI pred, Value obj, Resource... contexts)
@@ -130,7 +130,7 @@ public class GraphUtil {
 	 * @return The subject of the matched statement(s), or <tt>null</tt> if no matching statements were found.
 	 * @throws GraphUtilException If the statements matched by the specified parameters have more than one unique
 	 *                            subject.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
 	 *             {@link Model#subjectResource()} instead.
 	 */
 	@Deprecated
@@ -155,8 +155,8 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getOptionalSubject(Graph, IRI, Value, Resource[])} or if its return value is
 	 *                            not a URI.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
-	 *             {@link Model#subjectIRI()} instead.
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#subjectIRI()}
+	 *             instead.
 	 */
 	@Deprecated
 	public static IRI getOptionalSubjectURI(Graph graph, IRI pred, Value obj, Resource... contexts)
@@ -176,7 +176,7 @@ public class GraphUtil {
 	 * extracting the objects of the matching statements from the returned iterator. See
 	 * {@link Graph#match(Resource, IRI, Value, Resource[])} for a description of the parameter values.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#objects()}
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#objects()}
 	 *             instead.
 	 */
 	@Deprecated
@@ -199,7 +199,7 @@ public class GraphUtil {
 	 * adding the objects of the matching statements to a set. See {@link Graph#match(Resource, IRI, Value, Resource[])}
 	 * for a description of the parameter values.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#objects()}
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and {@link Model#objects()}
 	 *             instead.
 	 */
 	@Deprecated
@@ -218,7 +218,7 @@ public class GraphUtil {
 	 * @return The object of the matched statement(s).
 	 * @throws GraphUtilException If the statements matched by the specified parameters do not have exactly one unique
 	 *                            object.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...)} and
 	 *             {@link Model#objectValue()} instead.
 	 */
 	@Deprecated
@@ -240,7 +240,7 @@ public class GraphUtil {
 	 * subject and predicate. When contexts are specified, the (subj, pred) pair will occur exactly once in each
 	 * context, else the (subj, pred) pair will occur exactly once in the entire Graph.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Models#setProperty(Model, Resource, IRI, Value, Resource...) } instead.
+	 * @deprecated since 2.0. Use {@link Models#setProperty(Model, Resource, IRI, Value, Resource...) } instead.
 	 */
 	@Deprecated
 	public static void setUniqueObject(Graph graph, Resource subj, IRI pred, Value obj, Resource... contexts) {
@@ -262,7 +262,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getUniqueObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a Resource.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectResource() } instead.
 	 */
 	@Deprecated
@@ -284,7 +284,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getUniqueObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a URI.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectIRI() } instead.
 	 */
 	@Deprecated
@@ -306,7 +306,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getUniqueObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a Literal.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectLiteral() } instead.
 	 */
 	@Deprecated
@@ -329,7 +329,7 @@ public class GraphUtil {
 	 * @return The object of the matched statement(s), or <tt>null</tt> if no matching statements were found.
 	 * @throws GraphUtilException If the statements matched by the specified parameters have more than one unique
 	 *                            object.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectValue() } instead.
 	 */
 	@Deprecated
@@ -354,7 +354,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getOptionalObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a Resource.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectResource() } instead.
 	 */
 	@Deprecated
@@ -376,7 +376,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getOptionalObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a URI.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectIRI() } instead.
 	 */
 	@Deprecated
@@ -398,7 +398,7 @@ public class GraphUtil {
 	 * @throws GraphUtilException If such an exception is thrown by
 	 *                            {@link #getOptionalObject(Graph, Resource, IRI, Resource[])} or if its return value is
 	 *                            not a Literal.
-	 * @deprecated since 2.8.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
+	 * @deprecated since 2.0. Use {@link Model#filter(Resource, IRI, Value, Resource...) } and
 	 *             {@link Model#objectLiteral() } instead.
 	 */
 	@Deprecated
@@ -424,7 +424,7 @@ public class GraphUtil {
 	 *                 matching one of these will match.
 	 * @throws IllegalArgumentException If a <tt>null</tt>-array is specified as the value for <tt>contexts</tt>. See
 	 *                                  {@link OpenRDFUtil#verifyContextNotNull(Resource[])} for more info.
-	 * @deprecated since 2.8.0. Use {@link Model#remove(Resource, IRI, Value, Resource...) } instead.
+	 * @deprecated since 2.0. Use {@link Model#remove(Resource, IRI, Value, Resource...) } instead.
 	 */
 	@Deprecated
 	public static void remove(Graph graph, Resource subj, IRI pred, Value obj, Resource... contexts) {

@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractQueryModelVisitor} instead.
+ * @deprecated since 2.0. Use {@link AbstractQueryModelVisitor} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractRDFParser} instead.
+ * @deprecated since 2.0. Use {@link AbstractRDFParser} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

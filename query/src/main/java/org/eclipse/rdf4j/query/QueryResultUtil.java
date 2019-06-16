@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * @deprecated since 2.7.0. Use {@link QueryResults} instead.
+ * @deprecated since 2.0. Use {@link QueryResults} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

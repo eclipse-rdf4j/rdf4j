@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository.base;
 import org.eclipse.rdf4j.repository.Repository;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractRepositoryConnection} instead.
+ * @deprecated since 2.0. Use {@link AbstractRepositoryConnection} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

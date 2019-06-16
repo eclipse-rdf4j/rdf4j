@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.impl;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * @deprecated since 4.0. Use {@link SimpleBinding} instead.
+ * @deprecated since 2.0. Use {@link SimpleBinding} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractCloseableIteration} instead.
+ * @deprecated since 2.0. Use {@link AbstractCloseableIteration} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

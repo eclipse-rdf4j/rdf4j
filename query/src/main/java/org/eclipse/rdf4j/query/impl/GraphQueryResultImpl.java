@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * @deprecated since 4.0. Use {@link IteratingGraphQueryResult} instead.
+ * @deprecated since 2.0. Use {@link IteratingGraphQueryResult} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

@@ -57,7 +57,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #object(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #object(Model)} instead.
 	 */
 	@Deprecated
 	public static Value anyObject(Model m) {
@@ -92,7 +92,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #objectLiteral(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #objectLiteral(Model)} instead.
 	 */
 	@Deprecated
 	public static Literal anyObjectLiteral(Model m) {
@@ -128,7 +128,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #objectResource(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #objectResource(Model)} instead.
 	 */
 	@Deprecated
 	public static Resource anyObjectResource(Model m) {
@@ -188,7 +188,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #objectIRI(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #objectIRI(Model)} instead.
 	 */
 	@Deprecated
 	public static URI anyObjectURI(Model m) {
@@ -208,7 +208,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #subject(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #subject(Model)} instead.
 	 */
 	@Deprecated
 	public static Resource anySubject(Model m) {
@@ -238,7 +238,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #subjectIRI(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #subjectIRI(Model)} instead.
 	 */
 	@Deprecated
 	public static URI anySubjectURI(Model m) {
@@ -268,7 +268,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #subjectBNode(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #subjectBNode(Model)} instead.
 	 */
 	@Deprecated
 	public static BNode anySubjectBNode(Model m) {
@@ -288,7 +288,7 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link #predicate(Model)} instead.
+	 * @deprecated since 2.0. Use {@link #predicate(Model)} instead.
 	 */
 	@Deprecated
 	public static URI anyPredicate(Model m) {
@@ -525,7 +525,7 @@ public class Models {
 	 * Models are equal if they contain the same set of statements. Blank node IDs are not relevant for model equality,
 	 * they are mapped from one model to the other by using the attached properties.
 	 *
-	 * @deprecated since 2.8.0. Use {@link Models#isomorphic(Iterable, Iterable)} instead.
+	 * @deprecated since 2.0. Use {@link Models#isomorphic(Iterable, Iterable)} instead.
 	 */
 	@Deprecated
 	public static boolean equals(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {

@@ -97,7 +97,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
-	 * @deprecated since 4.0. Use {@link #contains(Resource, IRI, Value, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #contains(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	public default boolean contains(Resource subj, URI pred, Value obj, Resource... contexts) {
@@ -123,7 +123,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
-	 * @deprecated since 4.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	public default boolean add(Resource subj, URI pred, Value obj, Resource... contexts) {
@@ -164,7 +164,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
-	 * @deprecated since 4.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	public default boolean remove(Resource subj, URI pred, Value obj, Resource... contexts) {
@@ -230,7 +230,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The subject of the matched statement(s), or {@link Optional#empty()} if no matching statements were
 	 *         found.
 	 * @throws ModelException If the statements matched by the specified parameters have more than one unique subject.
-	 * @deprecated since 4.0. Instead, use {@link Models#subject(Model)} to retrieve a subject Resource, and/or use the
+	 * @deprecated since 2.0. Instead, use {@link Models#subject(Model)} to retrieve a subject Resource, and/or use the
 	 *             size of the set returned by {@link #subjects()} to verify if the subject is unique.
 	 */
 	@Deprecated
@@ -252,7 +252,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The subject of the matched statement(s), or {@code null} if no matching statements were found.
 	 * @throws ModelException If such an exception is thrown by {@link #subjectResource()} or if its return value is not
 	 *                        a IRI.
-	 * @deprecated since 4.0. Instead, use {@link Models#subjectURI(Model)} to retrieve a subject URI, and/or use the
+	 * @deprecated since 2.0. Instead, use {@link Models#subjectURI(Model)} to retrieve a subject URI, and/or use the
 	 *             size of the set returned by {@link #subjects()} to verify if the subject is unique.
 	 */
 	@Deprecated
@@ -286,7 +286,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The subject of the matched statement(s), or {@code null} if no matching statements were found.
 	 * @throws ModelException If such an exception is thrown by {@link #subjectResource()} or if its return value is not
 	 *                        a BNode.
-	 * @deprecated since 4.0. Instead, use {@link Models#subjectBNode(Model)} to retrieve a subject BNode, and/or use
+	 * @deprecated since 2.0. Instead, use {@link Models#subjectBNode(Model)} to retrieve a subject BNode, and/or use
 	 *             the size of the set returned by {@link #subjects()} to verify if the subject is unique.
 	 */
 	@Deprecated
@@ -351,7 +351,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * 
 	 * @return The object of the matched statement(s), or {@link Optional#empty()} if no matching statements were found.
 	 * @throws ModelException If the statements matched by the specified parameters have more than one unique object.
-	 * @deprecated since 4.0. Instead, use {@link Models#object(Model)} to retrieve an object value, and/or use the size
+	 * @deprecated since 2.0. Instead, use {@link Models#object(Model)} to retrieve an object value, and/or use the size
 	 *             of the set returned by {@link #objects()} to verify if the object is unique.
 	 */
 	@Deprecated
@@ -373,7 +373,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The object of the matched statement(s), or {@link Optional#empty()} if no matching statements were found.
 	 * @throws ModelException If such an exception is thrown by {@link #objectValue()} or if its return value is not a
 	 *                        Literal.
-	 * @deprecated since 4.0. Instead, use {@link Models#objectLiteral(Model)} to retrieve an object Literal value,
+	 * @deprecated since 2.0. Instead, use {@link Models#objectLiteral(Model)} to retrieve an object Literal value,
 	 *             and/or use the size of the set returned by {@link #objects()} to verify if the object is unique.
 	 */
 	@Deprecated
@@ -397,7 +397,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The object of the matched statement(s), or {@link Optional#empty()} if no matching statements were found.
 	 * @throws ModelException If such an exception is thrown by {@link #objectValue()} or if its return value is not a
 	 *                        Resource.
-	 * @deprecated since 4.0. Instead, use {@link Models#objectResource(Model)} to retrieve an object Resource value,
+	 * @deprecated since 2.0. Instead, use {@link Models#objectResource(Model)} to retrieve an object Resource value,
 	 *             and/or use the size of the set returned by {@link #objects()} to verify if the object is unique.
 	 */
 	@Deprecated
@@ -421,7 +421,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The object of the matched statement(s), or {@link Optional#empty()} if no matching statements were found.
 	 * @throws ModelException If such an exception is thrown by {@link #objectValue()} or if its return value is not an
 	 *                        IRI.
-	 * @deprecated since 4.0. Instead, use {@link Models#objectURI(Model)} to retrieve an object URI value, and/or use
+	 * @deprecated since 2.0. Instead, use {@link Models#objectURI(Model)} to retrieve an object URI value, and/or use
 	 *             the size of the set returned by {@link #objects()} to verify if the object is unique.
 	 */
 	@Deprecated
@@ -454,7 +454,7 @@ public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAwa
 	 * @return The object string value of the matched statement(s), or {@link Optional#empty()} if no matching
 	 *         statements were found.
 	 * @throws ModelException If the statements matched by the specified parameters have more than one unique object.
-	 * @deprecated since 4.0. Instead, use {@link Models#objectString(Model)} to retrieve an object string value, and/or
+	 * @deprecated since 2.0. Instead, use {@link Models#objectString(Model)} to retrieve an object string value, and/or
 	 *             use the size of the set returned by {@link #objects()} to verify if the object is unique.
 	 */
 	@Deprecated

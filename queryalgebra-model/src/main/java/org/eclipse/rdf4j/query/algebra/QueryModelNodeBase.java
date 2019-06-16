@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractQueryModelNode} instead.
+ * @deprecated since 2.0. Use {@link AbstractQueryModelNode} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

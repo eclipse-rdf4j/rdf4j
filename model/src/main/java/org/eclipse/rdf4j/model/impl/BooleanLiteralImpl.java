@@ -8,20 +8,20 @@
 package org.eclipse.rdf4j.model.impl;
 
 /**
- * @deprecated since 4.0. Use {@link BooleanLiteral} instead.
+ * @deprecated since 2.0. Use {@link BooleanLiteral} instead.
  * @author Jeen Broekstra
  */
 @Deprecated
 public class BooleanLiteralImpl extends BooleanLiteral {
 
 	/**
-	 * @deprecated since 4.0. Use {@link BooleanLiteral#TRUE} instead.
+	 * @deprecated since 2.0. Use {@link BooleanLiteral#TRUE} instead.
 	 */
 	@Deprecated
 	public static final BooleanLiteralImpl TRUE = new BooleanLiteralImpl(true);
 
 	/**
-	 * @deprecated since 4.0. Use {@link BooleanLiteral#FALSE} instead.
+	 * @deprecated since 2.0. Use {@link BooleanLiteral#FALSE} instead.
 	 */
 	@Deprecated
 	public static final BooleanLiteralImpl FALSE = new BooleanLiteralImpl(false);

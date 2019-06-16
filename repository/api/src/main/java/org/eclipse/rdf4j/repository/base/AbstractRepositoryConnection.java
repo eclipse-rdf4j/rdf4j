@@ -185,7 +185,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * @deprecated since 2.7.0. Use {@link #begin()} instead.
+	 * @deprecated since 2.0. Use {@link #begin()} instead.
 	 */
 	@Deprecated
 	@Override
@@ -202,7 +202,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * @deprecated since 2.7.0. Use {@link #isActive()} instead.
+	 * @deprecated since 2.0. Use {@link #isActive()} instead.
 	 */
 	@Deprecated
 	@Override

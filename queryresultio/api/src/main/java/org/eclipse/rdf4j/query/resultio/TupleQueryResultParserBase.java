@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractTupleQueryResultParser} instead.
+ * @deprecated since 2.0. Use {@link AbstractTupleQueryResultParser} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

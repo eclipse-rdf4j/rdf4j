@@ -24,7 +24,7 @@ public interface RepositoryConnectionListener {
 	public abstract void close(RepositoryConnection conn);
 
 	/**
-	 * @deprecated since release 2.7.0. Use {@link #begin(RepositoryConnection)} instead.
+	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
 	 * @param conn
 	 * @param autoCommit
 	 */
