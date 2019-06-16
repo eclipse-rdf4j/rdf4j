@@ -726,9 +726,63 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
+	/**
+	 * Remove triples
+	 * 
+	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
+	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
+	 *                 the pattern.
+	 * @return The number of triples that were removed.
+	 * @throws IOException
+	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int)} instead.
+	 */
+	@Deprecated
 	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
+		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context);
+		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();
+	}
+
+	/**
+	 * Remove triples by context
+	 * 
+	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
+	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
+	 *                 the pattern.
+	 * @return A mapping of each modified context to the number of statements removed in that context.
+	 * @throws IOException
+	 * @since 2.5.3
+	 */
+	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context) throws IOException {
 		RecordIterator iter = getTriples(subj, pred, obj, context, 0, 0);
 		return removeTriples(iter);
+	}
+
+	/**
+	 * Remove triples
+	 * 
+	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
+	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
+	 *                 the pattern.
+	 * @return The number of triples that were removed.
+	 * @throws IOException
+	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int, boolean)} instead.
+	 */
+	@Deprecated
+	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
+		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context, explicit);
+		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();
 	}
 
 	/**
@@ -739,24 +793,24 @@ class TripleStore implements Closeable {
 	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
 	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
 	 *                 the pattern.
-	 * @return The number of triples that were removed.
+	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 */
-	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
+	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
+			throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
 		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
 		return removeTriples(iter);
 	}
 
-	private int removeTriples(RecordIterator iter) throws IOException {
-		byte[] data = iter.next();
+	private Map<Integer, Long> removeTriples(RecordIterator iter) throws IOException {
+		final Map<Integer, Long> perContextCounts = new HashMap<>();
 
+		byte[] data = iter.next();
 		if (data == null) {
 			// no triples to remove
-			return 0;
+			return perContextCounts;
 		}
-
-		int count = 0;
 
 		// Store the values that need to be removed in a tmp file and then
 		// iterate over this file to set the REMOVED flag
@@ -766,12 +820,13 @@ class TripleStore implements Closeable {
 				if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
 					data[FLAG_IDX] |= REMOVED_FLAG;
 					removedTriplesCache.storeRecord(data);
+					int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
+					perContextCounts.merge(context, 1L, (c, one) -> c + one);
 				}
 				data = iter.next();
 			}
 			iter.close();
 
-			count = (int) removedTriplesCache.getRecordCount();
 			updatedTriplesCache.storeRecords(removedTriplesCache);
 
 			// Set the REMOVED flag by overwriting the affected records
@@ -788,7 +843,7 @@ class TripleStore implements Closeable {
 			removedTriplesCache.discard();
 		}
 
-		return count;
+		return perContextCounts;
 	}
 
 	public void startTransaction() throws IOException {

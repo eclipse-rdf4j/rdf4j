@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -487,7 +489,7 @@ class NativeSailStore implements SailStore {
 			return result;
 		}
 
-		private int removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
+		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
@@ -516,18 +518,29 @@ class NativeSailStore implements SailStore {
 					}
 				}
 
+				final int[] contextIds = new int[contexts.length == 0 ? 1 : contexts.length];
 				if (contexts.length == 0) {
-					return tripleStore.removeTriples(subjID, predID, objID, NativeValue.UNKNOWN_ID, explicit);
+					contextIds[0] = NativeValue.UNKNOWN_ID;
+				} else {
+					for (int i = 0; i < contexts.length; i++) {
+						Resource context = contexts[i];
+						contextIds[i] = context == null ? 0 : valueStore.getID(context);
+					}
 				}
 
-				int removeCount = 0;
-				for (Resource context : contexts) {
-					int contextId = context == null ? 0 : valueStore.getID(context);
-					int count = tripleStore.removeTriples(subjID, predID, objID, contextId, explicit);
-					if (context != null) {
-						contextStore.decrementBy(context, count);
+				long removeCount = 0;
+				for (int contextId : contextIds) {
+					Map<Integer, Long> result = tripleStore.removeTriplesByContext(subjID, predID, objID, contextId,
+							explicit);
+
+					for (Entry<Integer, Long> entry : result.entrySet()) {
+						Integer entryContextId = entry.getKey();
+						if (entryContextId > 0) {
+							Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
+							contextStore.decrementBy(modifiedContext, entry.getValue());
+						}
+						removeCount += entry.getValue();
 					}
-					removeCount += count;
 				}
 				return removeCount;
 			} catch (IOException e) {
