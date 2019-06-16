@@ -134,7 +134,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	private Binding getBinding(Resource bindingNode) {
 		Literal name = Models.getPropertyLiteral(graph, bindingNode, VARIABLE)
 				.orElseThrow(() -> new RDFHandlerException("missing variable name for binding " + bindingNode));
-		Value value = Models.getPropertyLiteral(graph, bindingNode, VALUE)
+		Value value = Models.getProperty(graph, bindingNode, VALUE)
 				.orElseThrow(() -> new RDFHandlerException("missing variable value for binding " + bindingNode));
 		return new SimpleBinding(name.getLabel(), value);
 	}
