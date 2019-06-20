@@ -93,21 +93,14 @@ public class ContextStore implements Iterable<Resource> {
 
 		contextInfoMap = new HashMap<>(16);
 
-		if (file.exists()) {
-			try {
-				readContextsFromFile();
-			} catch (IOException e) {
-				logger.warn("could not read context index: " + e.getMessage(), e);
-				logger.info("attempting reconstruction from store (this may take a while)");
-				store.initializeContextCache();
-				writeContextsToFile();
-				logger.info("context index reconstruction complete");
-			}
-		} else {
-			logger.info("attempting construction from store (this may take a while)");
+		try {
+			readContextsFromFile();
+		} catch (IOException e) {
+			logger.info("could not read context index: " + e.getMessage(), e);
+			logger.debug("attempting reconstruction from store (this may take a while)");
 			store.initializeContextCache();
-			// Make sure the file exists
 			writeContextsToFile();
+			logger.info("context index reconstruction complete");
 		}
 	}
 
@@ -172,6 +165,10 @@ public class ContextStore implements Iterable<Resource> {
 
 	private void readContextsFromFile() throws IOException {
 		synchronized (file) {
+			if (!file.exists()) {
+				throw new IOException("context index file " + file + " does not exist");
+			}
+
 			try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
 				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 				if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
