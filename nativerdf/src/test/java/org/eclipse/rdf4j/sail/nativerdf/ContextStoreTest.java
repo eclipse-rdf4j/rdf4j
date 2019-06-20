@@ -115,13 +115,13 @@ public class ContextStoreTest {
 		File datafile = new File(dir, "contexts.dat");
 		assertThat(datafile.exists());
 		long size = datafile.length();
-		assertThat(size).isEqualTo(4L); // empty contexts file is 4 bytes
+		assertThat(size).isEqualTo(8L); // empty contexts file is 8 bytes
 		subject.increment(g1);
 		subject.sync();
-		assertThat(datafile.length()).isGreaterThan(4L);
+		assertThat(datafile.length()).isGreaterThan(8L);
 		subject.decrementBy(g1, 1);
 		subject.sync();
-		assertThat(datafile.length()).isEqualTo(4L);
+		assertThat(datafile.length()).isEqualTo(8L);
 	}
 
 	private int countContexts(ContextStore subject) {

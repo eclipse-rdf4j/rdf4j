@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
@@ -29,13 +31,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An in-memory index for context information that uses a file for persistence. Contexts are encoded in the file as
- * records as follows:
+ * An in-memory index for context information that uses a file for persistence.
+ * <p>
+ * The context index file has an 8-byte header consisting of:
+ * 
+ * <pre>
+ * 	byte 1-3         : the magic number marker
+ *  byte 4           : the file format version
+ *  byte 5-8         : the number of mapped contexts contained in the file, as an int.
+ * </pre>
+ * 
+ * Each context is encoded in the file as a record, as follows:
  * 
  * <pre>
  *   byte 1 - 8      : the number of statements in the content, as a long.
  *   byte 9          : boolean flag indicating the type of context identifier (1 = IRI, 0 = blank node)
- *   byte 10 - 11     : the length of the encoded context identifier
+ *   byte 10 - 11    : the length of the encoded context identifier
  *   byte 12 - A     : the UTF-8 encoded the encoded context identifer
  * </pre>
  * 
@@ -83,13 +94,20 @@ public class ContextStore implements Iterable<Resource> {
 		contextInfoMap = new HashMap<>(16);
 
 		if (file.exists()) {
-			readContextsFromFile();
+			try {
+				readContextsFromFile();
+			} catch (IOException e) {
+				logger.warn("could not read context index: " + e.getMessage(), e);
+				logger.info("attempting reconstruction from store (this may take a while)");
+				store.initializeContextCache();
+				writeContextsToFile();
+				logger.info("context index reconstruction complete");
+			}
 		} else {
-			logger.info("no context index file found, reconstructing from store (this may take a while)");
+			logger.info("attempting construction from store (this may take a while)");
 			store.initializeContextCache();
 			// Make sure the file exists
 			writeContextsToFile();
-			logger.info("context index reconstruction complete");
 		}
 	}
 
@@ -139,9 +157,10 @@ public class ContextStore implements Iterable<Resource> {
 
 	private void writeContextsToFile() throws IOException {
 		synchronized (file) {
-			try (DataOutputStream out = new DataOutputStream(new FileOutputStream(file))) {
+			try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(file)))) {
 				out.write(MAGIC_NUMBER);
 				out.writeByte(FILE_FORMAT_VERSION);
+				out.writeInt(contextInfoMap.size());
 				for (Entry<Resource, Long> entry : contextInfoMap.entrySet()) {
 					out.writeLong(entry.getValue());
 					out.writeBoolean(entry.getKey() instanceof IRI);
@@ -153,7 +172,7 @@ public class ContextStore implements Iterable<Resource> {
 
 	private void readContextsFromFile() throws IOException {
 		synchronized (file) {
-			try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
+			try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
 				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 				if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
 					throw new IOException("File doesn't contain compatible context data");
@@ -165,6 +184,8 @@ public class ContextStore implements Iterable<Resource> {
 				} else if (version != FILE_FORMAT_VERSION) {
 					throw new IOException("Unable to read context file; invalid file format version: " + version);
 				}
+
+				final int size = in.readInt();
 
 				while (true) {
 					try {
@@ -178,6 +199,10 @@ public class ContextStore implements Iterable<Resource> {
 					} catch (EOFException e) {
 						break;
 					}
+				}
+
+				if (contextInfoMap.size() != size) {
+					throw new IOException("Unable to read context file; size checksum validation failed");
 				}
 			}
 		}
