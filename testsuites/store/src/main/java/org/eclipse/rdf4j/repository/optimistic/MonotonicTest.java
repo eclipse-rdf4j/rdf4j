@@ -547,7 +547,7 @@ public class MonotonicTest {
 			}
 		}
 		a.commit();
-		assertEquals(7, size(b, null, RDF.TYPE, PAINTING, false));
+		assertEquals(5, size(b, null, RDF.TYPE, PAINTING, false));
 		b.commit();
 		assertEquals(12, size(a, null, null, null, false));
 	}
@@ -569,8 +569,7 @@ public class MonotonicTest {
 				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
 						+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
 				NS).execute();
-		a.commit();
-		assertEquals(7, size(b, null, RDF.TYPE, PAINTING, false));
+		assertEquals(5, size(b, null, RDF.TYPE, PAINTING, false));
 		b.commit();
 		assertEquals(12, size(a, null, null, null, false));
 	}

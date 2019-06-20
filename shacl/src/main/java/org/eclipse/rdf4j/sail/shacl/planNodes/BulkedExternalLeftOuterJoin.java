@@ -41,7 +41,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select distinct * where { VALUES (?a) {}" + query + "} order by ?a", null);
+				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
