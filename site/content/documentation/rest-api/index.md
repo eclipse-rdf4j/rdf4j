@@ -16,7 +16,7 @@ The following is an overview of the resources that are available from rdf4j serv
        /protocol         : protocol version (GET)
        /repositories     : overview of available repositories (GET)
        /<REP_ID>         : query evaluation and administration tasks on a repository
-                           (GET/POST/DELETE)
+                           (GET/POST/PUT/DELETE)
            /statements   : repository statements (GET/POST/PUT/DELETE)
            /contexts     : context overview (GET)
            /size         : # statements in repository (GET)
@@ -212,6 +212,34 @@ Response:
     Content-Type: text/boolean;charset=US-ASCII
 
     true
+
+# Repository creation and reconfiguration
+
+A specific repository with ID `<ID>` can be deleted from the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `PUT` method should be used for this.
+
+The payload supplied with this request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. If the repository with the specified id previously existed, the Server will attempt to reconfigure it using the supplied configuration. If it does not exist, a new, empty, repository will be created.
+
+An example payload, containing a repository configuration for an in-memory store:
+
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+    @prefix rep: <http://www.openrdf.org/config/repository#>.
+    @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+    @prefix sail: <http://www.openrdf.org/config/sail#>.
+    @prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+
+    [] a rep:Repository ;
+       rep:repositoryID "test" ;
+       rdfs:label "test memory store" ;
+       rep:repositoryImpl [
+          rep:repositoryType "openrdf:SailRepository" ;
+          sr:sailImpl [
+             sail:sailType "openrdf:MemoryStore" ;
+             ms:persist true ;
+             ms:syncDelay 120
+          ]
+       ].
+
+Care should be taken with the use of this method: the result of this operation on an existing repository risks wiping that repository's data, if the configuration is not compatible with existing repository.
 
 # Repository removal
 
