@@ -210,6 +210,7 @@
 		<jackson.version>2.9.8</jackson.version>
 		<jsonldjava.version>0.12.1</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
+		<jaxb.version>2.3.2</jaxb.version>
 	</properties>
 
 	<dependencyManagement>
@@ -654,7 +655,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>2.21.0</version>
+					<version>2.22.2</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx1024M</argLine>
@@ -699,7 +700,7 @@
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.11.0</version>
+					<version>0.14.0</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
