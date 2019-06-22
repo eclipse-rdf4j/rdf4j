@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 
 /**
@@ -581,19 +580,4 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			((ValueSet<?>) c).closeIterator(e);
 		}
 	}
-
-	/* Graph methods */
-
-	@Deprecated
-	@Override
-	public Iterator<Statement> match(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return this.filter(subj, pred, obj, contexts).iterator();
-	}
-
-	@Deprecated
-	@Override
-	public ValueFactory getValueFactory() {
-		return SimpleValueFactory.getInstance();
-	}
-
 }

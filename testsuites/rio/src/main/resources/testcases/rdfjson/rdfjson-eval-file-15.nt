@@ -1,0 +1,4 @@
+<http://example.org/anna> <http://xmlns.com/foaf/0.1/homepage> _:anna .
+<http://example.org/anna> <http://xmlns.com/foaf/0.1/homepage> <http://example.org/bob> .
+<http://example.org/anna> <http://xmlns.com/foaf/0.1/name> "Anna" .
+<http://example.org/anna> <http://xmlns.com/foaf/0.1/name> "Bob"@de .

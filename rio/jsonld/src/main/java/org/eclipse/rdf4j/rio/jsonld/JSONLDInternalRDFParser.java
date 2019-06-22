@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.rio.jsonld;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
@@ -87,7 +87,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 		final RDFDataset result = new RDFDataset();
 		if (input instanceof Statement) {
 			handleStatement(result, (Statement) input);
-		} else if (input instanceof Graph) {
+		} else if (input instanceof Model) {
 			if (input instanceof NamespaceAware) {
 				final Set<Namespace> namespaces = ((NamespaceAware) input).getNamespaces();
 				for (final Namespace nextNs : namespaces) {
@@ -95,7 +95,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 				}
 			}
 
-			for (final Statement nextStatement : (Graph) input) {
+			for (final Statement nextStatement : (Model) input) {
 				handleStatement(result, nextStatement);
 			}
 		}
