@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
  * @author Jeen Broekstra
  *
  */
-public class ContextStore implements Iterable<Resource> {
+class ContextStore implements Iterable<Resource> {
 
 	static final Logger logger = LoggerFactory.getLogger(ContextStore.class);
 
@@ -84,7 +84,7 @@ public class ContextStore implements Iterable<Resource> {
 
 	private final ValueFactory valueFactory;
 
-	public ContextStore(NativeSailStore store, File dataDir) throws IOException {
+	ContextStore(NativeSailStore store, File dataDir) throws IOException {
 		Objects.requireNonNull(store);
 		Objects.requireNonNull(dataDir);
 
@@ -109,7 +109,7 @@ public class ContextStore implements Iterable<Resource> {
 	 * 
 	 * @param context the context identifier.
 	 */
-	public void increment(Resource context) {
+	void increment(Resource context) {
 		contextInfoMap.merge(context, 1L, (size, one) -> size + one);
 		contentsChanged = true;
 	}
@@ -120,7 +120,7 @@ public class ContextStore implements Iterable<Resource> {
 	 * @param context the context identifier.
 	 * @param amount  the number by which to decrease the size
 	 */
-	public void decrementBy(Resource context, long amount) {
+	void decrementBy(Resource context, long amount) {
 		contextInfoMap.computeIfPresent(context, (c, size) -> size <= amount ? null : size - amount);
 		contentsChanged = true;
 	}
@@ -130,17 +130,17 @@ public class ContextStore implements Iterable<Resource> {
 		return contextInfoMap.keySet().iterator();
 	}
 
-	public void clear() {
+	void clear() {
 		if (!contextInfoMap.isEmpty()) {
 			contextInfoMap.clear();
 			contentsChanged = true;
 		}
 	}
 
-	public void close() {
+	void close() {
 	}
 
-	public void sync() throws IOException {
+	void sync() throws IOException {
 		if (contentsChanged) {
 			// Flush the changes to disk
 			writeContextsToFile();
