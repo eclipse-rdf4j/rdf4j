@@ -190,7 +190,7 @@ public class ModelsTest {
 		assertTrue(result.equals(lit) || result.equals(foo));
 	}
 
-	public void testObjectURI() {
+	public void testObjectIRI() {
 		Literal lit = VF.createLiteral(1.0);
 		model1.add(foo, bar, lit);
 		model1.add(foo, bar, foo);
