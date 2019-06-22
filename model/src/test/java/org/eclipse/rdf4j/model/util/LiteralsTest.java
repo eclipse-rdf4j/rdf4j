@@ -273,16 +273,6 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getLocale(org.eclipse.rdf4j.model.Literal, java.util.Locale)} .
-	 */
-	@Ignore
-	@Test
-	public final void testGetLocale() throws Exception {
-		fail("Not yet implemented"); // TODO
-	}
-
-	/**
-	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#createLiteral(org.eclipse.rdf4j.model.ValueFactory, java.lang.Object)}
 	 * .
 	 */
