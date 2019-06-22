@@ -195,6 +195,8 @@ public class ContextStore implements Iterable<Resource> {
 						contextInfoMap.put(context, contextSize);
 					} catch (EOFException e) {
 						break;
+					} catch (IllegalArgumentException e) {
+						throw new IOException("unable to parse context identifier: ", e);
 					}
 				}
 
