@@ -205,8 +205,7 @@ class CSVQueryResultsComparisons {
 								"Unable to compare numeric types with other supported types");
 					}
 					if (leftDate != rightDate) {
-						throw new IllegalArgumentException(
-								"Unable to compare date types with other supported types");
+						throw new IllegalArgumentException("Unable to compare date types with other supported types");
 					}
 				} else if (!leftLangLit && !rightLangLit) {
 					// For literals with unsupported datatypes we don't know if their
