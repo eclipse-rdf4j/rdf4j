@@ -37,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.StampedLock;
 
 /**
@@ -223,8 +224,15 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.TARGET_OBJECTS_OF);
 	}
 
+	private final AtomicBoolean initialized = new AtomicBoolean(false);
+
 	@Override
 	public void initialize() throws SailException {
+		if (!initialized.compareAndSet(false, true)) {
+			// already initialized
+			return;
+		}
+
 		super.initialize();
 
 		if (getDataDir() != null) {
@@ -290,6 +298,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo.shutDown();
 			shapesRepo = null;
 		}
+
+		initialized.set(false);
+		nodeShapes = Collections.emptyList();
 		super.shutDown();
 	}
 
