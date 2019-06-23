@@ -89,7 +89,7 @@ import com.google.common.collect.Sets;
  * {{x=1,y=1},{x=2,y=2}}, this translates to the constraints (x=1 and y=1) or (x=2 and y=2). 2) The LuceneSail could
  * iterate over the LuceneQueryResult and supply the various results as query input parameters to the underlying Sail.
  * This is similar to using PreparedStatement's in JDBC.
- * 
+ *
  * @author sauermann
  * @author christian.huetter
  */
@@ -325,7 +325,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		// constant optimizer - evaluate lucene queries
 		if (!queries.isEmpty()) {
-			evaluateLuceneQueries(queries, tupleExpr);
+			evaluateLuceneQueries(queries);
 		}
 
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
@@ -364,13 +364,11 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * Evaluate the given Lucene queries, generate bindings from the query result, add the bindings to the query tree,
 	 * and remove the Lucene queries from the given query tree.
-	 * 
+	 *
 	 * @param queries
-	 * @param tupleExpr
 	 * @throws SailException
 	 */
-	private void evaluateLuceneQueries(Collection<SearchQueryEvaluator> queries, TupleExpr tupleExpr)
-			throws SailException {
+	private void evaluateLuceneQueries(Collection<SearchQueryEvaluator> queries) throws SailException {
 		// TODO: optimize lucene queries here
 		// - if they refer to the same subject, merge them into one lucene query
 		// - multiple different property constraints can be put into the lucene
@@ -383,157 +381,20 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// evaluate queries, generate binding sets, and remove queries
 		for (SearchQueryEvaluator query : queries) {
 			// evaluate the Lucene query and generate bindings
-			Collection<BindingSet> bindingSets = luceneIndex.evaluate(query);
+			final Collection<BindingSet> bindingSets = luceneIndex.evaluate(query);
 
-			boolean hasResult = bindingSets != null && !bindingSets.isEmpty();
+			final BindingSetAssignment bsa = new BindingSetAssignment();
 
 			// found something?
-			if (hasResult) {
-				// add bindings to the query tree
-				BindingSetAssignment bsa = new BindingSetAssignment();
+			if (bindingSets != null && !bindingSets.isEmpty()) {
 				bsa.setBindingSets(bindingSets);
 				if (bindingSets instanceof BindingSetCollection) {
 					bsa.setBindingNames(((BindingSetCollection) bindingSets).getBindingNames());
 				}
-				addBindingSets(query, bsa);
 			}
 
-			// remove the evaluated lucene query from the query tree
-			query.updateQueryModelNodes(hasResult);
+			query.replaceQueryPatternsWithResults(bsa);
 		}
-	}
-
-	/**
-	 * Join the given bindings and add them to the given query tree.
-	 * 
-	 * @param bindingSets bindings for the search query
-	 * @param tupleExpr   query tree
-	 * @param query       the search query to which the bindings belong
-	 */
-	private void addBindingSets(SearchQueryEvaluator query, BindingSetAssignment bindingSets) {
-
-		// find projection for the given query
-		QueryModelNode principalNode = query.getParentQueryModelNode();
-		final UnaryTupleOperator projection = (UnaryTupleOperator) getParentNodeOfTypes(principalNode,
-				PROJECTION_TYPES);
-		if (projection == null) {
-			logger.error(
-					"Could not add bindings to the query tree because no projection was found for the query node: {}",
-					principalNode);
-			return;
-		}
-
-		// find existing bindings within the given (sub-)query
-		final List<BindingSetAssignment> assignments = new ArrayList<>();
-		QueryModelVisitor<RuntimeException> assignmentVisitor = new AbstractQueryModelVisitor<RuntimeException>() {
-
-			@Override
-			public void meet(BindingSetAssignment node) throws RuntimeException {
-				// does the node belong to the same (sub-)query?
-				QueryModelNode parent = getParentNodeOfTypes(node, PROJECTION_TYPES);
-				if (parent != null && parent.equals(projection))
-					assignments.add(node);
-			}
-		};
-		projection.visit(assignmentVisitor);
-
-		// construct a list of binding sets
-		List<BindingSetAssignment> bindingSetsList = new ArrayList<>();
-		bindingSetsList.add(bindingSets);
-
-		// add existing bindings to the list of binding sets and remove them from
-		// the query tree
-		for (BindingSetAssignment assignment : assignments) {
-			bindingSetsList.add(assignment);
-			assignment.replaceWith(new SingletonSet());
-		}
-
-		// join binding sets
-		BindingSetAssignment bindings = joinBindingSets(bindingSetsList.iterator());
-
-		// add bindings to the projection
-		TupleExpr arg = projection.getArg();
-
-		// required to support OPTIONAL patterns (which are represented as
-		// LeftJoin)
-		if (arg instanceof LeftJoin) {
-			LeftJoin binary = (LeftJoin) arg;
-			Join join = new Join(bindings, binary.getLeftArg());
-			binary.setLeftArg(join);
-		} else {
-			Join join = new Join(bindings, arg);
-			projection.setArg(join);
-		}
-	}
-
-	/**
-	 * Returns the closest parent node of the given type.
-	 */
-	private QueryModelNode getParentNodeOfTypes(QueryModelNode node, Set<Class<? extends QueryModelNode>> types) {
-		QueryModelNode parent = node.getParentNode();
-		if (parent == null) {
-			return null;
-		} else if (types.contains(parent.getClass())) {
-			return parent;
-		} else {
-			return getParentNodeOfTypes(parent, types);
-		}
-	}
-
-	/**
-	 * Recursively join the given binding sets.
-	 * 
-	 * @param iterator for the binding sets to join
-	 * @return joined binding sets
-	 */
-	private BindingSetAssignment joinBindingSets(Iterator<BindingSetAssignment> iterator) {
-		if (iterator.hasNext()) {
-			BindingSetAssignment left = iterator.next();
-			BindingSetAssignment right = joinBindingSets(iterator);
-			if (right != null) {
-				return crossJoin(left, right);
-			} else {
-				return left;
-			}
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * Computes the Cartesian product of the given binding sets.
-	 * 
-	 * @param left  binding sets
-	 * @param right binding sets
-	 * @return Cartesian product TODO: implement as sort-merge join
-	 */
-	private BindingSetAssignment crossJoin(BindingSetAssignment left, BindingSetAssignment right) {
-		Iterable<BindingSet> leftIter = left.getBindingSets();
-		Iterable<BindingSet> rightIter = right.getBindingSets();
-		int leftSize = size(leftIter, 16);
-		int rightSize = size(rightIter, 16);
-		List<BindingSet> output = new ArrayList<>(leftSize * rightSize);
-
-		for (BindingSet l : leftIter) {
-			for (BindingSet r : rightIter) {
-				QueryBindingSet bs = new QueryBindingSet();
-				bs.addAll(l);
-				bs.addAll(r);
-				output.add(bs);
-			}
-		}
-
-		Set<String> bindingNames = new HashSet<>(left.getBindingNames());
-		bindingNames.addAll(right.getBindingNames());
-
-		BindingSetAssignment bindings = new BindingSetAssignment();
-		bindings.setBindingSets(output);
-		bindings.setBindingNames(bindingNames);
-		return bindings;
-	}
-
-	private static int size(Iterable<?> iter, int defaultSize) {
-		return (iter instanceof Collection<?>) ? ((Collection<?>) iter).size() : defaultSize;
 	}
 
 	@Override

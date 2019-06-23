@@ -9,19 +9,18 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 
 /**
  * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access the
  * patterns or use the get-methods to get the names of the variables to bind.
  */
-public class QuerySpec implements SearchQueryEvaluator {
+public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	private final StatementPattern matchesPattern;
 
@@ -106,38 +105,31 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	@Override
-	public void updateQueryModelNodes(boolean hasResult) {
-		Supplier<QueryModelNode> nodeFactory = hasResult ? new Supplier<QueryModelNode>() {
+	public QueryModelNode removeQueryPatterns() {
+		final Supplier<? extends QueryModelNode> replacement = SingletonSet::new;
 
-			@Override
-			public QueryModelNode get() {
-				return new SingletonSet();
-			}
-		} : new Supplier<QueryModelNode>() {
+		replace(getQueryPattern(), replacement);
+		replace(getScorePattern(), replacement);
+		replace(getPropertyPattern(), replacement);
+		replace(getSnippetPattern(), replacement);
+		replace(getTypePattern(), replacement);
 
-			@Override
-			public QueryModelNode get() {
-				return new EmptySet();
-			}
-		};
+		final QueryModelNode placeholder = new SingletonSet();
 
-		replace(getMatchesPattern(), nodeFactory);
-		replace(getQueryPattern(), nodeFactory);
-		replace(getScorePattern(), nodeFactory);
-		replace(getPropertyPattern(), nodeFactory);
-		replace(getSnippetPattern(), nodeFactory);
-		replace(getTypePattern(), nodeFactory);
+		getMatchesPattern().replaceWith(placeholder);
+
+		return placeholder;
 	}
 
 	/**
-	 * Replace the given node with a new instance of the given replacement type.
+	 * Replace the given pattern with a new instance of the given replacement type.
 	 * 
 	 * @param pattern     the pattern to remove
 	 * @param replacement the replacement type
 	 */
-	private void replace(QueryModelNode node, Supplier<? extends QueryModelNode> replacement) {
-		if (node != null) {
-			node.replaceWith(replacement.get());
+	private void replace(QueryModelNode pattern, Supplier<? extends QueryModelNode> replacement) {
+		if (pattern != null) {
+			pattern.replaceWith(replacement.get());
 		}
 	}
 
