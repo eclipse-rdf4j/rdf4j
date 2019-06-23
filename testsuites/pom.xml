@@ -18,7 +18,6 @@
 
 	<modules>
 		<module>rio</module>
-		<module>repository</module>
 	</modules>
 </project>
 
