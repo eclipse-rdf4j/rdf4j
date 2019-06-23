@@ -27,9 +27,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
@@ -205,21 +202,14 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 			} else if (value1 != null && value2 == null) {
 				return false;
 			} else if (value1 != null && value2 != null) {
-				if (!equals(value1, value2) && !value1.stringValue().equals(value2.stringValue())) {
+				if (!CSVQueryResultsComparisons.equals(value1, value2)
+						&& !value1.stringValue().equals(value2.stringValue())) {
 					return false;
 				}
 			}
 		}
 
 		return true;
-	}
-
-	protected static boolean equals(Value value1, Value value2) {
-		try {
-			return QueryEvaluationUtil.compare(value1, value2, Compare.CompareOp.EQ);
-		} catch (ValueExprEvaluationException e) {
-			return false;
-		}
 	}
 
 }
