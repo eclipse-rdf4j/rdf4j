@@ -24,19 +24,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-store-testsuite</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-serql-testsuite</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sparql-testsuite</artifactId>
+			<artifactId>rdf4j-repository-testsuite</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 
@@ -57,6 +45,27 @@
 			<artifactId>rdf4j-http-server</artifactId>
 			<version>${rdf4j.server.version}</version>
 			<type>war</type>
+		</dependency>
+
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-repository-sail</artifactId>
+			<version>${rdf4j.server.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-sail-memory</artifactId>
+			<version>${rdf4j.server.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-sail-inferencer</artifactId>
+			<version>${rdf4j.server.version}</version>
+			<scope>test</scope>
 		</dependency>
 
 		<dependency>
