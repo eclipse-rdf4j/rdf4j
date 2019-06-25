@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.repository.http;
 
 import java.io.File;
+import java.io.IOException;
 
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
@@ -17,13 +18,9 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
-import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
-import org.eclipse.rdf4j.sail.inferencer.fc.config.ForwardChainingRDFSInferencerConfig;
-import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.rio.RDFFormat;
 
 /**
  * @author Herko ter Horst
@@ -91,19 +88,11 @@ public class HTTPMemServer {
 	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
 		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 
-		// create a (non-inferencing) memory store
-		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
-		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(memStoreConfig);
-		RepositoryConfig repConfig = new RepositoryConfig(TEST_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
-
-		// create an inferencing memory store
-		ForwardChainingRDFSInferencerConfig inferMemStoreConfig = new ForwardChainingRDFSInferencerConfig(
-				new MemoryStoreConfig());
-		sailRepConfig = new SailRepositoryConfig(inferMemStoreConfig);
-		repConfig = new RepositoryConfig(TEST_INFERENCE_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+		try (RepositoryConnection conn = systemRep.getConnection()) {
+			conn.add(getClass().getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE);
+			conn.add(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE);
+		} catch (IOException e) {
+			throw new RepositoryConfigException(e);
+		}
 	}
 }
