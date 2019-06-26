@@ -16,12 +16,6 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-runtime</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-serql-testsuite</artifactId>
 			<version>${project.version}</version>
 		</dependency>
