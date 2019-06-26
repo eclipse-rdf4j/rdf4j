@@ -34,8 +34,8 @@
 			<version>3.5</version>
 		</dependency>
 		<dependency>
-			<groupId>jakarta.xml.bind</groupId>
-			<artifactId>jakarta.xml.bind-api</artifactId>
+			<groupId>javax.xml.bind</groupId>
+			<artifactId>jaxb-api</artifactId>
 			<version>${jaxb.version}</version>
 		</dependency>
 		<!-- needed for embedded solr server -->
