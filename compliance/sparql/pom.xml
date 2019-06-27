@@ -16,8 +16,6 @@
 	<description>Tests for the SPARQL query language implementation</description>
 
 	<properties>
-		<!-- we use a released version of RDF4J Server for spinning up a SPARQL endpoint to test SERVICE queries against -->
-		<rdf4j.server.version>2.5.0</rdf4j.server.version>
 		<jetty.version>7.0.2.v20100331</jetty.version>
 	</properties>
 	<dependencies>
@@ -118,7 +116,7 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-http-server</artifactId>
-			<version>${rdf4j.server.version}</version>
+			<version>${project.version}</version>
 			<type>war</type>
 		</dependency>
 
