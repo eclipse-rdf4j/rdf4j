@@ -17,7 +17,6 @@
 	<description>Compliance testing for the Repository API implementations</description>
 
 	<properties>
-		<rdf4j.server.version>2.5.2</rdf4j.server.version>
 		<jetty.version>7.0.2.v20100331</jetty.version>
 	</properties>
 
@@ -97,7 +96,7 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-http-server</artifactId>
-			<version>${rdf4j.server.version}</version>
+			<version>${project.version}</version>
 			<type>war</type>
 		</dependency>
 
