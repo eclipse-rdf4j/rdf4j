@@ -61,9 +61,8 @@
 		<module>queryrender</module>
 		<module>repository</module>
 		<module>http</module>
-                <module>sparqlbuilder</module>
-                <module>testsuites</module>
-                <module>compliance</module>
+		<module>sparqlbuilder</module>
+		<module>testsuites</module>
 	</modules>
 
 	<profiles>
@@ -180,6 +179,12 @@
 				<skipITs>true</skipITs>
 				<maven.test.skip>true</maven.test.skip>
 			</properties>
+		</profile>
+		<profile>
+			<id>compliance</id>
+			<modules>
+				<module>compliance</module>
+			</modules>
 		</profile>
 		<profile>
 			<id>doclint-java8-disable</id>
@@ -681,7 +686,8 @@
 							</file>
 						</newVersion>
 						<parameter>
-							<ignoreMissingClasses>true</ignoreMissingClasses>> <!-- necessary to allow removal of deprecated code -->
+							<ignoreMissingClasses>true</ignoreMissingClasses>
+							> <!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
 						</parameter>
 					</configuration>
