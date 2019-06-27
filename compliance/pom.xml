@@ -12,7 +12,6 @@
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>sail-model</module>
 		<module>sparql</module>
         <module>lucene</module>
 		<module>elasticsearch</module>
