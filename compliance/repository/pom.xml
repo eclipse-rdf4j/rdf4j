@@ -17,7 +17,7 @@
 	<description>Compliance testing for the Repository API implementations</description>
 
 	<properties>
-		<jetty.version>7.0.2.v20100331</jetty.version>
+		<jetty.version>9.4.19.v20190610</jetty.version>
 	</properties>
 
 	<dependencies>
@@ -72,13 +72,6 @@
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-webapp</artifactId>
 			<version>${jetty.version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.mortbay.jetty</groupId>
-			<artifactId>jetty-jsp-2.1</artifactId>
-			<version>${jetty.version}</version>
-			<scope>runtime</scope>
 		</dependency>
 
 		<dependency>
