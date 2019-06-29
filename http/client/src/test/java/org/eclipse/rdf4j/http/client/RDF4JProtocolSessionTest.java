@@ -17,12 +17,16 @@ import static org.mockito.Mockito.when;
 import java.util.HashMap;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HttpContext;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -52,7 +56,7 @@ public class RDF4JProtocolSessionTest {
 		when(statusLine.getStatusCode()).thenReturn(200);
 
 		subject = new RDF4JProtocolSession(httpclient, mock(ScheduledExecutorService.class));
-		subject.setRepository("http://localhost:1234/rdf4j-server/repositories/test");
+		subject.setRepository("http://localhost/rdf4j-server/repositories/test");
 
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);
@@ -64,6 +68,18 @@ public class RDF4JProtocolSessionTest {
 		when(response.getEntity()).thenReturn(new StringEntity("8"));
 
 		assertThat(subject.size()).isEqualTo(8);
+		verifyHeaders();
+	}
+
+	@Test
+	public void testRepositoryList() throws Exception {
+		Header h = new BasicHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType());
+		when(response.getHeaders("Content-Type")).thenReturn(new Header[] { h });
+		InputStreamEntity reponseData = new InputStreamEntity(
+				getClass().getResourceAsStream("/fixtures/repository-list.xml"));
+		when(response.getEntity()).thenReturn(reponseData);
+
+		assertThat(subject.getRepositoryList().getBindingNames()).contains("id");
 		verifyHeaders();
 	}
 
