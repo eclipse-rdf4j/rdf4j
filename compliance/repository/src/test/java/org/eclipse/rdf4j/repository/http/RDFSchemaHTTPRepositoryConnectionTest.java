@@ -20,6 +20,7 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
+/* FIXME: are these tests really necessary, or are we just duplicating what is already tested locally? */
 public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 
 	private static HTTPMemServer server;
@@ -143,6 +144,34 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 		} catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}
+	}
+
+	@Override
+	@Test
+	@Ignore
+	public void testQueryDefaultGraph() throws Exception {
+		// ignore - schema caching inferencer uses different context handling
+	}
+
+	@Override
+	@Test
+	@Ignore
+	public void testDeleteDefaultGraph() throws Exception {
+		// ignore - schema caching inferencer uses different context handling
+	}
+
+	@Override
+	@Test
+	@Ignore
+	public void testContextStatementsNotDuplicated() throws Exception {
+		// ignore - schema caching inferencer uses different context handling
+	}
+
+	@Override
+	@Test
+	@Ignore
+	public void testContextStatementsNotDuplicated2() throws Exception {
+		// ignore - schema caching inferencer uses different context handling
 	}
 
 	@Test
