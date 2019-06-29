@@ -35,7 +35,8 @@ hide_page_title: "true"
 
 # Javadoc
 
-- <a href="/javadoc/2.5.0">rdf4j API Javadoc</a>
+- <a href="/javadoc/latest">rdf4j API Javadoc</a>
+- <a href="/javadoc/3.0.0-M1">3.0.0-M1 Javadoc</a>
 - older releases: [<a href="/javadoc/2.4.0">2.4</a>], [<a href="/javadoc/2.3.0">2.3</a>] 
 
 # Project internal documentation
