@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -76,7 +75,7 @@ public class NativeStoreTxnTest {
 		for (File file : repoDir.listFiles()) {
 			System.out.println("# " + file.getName());
 		}
-		Assert.assertEquals(14, repoDir.listFiles().length);
+		Assert.assertEquals(15, repoDir.listFiles().length);
 
 		// make sure there is no txncacheXXX.dat file
 		Assert.assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
