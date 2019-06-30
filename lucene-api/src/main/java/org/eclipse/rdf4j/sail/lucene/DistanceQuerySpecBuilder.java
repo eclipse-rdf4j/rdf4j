@@ -128,7 +128,8 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							sp.replaceWith(join);
 							join.setLeftArg(sp);
 							join.setRightArg(funcCall);
-							spec.updateQueryModelNodes(true);
+
+							spec.removeQueryPatterns();
 						}
 					}
 				}

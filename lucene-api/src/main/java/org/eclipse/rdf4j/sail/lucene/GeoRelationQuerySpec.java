@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 
-public class GeoRelationQuerySpec implements SearchQueryEvaluator {
+public class GeoRelationQuerySpec extends AbstractSearchQueryEvaluator {
 
 	private String relation;
 
@@ -105,15 +105,12 @@ public class GeoRelationQuerySpec implements SearchQueryEvaluator {
 	}
 
 	@Override
-	public void updateQueryModelNodes(boolean hasResult) {
-		QueryModelNode replacementNode = hasResult ? new SingletonSet() : new EmptySet();
-		geoStatement.replaceWith(replacementNode);
+	public QueryModelNode removeQueryPatterns() {
+		final QueryModelNode placeholder = new SingletonSet();
 
-		if (hasResult) {
-			filter.replaceWith(filter.getArg());
-		} else {
-			filter.replaceWith(new EmptySet());
-		}
+		filter.replaceWith(filter.getArg());
+
+		geoStatement.replaceWith(placeholder);
 
 		if (functionParent instanceof ExtensionElem) {
 			Extension extension = (Extension) functionParent.getParentNode();
@@ -124,5 +121,7 @@ public class GeoRelationQuerySpec implements SearchQueryEvaluator {
 				extension.replaceWith(extension.getArg());
 			}
 		}
+
+		return placeholder;
 	}
 }
