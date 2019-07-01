@@ -7,6 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.LexicalValueComparator;
+import org.eclipse.rdf4j.model.util.PatternIterator;
+
 import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.ArrayList;
@@ -22,15 +31,6 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.LexicalValueComparator;
-import org.eclipse.rdf4j.model.util.PatternIterator;
-
 /**
  * A Red-Black tree based {@link Model} implementation. The model is sorted according to the lexical ordering of terms.
  * <p>
@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
  * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
  * via the Set interface methods):
  * </p>
- * 
+ *
  * @author James Leigh
  */
 public class TreeModel extends AbstractModel implements SortedSet<Statement> {
@@ -205,8 +205,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		if (subj == null || pred == null || obj == null)
+		if (subj == null || pred == null || obj == null) {
 			throw new UnsupportedOperationException("Incomplete statement");
+		}
 		boolean changed = false;
 		for (Value ctx : notEmpty(contexts)) {
 			if (ctx == null || ctx instanceof Resource) {
@@ -224,8 +225,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		if (contexts == null || contexts.length == 1 && contexts[0] == null) {
 			Iterator<Statement> iter = matchPattern(subj, pred, obj, null);
 			while (iter.hasNext()) {
-				if (iter.next().getContext() == null)
+				if (iter.next().getContext() == null) {
 					return true;
+				}
 			}
 			return false;
 		} else if (contexts.length == 0) {
@@ -233,8 +235,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		} else {
 			for (Resource ctx : contexts) {
 				if (ctx == null) {
-					if (contains(subj, pred, obj, (Resource[]) null))
+					if (contains(subj, pred, obj, (Resource[]) null)) {
 						return true;
+					}
 				} else if (matchPattern(subj, pred, obj, ctx).hasNext()) {
 					return true;
 				}
@@ -245,6 +248,10 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (isEmpty()) {
+			return false;
+		}
+
 		boolean changed = false;
 		if (contexts == null || contexts.length == 1 && contexts[0] == null) {
 			Iterator<Statement> iter = matchPattern(subj, pred, obj, null);
@@ -375,16 +382,21 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 	}
 
 	int compareValue(Value o1, Value o2) {
-		if (o1 == o2)
+		if (o1 == o2) {
 			return 0;
-		if (o1 == BEFORE)
+		}
+		if (o1 == BEFORE) {
 			return -1;
-		if (o2 == BEFORE)
+		}
+		if (o2 == BEFORE) {
 			return 1;
-		if (o1 == AFTER)
+		}
+		if (o1 == AFTER) {
 			return 1;
-		if (o2 == AFTER)
+		}
+		if (o2 == AFTER) {
 			return -1;
+		}
 		return vc.compare(o1, o2);
 	}
 
@@ -413,8 +425,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 	}
 
 	private Value[] notEmpty(Value[] contexts) {
-		if (contexts == null || contexts.length == 0)
+		if (contexts == null || contexts.length == 0) {
 			return new Resource[] { null };
+		}
 		return contexts;
 	}
 
@@ -436,8 +449,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private StatementTree choose(Value subj, Value pred, Value obj, Value ctx) {
 		for (StatementTree tree : trees) {
-			if (tree.isIndexed(subj, pred, obj, ctx))
+			if (tree.isIndexed(subj, pred, obj, ctx)) {
 				return tree;
+			}
 		}
 		return index(subj, pred, obj, ctx);
 	}
@@ -473,6 +487,14 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		tree.addAll(trees.get(0));
 		trees.add(tree);
 		return tree;
+	}
+
+	@Override
+	public boolean isEmpty() {
+		if (trees.isEmpty()) {
+			return true;
+		}
+		return trees.get(0).isEmpty();
 	}
 
 	private class ModelIterator implements Iterator<Statement> {
@@ -574,28 +596,32 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 			for (int i = 0; i < index.length; i++) {
 				switch (index[i]) {
 				case 's':
-					if (subj == null)
+					if (subj == null) {
 						wild = true;
-					else if (wild)
+					} else if (wild) {
 						return false;
+					}
 					break;
 				case 'p':
-					if (pred == null)
+					if (pred == null) {
 						wild = true;
-					else if (wild)
+					} else if (wild) {
 						return false;
+					}
 					break;
 				case 'o':
-					if (obj == null)
+					if (obj == null) {
 						wild = true;
-					else if (wild)
+					} else if (wild) {
 						return false;
+					}
 					break;
 				case 'g':
-					if (ctx == null)
+					if (ctx == null) {
 						wild = true;
-					else if (wild)
+					} else if (wild) {
 						return false;
+					}
 					break;
 				default:
 					throw new AssertionError();
@@ -633,6 +659,10 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		public Iterator<Statement> subIterator(Statement fromElement, boolean fromInclusive, Statement toElement,
 				boolean toInclusive) {
 			return tree.subSet(fromElement, true, toElement, true).iterator();
+		}
+
+		public boolean isEmpty() {
+			return tree.isEmpty();
 		}
 	}
 
@@ -690,8 +720,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		public int compare(Statement s1, Statement s2) {
 			for (Comparator<Statement> c : comparators) {
 				int r1 = c.compare(s1, s2);
-				if (r1 != 0)
+				if (r1 != 0) {
 					return r1;
+				}
 			}
 			return 0;
 		}
