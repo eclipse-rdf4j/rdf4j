@@ -61,9 +61,8 @@
 		<module>queryrender</module>
 		<module>repository</module>
 		<module>http</module>
-                <module>sparqlbuilder</module>
-                <module>testsuites</module>
-                <module>compliance</module>
+		<module>sparqlbuilder</module>
+		<module>testsuites</module>
 	</modules>
 
 	<profiles>
@@ -182,6 +181,12 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>compliance</id>
+			<modules>
+				<module>compliance</module>
+			</modules>
+		</profile>
+		<profile>
 			<id>doclint-java8-disable</id>
 			<activation>
 				<jdk>[1.8,9,)</jdk>
@@ -197,9 +202,9 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.25</slf4j.version>
 		<logback.version>1.1.11</logback.version>
-		<httpclient.version>4.5.6</httpclient.version>
-		<httpcore.version>4.4.10</httpcore.version>
-		<jackson.version>2.9.8</jackson.version>
+		<httpclient.version>4.5.9</httpclient.version>
+		<httpcore.version>4.4.11</httpcore.version>
+		<jackson.version>2.9.9</jackson.version>
 		<jsonldjava.version>0.12.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.0</jaxb.version>
@@ -330,7 +335,7 @@
 			<dependency>
 				<groupId>javax.servlet</groupId>
 				<artifactId>javax.servlet-api</artifactId>
-				<version>3.0.1</version>
+				<version>3.1.0</version>
 				<scope>provided</scope>
 			</dependency>
 			<dependency>
@@ -682,6 +687,8 @@
 							</file>
 						</newVersion>
 						<parameter>
+							<ignoreMissingClasses>true</ignoreMissingClasses>
+							> <!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
 						</parameter>
 					</configuration>
