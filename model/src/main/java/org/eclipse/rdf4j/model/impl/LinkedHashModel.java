@@ -168,23 +168,6 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	@Override
-	public boolean remove(Object o) {
-		if (o instanceof Statement) {
-			if (statements.isEmpty()) {
-				return false;
-			}
-
-			Iterator iter = find((Statement) o);
-			if (iter.hasNext()) {
-				iter.next();
-				iter.remove();
-				return true;
-			}
-		}
-		return false;
-	}
-
-	@Override
 	public boolean contains(Object o) {
 		if (o instanceof Statement) {
 			return find((Statement) o).hasNext();
@@ -204,6 +187,10 @@ public class LinkedHashModel extends AbstractModel {
 
 	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (isEmpty()) {
+			return false;
+		}
+
 		Iterator iter = matchPattern(subj, pred, obj, contexts);
 		if (!iter.hasNext()) {
 			return false;
@@ -276,6 +263,11 @@ public class LinkedHashModel extends AbstractModel {
 				iter.remove(); // remove from chosen
 			}
 		}
+	}
+
+	@Override
+	public boolean isEmpty() {
+		return statements.isEmpty();
 	}
 
 	private class ModelIterator implements Iterator<ModelStatement> {

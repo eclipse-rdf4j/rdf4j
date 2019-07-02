@@ -160,6 +160,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	@Override
 	public boolean remove(Object o) {
 		if (o instanceof Statement) {
+			if (isEmpty()) {
+				return false;
+			}
 			Statement st = (Statement) o;
 			return remove(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
