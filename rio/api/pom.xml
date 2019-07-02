@@ -28,13 +28,8 @@
 		</dependency>
 
 		<dependency>
-			<groupId>jakarta.xml.bind</groupId>
-    			<artifactId>jakarta.xml.bind-api</artifactId>
-			<version>${jaxb.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.glassfish.jaxb</groupId>
-			<artifactId>jaxb-runtime</artifactId>
+			<groupId>javax.xml.bind</groupId>
+			<artifactId>jaxb-api</artifactId>
 			<version>${jaxb.version}</version>
 		</dependency>
 

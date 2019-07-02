@@ -202,7 +202,7 @@
 		<jackson.version>2.9.8</jackson.version>
 		<jsonldjava.version>0.12.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.2</jaxb.version>
+		<jaxb.version>2.3.0</jaxb.version>
 	</properties>
 
 	<dependencyManagement>
@@ -760,8 +760,6 @@
 									<excludes>
 										<exclude>org.apache.logging.log4j:log4j-api</exclude>
 										<exclude>org.elasticsearch:elasticsearch</exclude>
-										<exclude>com.sun.xml.bind:jaxb-impl</exclude>
-										<exclude>com.sun.xml.bind:jaxb-core</exclude>
 										<exclude>javax.xml.bind:jaxb-api</exclude>
 									</excludes>
 								</enforceBytecodeVersion>
