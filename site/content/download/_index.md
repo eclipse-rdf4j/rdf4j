@@ -9,14 +9,14 @@ hide_page_title: "true"
 
 You can either retrieve rdf4j via Apache Maven, or download the SDK or onejar directly.
 
-# Download rdf4j 2.5.2 (latest)
+# Download rdf4j 2.5.3 (latest)
 
-rdf4j 2.5.2 is our latest stable release. It requires Java 8. For details on what’s new, see the release notes.
+rdf4j 2.5.3 is our latest stable release. It requires Java 8. For details on what’s new, see the release notes.
 
-- [rdf4j 2.5.2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.2-sdk.zip)<br/>
+- [rdf4j 2.5.3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.3-sdk.zip)<br/>
   Full Eclipse rdf4j SDK, containing all libraries, rdf4j Server, Workbench, and Console applications, and Javadoc API.
 
-- [rdf4j 2.5.2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.2-onejar.jar)<br/>
+- [rdf4j 2.5.3 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.3-onejar.jar)<br/>
   Single jar file for easy inclusion of the full rdf4j toolkit in your Java project.
 
 - [rdf4j artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
