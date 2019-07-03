@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 /**
  * Factory for {@link EvaluationStrategy}s.
@@ -32,13 +35,30 @@ public interface EvaluationStrategyFactory {
 	long getQuerySolutionCacheThreshold();
 
 	/**
+	 * Set a {@link QueryOptimizerPipeline} to be used for query execution planning by the {@link EvaluationStrategy}.
+	 * 
+	 * @param pipeline a {@link QueryOptimizerPipeline}
+	 */
+	void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
+
+	/**
+	 * Get the {@link QueryOptimizerPipeline} that this factory will inject into the {@link EvaluationStrategy}, if any.
+	 * If no {@link QueryOptimizerPipeline} is defined, the {@link EvaluationStrategy} itself determines the pipeline.
+	 * 
+	 * @return a {@link QueryOptimizerPipeline}, or {@link Optional#empty()} if no pipeline is set on this factory.
+	 */
+	Optional<QueryOptimizerPipeline> getOptimizerPipeline();
+
+	/**
 	 * Returns the {@link EvaluationStrategy} to use to evaluate queries for the given {@link Dataset} and
 	 * {@link TripleSource}.
 	 * 
-	 * @param dataset      the DataSet to evaluate queries against.
-	 * @param tripleSource the TripleSource to evaluate queries against.
+	 * @param dataset              the DataSet to evaluate queries against.
+	 * @param tripleSource         the TripleSource to evaluate queries against.
+	 * @param EvaluationStatistics the store evaluation statistics to use for query optimization.
 	 * @return an EvaluationStrategy.
 	 */
-	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource);
+	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics);
 
 }

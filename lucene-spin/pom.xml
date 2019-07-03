@@ -27,6 +27,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>${jaxb.version}</version>
+        </dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
@@ -64,7 +69,7 @@
 		<profile>
 			<id>jdk9</id>
 			<activation>
-				<jdk>[1.9,9,)</jdk>
+				<jdk>[1.9,9,10)</jdk>
 			</activation>
 			<build>
 				<plugins>

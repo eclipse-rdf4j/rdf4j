@@ -96,7 +96,8 @@ public class LuceneIndexLocationTest {
 		Path lucenePath = repository.getDataDir().toPath().resolve(luceneIndexPath);
 
 		log.info("Lucene index location: {}", lucenePath);
-		Assert.assertEquals(dataDir.getAbsolutePath() + "/" + luceneIndexPath, lucenePath.toAbsolutePath().toString());
+		Assert.assertEquals(dataDir.getAbsolutePath() + File.separator + luceneIndexPath,
+				lucenePath.toAbsolutePath().toString());
 
 		Assert.assertTrue(lucenePath.toFile().exists());
 		Assert.assertTrue(lucenePath.toFile().isDirectory());

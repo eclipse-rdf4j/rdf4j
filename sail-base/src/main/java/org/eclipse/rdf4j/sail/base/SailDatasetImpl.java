@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -33,7 +32,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A view of an {@link SailSource} that is derived from a backing {@link SailDataset}.
- * 
+ *
  * @author James Leigh
  */
 class SailDatasetImpl implements SailDataset {
@@ -51,7 +50,7 @@ class SailDatasetImpl implements SailDataset {
 	/**
 	 * Create a derivative dataset that applies the given changeset. The life cycle of this and the given
 	 * {@link SailDataset} are bound.
-	 * 
+	 *
 	 * @param derivedFrom will be released when this object is released
 	 * @param changes     changeset to be observed with the given dataset
 	 */
@@ -75,11 +74,13 @@ class SailDatasetImpl implements SailDataset {
 	@Override
 	public String getNamespace(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();
-		if (addedNamespaces != null && addedNamespaces.containsKey(prefix))
+		if (addedNamespaces != null && addedNamespaces.containsKey(prefix)) {
 			return addedNamespaces.get(prefix);
+		}
 		Set<String> removedPrefixes = changes.getRemovedPrefixes();
-		if (removedPrefixes != null && removedPrefixes.contains(prefix) || changes.isNamespaceCleared())
+		if (removedPrefixes != null && removedPrefixes.contains(prefix) || changes.isNamespaceCleared()) {
 			return null;
+		}
 		return derivedFrom.getNamespace(prefix);
 	}
 
@@ -100,8 +101,9 @@ class SailDatasetImpl implements SailDataset {
 			}
 			removed = changes.getRemovedPrefixes();
 		}
-		if (added == null && removed == null)
+		if (added == null && removed == null) {
 			return namespaces;
+		}
 		final Iterator<Map.Entry<String, String>> addedIter = added;
 		final Set<String> removedSet = removed;
 		return new AbstractCloseableIteration<Namespace, SailException>() {
@@ -181,8 +183,9 @@ class SailDatasetImpl implements SailDataset {
 				removed = deprecatedContexts;
 			}
 		}
-		if (added == null && removed == null)
+		if (added == null && removed == null) {
 			return contextIDs;
+		}
 		final Iterator<Resource> addedIter = added;
 		final Set<Resource> removedSet = removed;
 		return new AbstractCloseableIteration<Resource, SailException>() {
@@ -268,7 +271,9 @@ class SailDatasetImpl implements SailDataset {
 		}
 		Model approved = changes.getApproved();
 		if (approved != null && iter != null) {
-			return union(iter, approved.filter(subj, pred, obj, contexts));
+
+			return new DistinctModelReducingUnionIteration(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
+
 		} else if (approved != null) {
 			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
 			return new CloseableIteratorIteration<>(i);
@@ -291,17 +296,6 @@ class SailDatasetImpl implements SailDataset {
 				return !excluded.contains(stmt);
 			}
 		};
-	}
-
-	private CloseableIteration<? extends Statement, SailException> union(
-			CloseableIteration<? extends Statement, SailException> result, Model included) {
-		if (included.isEmpty()) {
-			return result;
-		}
-		final Iterator<Statement> iter = included.iterator();
-		CloseableIteration<Statement, SailException> incl;
-		incl = new CloseableIteratorIteration<>(iter);
-		return new UnionIteration<>(incl, result);
 	}
 
 }

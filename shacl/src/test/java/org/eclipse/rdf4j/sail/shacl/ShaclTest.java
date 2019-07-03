@@ -25,7 +25,7 @@ public class ShaclTest extends AbstractShaclTest {
 
 	@Test
 	public void test() throws Exception {
-		runTestCase(testCasePath, path, expectedResult, isolationLevel);
+		runTestCase(testCasePath, path, expectedResult, isolationLevel, false);
 	}
 
 	@Test
@@ -36,6 +36,11 @@ public class ShaclTest extends AbstractShaclTest {
 	@Test
 	public void testRevalidation() throws Exception {
 		runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel);
+	}
+
+	@Test
+	public void testNonEmpty() throws Exception {
+		runTestCase(testCasePath, path, expectedResult, isolationLevel, true);
 	}
 
 }

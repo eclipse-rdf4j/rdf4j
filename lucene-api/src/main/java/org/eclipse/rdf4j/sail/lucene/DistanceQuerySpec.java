@@ -12,7 +12,6 @@ import java.util.List;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -24,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
-public class DistanceQuerySpec implements SearchQueryEvaluator {
+public class DistanceQuerySpec extends AbstractSearchQueryEvaluator {
 
 	private FunctionCall distanceFunction;
 
@@ -181,15 +180,12 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 	}
 
 	@Override
-	public void updateQueryModelNodes(boolean hasResult) {
-		QueryModelNode replacementNode = hasResult ? new SingletonSet() : new EmptySet();
-		geoStatement.replaceWith(replacementNode);
+	public QueryModelNode removeQueryPatterns() {
+		final QueryModelNode placeholder = new SingletonSet();
 
-		if (hasResult) {
-			filter.replaceWith(filter.getArg());
-		} else {
-			filter.replaceWith(new EmptySet());
-		}
+		filter.replaceWith(filter.getArg());
+
+		geoStatement.replaceWith(placeholder);
 
 		QueryModelNode functionParent = distanceFunction.getParentNode();
 		if (functionParent instanceof ExtensionElem) {
@@ -201,6 +197,8 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 				extension.replaceWith(extension.getArg());
 			}
 		}
+
+		return placeholder;
 	}
 
 	public boolean isEvaluable() {

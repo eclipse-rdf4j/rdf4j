@@ -9,11 +9,13 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -57,25 +59,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A {@link SailConnection} implementation that is based on an {@link SailStore} .
- * 
+ *
  * @author James Leigh
  */
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
-
-	@Override
-	public boolean pendingRemovals() {
-		return explicitSinks.values().stream().anyMatch(v -> {
-
-			if (v instanceof Changeset) {
-				return ((Changeset) v).hasDeprecated();
-			}
-			return false;
-		});
-
-	}
 
 	/*-----------*
 	 * Variables *
@@ -152,7 +142,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	/**
 	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
-	 * 
+	 *
 	 * @param sail
 	 * @param store
 	 * @param resolver the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
@@ -186,7 +176,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	/**
 	 * Returns the {@link FederatedServiceResolver} being used.
-	 * 
+	 *
 	 * @return null if a custom {@link EvaluationStrategyFactory} is being used.
 	 */
 	public FederatedServiceResolver getFederatedServiceResolver() {
@@ -203,7 +193,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
+		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
+				store.getEvaluationStatistics());
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
@@ -238,21 +229,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 
-			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
-			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
-			// The regex as string function optimizer works better if the constants are resolved
-			new RegexAsStringFunctionOptimizer(vf).optimize(tupleExpr, dataset, bindings);
-			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
-			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
-			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
-			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(store.getEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
-			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
-			// bindings);
-			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
-			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 
@@ -313,24 +290,11 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		CloseableIteration<? extends Statement, SailException> iter = null;
-		try {
-			flush();
-			iter = new DistinctIteration<Statement, SailException>(
-					getStatementsInternal(null, null, null, false, contexts));
 
-			long size = 0L;
-
-			while (iter.hasNext()) {
-				iter.next();
-				size++;
-			}
-
-			return size;
-		} finally {
-			if (iter != null) {
-				iter.close();
-			}
+		flush();
+		try (Stream<? extends Statement> stream = Iterations
+				.stream(getStatementsInternal(null, null, null, false, contexts))) {
+			return stream.count();
 		}
 	}
 
@@ -491,7 +455,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -512,7 +475,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
-		flush();
 		synchronized (datasets) {
 			if (op == null && !datasets.containsKey(null)) {
 				SailSource source = branch(false);

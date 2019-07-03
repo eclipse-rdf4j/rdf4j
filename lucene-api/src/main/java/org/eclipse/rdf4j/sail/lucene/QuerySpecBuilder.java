@@ -52,7 +52,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	/**
 	 * Initialize a new QuerySpecBuilder
-	 * 
+	 *
 	 * @param incompleteQueryFails see {@link LuceneSail#isIncompleteQueryFails()}
 	 */
 	public QuerySpecBuilder(boolean incompleteQueryFails) {
@@ -61,7 +61,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	/**
 	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
-	 * TupleExpr. To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection
+	 * TupleExpr. To be removed, prefer {@link #process(TupleExpr tupleExpr, BindingSet bindings, Collection
 	 * <SearchQueryEvaluator> result)}.
 	 */
 	@SuppressWarnings("unchecked")
@@ -208,7 +208,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				matchesPattern.replaceWith(join);
 				join.setLeftArg(matchesPattern);
 				join.setRightArg(funcCall);
-				querySpec.updateQueryModelNodes(true);
+
+				querySpec.removeQueryPatterns();
 			}
 		}
 
