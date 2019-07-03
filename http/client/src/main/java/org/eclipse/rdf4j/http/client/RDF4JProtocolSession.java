@@ -201,7 +201,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkServerURL();
 
-		HttpGet method = new HttpGet(Protocol.getRepositoriesLocation(serverURL));
+		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getRepositoriesLocation(serverURL)));
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -221,7 +221,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public String getServerProtocol() throws IOException, RepositoryException, UnauthorizedException {
 		checkServerURL();
 
-		HttpGet method = new HttpGet(Protocol.getProtocolLocation(serverURL));
+		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getProtocolLocation(serverURL)));
 
 		try {
 			return EntityUtils.toString(executeOK(method).getEntity());
@@ -254,7 +254,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContexts[i]);
 			}
 
-			final HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
+			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
+			applyAdditionalHeaders(method);
 
 			try {
 				String response = EntityUtils.toString(executeOK(method).getEntity());
@@ -279,7 +280,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {
 
-		HttpDelete method = new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID));
+		HttpDelete method = applyAdditionalHeaders(
+				new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID)));
 
 		try {
 			executeNoContent(method);
@@ -312,7 +314,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkRepositoryURL();
 
-		HttpGet method = new HttpGet(Protocol.getNamespacesLocation(getQueryURL()));
+		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getNamespacesLocation(getQueryURL())));
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -327,7 +329,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public String getNamespace(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpGet method = new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
+		HttpGet method = applyAdditionalHeaders(
+				new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
 
 		try {
 			HttpResponse response = execute(method);
@@ -351,7 +354,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpPut method = new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
+		HttpPut method = applyAdditionalHeaders(
+				new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
 
 		try {
 			method.setEntity(new StringEntity(name, ContentType.create("text/plain", "UTF-8")));
@@ -368,7 +372,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public void removeNamespacePrefix(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpDelete method = new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
+		HttpDelete method = applyAdditionalHeaders(
+				new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
 
 		try {
 			executeNoContent(method);
@@ -384,7 +389,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public void clearNamespaces() throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpDelete method = new HttpDelete(Protocol.getNamespacesLocation(getQueryURL()));
+		HttpDelete method = applyAdditionalHeaders(new HttpDelete(Protocol.getNamespacesLocation(getQueryURL())));
 
 		try {
 			executeNoContent(method);
@@ -417,7 +422,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkRepositoryURL();
 
-		HttpGet method = new HttpGet(Protocol.getContextsLocation(getQueryURL()));
+		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getContextsLocation(getQueryURL())));
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -463,6 +468,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			}
 
 			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
+			method = applyAdditionalHeaders(method);
 
 			try {
 				getRDF(method, handler, true);
@@ -486,7 +492,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalStateException("Transaction URL is already set");
 		}
 
-		HttpPost method = new HttpPost(Protocol.getTransactionsLocation(getRepositoryURL()));
+		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getTransactionsLocation(getRepositoryURL())));
 
 		try {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
@@ -531,7 +537,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		try {
 			URIBuilder url = new URIBuilder(transactionURL);
 			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());
-			method = new HttpPut(url.build());
+			method = applyAdditionalHeaders(new HttpPut(url.build()));
 
 			final HttpResponse response = execute(method);
 			try {
@@ -566,7 +572,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		String requestURL = transactionURL;
-		HttpDelete method = new HttpDelete(requestURL);
+		HttpDelete method = applyAdditionalHeaders(new HttpDelete(requestURL));
 
 		try {
 			final HttpResponse response = execute(method);
@@ -612,7 +618,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		try {
 			URIBuilder url = new URIBuilder(transactionURL);
 			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());
-			method = new HttpPost(url.build());
+			method = applyAdditionalHeaders(new HttpPost(url.build()));
 			String text = EntityUtils.toString(executeOK(method).getEntity());
 			long timeout = Long.parseLong(text);
 			// clients should ping before server timeouts transaction
@@ -653,7 +659,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpPost method = new HttpPost(Protocol.getStatementsLocation(getQueryURL()));
+		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getStatementsLocation(getQueryURL())));
 
 		try {
 			// Create a RequestEntity for the transaction data
@@ -893,9 +899,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			HttpEntityEnclosingRequestBase method = null;
 			try {
 				if (overwrite || useTransaction) {
-					method = new HttpPut(url.build());
+					method = applyAdditionalHeaders(new HttpPut(url.build()));
 				} else {
-					method = new HttpPost(url.build());
+					method = applyAdditionalHeaders(new HttpPost(url.build()));
 				}
 
 				// Set payload
@@ -1013,6 +1019,13 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		return queryParams;
+	}
+
+	private <T extends HttpUriRequest> T applyAdditionalHeaders(T method) {
+		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
+			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+		}
+		return method;
 	}
 
 }
