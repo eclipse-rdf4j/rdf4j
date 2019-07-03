@@ -50,10 +50,10 @@ public class SortPlanNodeTest {
 		}
 		try (SailConnection connection = sailRepository.getConnection()) {
 
-			Select select = new Select(connection, "?a a rdfs:Resource", "*");
+			Select select = new Select(connection, "?a a rdfs:Resource", "?a");
 			List<Tuple> sortedBySelect = new MockConsumePlanNode(select).asList();
 
-			Sort sort = new Sort(new Select(connection, "?a a rdfs:Resource", "*"));
+			Sort sort = new Sort(new Select(connection, "?a a rdfs:Resource", "?a"));
 			List<Tuple> sortedBySort = new MockConsumePlanNode(sort).asList();
 
 			assertEquals(sortedBySelect, sortedBySort);
