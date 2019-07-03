@@ -86,14 +86,14 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	/**
 	 * 
 	 */
-	public AbstractSPARQLJSONParser() {
+	protected AbstractSPARQLJSONParser() {
 		super();
 	}
 
 	/**
 	 * 
 	 */
-	public AbstractSPARQLJSONParser(ValueFactory valueFactory) {
+	protected AbstractSPARQLJSONParser(ValueFactory valueFactory) {
 		super(valueFactory);
 	}
 

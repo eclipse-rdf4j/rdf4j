@@ -29,7 +29,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	 * Constructors *
 	 *--------------*/
 
-	public UnaryTupleOperator() {
+	protected UnaryTupleOperator() {
 	}
 
 	/**
@@ -37,7 +37,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	 * 
 	 * @param arg The operator's argument, must not be <tt>null</tt>.
 	 */
-	public UnaryTupleOperator(TupleExpr arg) {
+	protected UnaryTupleOperator(TupleExpr arg) {
 		setArg(arg);
 	}
 

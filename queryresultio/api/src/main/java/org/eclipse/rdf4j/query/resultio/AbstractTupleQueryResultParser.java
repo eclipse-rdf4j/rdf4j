@@ -26,14 +26,14 @@ public abstract class AbstractTupleQueryResultParser extends AbstractQueryResult
 	 * Creates a new parser base that, by default, will use an instance of {@link SimpleValueFactory} to create Value
 	 * objects.
 	 */
-	public AbstractTupleQueryResultParser() {
+	protected AbstractTupleQueryResultParser() {
 		super();
 	}
 
 	/**
 	 * Creates a new parser base that will use the supplied {@link ValueFactory} to create {@link Value} objects.
 	 */
-	public AbstractTupleQueryResultParser(ValueFactory valueFactory) {
+	protected AbstractTupleQueryResultParser(ValueFactory valueFactory) {
 		super(valueFactory);
 	}
 

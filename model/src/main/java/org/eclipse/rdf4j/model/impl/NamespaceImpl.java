@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.model.impl;
 
 /**
- * @deprecated since 4.0. Use {@link SimpleNamespace} instead.
+ * @deprecated since 2.0. Use {@link SimpleNamespace} instead.
  */
 @Deprecated
 public class NamespaceImpl extends SimpleNamespace {
 
 	/**
-	 * @deprecated since 4.0. Use {@link SimpleNamespace} instead.
+	 * @deprecated since 2.0. Use {@link SimpleNamespace} instead.
 	 */
 	@Deprecated
 	public NamespaceImpl(String prefix, String name) {

@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractRDFWriter} instead.
+ * @deprecated since 2.0. Use {@link AbstractRDFWriter} instead.
  * @author Jeen Broekstra
  */
 @Deprecated
 public abstract class RDFWriterBase extends AbstractRDFWriter {
 
-	public RDFWriterBase() {
+	protected RDFWriterBase() {
 		super();
 	}
 }

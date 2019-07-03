@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.common.iterator;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractCloseableIterator} instead.
+ * @deprecated since 2.0. Use {@link AbstractCloseableIterator} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTValueExpr extends SimpleNode {
 
-	public ASTValueExpr(int i) {
+	protected ASTValueExpr(int i) {
 		super(i);
 	}
 
-	public ASTValueExpr(SyntaxTreeBuilder p, int i) {
+	protected ASTValueExpr(SyntaxTreeBuilder p, int i) {
 		super(p, i);
 	}
 }

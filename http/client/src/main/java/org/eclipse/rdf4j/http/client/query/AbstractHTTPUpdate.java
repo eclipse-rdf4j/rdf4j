@@ -31,7 +31,7 @@ public abstract class AbstractHTTPUpdate extends AbstractUpdate {
 
 	protected final String baseURI;
 
-	public AbstractHTTPUpdate(SPARQLProtocolSession httpClient, QueryLanguage queryLanguage, String queryString,
+	protected AbstractHTTPUpdate(SPARQLProtocolSession httpClient, QueryLanguage queryLanguage, String queryString,
 			String baseURI) {
 		super();
 		this.httpClient = httpClient;

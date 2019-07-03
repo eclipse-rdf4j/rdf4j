@@ -30,7 +30,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	 * Constructors *
 	 *--------------*/
 
-	public BinaryValueOperator() {
+	protected BinaryValueOperator() {
 	}
 
 	/**
@@ -39,7 +39,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
 	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
 	 */
-	public BinaryValueOperator(ValueExpr leftArg, ValueExpr rightArg) {
+	protected BinaryValueOperator(ValueExpr leftArg, ValueExpr rightArg) {
 		setLeftArg(leftArg);
 		setRightArg(rightArg);
 	}

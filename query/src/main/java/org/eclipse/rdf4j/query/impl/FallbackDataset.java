@@ -84,11 +84,11 @@ public class FallbackDataset implements Dataset, Serializable {
 		sb.append("INSERT INTO ");
 		appendURI(sb, getDefaultInsertGraph());
 		for (IRI uri : getDefaultGraphs()) {
-			sb.append("USING ");
+			sb.append("FROM ");
 			appendURI(sb, uri);
 		}
 		for (IRI uri : getNamedGraphs()) {
-			sb.append("USING NAMED ");
+			sb.append("FROM NAMED ");
 			appendURI(sb, uri);
 		}
 		return sb.toString();

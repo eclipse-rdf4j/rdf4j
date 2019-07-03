@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.model;
 /**
  * A Uniform Resource Identifier (URI).
  * 
- * @deprecated Since 4.0. Use {@link IRI} instead.
+ * @deprecated since 2.0. Use {@link IRI} instead.
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  * @see <a href="http://tools.ietf.org/html/rfc3986">RFC 3986</a>

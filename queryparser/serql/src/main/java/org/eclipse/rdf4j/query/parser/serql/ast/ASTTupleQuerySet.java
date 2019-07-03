@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTTupleQuerySet extends ASTTupleQuery {
 
-	public ASTTupleQuerySet(int i) {
+	protected ASTTupleQuerySet(int i) {
 		super(i);
 	}
 
-	public ASTTupleQuerySet(SyntaxTreeBuilder p, int i) {
+	protected ASTTupleQuerySet(SyntaxTreeBuilder p, int i) {
 		super(p, i);
 	}
 

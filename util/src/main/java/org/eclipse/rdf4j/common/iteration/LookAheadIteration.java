@@ -27,7 +27,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * Constructors *
 	 *--------------*/
 
-	public LookAheadIteration() {
+	protected LookAheadIteration() {
 	}
 
 	/*---------*

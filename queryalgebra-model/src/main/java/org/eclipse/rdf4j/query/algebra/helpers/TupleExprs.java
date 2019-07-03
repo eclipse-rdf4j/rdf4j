@@ -77,7 +77,7 @@ public class TupleExprs {
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
 	 *         otherwise.
-	 * @deprecated Since 2.3. Use {@link TupleExprs#containsSubQuery(TupleExpr)} instead.
+	 * @deprecated since 2.0. Use {@link TupleExprs#containsSubQuery(TupleExpr)} instead.
 	 */
 	@Deprecated
 	public static boolean containsProjection(TupleExpr t) {

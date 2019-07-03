@@ -10,17 +10,17 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractRDFParser} instead.
+ * @deprecated since 2.0. Use {@link AbstractRDFParser} instead.
  * @author Jeen Broekstra
  */
 @Deprecated
 public abstract class RDFParserBase extends AbstractRDFParser {
 
-	public RDFParserBase() {
+	protected RDFParserBase() {
 		super();
 	}
 
-	public RDFParserBase(ValueFactory factory) {
+	protected RDFParserBase(ValueFactory factory) {
 		super(factory);
 	}
 }

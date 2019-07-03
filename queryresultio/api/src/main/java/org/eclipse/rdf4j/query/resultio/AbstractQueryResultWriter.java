@@ -26,7 +26,7 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 	/**
 	 * Default constructor.
 	 */
-	public AbstractQueryResultWriter() {
+	protected AbstractQueryResultWriter() {
 	}
 
 	@Override

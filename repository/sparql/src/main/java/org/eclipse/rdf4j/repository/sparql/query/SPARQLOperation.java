@@ -44,7 +44,7 @@ public abstract class SPARQLOperation implements Operation {
 
 	protected MapBindingSet bindings = new MapBindingSet();
 
-	public SPARQLOperation(HttpClient client, String url, String base, String operation) {
+	protected SPARQLOperation(HttpClient client, String url, String base, String operation) {
 		this.url = url;
 		this.operation = operation;
 		this.client = client;

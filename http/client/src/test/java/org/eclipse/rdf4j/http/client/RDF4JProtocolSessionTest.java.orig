@@ -7,6 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+<<<<<<< HEAD
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.concurrent.ScheduledExecutorService;
+
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpVersion;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.message.BasicStatusLine;
+import org.apache.http.protocol.HttpContext;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+=======
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -21,14 +40,13 @@ import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+>>>>>>> master
 import org.junit.Before;
 import org.junit.Test;
 
@@ -36,10 +54,38 @@ import org.junit.Test;
  * Unit tests for {@link RDF4JProtocolSession}
  * 
  * @author Jeen Broekstra
+<<<<<<< HEAD
+ *
+=======
+>>>>>>> master
  */
 public class RDF4JProtocolSessionTest {
 
 	private RDF4JProtocolSession subject;
+<<<<<<< HEAD
+	private HttpClient client;
+
+	@Before
+	public void setUp() throws Exception {
+		client = mock(HttpClient.class);
+		HttpResponse response = mock(HttpResponse.class);
+
+		when(client.execute(any(HttpUriRequest.class), any(HttpContext.class))).thenReturn(response);
+		when(response.getEntity()).thenReturn(mock(HttpEntity.class));
+		when(response.getStatusLine()).thenReturn(new BasicStatusLine(HttpVersion.HTTP_1_1, 200, "OK"));
+		ScheduledExecutorService executor = mock(ScheduledExecutorService.class);
+		subject = new RDF4JProtocolSession(client, executor);
+		subject.setServerURL("http://example.org/");
+	}
+
+	@Test
+	public void testCreateRepositoryExecutesPut() throws Exception {
+		RepositoryConfig config = new RepositoryConfig("test");
+		subject.createRepository(config);
+		verify(client, times(1)).execute(any(HttpPut.class), any(HttpContext.class));
+	}
+
+=======
 	private HttpClient httpclient;
 
 	private String testHeader = "X-testing-header";
@@ -48,6 +94,7 @@ public class RDF4JProtocolSessionTest {
 
 	@Before
 	public void setUp() throws Exception {
+
 		httpclient = mock(HttpClient.class);
 		response = mock(HttpResponse.class);
 		StatusLine statusLine = mock(StatusLine.class);
@@ -62,14 +109,6 @@ public class RDF4JProtocolSessionTest {
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);
 		subject.setAdditionalHttpHeaders(additionalHeaders);
-	}
-
-	@Test
-	public void testCreateRepositoryExecutesPut() throws Exception {
-		RepositoryConfig config = new RepositoryConfig("test");
-		subject.createRepository(config);
-		verify(httpclient).execute(any(HttpPut.class), any(HttpContext.class));
-		verifyHeaders();
 	}
 
 	@Test
@@ -96,4 +135,5 @@ public class RDF4JProtocolSessionTest {
 		verify(httpclient).execute(argThat(r -> r.getFirstHeader(testHeader).getValue().equals(testValue)),
 				any(HttpContext.class));
 	}
+>>>>>>> master
 }

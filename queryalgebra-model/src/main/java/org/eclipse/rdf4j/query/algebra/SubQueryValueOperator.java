@@ -19,10 +19,10 @@ public abstract class SubQueryValueOperator extends AbstractQueryModelNode imple
 	 * Constructors *
 	 *--------------*/
 
-	public SubQueryValueOperator() {
+	protected SubQueryValueOperator() {
 	}
 
-	public SubQueryValueOperator(TupleExpr subQuery) {
+	protected SubQueryValueOperator(TupleExpr subQuery) {
 		setSubQuery(subQuery);
 	}
 

@@ -73,7 +73,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 * Constructors *
 	 *--------------*/
 
-	public AbstractValueFactory() {
+	protected AbstractValueFactory() {
 		initBNodeParams();
 	}
 

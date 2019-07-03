@@ -28,7 +28,7 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 * Constructors *
 	 *--------------*/
 
-	public LookAheadIterator() {
+	protected LookAheadIterator() {
 	}
 
 	/*---------*

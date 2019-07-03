@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.model.impl;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleValueFactory} instead.
+ * @deprecated since 2.0. Use {@link SimpleValueFactory} instead.
  */
 @Deprecated
 public class ValueFactoryImpl extends SimpleValueFactory {
@@ -17,7 +17,7 @@ public class ValueFactoryImpl extends SimpleValueFactory {
 	private static final ValueFactoryImpl sharedInstance = new ValueFactoryImpl();
 
 	/**
-	 * @deprecated since 4.0. Use {@link SimpleValueFactory#getInstance()} instead.
+	 * @deprecated since 2.0. Use {@link SimpleValueFactory#getInstance()} instead.
 	 */
 	@Deprecated
 	public static ValueFactoryImpl getInstance() {
@@ -25,7 +25,7 @@ public class ValueFactoryImpl extends SimpleValueFactory {
 	}
 
 	/**
-	 * @deprecated since 4.0. Use {@link SimpleValueFactory#getInstance()} instead.
+	 * @deprecated since 2.0. Use {@link SimpleValueFactory#getInstance()} instead.
 	 */
 	@Deprecated
 	public ValueFactoryImpl() {

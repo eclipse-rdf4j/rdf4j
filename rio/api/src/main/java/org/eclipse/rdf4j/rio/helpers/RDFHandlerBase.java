@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 /**
- * @deprecated since 4.0 Use {@link AbstractRDFHandler} instead.
+ * @deprecated since 2.0.Use {@link AbstractRDFHandler} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTQuery extends SimpleNode {
 
-	public ASTQuery(int id) {
+	protected ASTQuery(int id) {
 		super(id);
 	}
 
-	public ASTQuery(SyntaxTreeBuilder p, int id) {
+	protected ASTQuery(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 }

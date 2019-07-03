@@ -398,7 +398,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
 	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
-	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
 	public default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
@@ -452,7 +452,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param includeInferred if false, no inferred statements are considered; if true, inferred statements are
 	 *                        considered if available
 	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
-	 * @deprecated since 4.0. Use {@link #hasStatement(Resource, IRI, Value, boolean, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #hasStatement(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
 	public default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
@@ -541,7 +541,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * <li>{@link #commit()} or {@link #rollback()} have been called to finish the transaction.
 	 * </ol>
 	 * 
-	 * @deprecated since release 2.7.0. Use {@link #isActive()} instead.
+	 * @deprecated since 2.0. Use {@link #isActive()} instead.
 	 * @throws RepositoryException If a repository access error occurs.
 	 */
 	@Deprecated
@@ -753,7 +753,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                  itself.
 	 * @throws RepositoryException If the data could not be added to the repository, for example because the repository
 	 *                             is not writable.
-	 * @deprecated since 4.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	public default void add(Resource subject, URI predicate, Value object, Resource... contexts)
@@ -831,7 +831,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                  optional. If no contexts are supplied the method operates on the entire repository.
 	 * @throws RepositoryException If the statement(s) could not be removed from the repository, for example because the
 	 *                             repository is not writable.
-	 * @deprecated since 4.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
+	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	public default void remove(Resource subject, URI predicate, Value object, Resource... contexts)

@@ -15,11 +15,11 @@ public abstract class ASTUpdate extends ASTOperation {
 	/**
 	 * @param id
 	 */
-	public ASTUpdate(int id) {
+	protected ASTUpdate(int id) {
 		super(id);
 	}
 
-	public ASTUpdate(SyntaxTreeBuilder p, int id) {
+	protected ASTUpdate(SyntaxTreeBuilder p, int id) {
 		super(p, id);
 	}
 

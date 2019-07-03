@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link ContextStatement} instead for extension, and {@link ValueFactory} for
+ * @deprecated since 2.0. Use {@link ContextStatement} instead for extension, and {@link ValueFactory} for
  *             instantiation.
  */
 @Deprecated
 public class ContextStatementImpl extends ContextStatement {
 
 	/**
-	 * @deprecated since 4.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value, Resource)} instead.
+	 * @deprecated since 2.0. Use {@link ValueFactory#createStatement(Resource, IRI, Value, Resource)} instead.
 	 */
 	@Deprecated
 	public ContextStatementImpl(Resource subject, URI predicate, Value object, Resource context) {

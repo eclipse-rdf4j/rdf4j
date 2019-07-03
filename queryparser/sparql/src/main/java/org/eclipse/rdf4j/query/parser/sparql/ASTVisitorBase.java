@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractASTVisitor} instead.
+ * @deprecated since 2.0. Use {@link AbstractASTVisitor} instead.
  * @author Jeen Broekstra
  */
 @Deprecated

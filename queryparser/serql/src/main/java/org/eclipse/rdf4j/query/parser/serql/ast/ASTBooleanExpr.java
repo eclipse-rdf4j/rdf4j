@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public abstract class ASTBooleanExpr extends SimpleNode {
 
-	public ASTBooleanExpr(int i) {
+	protected ASTBooleanExpr(int i) {
 		super(i);
 	}
 
-	public ASTBooleanExpr(SyntaxTreeBuilder p, int i) {
+	protected ASTBooleanExpr(SyntaxTreeBuilder p, int i) {
 		super(p, i);
 	}
 }
