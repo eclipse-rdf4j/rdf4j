@@ -18,6 +18,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.runner.RunWith;
@@ -369,7 +371,12 @@ abstract public class AbstractShaclTest {
 		System.out.println("\tValidation Report\n");
 		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
 		Model validationReport = cause.validationReportAsModel();
-		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE, writerConfig);
 		System.out.println("\n############################################");
 	}
 

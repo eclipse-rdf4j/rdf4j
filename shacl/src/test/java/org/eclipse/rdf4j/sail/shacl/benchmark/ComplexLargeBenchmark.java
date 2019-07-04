@@ -435,8 +435,8 @@ public class ComplexLargeBenchmark {
 
 	private static BufferedInputStream getData() {
 		ClassLoader classLoader = ComplexLargeBenchmark.class.getClassLoader();
-		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/generated.ttl"));
-//		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/datagovbe-valid.ttl"));
+//		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/generated.ttl"));
+		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/datagovbe-valid.ttl"));
 	}
 
 }
