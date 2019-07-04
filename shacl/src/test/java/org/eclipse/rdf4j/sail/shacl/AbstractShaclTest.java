@@ -126,7 +126,6 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/implicitAnd",
 		"test-cases/or/inheritance",
 		"test-cases/or/inheritance-deep",
-		"test-cases/or/inheritance-deep-minCountMaxCount",
 		"test-cases/or/inheritanceNodeShape",
 		"test-cases/or/maxCount",
 		"test-cases/or/minCount",
