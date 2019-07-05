@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.util.iterators.Iterators;
 
@@ -754,7 +755,9 @@ public class Models {
 
 	private static boolean isBlank(Value value) {
 		if (value instanceof IRI) {
-			return value.stringValue().indexOf("/.well-known/genid/") > 0;
+			boolean skolemizedBNode = value.stringValue().contains("/.well-known/genid/"); // this handles isomorphic on
+																							// skolemized ID
+			return skolemizedBNode;
 		} else {
 			return value instanceof BNode;
 		}
