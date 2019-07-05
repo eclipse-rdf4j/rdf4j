@@ -9,15 +9,7 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:property [
-		sh:path ex:ssn  ;
-                sh:or (
-                    [
-                      sh:maxCount 3 ;
-                    ]
-                    [
-                      sh:maxCount 2 ;
-                    ]
-                  ) ;
-    	] .
-
+	sh:or (
+	[sh:path ex:ssn; sh:maxCount 3 ;]
+	[sh:path ex:ssn; sh:maxCount 2 ;]
+	) .

@@ -23,6 +23,7 @@ public class ShaclProperties {
 	List<Resource> clazz = new ArrayList<>(0);
 	List<Resource> or = new ArrayList<>(0);
 	List<Resource> and = new ArrayList<>(0);
+	List<Resource> not = new ArrayList<>(0);
 	Long minCount;
 	Long maxCount;
 
@@ -66,6 +67,9 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#and":
 					and.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#not":
+					not.add((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {

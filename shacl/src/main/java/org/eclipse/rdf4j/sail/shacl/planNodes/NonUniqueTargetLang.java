@@ -13,7 +13,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.CloseablePeakableIteration;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -32,82 +35,15 @@ public class NonUniqueTargetLang implements PlanNode {
 	PlanNode parent;
 	private boolean printed = false;
 
-	private Set<String> seenLanguages = new HashSet<>();
-
 	public NonUniqueTargetLang(PlanNode parent) {
 		this.parent = parent;
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+		return new OnlyNonUnique(parent);
 
-			Tuple next;
-			Tuple previous;
-
-			private void calculateNext() {
-				if (next != null) {
-					return;
-				}
-
-				while (next == null && parentIterator.hasNext()) {
-					next = parentIterator.next();
-
-					if ((previous != null)) {
-						if (!previous.line.get(0).equals(next.line.get(0))) {
-							seenLanguages = new HashSet<>();
-						}
-					}
-
-					previous = next;
-
-					Value value = next.getlist().get(1);
-
-					if (value instanceof Literal) {
-						Optional<String> lang = ((Literal) value).getLanguage();
-
-						if (!lang.isPresent()) {
-							next = null;
-						} else if (!seenLanguages.contains(lang.get())) {
-							seenLanguages.add(lang.get());
-							next = null;
-						}
-
-					} else {
-						next = null;
-					}
-
-				}
-
-			}
-
-			@Override
-			public void close() throws SailException {
-				parentIterator.close();
-			}
-
-			@Override
-			public boolean hasNext() throws SailException {
-				calculateNext();
-				return next != null;
-			}
-
-			@Override
-			public Tuple next() throws SailException {
-				calculateNext();
-
-				Tuple temp = next;
-				next = null;
-				return temp;
-			}
-
-			@Override
-			public void remove() throws SailException {
-
-			}
-		};
 	}
 
 	@Override
@@ -142,4 +78,79 @@ public class NonUniqueTargetLang implements PlanNode {
 		return parent.getIteratorDataType();
 	}
 
+}
+
+class OnlyNonUnique implements CloseableIteration<Tuple, SailException> {
+
+	Tuple next;
+	Tuple previous;
+
+	private Set<String> seenLanguages = new HashSet<>();
+
+	CloseableIteration<Tuple, SailException> parentIterator;
+
+	public OnlyNonUnique(PlanNode parent) {
+		parentIterator = parent.iterator();
+	}
+
+	private void calculateNext() {
+		if (next != null) {
+			return;
+		}
+
+		while (next == null && parentIterator.hasNext()) {
+			next = parentIterator.next();
+
+			if ((previous != null)) {
+				if (!previous.line.get(0).equals(next.line.get(0))) {
+					seenLanguages = new HashSet<>();
+				}
+			}
+
+			previous = next;
+
+			Value value = next.getlist().get(1);
+
+			if (value instanceof Literal) {
+				Optional<String> lang = ((Literal) value).getLanguage();
+
+				if (!lang.isPresent()) {
+					next = null;
+				} else if (!seenLanguages.contains(lang.get())) {
+					seenLanguages.add(lang.get());
+					next = null;
+				}
+
+			} else {
+				next = null;
+			}
+
+		}
+
+	}
+
+	@Override
+	public void close() throws SailException {
+		parentIterator.close();
+	}
+
+	@Override
+	public boolean hasNext() throws SailException {
+		calculateNext();
+		return next != null;
+	}
+
+	@Override
+	public Tuple next() throws SailException {
+		calculateNext();
+
+		Tuple temp = next;
+		next = null;
+		return temp;
+	}
+
+	@Override
+	public void remove() throws SailException {
+
+	}
 }

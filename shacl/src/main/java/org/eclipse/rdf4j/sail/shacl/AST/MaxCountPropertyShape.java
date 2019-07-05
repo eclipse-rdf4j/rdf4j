@@ -45,8 +45,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	private long maxCount;
 
 	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			Long maxCount) {
+			PathPropertyShape parent, Resource path, Long maxCount) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxCount = maxCount;
@@ -54,16 +53,20 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
 		}
+		assert !negateSubPlans : "There are no subplans!";
+		assert !negateThisPlan;
+		assert hasOwnPath();
 
 		if (overrideTargetNode != null) {
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(
 					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-							shaclSailConnection, getPath().getQuery("?a", "?c", null), false),
+							shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c"),
 					"");
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
 
@@ -103,11 +106,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		}
 
 		PlanNode planAddedStatements = new LoggingNode(
-				nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
+				nodeShape.getPlanAddedStatements(shaclSailConnection, null),
 				"");
 
 		PlanNode planAddedStatements1 = new LoggingNode(
-				super.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
+				super.getPlanAddedStatements(shaclSailConnection, null),
 				"");
 
 		planAddedStatements1 = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1),
@@ -131,7 +134,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(
 					new BulkedExternalInnerJoin(unique, shaclSailConnection, getPath().getQuery("?a", "?c", null),
-							true),
+							true, "?a", "?c"),
 					"");
 
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
@@ -185,5 +188,22 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 				"maxCount=" + maxCount +
 				", path=" + getPath() +
 				'}';
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+
+		PlanNode plan = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
+		plan = new UnionNode(plan, nodeShape.getPlanRemovedStatements(shaclSailConnection, null));
+
+		Path path = getPath();
+		if (path != null) {
+			plan = new UnionNode(plan, getPlanAddedStatements(shaclSailConnection, null));
+			plan = new UnionNode(plan, getPlanRemovedStatements(shaclSailConnection, null));
+		}
+
+		plan = new Unique(new TrimTuple(plan, 0, 1));
+
+		return nodeShape.getTargetFilter(shaclSailConnection, plan);
 	}
 }

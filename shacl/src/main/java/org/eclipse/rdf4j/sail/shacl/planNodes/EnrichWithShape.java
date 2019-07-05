@@ -102,4 +102,8 @@ public class EnrichWithShape implements PlanNode {
 	public PropertyShape getPropertyShape() {
 		return propertyShape;
 	}
+
+	public PlanNode getParent() {
+		return parent;
+	}
 }

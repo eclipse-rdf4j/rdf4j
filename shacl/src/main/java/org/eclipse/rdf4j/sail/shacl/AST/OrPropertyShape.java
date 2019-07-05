@@ -27,10 +27,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.rmi.runtime.Log;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -51,16 +53,43 @@ public class OrPropertyShape extends PathPropertyShape {
 
 	}
 
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path,
+			List<List<PathPropertyShape>> or) {
+		super(id, connection, nodeShape, deactivated, parent, path);
+		this.or = or;
+
+	}
+
+	public OrPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
+			List<List<PathPropertyShape>> or) {
+		super(id, nodeShape, deactivated, parent, path);
+		this.or = or;
+	}
+
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
 		}
 
+		if (negateThisPlan) { // De Morgan's laws
+
+			AndPropertyShape orPropertyShape = new AndPropertyShape(getId(), nodeShape, deactivated, this, null,
+					or);
+
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
+					overrideTargetNode, false, true);
+
+			return new EnrichWithShape(plan.getParent(), this);
+
+		}
+
 		List<List<PlanNode>> initialPlanNodes = or.stream()
 				.map(shapes -> shapes.stream()
-						.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
+						.map(shape -> shape.getPlan(shaclSailConnection, false, null, negateSubPlans, false))
 						.filter(Objects::nonNull)
 						.collect(Collectors.toList()))
 				.filter(list -> !list.isEmpty())
@@ -68,10 +97,11 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		PlanNodeProvider targetNodesToValidate;
 		if (overrideTargetNode == null) {
-			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
+			List<PlanNode> collect = initialPlanNodes.stream()
 					.flatMap(Collection::stream)
-					.map(p -> new Unique(new TrimTuple(p, 0, 1))) // we only want the targets
-					.collect(Collectors.toList())));
+					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+					.collect(Collectors.toList());
+			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
 			if (shaclSailConnection.sail.isCacheSelectNodes()) {
@@ -86,11 +116,12 @@ public class OrPropertyShape extends PathPropertyShape {
 				.map(shapes -> shapes
 						.stream()
 						.map(shape -> {
-							if (shaclSailConnection.stats.isBaseSailEmpty()) {
-								return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+							if (shaclSailConnection.stats.isBaseSailEmpty() && overrideTargetNode == null) {
+								return shape.getPlan(shaclSailConnection, false, null, negateSubPlans,
+										false);
 							}
-							return shape.getPlan(shaclSailConnection, nodeShape, false,
-									targetNodesToValidate);
+							return shape.getPlan(shaclSailConnection, false, targetNodesToValidate,
+									negateSubPlans, false);
 						})
 						.filter(Objects::nonNull)
 						.collect(Collectors.toList()))
@@ -226,4 +257,15 @@ public class OrPropertyShape extends PathPropertyShape {
 				'}';
 	}
 
+	@Override
+	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+
+		Optional<PlanNode> reduce = or.stream()
+				.flatMap(Collection::stream)
+				.map(a -> a.getAllTargetsPlan(shaclSailConnection, negated))
+				.reduce((a, b) -> new UnionNode(a, b));
+
+		return new Unique(reduce.get());
+
+	}
 }

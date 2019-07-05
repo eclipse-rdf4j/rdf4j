@@ -35,11 +35,14 @@ public class Select implements PlanNode {
 	private final SailConnection connection;
 
 	private final String query;
+	private final String[] variables;
 	private boolean printed = false;
 
 	public Select(SailConnection connection, String query, String... variables) {
+		assert variables.length > 0;
 		this.connection = connection;
 		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
+		this.variables = variables;
 	}
 
 	@Override
@@ -73,7 +76,7 @@ public class Select implements PlanNode {
 
 			@Override
 			public Tuple next() throws SailException {
-				return new Tuple(bindingSet.next());
+				return new Tuple(bindingSet.next(), variables);
 			}
 
 			@Override

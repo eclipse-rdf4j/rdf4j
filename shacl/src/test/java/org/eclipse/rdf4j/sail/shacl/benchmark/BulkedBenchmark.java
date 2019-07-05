@@ -99,7 +99,7 @@ public class BulkedBenchmark {
 	public int innerJoin() {
 		try (SailConnection connection = repository.getSail().getConnection()) {
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(new MockInputPlanNode(subjects), connection,
-					QUERY, false);
+					QUERY, false, "?a", "?c");
 			return new MockConsumePlanNode(bulkedExternalInnerJoin).asList().size();
 		}
 	}
@@ -108,7 +108,7 @@ public class BulkedBenchmark {
 	public int outerJoin() {
 		try (SailConnection connection = repository.getSail().getConnection()) {
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalLeftOuterJoin(new MockInputPlanNode(subjects),
-					connection, QUERY, false);
+					connection, QUERY, false, "?a", "?c");
 			return new MockConsumePlanNode(bulkedExternalInnerJoin).asList().size();
 		}
 	}

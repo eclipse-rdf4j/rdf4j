@@ -37,7 +37,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, String... variables) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
@@ -45,6 +45,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.variables = variables;
 
 	}
 
@@ -72,7 +73,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					return;
 				}
 
-				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
 
 			}
 

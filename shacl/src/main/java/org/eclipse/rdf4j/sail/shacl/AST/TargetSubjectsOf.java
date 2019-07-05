@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 import java.util.Arrays;
@@ -44,14 +45,17 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection connection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
-		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "*"));
-		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
+	public PlanNode getPlan(ShaclSailConnection connection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		assert !negateSubPlans : "There are no subplans!";
+		assert !negateThisPlan;
+
+		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "?a", "?c"));
+		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection connection, NodeShape nodeShape,
+	public PlanNode getPlanAddedStatements(ShaclSailConnection connection,
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
@@ -64,12 +68,12 @@ public class TargetSubjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = connection.getCachedNodeFor(select);
-		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
+		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
 
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection connection, NodeShape nodeShape,
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection connection,
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
@@ -82,7 +86,7 @@ public class TargetSubjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = connection.getCachedNodeFor(select);
-		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
+		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
 
 	}
 

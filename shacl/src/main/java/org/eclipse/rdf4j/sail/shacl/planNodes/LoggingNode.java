@@ -28,9 +28,9 @@ public class LoggingNode implements PlanNode {
 	static private final Logger logger = LoggerFactory.getLogger(LoggingNode.class);
 
 	PlanNode parent;
-	String message;
+	private String message;
 
-	private boolean pullAll = true;
+	private final static boolean PULL_ALL = true;
 
 	public static boolean loggingEnabled = false;
 
@@ -50,7 +50,7 @@ public class LoggingNode implements PlanNode {
 				CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 				{
-					if (pullAll) {
+					if (PULL_ALL) {
 						parentIterator = cachedIterator(parentIterator);
 					}
 				}

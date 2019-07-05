@@ -19,14 +19,16 @@ import java.util.List;
  */
 public interface PlanGenerator {
 
-	PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode);
+	PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans);
 
-	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper);
 
-	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper);
+
+	PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated);
 
 	List<Path> getPaths();
 

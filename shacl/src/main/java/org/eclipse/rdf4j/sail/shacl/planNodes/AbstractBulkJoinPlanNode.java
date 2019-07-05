@@ -26,22 +26,25 @@ import java.util.stream.Stream;
 
 abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
+	protected String[] variables;
+
 	static void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,
-			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection) {
+			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, String[] variables) {
 		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection);
 
 		if (!newBindindingset.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingset);
-			executeQuery(right, connection, parsedQuery);
+			executeQuery(right, connection, parsedQuery, variables);
 		}
 	}
 
-	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery) {
+	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery,
+			String[] variables) {
 
 		try (Stream<? extends BindingSet> stream = Iterations.stream(
 				connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true))) {
 			stream
-					.map(Tuple::new)
+					.map(t -> new Tuple(t, variables))
 					.forEachOrdered(right::addFirst);
 		}
 

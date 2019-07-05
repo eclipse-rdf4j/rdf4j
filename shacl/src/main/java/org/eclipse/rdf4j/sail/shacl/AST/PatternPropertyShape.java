@@ -23,7 +23,7 @@ import java.util.Objects;
 /**
  * @author Håvard Ottestad
  */
-public class PatternPropertyShape extends PathPropertyShape {
+public class PatternPropertyShape extends AbstractSimplePropertyShape {
 
 	private final String pattern;
 	private final String flags;
@@ -40,14 +40,16 @@ public class PatternPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
 		}
+		assert !negateSubPlans : "There are no subplans!";
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
-				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode);
+		PlanNode invalidValues = getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
