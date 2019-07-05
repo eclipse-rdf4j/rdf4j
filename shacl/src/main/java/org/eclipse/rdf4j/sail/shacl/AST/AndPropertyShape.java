@@ -72,6 +72,13 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		}
 
+		if (and.stream().mapToLong(List::size).sum() == 1) {
+			PlanNode plan = and.get(0)
+					.get(0)
+					.getPlan(shaclSailConnection, false, overrideTargetNode, negateSubPlans, false);
+			return new EnrichWithShape(plan, this);
+		}
+
 		List<PlanNode> plans = and
 				.stream()
 				.flatMap(List::stream)

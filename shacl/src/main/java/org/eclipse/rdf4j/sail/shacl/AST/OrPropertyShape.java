@@ -87,6 +87,13 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		}
 
+		if (or.stream().mapToLong(List::size).sum() == 1) {
+			PlanNode plan = or.get(0)
+					.get(0)
+					.getPlan(shaclSailConnection, false, overrideTargetNode, negateSubPlans, false);
+			return new EnrichWithShape(plan, this);
+		}
+
 		List<List<PlanNode>> initialPlanNodes = or.stream()
 				.map(shapes -> shapes.stream()
 						.map(shape -> shape.getPlan(shaclSailConnection, false, null, negateSubPlans, false))
