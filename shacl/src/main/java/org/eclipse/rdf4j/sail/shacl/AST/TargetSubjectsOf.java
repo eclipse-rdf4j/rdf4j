@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -51,7 +50,7 @@ public class TargetSubjectsOf extends NodeShape {
 		assert !negateThisPlan;
 
 		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "?a", "?c"));
-		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
+		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
@@ -68,7 +67,7 @@ public class TargetSubjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = connection.getCachedNodeFor(select);
-		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
+		return new Unique(new TrimTuple(cachedNodeFor, 0, 1));
 
 	}
 
@@ -86,7 +85,7 @@ public class TargetSubjectsOf extends NodeShape {
 		}
 
 		PlanNode cachedNodeFor = connection.getCachedNodeFor(select);
-		return new Unique(new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1));
+		return new Unique(new TrimTuple(cachedNodeFor, 0, 1));
 
 	}
 

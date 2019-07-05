@@ -23,6 +23,7 @@ public class Sort implements PlanNode {
 
 	private final PlanNode parent;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Sort(PlanNode parent) {
 		this.parent = parent;
@@ -30,7 +31,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> iterator = parent.iterator();
 
@@ -46,7 +47,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				sortTuples();
 				return sortedTuplesIterator.hasNext();
 			}
@@ -81,7 +82,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				sortTuples();
 
 				return sortedTuplesIterator.next();
@@ -142,5 +143,11 @@ public class Sort implements PlanNode {
 	@Override
 	public int hashCode() {
 		return Objects.hash(parent);
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

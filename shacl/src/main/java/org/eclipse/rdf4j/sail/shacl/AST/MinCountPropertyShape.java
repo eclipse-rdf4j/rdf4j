@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -66,9 +65,9 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		assert hasOwnPath();
 
 		if (overrideTargetNode != null) {
-			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode.getPlanNode(),
-					shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c"), "");
-			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
+			PlanNode allStatements = new BulkedExternalLeftOuterJoin(overrideTargetNode.getPlanNode(),
+					shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c");
+			PlanNode groupBy = new GroupByCount(allStatements);
 
 			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
@@ -77,7 +76,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 				logger.info(planAsGraphvizDot);
 			}
 
-			return new EnrichWithShape(new LoggingNode(filteredStatements, ""), this);
+			return new EnrichWithShape(filteredStatements, this);
 
 		}
 
@@ -100,66 +99,60 @@ public class MinCountPropertyShape extends PathPropertyShape {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(select, shaclSailConnection);
 				logger.info(planAsGraphvizDot);
 			}
-			return new EnrichWithShape(new LoggingNode(select, ""), this);
+			return new EnrichWithShape(select, this);
 
 		}
 
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
-			PlanNode planRemovedStatements = new LoggingNode(new Unique(new TrimTuple(
-					new LoggingNode(getPlanRemovedStatements(shaclSailConnection, null), ""), 0, 1)),
-					"");
+			PlanNode planRemovedStatements = new Unique(
+					new TrimTuple(getPlanRemovedStatements(shaclSailConnection, null), 0, 1));
 
-			PlanNode filteredPlanRemovedStatements = new LoggingNode(
-					nodeShape.getTargetFilter(shaclSailConnection, planRemovedStatements), "");
+			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(shaclSailConnection,
+					planRemovedStatements);
 
-			PlanNode planAddedStatements = new LoggingNode(
-					nodeShape.getPlanAddedStatements(shaclSailConnection, null), "");
+			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
 
-			PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, filteredPlanRemovedStatements), "");
+			PlanNode mergeNode = new UnionNode(planAddedStatements, filteredPlanRemovedStatements);
 
-			PlanNode unique = new LoggingNode(new Unique(mergeNode), "");
+			PlanNode unique = new Unique(mergeNode);
 
 			PlanNode planAddedStatements1 = getPlanAddedStatements(shaclSailConnection, null);
 
-			planAddedStatements1 = new LoggingNode(
-					(nodeShape).getTargetFilter(shaclSailConnection, planAddedStatements1), "");
+			planAddedStatements1 = (nodeShape).getTargetFilter(shaclSailConnection, planAddedStatements1);
 
-			topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1), "");
+			topNode = new UnionNode(unique, planAddedStatements1);
 
 			// BulkedExternalLeftOuterJoin is slower, at least when the getPlanAddedStatements only returns
 			// statements that have the correct type.
 			// Persumably BulkedExternalLeftOuterJoin will be high if getPlanAddedStatements has a high number of
 			// statements for other subjects that in "unique"
-			// topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements,
+			// topNode = new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements,
 			// getPath().getQuery()));
 
 		} else {
 
-			PlanNode planAddedForShape = new LoggingNode(
-					nodeShape.getPlanAddedStatements(shaclSailConnection, null), "");
+			PlanNode planAddedForShape = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
 
-			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, null), "");
+			PlanNode addedByPath = getPlanAddedStatements(shaclSailConnection, null);
 
-			addedByPath = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, addedByPath), "");
+			addedByPath = (nodeShape).getTargetFilter(shaclSailConnection, addedByPath);
 
-			topNode = new LoggingNode(new UnionNode(planAddedForShape, addedByPath), "");
+			topNode = new UnionNode(planAddedForShape, addedByPath);
 
 		}
 
-		PlanNode groupBy = new LoggingNode(new GroupByCount(topNode), "");
+		PlanNode groupBy = new GroupByCount(topNode);
 
 		PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
-		PlanNode minCountFilter = new LoggingNode(filteredStatements, "");
+		PlanNode minCountFilter = filteredStatements;
 
-		PlanNode trimTuple = new LoggingNode(new Unique(new TrimTuple(minCountFilter, 0, 1)), "");
+		PlanNode trimTuple = new Unique(new TrimTuple(minCountFilter, 0, 1));
 
-		PlanNode bulkedExternalLeftOuterJoin2 = new LoggingNode(
-				new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, getPath().getQuery("?a", "?c", null),
-						false, "?a", "?c"),
-				"");
+		PlanNode bulkedExternalLeftOuterJoin2 = new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection,
+				getPath().getQuery("?a", "?c", null), false, "?a", "?c");
 
-		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2), "");
+		PlanNode groupBy2 = new GroupByCount(bulkedExternalLeftOuterJoin2);
 
 		PlanNode filteredStatements2 = new MinCountFilter(groupBy2, minCount).getFalseNode(UnBufferedPlanNode.class);
 
@@ -168,7 +161,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(filteredStatements2, ""), this);
+		return new EnrichWithShape(filteredStatements2, this);
 
 	}
 

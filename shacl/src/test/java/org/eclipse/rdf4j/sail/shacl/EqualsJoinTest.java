@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.junit.Test;
@@ -33,7 +32,7 @@ import static junit.framework.TestCase.assertTrue;
 public class EqualsJoinTest {
 
 	{
-		LoggingNode.loggingEnabled = true;
+		GlobalValidationExecutionLogging.loggingEnabled = true;
 	}
 
 	@Test

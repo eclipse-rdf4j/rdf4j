@@ -16,6 +16,7 @@ public class EqualsJoin implements PlanNode {
 	private PlanNode right;
 	private boolean useAsFilter;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;
@@ -25,7 +26,7 @@ public class EqualsJoin implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
 			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
@@ -98,13 +99,13 @@ public class EqualsJoin implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 				Tuple temp = next;
 				next = null;
@@ -155,5 +156,12 @@ public class EqualsJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "EqualsJoin{" + "useAsFilter=" + useAsFilter + '}';
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		left.receiveLogger(validationExecutionLogger);
+		right.receiveLogger(validationExecutionLogger);
 	}
 }

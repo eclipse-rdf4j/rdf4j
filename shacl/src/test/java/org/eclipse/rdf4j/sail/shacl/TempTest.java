@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -29,7 +28,7 @@ import java.io.StringReader;
 public class TempTest {
 
 	{
-		LoggingNode.loggingEnabled = true;
+		GlobalValidationExecutionLogging.loggingEnabled = true;
 	}
 
 	@Test

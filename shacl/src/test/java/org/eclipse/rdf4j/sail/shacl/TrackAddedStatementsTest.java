@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
 
 import static junit.framework.TestCase.assertEquals;
@@ -33,7 +32,7 @@ import static junit.framework.TestCase.assertNull;
 public class TrackAddedStatementsTest {
 
 	{
-		LoggingNode.loggingEnabled = true;
+		GlobalValidationExecutionLogging.loggingEnabled = true;
 	}
 
 	@Test

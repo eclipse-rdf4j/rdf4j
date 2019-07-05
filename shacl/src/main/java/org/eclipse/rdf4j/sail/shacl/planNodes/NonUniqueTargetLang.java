@@ -13,10 +13,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.CloseablePeakableIteration;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -34,6 +31,7 @@ import java.util.Set;
 public class NonUniqueTargetLang implements PlanNode {
 	PlanNode parent;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public NonUniqueTargetLang(PlanNode parent) {
 		this.parent = parent;
@@ -42,7 +40,7 @@ public class NonUniqueTargetLang implements PlanNode {
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 
-		return new OnlyNonUnique(parent);
+		return new OnlyNonUnique(parent, validationExecutionLogger);
 
 	}
 
@@ -78,18 +76,25 @@ public class NonUniqueTargetLang implements PlanNode {
 		return parent.getIteratorDataType();
 	}
 
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
+	}
+
 }
 
-class OnlyNonUnique implements CloseableIteration<Tuple, SailException> {
+class OnlyNonUnique extends LoggingCloseableIteration {
 
-	Tuple next;
-	Tuple previous;
+	private Tuple next;
+	private Tuple previous;
 
 	private Set<String> seenLanguages = new HashSet<>();
 
-	CloseableIteration<Tuple, SailException> parentIterator;
+	private CloseableIteration<Tuple, SailException> parentIterator;
 
-	public OnlyNonUnique(PlanNode parent) {
+	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
+		super(parent, validationExecutionLogger);
 		parentIterator = parent.iterator();
 	}
 
@@ -135,13 +140,13 @@ class OnlyNonUnique implements CloseableIteration<Tuple, SailException> {
 	}
 
 	@Override
-	public boolean hasNext() throws SailException {
+	boolean localHasNext() throws SailException {
 		calculateNext();
 		return next != null;
 	}
 
 	@Override
-	public Tuple next() throws SailException {
+	Tuple loggingNext() throws SailException {
 		calculateNext();
 
 		Tuple temp = next;
@@ -153,4 +158,5 @@ class OnlyNonUnique implements CloseableIteration<Tuple, SailException> {
 	public void remove() throws SailException {
 
 	}
+
 }

@@ -11,6 +11,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +35,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	private PushablePlanNode joined;
 	private PushablePlanNode discardedLeft;
 	private PushablePlanNode discardedRight;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public InnerJoin(PlanNode left, PlanNode right) {
 		this.left = left;
@@ -49,9 +51,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			throw new IllegalStateException();
 		}
 		if (type == BufferedPlanNode.class) {
-			joined = new BufferedPlanNode<>(this);
+			joined = new BufferedPlanNode<>(this, "Joined");
 		} else {
-			joined = new UnBufferedPlanNode<>(this);
+			joined = new UnBufferedPlanNode<>(this, "Joined");
 
 		}
 
@@ -63,9 +65,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			throw new IllegalStateException();
 		}
 		if (type == BufferedPlanNode.class) {
-			discardedLeft = new BufferedPlanNode<>(this);
+			discardedLeft = new BufferedPlanNode<>(this, "DiscardedLeft");
 		} else {
-			discardedLeft = new UnBufferedPlanNode<>(this);
+			discardedLeft = new UnBufferedPlanNode<>(this, "DiscaredLeft");
 
 		}
 		return discardedLeft;
@@ -76,9 +78,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			throw new IllegalStateException();
 		}
 		if (type == BufferedPlanNode.class) {
-			discardedRight = new BufferedPlanNode<>(this);
+			discardedRight = new BufferedPlanNode<>(this, "DiscardedRight");
 		} else {
-			discardedRight = new UnBufferedPlanNode<>(this);
+			discardedRight = new UnBufferedPlanNode<>(this, "DiscardedRight");
 
 		}
 		return discardedRight;
@@ -126,10 +128,6 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 				if (nextLeft == null) {
 					if (discardedRight != null) {
 						while (nextRight != null) {
-							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";discardedRight: " + " "
-										+ nextRight.toString());
-							}
 							discardedRight.push(nextRight);
 							if (rightIterator.hasNext()) {
 								nextRight = rightIterator.next();
@@ -155,10 +153,6 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 							if (compareTo < 0) {
 								if (joinedLeft != nextLeft && discardedLeft != null) {
-									if (LoggingNode.loggingEnabled) {
-										logger.info(leadingSpace() + that.getClass().getSimpleName()
-												+ ";discardedLeft: " + " " + nextLeft.toString());
-									}
 									discardedLeft.push(nextLeft);
 								}
 								if (leftIterator.hasNext()) {
@@ -169,10 +163,6 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 								}
 							} else {
 								if (discardedRight != null) {
-									if (LoggingNode.loggingEnabled) {
-										logger.info(leadingSpace() + that.getClass().getSimpleName()
-												+ ";discardedRight: " + " " + nextRight.toString());
-									}
 									discardedRight.push(nextRight);
 								}
 								if (rightIterator.hasNext()) {
@@ -310,4 +300,16 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		return false;
 	}
 
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+
+		PlanNode[] planNodes = { joined, discardedLeft, discardedRight, left, right };
+
+		for (PlanNode planNode : planNodes) {
+			if (planNode != null)
+				planNode.receiveLogger(validationExecutionLogger);
+		}
+
+	}
 }

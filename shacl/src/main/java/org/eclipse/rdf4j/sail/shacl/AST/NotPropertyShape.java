@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
@@ -65,8 +64,6 @@ public class NotPropertyShape extends PathPropertyShape {
 
 			PlanNode parent = plan.getParent();
 
-			parent = new LoggingNode(parent, "");
-
 			return new EnrichWithShape(parent, this);
 
 		} else {
@@ -74,25 +71,20 @@ public class NotPropertyShape extends PathPropertyShape {
 			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
 					() -> getTargetsPlan(shaclSailConnection, overrideTargetNode, !negateThisPlan), false, false);
 
+			// parents are the targets that are checked
 			PlanNode parent = plan.getParent();
 
 			if (childrenHasOwnPath()) {
 				parent = new Unique(new TrimTuple(parent, 0, 1));
 			}
 
-			// parents are the targets that are checked
-			parent = new LoggingNode(parent, "");
-
 			// these are all the checkable targets
-			PlanNode targetsPlan = new LoggingNode(
-					getTargetsPlan(shaclSailConnection, overrideTargetNode, !negateThisPlan), "");
+			PlanNode targetsPlan = getTargetsPlan(shaclSailConnection, overrideTargetNode, !negateThisPlan);
 
 //			targetsPlan = new BufferedSplitter(targetsPlan).getPlanNode();
 
 			// here we get all targets from targetsPlan that are not in parent
 			parent = new InnerJoin(targetsPlan, parent).getDiscardedLeft(BufferedPlanNode.class);
-
-			parent = new LoggingNode(parent, "");
 
 			return new EnrichWithShape(parent, this);
 		}

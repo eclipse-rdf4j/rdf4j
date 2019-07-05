@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -384,7 +383,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * @param loggingEnabled
 	 */
 	public void setGlobalLogValidationExecution(boolean loggingEnabled) {
-		LoggingNode.loggingEnabled = loggingEnabled;
+		GlobalValidationExecutionLogging.loggingEnabled = loggingEnabled;
 	}
 
 	/**
@@ -394,7 +393,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * @see #setGlobalLogValidationExecution(boolean)
 	 */
 	public boolean isGlobalLogValidationExecution() {
-		return LoggingNode.loggingEnabled;
+		return GlobalValidationExecutionLogging.loggingEnabled;
 	}
 
 	/**

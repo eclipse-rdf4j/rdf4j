@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
 import java.util.Arrays;
 import java.util.Iterator;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
 public class MockInputPlanNode implements PlanNode {
 
 	List<Tuple> initialData;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public MockInputPlanNode(List<Tuple> initialData) {
 		this.initialData = initialData;
@@ -91,6 +93,13 @@ public class MockInputPlanNode implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return IteratorData.tripleBased;
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		if (this.validationExecutionLogger == null) {
+			this.validationExecutionLogger = validationExecutionLogger;
+		}
 	}
 
 }
