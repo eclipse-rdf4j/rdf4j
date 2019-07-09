@@ -17,7 +17,7 @@ public class ValidationExecutionLogger {
 
 	private List<LogStatement> list = new ArrayList<>();
 
-	public boolean groupedLogging = true;
+	private static boolean groupedLogging = true;
 
 	void log(int depth, String name, Tuple tuple, PlanNode planNode, String id) {
 		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id);
