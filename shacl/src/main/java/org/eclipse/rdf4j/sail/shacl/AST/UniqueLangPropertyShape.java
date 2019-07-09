@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NonUniqueTargetLang;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -58,10 +57,8 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		assert hasOwnPath();
 
 		if (overrideTargetNode != null) {
-			PlanNode relevantTargetsWithPath = new LoggingNode(
-					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-							shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c"),
-					"");
+			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
+					shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
@@ -70,19 +67,15 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 				logger.info(planAsGraphvizDot);
 			}
 
-			return new EnrichWithShape(new LoggingNode(planNode, ""), this);
+			return new EnrichWithShape(planNode, this);
 		}
 
 		if (shaclSailConnection.stats.isBaseSailEmpty()) {
-			PlanNode addedTargets = new LoggingNode(
-					nodeShape.getPlanAddedStatements(shaclSailConnection, null),
-					"");
+			PlanNode addedTargets = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
 
-			PlanNode addedByPath = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, null),
-					"");
+			PlanNode addedByPath = super.getPlanAddedStatements(shaclSailConnection, null);
 
-			PlanNode innerJoin = new LoggingNode(
-					new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class), "");
+			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
 			PlanNode planNode = new NonUniqueTargetLang(innerJoin);
 
@@ -91,27 +84,24 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 				logger.info(planAsGraphvizDot);
 			}
 
-			return new EnrichWithShape(new LoggingNode(planNode, ""), this);
+			return new EnrichWithShape(planNode, this);
 
 		}
 
-		PlanNode addedTargets = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, null),
-				"");
+		PlanNode addedTargets = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
 
-		PlanNode addedByPath = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, null), "");
+		PlanNode addedByPath = super.getPlanAddedStatements(shaclSailConnection, null);
 
-		addedByPath = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, addedByPath), "");
+		addedByPath = nodeShape.getTargetFilter(shaclSailConnection, addedByPath);
 
-		PlanNode mergeNode = new LoggingNode(new UnionNode(addedTargets, addedByPath), "");
+		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
-		PlanNode trimmed = new LoggingNode(new TrimTuple(mergeNode, 0, 1), "");
+		PlanNode trimmed = new TrimTuple(mergeNode, 0, 1);
 
-		PlanNode allRelevantTargets = new LoggingNode(new Unique(trimmed), "");
+		PlanNode allRelevantTargets = new Unique(trimmed);
 
-		PlanNode relevantTargetsWithPath = new LoggingNode(
-				new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
-						getPath().getQuery("?a", "?c", null), false, "?a", "?c"),
-				"");
+		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
+				getPath().getQuery("?a", "?c", null), false, "?a", "?c");
 
 		PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
@@ -120,7 +110,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(planNode, ""), this);
+		return new EnrichWithShape(planNode, this);
 
 	}
 

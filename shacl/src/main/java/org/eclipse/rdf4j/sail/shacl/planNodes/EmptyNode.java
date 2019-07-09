@@ -58,4 +58,8 @@ public class EmptyNode implements PlanNode {
 	public IteratorData getIteratorDataType() {
 		return IteratorData.tripleBased;
 	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+	}
 }

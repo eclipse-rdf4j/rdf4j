@@ -37,6 +37,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
 			boolean skipBasedOnPreviousConnection, String... variables) {
@@ -53,7 +54,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
@@ -130,13 +131,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return !joined.isEmpty();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 				return joined.removeFirst();
 
@@ -189,7 +190,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
+		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ") + '}';
 	}
 
 	@Override
@@ -200,5 +201,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return leftNode.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		leftNode.receiveLogger(validationExecutionLogger);
 	}
 }

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -66,7 +65,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
-		return new Unique(new TrimTuple(new LoggingNode(node, ""), 0, 1));
+		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
@@ -74,7 +73,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
 				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
-		return new Unique(new TrimTuple(new LoggingNode(node, ""), 0, 1));
+		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override

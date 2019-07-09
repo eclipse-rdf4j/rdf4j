@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 import java.util.Arrays;
 import java.util.Set;
@@ -31,6 +32,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	int index = 0;
 	private final boolean returnMatching;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index,
 			boolean returnMatching) {
@@ -43,7 +45,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		PlanNode that = this;
+
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			Tuple next = null;
 
@@ -61,11 +65,23 @@ public class ExternalTypeFilterNode implements PlanNode {
 						if (matchedType != null) {
 							next = temp;
 							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, matchedType)));
+						} else {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								validationExecutionLogger.log(depth(),
+										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										getId());
+							}
 						}
 					} else {
 						if (matchedType == null) {
 							next = temp;
 							next.addHistory(new Tuple(Arrays.asList(subject)));
+						} else {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								validationExecutionLogger.log(depth(),
+										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										getId());
+							}
 						}
 					}
 
@@ -88,13 +104,13 @@ public class ExternalTypeFilterNode implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 
 				Tuple temp = next;
@@ -151,4 +167,11 @@ public class ExternalTypeFilterNode implements PlanNode {
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
 	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
+	}
+
 }

@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Heshan Jayasinghe
+ * @author Håvard Mikkelsen Ottestad
  */
 public interface PlanNode {
 
@@ -25,5 +26,7 @@ public interface PlanNode {
 	String getId();
 
 	IteratorData getIteratorDataType();
+
+	void receiveLogger(ValidationExecutionLogger validationExecutionLogger);
 
 }

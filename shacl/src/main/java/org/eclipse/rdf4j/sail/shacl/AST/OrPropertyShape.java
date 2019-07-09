@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
@@ -27,7 +26,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.rmi.runtime.Log;
 
 import java.util.Collection;
 import java.util.List;
@@ -158,9 +156,9 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		if (plannodes.size() == 1) {
 			if (iteratorData == IteratorData.tripleBased) {
-				ret = new LoggingNode(unionAll(plannodes.get(0)), "");
+				ret = unionAll(plannodes.get(0));
 			} else if (iteratorData == IteratorData.aggregated) {
-				ret = new LoggingNode(new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1)), "");
+				ret = new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1));
 
 			} else {
 				throw new IllegalStateException("Should not get here!");
@@ -169,30 +167,25 @@ public class OrPropertyShape extends PathPropertyShape {
 
 			if (iteratorData == IteratorData.tripleBased) {
 
-				PlanNode equalsJoin = new LoggingNode(
-						new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true), "");
+				PlanNode equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
 
 				for (int i = 2; i < plannodes.size(); i++) {
-					equalsJoin = new LoggingNode(new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true), "");
+					equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 				}
 
-				ret = new LoggingNode(equalsJoin, "");
+				ret = equalsJoin;
 			} else if (iteratorData == IteratorData.aggregated) {
 
-				PlanNode innerJoin = new LoggingNode(
-						new InnerJoin(new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1)),
-								new Unique(new TrimTuple(unionAll(plannodes.get(1)), 0, 1)))
-										.getJoined(BufferedPlanNode.class),
-						"");
+				PlanNode innerJoin = new InnerJoin(new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1)),
+						new Unique(new TrimTuple(unionAll(plannodes.get(1)), 0, 1)))
+								.getJoined(BufferedPlanNode.class);
 
 				for (int i = 2; i < plannodes.size(); i++) {
-					innerJoin = new LoggingNode(
-							new InnerJoin(innerJoin, new Unique(new TrimTuple(unionAll(plannodes.get(i)), 0, 1)))
-									.getJoined(BufferedPlanNode.class),
-							"");
+					innerJoin = new InnerJoin(innerJoin, new Unique(new TrimTuple(unionAll(plannodes.get(i)), 0, 1)))
+							.getJoined(BufferedPlanNode.class);
 				}
 
-				ret = new LoggingNode(innerJoin, "");
+				ret = innerJoin;
 			} else {
 				throw new IllegalStateException("Should not get here!");
 			}

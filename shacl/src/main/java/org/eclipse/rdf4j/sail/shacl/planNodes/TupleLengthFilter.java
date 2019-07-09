@@ -30,4 +30,12 @@ public class TupleLengthFilter extends FilterPlanNode {
 
 		return false;
 	}
+
+	@Override
+	public String toString() {
+		return "TupleLengthFilter{" +
+				"length=" + length +
+				", exact=" + exact +
+				'}';
+	}
 }

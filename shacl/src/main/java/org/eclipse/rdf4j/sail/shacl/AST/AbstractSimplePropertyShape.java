@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -50,17 +49,14 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 					return t;
 				});
 			} else {
-				planNode = new LoggingNode(
-						new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
-								pathPropertyShape.getPath().getQuery("?a", "?c", null), false, "?a", "?c"),
-						"");
+				planNode = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(), shaclSailConnection,
+						pathPropertyShape.getPath().getQuery("?a", "?c", null), false, "?a", "?c");
 			}
 
 			if (negatePlan) {
-				return new LoggingNode(filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class), "");
+				return filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return new LoggingNode(filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class),
-						"");
+				return filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
@@ -68,15 +64,15 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 		if (pathPropertyShape.getPath() == null) {
 
 			PlanNode targets = new ModifyTuple(
-					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, null), ""), t -> {
+					nodeShape.getPlanAddedStatements(shaclSailConnection, null), t -> {
 						t.line.add(t.line.get(0));
 						return t;
 					});
 
 			if (negatePlan) {
-				return new LoggingNode(filterAttacher.attachFilter(targets).getTrueNode(UnBufferedPlanNode.class), "");
+				return filterAttacher.attachFilter(targets).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return new LoggingNode(filterAttacher.attachFilter(targets).getFalseNode(UnBufferedPlanNode.class), "");
+				return filterAttacher.attachFilter(targets).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
@@ -84,45 +80,40 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 		PlanNode invalidValuesDirectOnPath;
 
 		if (negatePlan) {
-			invalidValuesDirectOnPath = new LoggingNode(
-					pathPropertyShape.getPlanAddedStatements(shaclSailConnection,
-							planNode -> filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class)),
-					"");
+			invalidValuesDirectOnPath = pathPropertyShape.getPlanAddedStatements(shaclSailConnection,
+					planNode -> filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class));
 		} else {
-			invalidValuesDirectOnPath = new LoggingNode(
-					pathPropertyShape.getPlanAddedStatements(shaclSailConnection,
-							planNode -> filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class)),
-					"");
+			invalidValuesDirectOnPath = pathPropertyShape.getPlanAddedStatements(shaclSailConnection,
+					planNode -> filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class));
 		}
 
 		InnerJoin innerJoin = new InnerJoin(
-				new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, null), ""),
+				nodeShape.getPlanAddedStatements(shaclSailConnection, null),
 				invalidValuesDirectOnPath);
 
 		if (shaclSailConnection.stats.isBaseSailEmpty()) {
-			return new LoggingNode(innerJoin.getJoined(UnBufferedPlanNode.class), "");
+			return innerJoin.getJoined(UnBufferedPlanNode.class);
 
 		} else {
 
-			PlanNode top = new LoggingNode(innerJoin.getJoined(BufferedPlanNode.class), "");
+			PlanNode top = innerJoin.getJoined(BufferedPlanNode.class);
 
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
-			PlanNode typeFilterPlan = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, discardedRight),
-					"");
+			PlanNode typeFilterPlan = nodeShape.getTargetFilter(shaclSailConnection, discardedRight);
 
-			top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
+			top = new UnionNode(top, typeFilterPlan);
 
-			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(
-					new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, null), ""),
-					shaclSailConnection, pathPropertyShape.getPath().getQuery("?a", "?c", null), true, "?a", "?c"), "");
+			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
+					nodeShape.getPlanAddedStatements(shaclSailConnection, null),
+					shaclSailConnection, pathPropertyShape.getPath().getQuery("?a", "?c", null), true, "?a", "?c");
 
-			top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
+			top = new UnionNode(top, bulkedExternalInnerJoin);
 
 			if (negatePlan) {
-				return new LoggingNode(filterAttacher.attachFilter(top).getTrueNode(UnBufferedPlanNode.class), "");
+				return filterAttacher.attachFilter(top).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return new LoggingNode(filterAttacher.attachFilter(top).getFalseNode(UnBufferedPlanNode.class), "");
+				return filterAttacher.attachFilter(top).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
