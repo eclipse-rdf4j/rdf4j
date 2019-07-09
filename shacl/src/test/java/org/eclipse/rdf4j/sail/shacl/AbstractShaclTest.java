@@ -216,7 +216,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel, boolean preloadWithDummyData) throws Exception {
+			IsolationLevel isolationLevel, boolean preloadWithDummyData) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -233,7 +233,11 @@ abstract public class AbstractShaclTest {
 
 		SailRepository shaclRepository = getShaclSail();
 
-		Utils.loadShapeData(shaclRepository, shaclFile);
+		try {
+			Utils.loadShapeData(shaclRepository, shaclFile);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 
 		boolean exception = false;
 		boolean ran = false;
@@ -294,6 +298,10 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static void printCurrentState(SailRepository shaclRepository) {
+		if (!fullLogging) {
+			return;
+		}
+
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
 			if (connection.isEmpty()) {
@@ -324,6 +332,10 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static void printFile(String filename) {
+		if (!fullLogging) {
+			return;
+		}
+
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
@@ -343,7 +355,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -354,7 +366,11 @@ abstract public class AbstractShaclTest {
 		}
 
 		SailRepository shaclRepository = getShaclSail();
-		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+		try {
+			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 
 		boolean exception = false;
 		boolean ran = false;
@@ -409,7 +425,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) throws Exception {
+			IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -420,7 +436,11 @@ abstract public class AbstractShaclTest {
 		}
 
 		SailRepository shaclRepository = getShaclSail();
-		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+		try {
+			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 
 		ValidationReport report;
 
@@ -467,6 +487,9 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static void printResults(ValidationReport report) {
+		if (!fullLogging) {
+			return;
+		}
 		System.out.println("\n############################################");
 		System.out.println("\tValidation Report\n");
 		Model validationReport = report.asModel();
@@ -500,16 +523,18 @@ abstract public class AbstractShaclTest {
 		invalid
 	}
 
+	static boolean fullLogging = false;
+
 	private static SailRepository getShaclSail() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 
-		shaclSail.setLogValidationPlans(true);
+		shaclSail.setLogValidationPlans(fullLogging);
 		shaclSail.setCacheSelectNodes(true);
 		shaclSail.setParallelValidation(true);
-		shaclSail.setLogValidationViolations(true);
-		shaclSail.setGlobalLogValidationExecution(true);
+		shaclSail.setLogValidationViolations(fullLogging);
+		shaclSail.setGlobalLogValidationExecution(fullLogging);
 
 		shaclRepository.init();
 
