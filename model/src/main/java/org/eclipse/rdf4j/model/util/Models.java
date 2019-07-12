@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -782,7 +782,7 @@ public class Models {
 	private static boolean isBlank(Value value) {
 		if (value instanceof IRI) {
 			boolean skolemizedBNode = value.stringValue().contains("/.well-known/genid/"); // this handles isomorphic on
-																							// skolemized ID
+			// skolemized ID
 			return skolemizedBNode;
 		} else {
 			return value instanceof BNode;
@@ -793,8 +793,16 @@ public class Models {
 		if (iterable instanceof Model) {
 			return (Model) iterable;
 		}
-		final Model set = new TreeModel();
-		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(st -> set.add(st));
+
+		final Model set;
+		if (iterable instanceof List) {
+			int size = ((List<? extends Statement>) iterable).size();
+			set = new LinkedHashModel(size);
+		} else {
+			set = new LinkedHashModel();
+		}
+
+		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(set::add);
 		return set;
 	}
 

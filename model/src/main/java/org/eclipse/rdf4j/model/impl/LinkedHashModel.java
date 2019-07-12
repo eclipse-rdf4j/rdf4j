@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.PatternIterator;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -19,14 +27,6 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.PatternIterator;
 
 /**
  * Hash table based implementation of the <tt>{@link Model}</tt> interface.
@@ -43,11 +43,11 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
  * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
  * via the Set interface methods):
  * </p>
- * 
+ *
  * <pre>
  * Set<Statement> s = Collections.synchronizedSet(new LinkedHashModel(...));
  * </pre>
- * 
+ *
  * @author James Leigh
  */
 @SuppressWarnings("unchecked")
@@ -79,8 +79,12 @@ public class LinkedHashModel extends AbstractModel {
 
 	public LinkedHashModel(int size) {
 		super();
-		values = new HashMap<>(size * 2);
-		statements = new LinkedHashSet<>(size);
+
+		// assume fewer unique values than statements (eg. some reuse of nodes instatements)
+		values = new HashMap<>(size, 0.75f);
+
+		// compensate for the loadfactor by multiplying by 2
+		statements = new LinkedHashSet<>(size * 2, 0.75f);
 	}
 
 	public LinkedHashModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {
@@ -143,8 +147,9 @@ public class LinkedHashModel extends AbstractModel {
 
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		if (subj == null || pred == null || obj == null)
+		if (subj == null || pred == null || obj == null) {
 			throw new UnsupportedOperationException("Incomplete statement");
+		}
 		Value[] ctxs = notNull(contexts);
 		if (ctxs.length == 0) {
 			ctxs = NULL_CTX;
@@ -391,12 +396,15 @@ public class LinkedHashModel extends AbstractModel {
 
 		@Override
 		public boolean equals(Object other) {
-			if (this == other)
+			if (this == other) {
 				return true;
-			if (!super.equals(other))
+			}
+			if (!super.equals(other)) {
 				return false;
-			if (getContext() == null)
+			}
+			if (getContext() == null) {
 				return ((Statement) other).getContext() == null;
+			}
 			return getContext().equals(((Statement) other).getContext());
 		}
 	}
@@ -444,23 +452,27 @@ public class LinkedHashModel extends AbstractModel {
 		Set<ModelStatement> p = null;
 		Set<ModelStatement> o = null;
 		if (subj != null) {
-			if (!values.containsKey(subj))
+			if (!values.containsKey(subj)) {
 				return Collections.emptySet();
+			}
 			s = values.get(subj).subjects;
 		}
 		if (pred != null) {
-			if (!values.containsKey(pred))
+			if (!values.containsKey(pred)) {
 				return Collections.emptySet();
+			}
 			p = values.get(pred).predicates;
 		}
 		if (obj != null) {
-			if (!values.containsKey(obj))
+			if (!values.containsKey(obj)) {
 				return Collections.emptySet();
+			}
 			o = values.get(obj).objects;
 		}
 		if (contexts.length == 1) {
-			if (!values.containsKey(contexts[0]))
+			if (!values.containsKey(contexts[0])) {
 				return Collections.emptySet();
+			}
 			Set<ModelStatement> c = values.get(contexts[0]).contexts;
 			return smallest(statements, s, p, o, c);
 		} else {
@@ -513,8 +525,9 @@ public class LinkedHashModel extends AbstractModel {
 
 	private <V extends Value> ModelNode<V> asNode(V value) {
 		ModelNode node = values.get(value);
-		if (node != null)
+		if (node != null) {
 			return node;
+		}
 		node = new ModelNode<>(value);
 		values.put(value, node);
 		return node;
