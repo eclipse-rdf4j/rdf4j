@@ -188,6 +188,10 @@ public class LinkedHashModel extends AbstractModel {
 	@Override
 	public boolean contains(Object o) {
 		if (o instanceof Statement) {
+			if (o instanceof ModelStatement) {
+				return statements.contains(o);
+			}
+
 			return find((Statement) o).hasNext();
 		}
 		return false;
@@ -407,6 +411,7 @@ public class LinkedHashModel extends AbstractModel {
 			}
 			return getContext().equals(((Statement) other).getContext());
 		}
+
 	}
 
 	private void writeObject(ObjectOutputStream s) throws IOException {
