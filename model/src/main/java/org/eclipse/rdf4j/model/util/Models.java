@@ -512,6 +512,10 @@ public class Models {
 	 *      3.6 (Graph Comparison)</a>
 	 */
 	public static boolean isomorphic(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
+		if (model1 == model2) {
+			return true;
+		}
+
 		Model set1 = toModel(model1);
 		Model set2 = toModel(model2);
 		// Compare the number of statements in both sets

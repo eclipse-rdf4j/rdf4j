@@ -47,64 +47,85 @@ public class IsomorphicBenchmark {
 	private Model manyProperties = getModel("manyProperties.ttl");
 	private Model manyProperties2 = getModel("manyProperties2.ttl");
 
+	private Model empty_2 = getModel("empty.ttl");
+	private Model blankNodes_2 = getModel("blankNodes.ttl");
+	private Model shacl_2 = getModel("shacl.ttl");
+	private Model longChain_2 = getModel("longChain.ttl");
+	private Model sparqlTestCase_2 = getModel("sparqlTestCase.ttl");
+	private Model spinFullForwardchained_2 = getModel("spin-full-forwardchained.ttl");
+	private Model bsbm_2 = getModel("bsbm-100.ttl");
+	private List<Statement> bsbm_arraylist_2 = new ArrayList<>(bsbm);
+	private Model bsbmTree_2 = new TreeModel(bsbm);
+	private Model list_2 = getModel("list.ttl");
+	private Model internallyIsomorphic_2 = getModel("internallyIsomorphic.ttl");
+	private Model manyProperties_2 = getModel("manyProperties.ttl");
+	private Model manyProperties2_2 = getModel("manyProperties2.ttl");
+
 	@Setup(Level.Iteration)
 	public void after() {
 		System.gc();
 	}
 
 	@Benchmark
+	public boolean sameModel() {
+
+		return isomorphic(bsbm, bsbm);
+
+	}
+
+	@Benchmark
 	public boolean empty() {
 
-		return isomorphic(empty);
+		return isomorphic(empty, empty_2);
 
 	}
 
 	@Benchmark
 	public boolean blankNodes() {
 
-		return isomorphic(blankNodes);
+		return isomorphic(blankNodes, blankNodes_2);
 
 	}
 
 	@Benchmark
 	public boolean shacl() {
 
-		return isomorphic(shacl);
+		return isomorphic(shacl, shacl_2);
 
 	}
 
 	@Benchmark
 	public boolean longChain() {
 
-		return isomorphic(longChain);
+		return isomorphic(longChain, longChain_2);
 
 	}
 
 	@Benchmark
 	public boolean sparqlTestCase() {
 
-		return isomorphic(sparqlTestCase);
+		return isomorphic(sparqlTestCase, sparqlTestCase_2);
 
 	}
 
 	@Benchmark
 	public boolean bsbm() {
 
-		return isomorphic(bsbm);
+		return isomorphic(bsbm, bsbm_2);
 
 	}
 
 	@Benchmark
 	public boolean bsbmTree() {
 
-		return isomorphic(bsbmTree);
+		return isomorphic(bsbmTree, bsbmTree_2);
 
 	}
 
 	@Benchmark
 	public boolean bsbmArrayList() {
 
-		boolean isomorphic = Models.isomorphic(bsbm_arraylist, bsbm_arraylist);
+		boolean isomorphic = Models.isomorphic(bsbm_arraylist, bsbm_arraylist_2);
 		if (!isomorphic) {
 			throw new IllegalStateException("Not isomorphic");
 		}
@@ -116,35 +137,35 @@ public class IsomorphicBenchmark {
 	@Benchmark
 	public boolean spinFullForwardchained() {
 
-		return isomorphic(spinFullForwardchained);
+		return isomorphic(spinFullForwardchained, spinFullForwardchained_2);
 
 	}
 
 	@Benchmark
 	public boolean list() {
 
-		return isomorphic(list);
+		return isomorphic(list, list_2);
 
 	}
 
 	@Benchmark
 	public boolean internallyIsomorphic() {
 
-		return isomorphic(internallyIsomorphic);
+		return isomorphic(internallyIsomorphic, internallyIsomorphic_2);
 
 	}
 
 	@Benchmark
 	public boolean manyProperties() {
 
-		return isomorphic(manyProperties);
+		return isomorphic(manyProperties, manyProperties_2);
 
 	}
 
 	@Benchmark
 	public boolean manyProperties2() {
 
-		return isomorphic(manyProperties2);
+		return isomorphic(manyProperties2, manyProperties2_2);
 
 	}
 
@@ -173,9 +194,9 @@ public class IsomorphicBenchmark {
 		}
 	}
 
-	private boolean isomorphic(Model m) {
+	private boolean isomorphic(Model m1, Model m2) {
 
-		boolean isomorphic = Models.isomorphic(m, m);
+		boolean isomorphic = Models.isomorphic(m1, m2);
 		if (!isomorphic) {
 			throw new IllegalStateException("Not isomorphic");
 		}
