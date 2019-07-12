@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 201 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.model.util;
 
 import org.eclipse.rdf4j.model.Model;
@@ -46,6 +54,7 @@ public class IsomorphicBenchmark {
 	private Model internallyIsomorphic = getModel("internallyIsomorphic.ttl");
 	private Model manyProperties = getModel("manyProperties.ttl");
 	private Model manyProperties2 = getModel("manyProperties2.ttl");
+	private Model uuid = getModel("uuid.ttl");
 
 	private Model empty_2 = getModel("empty.ttl");
 	private Model blankNodes_2 = getModel("blankNodes.ttl");
@@ -60,12 +69,14 @@ public class IsomorphicBenchmark {
 	private Model internallyIsomorphic_2 = getModel("internallyIsomorphic.ttl");
 	private Model manyProperties_2 = getModel("manyProperties.ttl");
 	private Model manyProperties2_2 = getModel("manyProperties2.ttl");
+	private Model uuid_2 = getModel("uuid.ttl");
 
 	@Setup(Level.Iteration)
 	public void after() {
 		System.gc();
 	}
 
+	// checks for optimisation when comparing the same objects
 	@Benchmark
 	public boolean sameModel() {
 
@@ -73,6 +84,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// check performance of an empty model
 	@Benchmark
 	public boolean empty() {
 
@@ -80,6 +92,15 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// check performance when using UUIDs
+	@Benchmark
+	public boolean uuid() {
+
+		return isomorphic(uuid, uuid_2);
+
+	}
+
+	// checks performance for a model with many blank nodes
 	@Benchmark
 	public boolean blankNodes() {
 
@@ -87,6 +108,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for a typical SHACL file (with nested blank nodes)
 	@Benchmark
 	public boolean shacl() {
 
@@ -94,6 +116,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for a long chaing of rdfs:subClassOf statements
 	@Benchmark
 	public boolean longChain() {
 
@@ -101,6 +124,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for a file used in the SPARQL compliance tests
 	@Benchmark
 	public boolean sparqlTestCase() {
 
@@ -108,6 +132,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for a rather large and varied file
 	@Benchmark
 	public boolean bsbm() {
 
@@ -115,6 +140,8 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance of a the same file as above, but this time using a TreeModel instead of the default
+	// LinkedHashModel
 	@Benchmark
 	public boolean bsbmTree() {
 
@@ -122,6 +149,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance when isomorphic is called with two array lists instead of models
 	@Benchmark
 	public boolean bsbmArrayList() {
 
@@ -134,6 +162,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for the fully forward chained version of the base SPIN file
 	@Benchmark
 	public boolean spinFullForwardchained() {
 
@@ -141,6 +170,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance for varied use of RDF lists
 	@Benchmark
 	public boolean list() {
 
@@ -148,6 +178,24 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance of SimpleBNode.equals(...)
+	@Benchmark
+	public int listEquals() {
+
+		int i = 0;
+		for (Statement statement : list) {
+			for (Statement statement1 : list_2) {
+				if (statement.getSubject().equals(statement1.getSubject())) {
+					i++;
+				}
+			}
+		}
+
+		return i;
+
+	}
+
+	// checks performance for a file that has multiple internal isomorphisms
 	@Benchmark
 	public boolean internallyIsomorphic() {
 
@@ -155,6 +203,8 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance on a file with many unique properties (predicates) and also with blank nodes, IRIs and
+	// literals
 	@Benchmark
 	public boolean manyProperties() {
 
@@ -162,6 +212,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance on a file with many unique properties (predicates) and also with blank nodes
 	@Benchmark
 	public boolean manyProperties2() {
 
@@ -169,6 +220,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks perfomance of comparing an empty model to a large model
 	@Benchmark
 	public boolean emptyNotIsomorphic() {
 
@@ -176,6 +228,7 @@ public class IsomorphicBenchmark {
 
 	}
 
+	// checks performance of comparing two models that are equals except for one statement (same sizes)
 	@Benchmark
 	public boolean bsbmNotIsomorphic() {
 

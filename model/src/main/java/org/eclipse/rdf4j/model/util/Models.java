@@ -696,55 +696,15 @@ public class Models {
 		Resource subj1 = st1.getSubject();
 		Resource subj2 = st2.getSubject();
 
-		if (isBlank(subj1) && isBlank(subj2)) {
-			Resource mappedBNode = bNodeMapping.get(subj1);
-
-			if (mappedBNode != null) {
-				// bNode 'subj1' was already mapped to some other bNode
-				if (!subj2.equals(mappedBNode)) {
-					// 'subj1' and 'subj2' do not match
-					return false;
-				}
-			} else {
-				// 'subj1' was not yet mapped. we need to check if 'subj2' is a
-				// possible mapping candidate
-				if (bNodeMapping.containsValue(subj2)) {
-					// 'subj2' is already mapped to some other value.
-					return false;
-				}
-			}
-		} else {
-			// subjects are not (both) bNodes
-			if (!subj1.equals(subj2)) {
-				return false;
-			}
+		if (bnodeValueMatching(bNodeMapping, subj1, subj2)) {
+			return false;
 		}
 
 		Value obj1 = st1.getObject();
 		Value obj2 = st2.getObject();
 
-		if (isBlank(obj1) && isBlank(obj2)) {
-			Resource mappedBNode = bNodeMapping.get(obj1);
-
-			if (mappedBNode != null) {
-				// bNode 'obj1' was already mapped to some other bNode
-				if (!obj2.equals(mappedBNode)) {
-					// 'obj1' and 'obj2' do not match
-					return false;
-				}
-			} else {
-				// 'obj1' was not yet mapped. we need to check if 'obj2' is a
-				// possible mapping candidate
-				if (bNodeMapping.containsValue(obj2)) {
-					// 'obj2' is already mapped to some other value.
-					return false;
-				}
-			}
-		} else {
-			// objects are not (both) bNodes
-			if (!obj1.equals(obj2)) {
-				return false;
-			}
+		if (bnodeValueMatching(bNodeMapping, obj1, obj2)) {
+			return false;
 		}
 
 		Resource context1 = st1.getContext();
@@ -757,42 +717,43 @@ public class Models {
 			return false;
 		}
 
-		if (isBlank(context1) && isBlank(context2)) {
-			Resource mappedBNode = bNodeMapping.get(context1);
-
-			if (mappedBNode != null) {
-				// bNode 'context1' was already mapped to some other bNode
-				if (!context2.equals(mappedBNode)) {
-					// 'context1' and 'context2' do not match
-					return false;
-				}
-			} else {
-				// 'context1' was not yet mapped. we need to check if 'context2' is
-				// a
-				// possible mapping candidate
-				if (bNodeMapping.containsValue(context2)) {
-					// 'context2' is already mapped to some other value.
-					return false;
-				}
-			}
-		} else {
-			// contexts are not (both) bNodes
-			if (!context1.equals(context1)) {
-				return false;
-			}
+		if (bnodeValueMatching(bNodeMapping, context1, context2)) {
+			return false;
 		}
 
 		return true;
 	}
 
+	private static boolean bnodeValueMatching(Map<Resource, Resource> bNodeMapping, Value obj1, Value obj2) {
+		if (isBlank(obj1) && isBlank(obj2)) {
+			Resource mappedBNode = bNodeMapping.get(obj1);
+
+			if (mappedBNode != null) {
+				// bNode 'obj1' was already mapped to some other bNode
+				// 'obj1' and 'obj2' do not match
+				return !obj2.equals(mappedBNode);
+			} else {
+				// 'obj1' was not yet mapped. we need to check if 'obj2' is a
+				// possible mapping candidate
+				// 'obj2' is already mapped to some other value.
+				return bNodeMapping.containsValue(obj2);
+			}
+		} else {
+			// objects are not (both) bNodes
+			return !obj1.equals(obj2);
+		}
+	}
+
 	private static boolean isBlank(Value value) {
+		if (value instanceof BNode) {
+			return true;
+		}
+
 		if (value instanceof IRI) {
-			// this handles isomorphic on skolemized ID
 			boolean skolemizedBNode = value.stringValue().contains("/.well-known/genid/");
 			return skolemizedBNode;
-		} else {
-			return value instanceof BNode;
 		}
+		return false;
 	}
 
 	private static Model toModel(Iterable<? extends Statement> iterable) {
@@ -814,7 +775,7 @@ public class Models {
 
 	private static Set<Statement> toSet(Iterable<? extends Statement> iterable) {
 		if (iterable instanceof Set) {
-			return (Model) iterable;
+			return (Set<Statement>) iterable;
 		}
 
 		if (iterable instanceof Collection) {
