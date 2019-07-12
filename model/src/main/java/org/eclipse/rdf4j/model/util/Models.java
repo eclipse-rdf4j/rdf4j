@@ -7,17 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -26,9 +15,21 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.util.iterators.Iterators;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * Utility functions for working with {@link Model}s and other {@link Statement} collections.
@@ -577,7 +578,7 @@ public class Models {
 			}
 		}
 
-		return matchModels(model1BNodes, model2, new HashMap<>(), 0);
+		return matchModels(Collections.unmodifiableList(model1BNodes), model2);
 	}
 
 	/**
@@ -586,52 +587,77 @@ public class Models {
 	 *
 	 * @param model1
 	 * @param model2
-	 * @param bNodeMapping
-	 * @param idx
 	 * @return true if a complete mapping has been found, false otherwise.
 	 */
-	private static boolean matchModels(List<? extends Statement> model1, Model model2,
-			Map<Resource, Resource> bNodeMapping, int idx) {
-		boolean result = false;
+	private static boolean matchModels(final List<? extends Statement> model1, final Model model2) {
 
-		if (idx < model1.size()) {
+		ArrayDeque<Iterator<Statement>> iterators = new ArrayDeque<>();
+		ArrayDeque<Map<Resource, Resource>> bNodeMappings = new ArrayDeque<>();
+
+		Map<Resource, Resource> bNodeMapping = Collections.emptyMap();
+		int idx = 0;
+
+		Iterator<Statement> iterator = null;
+		while (true) {
+
+			if (idx >= model1.size()) {
+				return true;
+			}
+
 			Statement st1 = model1.get(idx);
 
-			List<Statement> matchingStats = findMatchingStatements(st1, model2, bNodeMapping);
+			if (iterator == null) {
 
-			for (Statement st2 : matchingStats) {
-				// Map bNodes in st1 to bNodes in st2
-				Map<Resource, Resource> newBNodeMapping = new HashMap<>(bNodeMapping);
+				List<Statement> matchingStats = findMatchingStatements(st1, model2, bNodeMapping);
 
-				if (isBlank(st1.getSubject()) && isBlank(st2.getSubject())) {
-					newBNodeMapping.put(st1.getSubject(), st2.getSubject());
-				}
-
-				if (isBlank(st1.getObject()) && isBlank(st2.getObject())) {
-					newBNodeMapping.put((Resource) st1.getObject(), (Resource) st2.getObject());
-				}
-
-				if (isBlank(st1.getContext()) && isBlank(st2.getContext())) {
-					newBNodeMapping.put(st1.getContext(), st2.getContext());
-				}
-
-				// FIXME: this recursive implementation has a high risk of
-				// triggering a stack overflow
-
-				// Enter recursion
-				result = matchModels(model1, model2, newBNodeMapping, idx + 1);
-
-				if (result == true) {
-					// models match, look no further
-					break;
-				}
+				iterator = matchingStats.iterator();
 			}
-		} else {
-			// All statements have been mapped successfully
-			result = true;
+
+			if (iterator.hasNext()) {
+				Statement st2 = iterator.next();
+
+				// Map bNodes in st1 to bNodes in st2
+				Map<Resource, Resource> newBNodeMapping = createNewBnodeMapping(bNodeMapping, st1, st2);
+
+				iterators.addLast(iterator);
+				bNodeMappings.addLast(bNodeMapping);
+
+				iterator = null;
+
+				bNodeMapping = newBNodeMapping;
+				idx++;
+
+			}
+
+			if (iterator != null) {
+				idx--;
+				if (idx < 0) {
+					return false;
+				}
+				iterator = iterators.removeLast();
+				bNodeMapping = bNodeMappings.removeLast();
+			}
+
 		}
 
-		return result;
+	}
+
+	private static Map<Resource, Resource> createNewBnodeMapping(Map<Resource, Resource> bNodeMapping, Statement st1,
+			Statement st2) {
+		Map<Resource, Resource> newBNodeMapping = new HashMap<>(bNodeMapping);
+
+		if (isBlank(st1.getSubject()) && isBlank(st2.getSubject())) {
+			newBNodeMapping.put(st1.getSubject(), st2.getSubject());
+		}
+
+		if (isBlank(st1.getObject()) && isBlank(st2.getObject())) {
+			newBNodeMapping.put((Resource) st1.getObject(), (Resource) st2.getObject());
+		}
+
+		if (isBlank(st1.getContext()) && isBlank(st2.getContext())) {
+			newBNodeMapping.put(st1.getContext(), st2.getContext());
+		}
+		return newBNodeMapping;
 	}
 
 	private static List<Statement> findMatchingStatements(Statement st, Model model,
@@ -649,7 +675,7 @@ public class Models {
 			}
 		}
 
-		return result;
+		return Collections.unmodifiableList(result);
 	}
 
 	private static boolean statementsMatch(Statement st1, Statement st2, Map<Resource, Resource> bNodeMapping) {
