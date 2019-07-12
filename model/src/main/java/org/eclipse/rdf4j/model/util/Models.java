@@ -19,8 +19,10 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -516,7 +518,7 @@ public class Models {
 			return true;
 		}
 
-		Model set1 = toModel(model1);
+		Set<Statement> set1 = toSet(model1);
 		Model set2 = toModel(model2);
 		// Compare the number of statements in both sets
 		if (set1.size() != set2.size()) {
@@ -544,7 +546,7 @@ public class Models {
 	 */
 	public static boolean isSubset(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
 		// Filter duplicates
-		Model set1 = toModel(model1);
+		Set<Statement> set1 = toSet(model1);
 		Model set2 = toModel(model2);
 
 		return isSubset(set1, set2);
@@ -560,15 +562,15 @@ public class Models {
 			return false;
 		}
 
-		return isSubsetInternal(toModel(model1), toModel(model2));
+		return isSubsetInternal(toSet(model1), toModel(model2));
 	}
 
-	private static boolean isSubsetInternal(Model model1, Model model2) {
+	private static boolean isSubsetInternal(Set<Statement> model1, Model model2) {
 		// try to create a full blank node mapping
 		return matchModels(model1, model2);
 	}
 
-	private static boolean matchModels(Model model1, Model model2) {
+	private static boolean matchModels(Set<Statement> model1, Model model2) {
 		// Compare statements without blank nodes first, save the rest for later
 		List<Statement> model1BNodes = new ArrayList<>(model1.size());
 
@@ -785,8 +787,8 @@ public class Models {
 
 	private static boolean isBlank(Value value) {
 		if (value instanceof IRI) {
-			boolean skolemizedBNode = value.stringValue().contains("/.well-known/genid/"); // this handles isomorphic on
-			// skolemized ID
+			// this handles isomorphic on skolemized ID
+			boolean skolemizedBNode = value.stringValue().contains("/.well-known/genid/");
 			return skolemizedBNode;
 		} else {
 			return value instanceof BNode;
@@ -799,8 +801,8 @@ public class Models {
 		}
 
 		final Model set;
-		if (iterable instanceof List) {
-			int size = ((List<? extends Statement>) iterable).size();
+		if (iterable instanceof Collection) {
+			int size = ((Collection<? extends Statement>) iterable).size();
 			set = new LinkedHashModel(size);
 		} else {
 			set = new LinkedHashModel();
@@ -808,6 +810,21 @@ public class Models {
 
 		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(set::add);
 		return set;
+	}
+
+	private static Set<Statement> toSet(Iterable<? extends Statement> iterable) {
+		if (iterable instanceof Set) {
+			return (Model) iterable;
+		}
+
+		if (iterable instanceof Collection) {
+			return new HashSet<>((Collection<? extends Statement>) iterable);
+		} else {
+			HashSet<Statement> statements = new HashSet<>();
+			StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(statements::add);
+			return statements;
+		}
+
 	}
 
 	/**
