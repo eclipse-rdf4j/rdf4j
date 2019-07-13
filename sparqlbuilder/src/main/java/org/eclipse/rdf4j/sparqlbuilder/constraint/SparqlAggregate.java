@@ -15,7 +15,13 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
  */
 @SuppressWarnings("javadoc") // acceptable, as this won't be public for long
 public enum SparqlAggregate implements SparqlOperator {
-	AVG("AVG"), COUNT("COUNT"), GROUP_CONCAT("GROUP_CONCAT"), MAX("MAX"), MIN("MIN"), SAMPLE("SAMPLE"), SUM("SUM");
+	AVG("AVG"),
+	COUNT("COUNT"),
+	GROUP_CONCAT("GROUP_CONCAT"),
+	MAX("MAX"),
+	MIN("MIN"),
+	SAMPLE("SAMPLE"),
+	SUM("SUM");
 
 	private String function;
 
