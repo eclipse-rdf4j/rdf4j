@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
+
+import java.util.Objects;
 
 /**
  * The default implementation of the {@link IRI} interface.
@@ -54,7 +54,7 @@ public class SimpleIRI implements IRI {
 	 * Note that creating SimpleIRI objects directly via this constructor is not the recommended approach. Instead, use
 	 * a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by using
 	 * {@link SimpleValueFactory#getInstance()}) to create new IRI objects.
-	 * 
+	 *
 	 * @param iriString A String representing a valid, absolute IRI. May not be <code>null</code>.
 	 * @throws IllegalArgumentException If the supplied IRI is not a valid (absolute) IRI.
 	 * @see {@link SimpleValueFactory#createIRI(String)}
@@ -115,7 +115,11 @@ public class SimpleIRI implements IRI {
 		}
 
 		if (o instanceof IRI) {
-			return toString().equals(o.toString());
+
+			String a = toString();
+			String b = o.toString();
+
+			return a.equals(b);
 		}
 
 		return false;

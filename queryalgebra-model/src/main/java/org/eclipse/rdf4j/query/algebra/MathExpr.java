@@ -17,7 +17,10 @@ public class MathExpr extends BinaryValueOperator {
 	 *---------------*/
 
 	public enum MathOp {
-		PLUS("+"), MINUS("-"), MULTIPLY("*"), DIVIDE("/");
+		PLUS("+"),
+		MINUS("-"),
+		MULTIPLY("*"),
+		DIVIDE("/");
 
 		private String symbol;
 

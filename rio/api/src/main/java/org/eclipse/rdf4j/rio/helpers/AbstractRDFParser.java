@@ -93,6 +93,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	private ParserConfig parserConfig;
 
+	static int counter = 0;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
