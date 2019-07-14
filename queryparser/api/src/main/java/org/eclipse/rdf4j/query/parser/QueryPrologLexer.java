@@ -21,7 +21,15 @@ import java.util.regex.Pattern;
 public class QueryPrologLexer {
 
 	public static enum TokenType {
-		PREFIX_KEYWORD, PREFIX, BASE_KEYWORD, LBRACKET, RBRACKET, IRI, HASH, COMMENT, REST_OF_QUERY
+		PREFIX_KEYWORD,
+		PREFIX,
+		BASE_KEYWORD,
+		LBRACKET,
+		RBRACKET,
+		IRI,
+		HASH,
+		COMMENT,
+		REST_OF_QUERY
 	}
 
 	private static final Token HASH_TOKEN = new Token(TokenType.HASH, "#");

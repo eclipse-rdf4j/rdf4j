@@ -1,0 +1,46 @@
+@base <http://example.com/ns> .
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+
+_:0 foaf:knows _:1.
+_:1 foaf:knows _:2.
+_:2 foaf:knows _:3.
+_:3 foaf:knows _:4.
+_:4 foaf:knows _:5.
+_:5 foaf:knows _:6.
+_:6 foaf:knows _:7.
+_:7 foaf:knows _:8.
+_:8 foaf:knows _:9.
+_:9 foaf:knows _:0.
+
+
+
+_:01 foaf:knows _:1.
+_:11 foaf:knows _:2.
+_:21 foaf:knows _:3.
+_:31 foaf:knows _:4.
+_:41 foaf:knows _:5.
+_:51 foaf:knows _:6.
+_:61 foaf:knows _:7.
+_:71 foaf:knows _:8.
+_:81 foaf:knows _:9.
+_:91 foaf:knows _:0.
+
+_:02 foaf:knows _:1.
+_:12 foaf:knows _:2.
+_:22 foaf:knows _:3.
+_:32 foaf:knows _:4.
+_:42 foaf:knows _:5.
+_:52 foaf:knows _:6.
+_:62 foaf:knows _:7.
+_:72 foaf:knows _:8.
+_:82 foaf:knows _:9.
+_:92 foaf:knows _:0.
+
+
+

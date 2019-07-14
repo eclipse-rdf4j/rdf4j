@@ -13,10 +13,14 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
  */
 enum ConnectiveOperator implements SparqlOperator {
 	// Logical
-	AND("&&"), OR("||"),
+	AND("&&"),
+	OR("||"),
 
 	// Arithmetic
-	ADD("+"), DIVIDE("/"), MULTIPLY("*"), SUBTRACT("-");
+	ADD("+"),
+	DIVIDE("/"),
+	MULTIPLY("*"),
+	SUBTRACT("-");
 
 	private String operator;
 
