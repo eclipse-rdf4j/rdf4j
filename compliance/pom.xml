@@ -15,7 +15,8 @@
         <module>repository</module>
 		<module>queryresultio</module>
 		<module>rio</module>
-	</modules>
+		<module>model</module>
+    </modules>
 
 	<name>RDF4J compliance tests</name>
 	<description>RDF4J compliance tests</description>
