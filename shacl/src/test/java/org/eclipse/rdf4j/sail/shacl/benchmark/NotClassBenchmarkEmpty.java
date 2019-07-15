@@ -31,11 +31,9 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -64,46 +62,32 @@ public class NotClassBenchmarkEmpty {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		allStatements = new ArrayList<>();
+		allStatements = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
+			IRI person = vf.createIRI("http://example.com/" + i + "_" + j);
+			IRI friend = vf.createIRI("http://example.com/friend" + i + "_" + j);
 
-		for (int j = 0; j < 30; j++) {
-			List<Statement> statements = new ArrayList<>();
-			allStatements.add(statements);
-			for (int i = 0; i < 1000; i++) {
-				IRI person = vf.createIRI("http://example.com/" + i + "_" + j);
-				statements.add(vf.createStatement(person, RDF.TYPE, FOAF.PERSON));
-				IRI friend = vf.createIRI("http://example.com/friend" + i + "_" + j);
-				statements.add(vf.createStatement(person, FOAF.KNOWS, friend));
-				statements.add(vf.createStatement(friend, RDF.TYPE, FOAF.PERSON));
+			statements.add(vf.createStatement(person, RDF.TYPE, FOAF.PERSON));
+			statements.add(vf.createStatement(person, FOAF.KNOWS, friend));
+			statements.add(vf.createStatement(friend, RDF.TYPE, FOAF.PERSON));
 
-				IRI notAPerson = vf.createIRI("http://example.com/notAPerson" + i + "_" + j);
-				IRI animal = vf.createIRI("http://example.com/animal" + i + "_" + j);
+			IRI notAPerson = vf.createIRI("http://example.com/notAPerson" + i + "_" + j);
+			IRI animal = vf.createIRI("http://example.com/animal" + i + "_" + j);
 
-				statements.add(vf.createStatement(notAPerson, FOAF.KNOWS, animal));
-				statements.add(vf.createStatement(animal, RDF.TYPE, ANIMAL));
-			}
-		}
+			statements.add(vf.createStatement(notAPerson, FOAF.KNOWS, animal));
+			statements.add(vf.createStatement(animal, RDF.TYPE, ANIMAL));
+		}));
 
-		allStatementsWithoutAnimals = new ArrayList<>();
+		allStatementsWithoutAnimals = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
+			IRI person = vf.createIRI("http://example.com/" + i + "_" + j);
+			IRI friend = vf.createIRI("http://example.com/friend" + i + "_" + j);
 
-		for (int j = 0; j < 30; j++) {
-			List<Statement> statements = new ArrayList<>();
-			allStatementsWithoutAnimals.add(statements);
-			for (int i = 0; i < 1000; i++) {
-				IRI person = vf.createIRI("http://example.com/" + i + "_" + j);
-				statements.add(vf.createStatement(person, RDF.TYPE, FOAF.PERSON));
-				IRI friend = vf.createIRI("http://example.com/friend" + i + "_" + j);
-				statements.add(vf.createStatement(person, FOAF.KNOWS, friend));
-				statements.add(vf.createStatement(friend, RDF.TYPE, FOAF.PERSON));
-			}
-		}
+			statements.add(vf.createStatement(person, RDF.TYPE, FOAF.PERSON));
+			statements.add(vf.createStatement(person, FOAF.KNOWS, friend));
+			statements.add(vf.createStatement(friend, RDF.TYPE, FOAF.PERSON));
+		}));
+
 		System.gc();
 
-	}
-
-	@TearDown(Level.Iteration)
-	public void tearDown() {
-		allStatements.clear();
 	}
 
 	@Benchmark

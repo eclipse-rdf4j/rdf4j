@@ -12,7 +12,6 @@ import ch.qos.logback.classic.Logger;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;

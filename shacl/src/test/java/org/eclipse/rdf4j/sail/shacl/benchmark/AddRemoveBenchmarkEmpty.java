@@ -30,7 +30,6 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
@@ -50,9 +49,6 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class AddRemoveBenchmarkEmpty {
 
-	private static final int NUMBER_OF_TRANSACTIONS = 10;
-	private static final int STATEMENTS_PER_TRANSACTION = 1000;
-
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Iteration)
@@ -60,14 +56,14 @@ public class AddRemoveBenchmarkEmpty {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		allStatements = new ArrayList<>(NUMBER_OF_TRANSACTIONS);
+		allStatements = new ArrayList<>(BenchmarkConfigs.NUMBER_OF_TRANSACTIONS);
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-		for (int j = 0; j < NUMBER_OF_TRANSACTIONS; j++) {
-			List<Statement> statements = new ArrayList<>(STATEMENTS_PER_TRANSACTION);
+		for (int j = 0; j < BenchmarkConfigs.NUMBER_OF_TRANSACTIONS; j++) {
+			List<Statement> statements = new ArrayList<>(BenchmarkConfigs.STATEMENTS_PER_TRANSACTION);
 			allStatements.add(statements);
-			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
+			for (int i = 0; i < BenchmarkConfigs.STATEMENTS_PER_TRANSACTION; i++) {
 				statements.add(
 						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
 				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
@@ -76,11 +72,6 @@ public class AddRemoveBenchmarkEmpty {
 		}
 		System.gc();
 
-	}
-
-	@TearDown(Level.Iteration)
-	public void tearDown() {
-		allStatements.clear();
 	}
 
 	@Benchmark

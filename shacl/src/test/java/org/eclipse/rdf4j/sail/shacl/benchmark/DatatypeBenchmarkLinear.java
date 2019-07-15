@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -31,7 +32,6 @@ import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
@@ -54,8 +54,6 @@ public class DatatypeBenchmarkLinear {
 	@Param({ "1", "10", "100" })
 	public int NUMBER_OF_TRANSACTIONS = 10;
 
-	private static final int STATEMENTS_PER_TRANSACTION = 100;
-
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Iteration)
@@ -68,22 +66,17 @@ public class DatatypeBenchmarkLinear {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (int j = 0; j < NUMBER_OF_TRANSACTIONS; j++) {
-			List<Statement> statements = new ArrayList<>(STATEMENTS_PER_TRANSACTION);
+			List<Statement> statements = new ArrayList<>(BenchmarkConfigs.STATEMENTS_PER_TRANSACTION);
 			allStatements.add(statements);
-			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE,
+			for (int i = 0; i < BenchmarkConfigs.STATEMENTS_PER_TRANSACTION; i++) {
+				IRI iri = vf.createIRI("http://example.com/" + i + "_" + j);
+				statements.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
+				statements.add(vf.createStatement(iri, FOAF.AGE,
 						vf.createLiteral(i)));
 			}
 		}
 		System.gc();
 
-	}
-
-	@TearDown(Level.Iteration)
-	public void tearDown() {
-		allStatements.clear();
 	}
 
 	@Benchmark
