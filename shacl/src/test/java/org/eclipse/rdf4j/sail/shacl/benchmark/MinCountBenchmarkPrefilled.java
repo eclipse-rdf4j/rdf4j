@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -31,7 +32,6 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
@@ -62,35 +62,30 @@ public class MinCountBenchmarkPrefilled {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		if (shaclRepo != null)
+		if (shaclRepo != null) {
 			shaclRepo.shutDown();
-		if (memoryStoreRepo != null)
+		}
+		if (memoryStoreRepo != null) {
 			memoryStoreRepo.shutDown();
-		if (sparqlQueryMemoryStoreRepo != null)
+		}
+		if (sparqlQueryMemoryStoreRepo != null) {
 			sparqlQueryMemoryStoreRepo.shutDown();
-
-		allStatements = new ArrayList<>(10);
+		}
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-		for (int j = 0; j < 10; j++) {
-			List<Statement> statements = new ArrayList<>(101);
-			allStatements.add(statements);
-			for (int i = 0; i < 1000; i++) {
-				statements.add(
-						vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE));
-				statements.add(vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL,
-						vf.createLiteral("label" + i)));
-			}
-		}
+		allStatements = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
+			IRI iri = vf.createIRI("http://example.com/" + i + "_" + j);
+			statements.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
+			statements.add(vf.createStatement(iri, RDFS.LABEL, vf.createLiteral("label" + i)));
+		}));
 
-		List<Statement> allStatements2 = new ArrayList<>(10);
+		List<Statement> allStatements2 = new ArrayList<>();
 
 		for (int i = 0; i < 100000; i++) {
-			allStatements2.add(
-					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
-			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL,
-					vf.createLiteral("label" + i)));
+			IRI iri = vf.createIRI("http://example.com/preinserted/" + i);
+			allStatements2.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
+			allStatements2.add(vf.createStatement(iri, RDFS.LABEL, vf.createLiteral("label" + i)));
 		}
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
@@ -116,11 +111,6 @@ public class MinCountBenchmarkPrefilled {
 			connection.add(allStatements2);
 		}
 		System.gc();
-	}
-
-	@TearDown(Level.Iteration)
-	public void tearDown() {
-		allStatements.clear();
 	}
 
 	@Benchmark
