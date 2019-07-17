@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -52,19 +52,19 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
@@ -83,7 +83,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
-	public String getPlanAsGraphvizDot(PlanNode planNode, ShaclSailConnection shaclSailConnection) {
+	public String getPlanAsGraphvizDot(PlanNode planNode, ConnectionsGroup connectionsGroup) {
 
 		StringBuilder stringBuilder = new StringBuilder("Graphviz DOT output:\n\n");
 
@@ -91,15 +91,15 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
 				.append("\n");
 
-		stringBuilder.append(System.identityHashCode(shaclSailConnection)
+		stringBuilder.append(System.identityHashCode(connectionsGroup)
 				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 		stringBuilder
-				.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection())
+				.append(System.identityHashCode(connectionsGroup.getPreviousStateConnection())
 						+ " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];")
 				.append("\n");
 
-		MemoryStore addedStatements = ((MemoryStoreConnection) shaclSailConnection.getAddedStatements()).getSail();
-		MemoryStore removedStatements = ((MemoryStoreConnection) shaclSailConnection.getRemovedStatements()).getSail();
+		MemoryStore addedStatements = ((MemoryStoreConnection) connectionsGroup.getAddedStatements()).getSail();
+		MemoryStore removedStatements = ((MemoryStoreConnection) connectionsGroup.getRemovedStatements()).getSail();
 
 		stringBuilder
 				.append(System.identityHashCode(addedStatements)

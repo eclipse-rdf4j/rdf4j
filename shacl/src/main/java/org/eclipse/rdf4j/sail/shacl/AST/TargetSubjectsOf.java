@@ -11,10 +11,9 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -44,17 +43,19 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection connection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
-		PlanNode parent = connection.getCachedNodeFor(new Select(connection, getQuery("?a", "?c", null), "?a", "?c"));
+		PlanNode parent = connectionsGroup
+				.getCachedNodeFor(
+						new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection connection,
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connection,
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
@@ -72,7 +73,7 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection connection,
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connection,
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
@@ -109,7 +110,7 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(NotifyingSailConnection connection, PlanNode parent) {
+	public PlanNode getTargetFilter(SailConnection connection, PlanNode parent) {
 		return new ExternalFilterByPredicate(connection, targetSubjectsOf, parent, 0,
 				ExternalFilterByPredicate.On.Subject);
 	}

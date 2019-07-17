@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
@@ -27,10 +27,13 @@ import java.util.stream.Stream;
 abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	protected String[] variables;
+	ValidationExecutionLogger validationExecutionLogger;
 
-	static void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,
-			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, String[] variables) {
-		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection);
+	void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,
+			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			String[] variables) {
+		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
+				previousStateConnection);
 
 		if (!newBindindingset.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingset);
@@ -50,7 +53,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	}
 
-	private static void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset) {
+	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset) {
 		try {
 			parsedQuery.getTupleExpr()
 					.visitChildren(new AbstractQueryModelVisitor<Exception>() {
@@ -64,23 +67,27 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		}
 	}
 
-	private static List<BindingSet> buildBindingSets(ArrayDeque<Tuple> left, SailConnection connection,
-			boolean skipBasedOnPreviousConnection) {
+	private List<BindingSet> buildBindingSets(ArrayDeque<Tuple> left, SailConnection connection,
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
 		return left.stream()
-				.map(tuple -> tuple.line.get(0))
-				.map(v -> (Resource) v)
-				.filter(r -> {
+
+				.filter(tuple -> {
 					if (!skipBasedOnPreviousConnection) {
 						return true;
 					}
 
-					if (connection instanceof ShaclSailConnection) {
-						return ((ShaclSailConnection) connection).getPreviousStateConnection()
-								.hasStatement(r, null, null, true);
+					boolean hasStatement = previousStateConnection.hasStatement(((Resource) tuple.line.get(0)), null,
+							null, true);
+
+					if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
+						validationExecutionLogger.log(depth(),
+								this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this,
+								getId());
 					}
-					return true;
+					return hasStatement;
 
 				})
+				.map(tuple -> (Resource) tuple.line.get(0))
 				.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
 				.collect(Collectors.toList());
 	}

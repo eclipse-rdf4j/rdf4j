@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -52,33 +52,34 @@ public abstract class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
-		return shaclSailConnection.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection, null,
-				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
+		return connectionsGroup
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
+						(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 
-		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getAddedStatements(), null,
+		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
 				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
-		return shaclSailConnection.getCachedNodeFor(new Sort(unorderedSelect));
+		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode unorderedSelect = new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null,
+		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
-		return shaclSailConnection.getCachedNodeFor(new Sort(unorderedSelect));
+		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 	}
 
 	@Override
@@ -132,9 +133,9 @@ public abstract class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
-		Select select = new Select(shaclSailConnection, "?a ?b ?c", "?a");
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		Select select = new Select(connectionsGroup.getBaseConnection(), "?a ?b ?c", "?a");
 		Unique unique = new Unique(select);
-		return nodeShape.getTargetFilter(shaclSailConnection, unique);
+		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), unique);
 	}
 }

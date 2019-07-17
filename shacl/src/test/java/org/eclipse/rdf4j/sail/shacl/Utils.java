@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
@@ -84,10 +86,10 @@ public class Utils {
 		return sail;
 	}
 
-	public static ShaclSail getInitializedShaclSailNativeStore(String shapeData) throws IOException {
-		ShaclSail sail = new ShaclSail(new NativeStore(Files.newTemporaryFolder()));
+	public static Sail getInitializedShaclSail(NotifyingSail baseSail, String shaclFileName) throws IOException {
+		ShaclSail sail = new ShaclSail(baseSail);
 		sail.init();
-		Utils.loadShapeData(sail, shapeData);
+		Utils.loadShapeData(sail, shaclFileName);
 		return sail;
 	}
 

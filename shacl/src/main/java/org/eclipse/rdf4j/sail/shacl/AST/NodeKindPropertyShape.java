@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NodeKindFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -66,7 +66,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -74,11 +74,11 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
-		PlanNode invalidValues = getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
 				(parent) -> new NodeKindFilter(parent, nodeKind), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
-			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
 			logger.info(planAsGraphvizDot);
 		}
 

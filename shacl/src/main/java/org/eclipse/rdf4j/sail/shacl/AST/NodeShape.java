@@ -14,11 +14,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -55,29 +54,29 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+		PlanNode node = connectionsGroup.getCachedNodeFor(
+				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+		PlanNode node = connectionsGroup.getCachedNodeFor(
+				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -86,7 +85,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		throw new IllegalStateException();
 	}
 
-	public Stream<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape,
 			boolean printPlans, boolean validateEntireBaseSail) {
 
 		PlanNodeProvider overrideTargetNodeBufferedSplitter;
@@ -94,32 +93,32 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		SailConnection removedStatements;
 
 		if (validateEntireBaseSail) {
-			if (shaclSailConnection.sail.isCacheSelectNodes()) {
-				PlanNode overrideTargetNode = getPlan(shaclSailConnection, printPlans, null, false, false);
+			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+				PlanNode overrideTargetNode = getPlan(connectionsGroup, printPlans, null, false, false);
 				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
 			} else {
-				overrideTargetNodeBufferedSplitter = () -> getPlan(shaclSailConnection, printPlans, null,
+				overrideTargetNodeBufferedSplitter = () -> getPlan(connectionsGroup, printPlans, null,
 						false, false);
 			}
-			addedStatements = shaclSailConnection;
-			removedStatements = shaclSailConnection;
+			addedStatements = connectionsGroup.getBaseConnection();
+			removedStatements = connectionsGroup.getBaseConnection();
 		} else {
 			overrideTargetNodeBufferedSplitter = null;
-			addedStatements = shaclSailConnection.getAddedStatements();
-			removedStatements = shaclSailConnection.getRemovedStatements();
+			addedStatements = connectionsGroup.getAddedStatements();
+			removedStatements = connectionsGroup.getRemovedStatements();
 		}
 
-		Stream<PlanNode> propertyShapesPlans = convertToPlan(propertyShapes, shaclSailConnection, nodeShape, printPlans,
+		Stream<PlanNode> propertyShapesPlans = convertToPlan(propertyShapes, connectionsGroup, nodeShape, printPlans,
 				overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
 
-		Stream<PlanNode> nodeShapesPlans = convertToPlan(this.nodeShapes, shaclSailConnection, nodeShape, printPlans,
+		Stream<PlanNode> nodeShapesPlans = convertToPlan(this.nodeShapes, connectionsGroup, nodeShape, printPlans,
 				overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
 
 		return Stream.concat(propertyShapesPlans, nodeShapesPlans);
 	}
 
 	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes,
-			ShaclSailConnection shaclSailConnection,
+			ConnectionsGroup connectionsGroup,
 			NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
 			SailConnection addedStatements,
 			SailConnection removedStatements) {
@@ -127,7 +126,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return propertyShapes
 				.stream()
 				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements))
-				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, printPlans,
+				.map(propertyShape -> propertyShape.getPlan(connectionsGroup, printPlans,
 						overrideTargetNodeBufferedSplitter, false, false));
 	}
 
@@ -197,7 +196,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id.toString();
 	}
 
-	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
 		return parent;
 	}
 

@@ -26,6 +26,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
@@ -56,6 +57,8 @@ public class ShaclSailConfigTest {
 		assertThat(subject.isGlobalLogValidationExecution()).isFalse();
 		assertThat(subject.isRdfsSubClassReasoning()).isTrue();
 		assertThat(subject.isPerformanceLogging()).isFalse();
+		assertThat(subject.isSerializableValidation()).isTrue();
+
 	}
 
 	@Test
@@ -73,7 +76,9 @@ public class ShaclSailConfigTest {
 			.add(CACHE_SELECT_NODES, true)
 			.add(GLOBAL_LOG_VALIDATION_EXECUTION, true)
 			.add(RDFS_SUB_CLASS_REASONING, false)
-			.add(PERFORMANCE_LOGGING, true);
+			.add(PERFORMANCE_LOGGING, true)
+			.add(SERIALIZABLE_VALIDATION, false);
+
 		// @formatter:on
 
 		subject.parse(mb.build(), implNode);
@@ -88,6 +93,7 @@ public class ShaclSailConfigTest {
 		assertThat(subject.isGlobalLogValidationExecution()).isTrue();
 		assertThat(subject.isRdfsSubClassReasoning()).isFalse();
 		assertThat(subject.isPerformanceLogging()).isTrue();
+		assertThat(subject.isSerializableValidation()).isFalse();
 
 	}
 
@@ -124,6 +130,8 @@ public class ShaclSailConfigTest {
 		assertThat(m.contains(node, GLOBAL_LOG_VALIDATION_EXECUTION, null)).isTrue();
 		assertThat(m.contains(node, RDFS_SUB_CLASS_REASONING, null)).isTrue();
 		assertThat(m.contains(node, PERFORMANCE_LOGGING, null)).isTrue();
+		assertThat(m.contains(node, SERIALIZABLE_VALIDATION, null)).isTrue();
+
 	}
 
 }
