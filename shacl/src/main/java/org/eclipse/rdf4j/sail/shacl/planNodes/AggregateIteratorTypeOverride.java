@@ -48,4 +48,8 @@ public class AggregateIteratorTypeOverride implements PlanNode {
 		return IteratorData.aggregated;
 	}
 
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		parent.receiveLogger(validationExecutionLogger);
+	}
 }

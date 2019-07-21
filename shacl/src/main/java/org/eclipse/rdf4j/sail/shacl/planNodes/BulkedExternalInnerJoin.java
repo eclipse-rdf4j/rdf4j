@@ -12,8 +12,7 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -38,22 +37,24 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, String... variables) {
 		this.leftNode = leftNode;
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
-		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+
+		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
+		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.variables = variables;
 
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
@@ -75,7 +76,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						left.addFirst(leftNodeIterator.next());
 					}
 
-					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
 
 					while (!right.isEmpty()) {
 
@@ -130,13 +131,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return !joined.isEmpty();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 				return joined.removeFirst();
 
@@ -189,7 +190,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
+		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ") + '}';
 	}
 
 	@Override
@@ -200,5 +201,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return leftNode.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		leftNode.receiveLogger(validationExecutionLogger);
 	}
 }

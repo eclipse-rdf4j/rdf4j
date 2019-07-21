@@ -35,9 +35,10 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, String... variables) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
@@ -45,12 +46,13 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.variables = variables;
 
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
@@ -72,7 +74,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					return;
 				}
 
-				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection);
+				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
 
 			}
 
@@ -82,13 +84,13 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return !left.isEmpty();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 
 				if (!left.isEmpty()) {
@@ -180,7 +182,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
+		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ")
+				+ '}';
 	}
 
 	@Override
@@ -191,5 +194,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return leftNode.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		leftNode.receiveLogger(validationExecutionLogger);
 	}
 }

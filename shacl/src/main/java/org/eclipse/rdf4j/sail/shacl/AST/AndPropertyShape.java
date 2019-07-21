@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -46,17 +47,43 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	}
 
+	public AndPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
+			List<List<PathPropertyShape>> and) {
+		super(id, nodeShape, deactivated, parent, path);
+		this.and = and;
+	}
+
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
+		}
+
+		if (negateThisPlan) { // De Morgan's laws
+			OrPropertyShape orPropertyShape = new OrPropertyShape(getId(), nodeShape, deactivated, this, null,
+					and);
+
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
+					overrideTargetNode, false, true);
+
+			return new EnrichWithShape(plan.getParent(), this);
+
+		}
+
+		if (and.stream().mapToLong(List::size).sum() == 1) {
+			PlanNode plan = and.get(0)
+					.get(0)
+					.getPlan(shaclSailConnection, false, overrideTargetNode, negateSubPlans, false);
+			return new EnrichWithShape(plan, this);
 		}
 
 		List<PlanNode> plans = and
 				.stream()
 				.flatMap(List::stream)
-				.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, printPlans, overrideTargetNode))
+				.map(shape -> shape.getPlan(shaclSailConnection, printPlans, overrideTargetNode, negateSubPlans,
+						false))
 				.collect(Collectors.toList());
 
 		PlanNode unionPlan = unionAll(plans);
@@ -141,4 +168,13 @@ public class AndPropertyShape extends PathPropertyShape {
 		return and.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
 	}
 
+	@Override
+	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+		Optional<PlanNode> reduce = and.stream()
+				.flatMap(Collection::stream)
+				.map(a -> a.getAllTargetsPlan(shaclSailConnection, negated))
+				.reduce((a, b) -> new UnionNode(a, b));
+
+		return new Unique(reduce.get());
+	}
 }

@@ -35,16 +35,20 @@ public class Select implements PlanNode {
 	private final SailConnection connection;
 
 	private final String query;
+	private final String[] variables;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Select(SailConnection connection, String query, String... variables) {
+		assert variables.length > 0;
 		this.connection = connection;
 		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
+		this.variables = variables;
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
@@ -67,13 +71,13 @@ public class Select implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				return bindingSet.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
-				return new Tuple(bindingSet.next());
+			Tuple loggingNext() throws SailException {
+				return new Tuple(bindingSet.next(), variables);
 			}
 
 			@Override
@@ -90,8 +94,9 @@ public class Select implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -118,7 +123,7 @@ public class Select implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Select{" + "query='" + query + '\'' + '}';
+		return "Select{" + "query='" + query.replace("\n", "  ") + '\'' + '}';
 	}
 
 	@Override
@@ -148,5 +153,10 @@ public class Select implements PlanNode {
 		}
 		return Objects.hash(System.identityHashCode(connection), query);
 
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
 	}
 }

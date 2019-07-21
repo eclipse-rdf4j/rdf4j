@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,10 +22,12 @@ import java.util.List;
  */
 public class MockConsumePlanNode {
 
+	private static final ValidationExecutionLogger VALIDATION_EXECUTION_LOGGER = new ValidationExecutionLogger();
 	PlanNode innerNode;
 
 	public MockConsumePlanNode(PlanNode innerNode) {
 		this.innerNode = innerNode;
+		innerNode.receiveLogger(VALIDATION_EXECUTION_LOGGER);
 	}
 
 	public List<Tuple> asList() {
@@ -36,6 +39,8 @@ public class MockConsumePlanNode {
 		while (iterator.hasNext()) {
 			ret.add(iterator.next());
 		}
+
+		VALIDATION_EXECUTION_LOGGER.flush();
 
 		return ret;
 

@@ -11,6 +11,9 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -19,8 +22,11 @@ import java.util.Set;
  * @author Håvard Ottestad
  */
 public class Unique implements PlanNode {
+	private final Logger logger = LoggerFactory.getLogger(Unique.class);
+
 	PlanNode parent;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Unique(PlanNode parent) {
 		this.parent = parent;
@@ -28,7 +34,9 @@ public class Unique implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		Unique that = this;
+
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
@@ -57,6 +65,9 @@ public class Unique implements PlanNode {
 						if (useMultiCardinalityDedupeSet) {
 							if (multiCardinalityDedupeSet == null || !previous.line.get(0).equals(temp.line.get(0))) {
 								multiCardinalityDedupeSet = new HashSet<>();
+								if (previous.line.get(0).equals(temp.line.get(0))) {
+									multiCardinalityDedupeSet.add(previous);
+								}
 							}
 
 							if (!multiCardinalityDedupeSet.contains(temp)) {
@@ -74,6 +85,11 @@ public class Unique implements PlanNode {
 
 					if (next != null) {
 						previous = next;
+					} else {
+						if (GlobalValidationExecutionLogging.loggingEnabled) {
+							validationExecutionLogger.log(depth(),
+									that.getClass().getSimpleName() + ":IgnoredNotUnique", temp, that, getId());
+						}
 					}
 
 				}
@@ -87,13 +103,13 @@ public class Unique implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 
 				Tuple temp = next;
@@ -138,5 +154,11 @@ public class Unique implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

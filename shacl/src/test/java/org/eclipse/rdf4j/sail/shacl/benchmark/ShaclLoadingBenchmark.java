@@ -65,7 +65,7 @@ public class ShaclLoadingBenchmark {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
 
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < BenchmarkConfigs.NUMBER_OF_TRANSACTIONS; i++) {
 				StringReader data = new StringReader(String.join("\n", "",
 						"@prefix ex: <http://example.com/ns#> .",
 						"@prefix sh: <http://www.w3.org/ns/shacl#> .",
@@ -120,7 +120,7 @@ public class ShaclLoadingBenchmark {
 			}
 			connection.commit();
 
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < BenchmarkConfigs.NUMBER_OF_TRANSACTIONS; i++) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				StringReader shaclRules = new StringReader(String.join("\n", "",
 						"@prefix ex: <http://example.com/ns#> .",

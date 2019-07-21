@@ -20,11 +20,11 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
@@ -56,25 +55,30 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
-		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
-		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+		return new Unique(new TrimTuple(node, 0, 1));
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+		throw new UnsupportedOperationException();
 	}
 
 	@Override
@@ -91,10 +95,11 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 		if (validateEntireBaseSail) {
 			if (shaclSailConnection.sail.isCacheSelectNodes()) {
-				PlanNode overrideTargetNode = getPlan(shaclSailConnection, nodeShape, printPlans, null);
+				PlanNode overrideTargetNode = getPlan(shaclSailConnection, printPlans, null, false, false);
 				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
 			} else {
-				overrideTargetNodeBufferedSplitter = () -> getPlan(shaclSailConnection, nodeShape, printPlans, null);
+				overrideTargetNodeBufferedSplitter = () -> getPlan(shaclSailConnection, printPlans, null,
+						false, false);
 			}
 			addedStatements = shaclSailConnection;
 			removedStatements = shaclSailConnection;
@@ -122,8 +127,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return propertyShapes
 				.stream()
 				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements))
-				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans,
-						overrideTargetNodeBufferedSplitter));
+				.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, printPlans,
+						overrideTargetNodeBufferedSplitter, false, false));
 	}
 
 	@Override

@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -45,27 +44,30 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		assert !negateSubPlans : "There are no subplans!";
+		assert !negateThisPlan;
+
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection,
-				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "*"));
-		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
+				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "?a", "?c"));
+		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
-		return new Unique(new TrimTuple(new LoggingNode(parent, ""), 0, 1));
+				new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+		return new Unique(new TrimTuple(parent, 0, 1));
 
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape,
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(
-				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
+				new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
@@ -80,12 +82,14 @@ public class TargetNode extends NodeShape {
 
 		return targetNodeSet.stream()
 				.map(node -> {
-					if (node instanceof Resource)
+					if (node instanceof Resource) {
 						return "<" + node + ">";
+					}
 					if (node instanceof Literal) {
 						IRI datatype = ((Literal) node).getDatatype();
-						if (datatype == null)
+						if (datatype == null) {
 							return "\"" + node.stringValue() + "\"";
+						}
 						return "\"" + node.stringValue() + "\"^^<" + datatype.stringValue() + ">";
 					}
 
@@ -104,7 +108,7 @@ public class TargetNode extends NodeShape {
 
 	@Override
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return new LoggingNode(new SetFilterNode(targetNodeSet, parent, 0, true), "targetNode filter");
+		return new SetFilterNode(targetNodeSet, parent, 0, true);
 	}
 
 	@Override

@@ -134,6 +134,9 @@ public class MultithreadedTest {
 	private void parallelTest(List<List<Transaction>> list, IsolationLevels isolationLevel) {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.setParallelValidation(true);
+		sail.setLogValidationPlans(false);
+		sail.setGlobalLogValidationExecution(false);
+		sail.setLogValidationViolations(false);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 

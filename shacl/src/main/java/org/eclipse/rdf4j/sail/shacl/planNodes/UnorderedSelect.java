@@ -38,6 +38,7 @@ public class UnorderedSelect implements PlanNode {
 	private final OutputPattern outputPattern;
 
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
 			OutputPattern outputPattern) {
@@ -50,7 +51,7 @@ public class UnorderedSelect implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
 					predicate, object, true);
@@ -61,12 +62,12 @@ public class UnorderedSelect implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				return statements.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 
 				Statement next = statements.next();
 				if (outputPattern == OutputPattern.SubjectObject) {
@@ -173,5 +174,10 @@ public class UnorderedSelect implements PlanNode {
 		SubjectObject,
 		ObjectPredicateSubject,
 		SubjectPredicateObject
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
 	}
 }

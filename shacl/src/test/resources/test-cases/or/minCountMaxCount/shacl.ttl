@@ -9,15 +9,7 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:property [
-		sh:path ex:age ;
-                sh:or (
-                    [
-                      sh:minCount 4 ;
-                    ]
-                    [
-                      sh:maxCount 2 ;
-                    ]
-                  ) ;
-    	] .
-
+	sh:or (
+	[sh:path ex:age; sh:minCount 4 ;]
+	[sh:path ex:age; sh:maxCount 2 ;]
+	) .

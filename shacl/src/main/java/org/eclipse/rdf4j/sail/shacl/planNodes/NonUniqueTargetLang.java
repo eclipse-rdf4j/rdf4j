@@ -31,8 +31,7 @@ import java.util.Set;
 public class NonUniqueTargetLang implements PlanNode {
 	PlanNode parent;
 	private boolean printed = false;
-
-	private Set<String> seenLanguages = new HashSet<>();
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public NonUniqueTargetLang(PlanNode parent) {
 		this.parent = parent;
@@ -40,74 +39,9 @@ public class NonUniqueTargetLang implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+		return new OnlyNonUnique(parent, validationExecutionLogger);
 
-			Tuple next;
-			Tuple previous;
-
-			private void calculateNext() {
-				if (next != null) {
-					return;
-				}
-
-				while (next == null && parentIterator.hasNext()) {
-					next = parentIterator.next();
-
-					if ((previous != null)) {
-						if (!previous.line.get(0).equals(next.line.get(0))) {
-							seenLanguages = new HashSet<>();
-						}
-					}
-
-					previous = next;
-
-					Value value = next.getlist().get(1);
-
-					if (value instanceof Literal) {
-						Optional<String> lang = ((Literal) value).getLanguage();
-
-						if (!lang.isPresent()) {
-							next = null;
-						} else if (!seenLanguages.contains(lang.get())) {
-							seenLanguages.add(lang.get());
-							next = null;
-						}
-
-					} else {
-						next = null;
-					}
-
-				}
-
-			}
-
-			@Override
-			public void close() throws SailException {
-				parentIterator.close();
-			}
-
-			@Override
-			public boolean hasNext() throws SailException {
-				calculateNext();
-				return next != null;
-			}
-
-			@Override
-			public Tuple next() throws SailException {
-				calculateNext();
-
-				Tuple temp = next;
-				next = null;
-				return temp;
-			}
-
-			@Override
-			public void remove() throws SailException {
-
-			}
-		};
 	}
 
 	@Override
@@ -140,6 +74,89 @@ public class NonUniqueTargetLang implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
+	}
+
+}
+
+class OnlyNonUnique extends LoggingCloseableIteration {
+
+	private Tuple next;
+	private Tuple previous;
+
+	private Set<String> seenLanguages = new HashSet<>();
+
+	private CloseableIteration<Tuple, SailException> parentIterator;
+
+	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
+		super(parent, validationExecutionLogger);
+		parentIterator = parent.iterator();
+	}
+
+	private void calculateNext() {
+		if (next != null) {
+			return;
+		}
+
+		while (next == null && parentIterator.hasNext()) {
+			next = parentIterator.next();
+
+			if ((previous != null)) {
+				if (!previous.line.get(0).equals(next.line.get(0))) {
+					seenLanguages = new HashSet<>();
+				}
+			}
+
+			previous = next;
+
+			Value value = next.getlist().get(1);
+
+			if (value instanceof Literal) {
+				Optional<String> lang = ((Literal) value).getLanguage();
+
+				if (!lang.isPresent()) {
+					next = null;
+				} else if (!seenLanguages.contains(lang.get())) {
+					seenLanguages.add(lang.get());
+					next = null;
+				}
+
+			} else {
+				next = null;
+			}
+
+		}
+
+	}
+
+	@Override
+	public void close() throws SailException {
+		parentIterator.close();
+	}
+
+	@Override
+	boolean localHasNext() throws SailException {
+		calculateNext();
+		return next != null;
+	}
+
+	@Override
+	Tuple loggingNext() throws SailException {
+		calculateNext();
+
+		Tuple temp = next;
+		next = null;
+		return temp;
+	}
+
+	@Override
+	public void remove() throws SailException {
+
 	}
 
 }

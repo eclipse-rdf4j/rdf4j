@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -45,8 +44,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	private long maxCount;
 
 	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			Long maxCount) {
+			PathPropertyShape parent, Resource path, Long maxCount) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxCount = maxCount;
@@ -54,28 +52,30 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNodeProvider overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
 		if (deactivated) {
 			return null;
 		}
+		assert !negateSubPlans : "There are no subplans!";
+		assert !negateThisPlan;
+		assert hasOwnPath();
 
 		if (overrideTargetNode != null) {
-			PlanNode bulkedExternalInnerJoin = new LoggingNode(
-					new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-							shaclSailConnection, getPath().getQuery("?a", "?c", null), false),
-					"");
-			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
+			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
+					shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c");
+			PlanNode groupByCount = new GroupByCount(bulkedExternalInnerJoin);
 
-			PlanNode directTupleFromFilter = new LoggingNode(
-					new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class), "");
+			PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
+					.getFalseNode(UnBufferedPlanNode.class);
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(directTupleFromFilter, shaclSailConnection);
 				logger.info(planAsGraphvizDot);
 			}
 
-			return new EnrichWithShape(new LoggingNode(directTupleFromFilter, ""), this);
+			return new EnrichWithShape(directTupleFromFilter, this);
 		}
 
 		if (maxCount == 1 && shaclSailConnection.stats.isBaseSailEmpty()) {
@@ -98,24 +98,19 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 				logger.info(planAsGraphvizDot);
 			}
 
-			return new EnrichWithShape(new LoggingNode(select, ""), this);
+			return new EnrichWithShape(select, this);
 
 		}
 
-		PlanNode planAddedStatements = new LoggingNode(
-				nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
-				"");
+		PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
 
-		PlanNode planAddedStatements1 = new LoggingNode(
-				super.getPlanAddedStatements(shaclSailConnection, nodeShape, null),
-				"");
+		PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, null);
 
-		planAddedStatements1 = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1),
-				"");
+		planAddedStatements1 = nodeShape.getTargetFilter(shaclSailConnection, planAddedStatements1);
 
-		PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, planAddedStatements1), "");
+		PlanNode mergeNode = new UnionNode(planAddedStatements, planAddedStatements1);
 
-		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode), "");
+		PlanNode groupByCount1 = new GroupByCount(mergeNode);
 
 		MaxCountFilter maxCountFilter = new MaxCountFilter(groupByCount1, maxCount);
 
@@ -125,22 +120,21 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		PlanNode mergeNode1;
 		if (!shaclSailConnection.stats.isBaseSailEmpty()) {
 
-			PlanNode trimmed = new LoggingNode(new TrimTuple(validValues, 0, 1), "");
+			PlanNode trimmed = new TrimTuple(validValues, 0, 1);
 
-			PlanNode unique = new LoggingNode(new Unique(trimmed), "");
+			PlanNode unique = new Unique(trimmed);
 
-			PlanNode bulkedExternalInnerJoin = new LoggingNode(
-					new BulkedExternalInnerJoin(unique, shaclSailConnection, getPath().getQuery("?a", "?c", null),
-							true),
-					"");
+			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(unique, shaclSailConnection,
+					getPath().getQuery("?a", "?c", null),
+					true, "?a", "?c");
 
-			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalInnerJoin), "");
+			PlanNode groupByCount = new GroupByCount(bulkedExternalInnerJoin);
 
 			PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
 					.getFalseNode(UnBufferedPlanNode.class);
 
-			mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""),
-					new LoggingNode(invalidValues, ""));
+			mergeNode1 = new UnionNode(directTupleFromFilter,
+					invalidValues);
 		} else {
 			mergeNode1 = invalidValues;
 		}
@@ -150,7 +144,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(mergeNode1, ""), this);
+		return new EnrichWithShape(mergeNode1, this);
 
 	}
 
@@ -185,5 +179,22 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 				"maxCount=" + maxCount +
 				", path=" + getPath() +
 				'}';
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+
+		PlanNode plan = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
+		plan = new UnionNode(plan, nodeShape.getPlanRemovedStatements(shaclSailConnection, null));
+
+		Path path = getPath();
+		if (path != null) {
+			plan = new UnionNode(plan, getPlanAddedStatements(shaclSailConnection, null));
+			plan = new UnionNode(plan, getPlanRemovedStatements(shaclSailConnection, null));
+		}
+
+		plan = new Unique(new TrimTuple(plan, 0, 1));
+
+		return nodeShape.getTargetFilter(shaclSailConnection, plan);
 	}
 }
