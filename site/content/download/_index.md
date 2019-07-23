@@ -46,15 +46,15 @@ rdf4j is a multi-module project, you can pick and choose which libraries you nee
 
 See the Setup instructions in the Programmer’s documentation for more details on Maven and which artifacts RDF4J provides.
 
-# Download rdf4j 3.0.0-M1 (milestone build)
+# Download rdf4j 3.0.0-M2 (milestone build)
 
-rdf4j 3.0 is our upcoming major new release, milestone 1 is the first milestone build for this release, intended for 
+rdf4j 3.0 is our upcoming major new release, milestone 2 is the second milestone build for this release, intended for 
 early testing and feedback. Please note that this build is not intended for production usage.
 
-- [rdf4j 3.0.0-M1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-M1-sdk.zip)<br/>
+- [rdf4j 3.0.0-M2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-M2-sdk.zip)<br/>
   Full Eclipse rdf4j SDK, containing all libraries, rdf4j Server, Workbench, and Console applications, and Javadoc API.
 
-- [rdf4j 3.0.0-M1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-M1-onejar.jar)<br/>
+- [rdf4j 3.0.0-M2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-M2-onejar.jar)<br/>
   Single jar file for easy inclusion of the full rdf4j toolkit in your Java project.
 
 - [rdf4j artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
