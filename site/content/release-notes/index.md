@@ -16,7 +16,7 @@ For a complete overview, see [all issues fixed in 3.0](https://github.com/eclips
 
 ## Upgrade notes
 
-Rdf4j 3.0 contains several [backward incompatible changes](https://github.com/eclipse/rdf4j/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22Not+backwards+compatible%22+-label%3A%22wontfix%22+milestone%3A3.0). We distinguish changes that affect users of the Rdf4j tools (Console, Workbench, Server), changes that affect users of the Rdf4j APIs and libraries, and changes that affect third party Sail / Repository implementations. See the linked issues for further details.
+Rdf4j 3.0 contains several [backward incompatible changes](https://github.com/eclipse/rdf4j/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22Not+backwards+compatible%22+-label%3A%22wontfix%22+milestone%3A3.0.0). We distinguish changes that affect users of the Rdf4j tools (Console, Workbench, Server), changes that affect users of the Rdf4j APIs and libraries, and changes that affect third party Sail / Repository implementations. See the linked issues for further details.
 
 ### rdf4j tools users
 
