@@ -12,6 +12,7 @@ import ch.qos.logback.classic.Logger;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -36,9 +37,12 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -72,42 +76,64 @@ public class ParallelBenchmark {
 	}
 
 	@Benchmark
-	public void shaclSnapshot() throws Exception {
+	public void shaclSnapshot(Blackhole blackhole) throws Exception {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
-		runBenchmark(IsolationLevels.SNAPSHOT, repository, true);
+		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
 	}
 
 	@Benchmark
-	public void shaclSnapshotWithoutSerializableValidation() throws Exception {
+	public void shaclSnapshotMixedReadWrite(Blackhole blackhole) throws Exception {
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
+
+		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, true, blackhole);
+	}
+
+	@Benchmark
+	public void shaclSnapshotWithoutSerializableValidation(Blackhole blackhole) throws Exception {
 		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
 		((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
-		runBenchmark(IsolationLevels.SNAPSHOT, repository, true);
+		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
 	}
 
 	@Benchmark
-	public void shaclSerializable() throws Exception {
+	public void shaclSnapshotWithoutSerializableValidationMixedReadWrite(Blackhole blackhole) throws Exception {
+		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
+		((ShaclSail) repository.getSail()).setSerializableValidation(false);
+
+		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, true, blackhole);
+	}
+
+	@Benchmark
+	public void shaclSerializable(Blackhole blackhole) throws Exception {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
-		runBenchmark(IsolationLevels.SERIALIZABLE, repository, true);
+		runBenchmark(IsolationLevels.SERIALIZABLE, repository, true, false, blackhole);
 	}
 
 	@Benchmark
-	public void shaclSerializableNotParallel() throws Exception {
+	public void shaclSerializableMixedReadWrite(Blackhole blackhole) throws Exception {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
-		runBenchmark(IsolationLevels.SERIALIZABLE, repository, false);
+		runBenchmark(IsolationLevels.SERIALIZABLE, repository, true, true, blackhole);
 	}
 
 	@Benchmark
-	public void nativeStoreShaclSerializable() throws Exception {
+	public void shaclSerializableNotParallel(Blackhole blackhole) throws Exception {
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
+
+		runBenchmark(IsolationLevels.SERIALIZABLE, repository, false, false, blackhole);
+	}
+
+	@Benchmark
+	public void nativeStoreShaclSerializable(Blackhole blackhole) throws Exception {
 		File file = Files.newTemporaryFolder();
 
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
-			runBenchmark(IsolationLevels.SERIALIZABLE, repository, true);
+			runBenchmark(IsolationLevels.SERIALIZABLE, repository, true, false, blackhole);
 
 		} finally {
 			FileUtils.deleteDirectory(file);
@@ -116,13 +142,13 @@ public class ParallelBenchmark {
 	}
 
 	@Benchmark
-	public void nativeStoreShaclSerializableNotParallel() throws Exception {
+	public void nativeStoreShaclSerializableNotParallel(Blackhole blackhole) throws Exception {
 		File file = Files.newTemporaryFolder();
 
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
-			runBenchmark(IsolationLevels.SERIALIZABLE, repository, false);
+			runBenchmark(IsolationLevels.SERIALIZABLE, repository, false, false, blackhole);
 
 		} finally {
 			FileUtils.deleteDirectory(file);
@@ -131,13 +157,13 @@ public class ParallelBenchmark {
 	}
 
 	@Benchmark
-	public void nativeStoreShaclSnapshot() throws Exception {
+	public void nativeStoreShaclSnapshot(Blackhole blackhole) throws Exception {
 		File file = Files.newTemporaryFolder();
 
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
-			runBenchmark(IsolationLevels.SNAPSHOT, repository, true);
+			runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
 
 		} finally {
 			FileUtils.deleteDirectory(file);
@@ -146,7 +172,7 @@ public class ParallelBenchmark {
 	}
 
 	@Benchmark
-	public void nativeStoreShaclSnapshotWithoutSerializableValidation() throws Exception {
+	public void nativeStoreShaclSnapshotWithoutSerializableValidation(Blackhole blackhole) throws Exception {
 		File file = Files.newTemporaryFolder();
 
 		try {
@@ -154,7 +180,7 @@ public class ParallelBenchmark {
 					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
 			((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
-			runBenchmark(IsolationLevels.SNAPSHOT, repository, true);
+			runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
 
 		} finally {
 			FileUtils.deleteDirectory(file);
@@ -162,7 +188,18 @@ public class ParallelBenchmark {
 
 	}
 
-	private void runBenchmark(IsolationLevels isolationLevel, SailRepository repository, boolean parallel) {
+	private void runBenchmark(IsolationLevels isolationLevel, SailRepository repository, boolean parallel,
+			boolean mixedReadWrite, Blackhole blackhole) {
+		ArrayList<List<Statement>> allStatements = new ArrayList<>(this.allStatements);
+
+		if (mixedReadWrite) {
+			for (int i = 0; i < this.allStatements.size() * 10; i++) {
+				allStatements.add(Collections.emptyList());
+			}
+		}
+
+		Collections.shuffle(allStatements);
+
 		Stream<List<Statement>> listStream;
 		if (parallel) {
 			listStream = allStatements.parallelStream();
@@ -175,7 +212,16 @@ public class ParallelBenchmark {
 			while (!success) {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					connection.begin(isolationLevel);
-					connection.add(statements);
+					if (!statements.isEmpty()) {
+						connection.add(statements);
+					} else {
+						// read operation instead of write
+						try (Stream<Statement> stream = Iterations
+								.stream(connection.getStatements(null, RDF.TYPE, null, false))) {
+							long count = stream.count();
+							blackhole.consume(count);
+						}
+					}
 					try {
 						connection.commit();
 						success = true;

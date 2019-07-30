@@ -35,7 +35,7 @@ public class SerializableTest {
 			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
 
 			Sail sail = repo.getSail();
-			((ShaclSail) sail).setGlobalLogValidationExecution(true);
+//			((ShaclSail) sail).setGlobalLogValidationExecution(true);
 
 			multithreadedMaxCountViolation(IsolationLevels.SNAPSHOT, repo);
 
