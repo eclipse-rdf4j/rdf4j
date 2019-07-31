@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
@@ -54,7 +54,7 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -65,7 +65,7 @@ public class AndPropertyShape extends PathPropertyShape {
 			OrPropertyShape orPropertyShape = new OrPropertyShape(getId(), nodeShape, deactivated, this, null,
 					and);
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
 					overrideTargetNode, false, true);
 
 			return new EnrichWithShape(plan.getParent(), this);
@@ -75,14 +75,14 @@ public class AndPropertyShape extends PathPropertyShape {
 		if (and.stream().mapToLong(List::size).sum() == 1) {
 			PlanNode plan = and.get(0)
 					.get(0)
-					.getPlan(shaclSailConnection, false, overrideTargetNode, negateSubPlans, false);
+					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
 			return new EnrichWithShape(plan, this);
 		}
 
 		List<PlanNode> plans = and
 				.stream()
 				.flatMap(List::stream)
-				.map(shape -> shape.getPlan(shaclSailConnection, printPlans, overrideTargetNode, negateSubPlans,
+				.map(shape -> shape.getPlan(connectionsGroup, printPlans, overrideTargetNode, negateSubPlans,
 						false))
 				.collect(Collectors.toList());
 
@@ -169,10 +169,10 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Optional<PlanNode> reduce = and.stream()
 				.flatMap(Collection::stream)
-				.map(a -> a.getAllTargetsPlan(shaclSailConnection, negated))
+				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
 				.reduce((a, b) -> new UnionNode(a, b));
 
 		return new Unique(reduce.get());

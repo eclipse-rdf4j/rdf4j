@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
@@ -45,7 +45,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -58,29 +58,30 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		if (overrideTargetNode != null) {
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-					shaclSailConnection, getPath().getQuery("?a", "?c", null), false, "?a", "?c");
+					connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
+					"?c");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
 			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, shaclSailConnection);
+				String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
 				logger.info(planAsGraphvizDot);
 			}
 
 			return new EnrichWithShape(planNode, this);
 		}
 
-		if (shaclSailConnection.stats.isBaseSailEmpty()) {
-			PlanNode addedTargets = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
+		if (connectionsGroup.getStats().isBaseSailEmpty()) {
+			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
-			PlanNode addedByPath = super.getPlanAddedStatements(shaclSailConnection, null);
+			PlanNode addedByPath = super.getPlanAddedStatements(connectionsGroup, null);
 
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
 			PlanNode planNode = new NonUniqueTargetLang(innerJoin);
 
 			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, shaclSailConnection);
+				String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
 				logger.info(planAsGraphvizDot);
 			}
 
@@ -88,11 +89,11 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		}
 
-		PlanNode addedTargets = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
+		PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
-		PlanNode addedByPath = super.getPlanAddedStatements(shaclSailConnection, null);
+		PlanNode addedByPath = super.getPlanAddedStatements(connectionsGroup, null);
 
-		addedByPath = nodeShape.getTargetFilter(shaclSailConnection, addedByPath);
+		addedByPath = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), addedByPath);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
@@ -100,13 +101,14 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		PlanNode allRelevantTargets = new Unique(trimmed);
 
-		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets, shaclSailConnection,
-				getPath().getQuery("?a", "?c", null), false, "?a", "?c");
+		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets,
+				connectionsGroup.getBaseConnection(),
+				getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
 
 		PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
 		if (printPlans) {
-			String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
 			logger.info(planAsGraphvizDot);
 		}
 
@@ -148,18 +150,18 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
-		PlanNode plan = nodeShape.getPlanAddedStatements(shaclSailConnection, null);
-		plan = new UnionNode(plan, nodeShape.getPlanRemovedStatements(shaclSailConnection, null));
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		PlanNode plan = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+		plan = new UnionNode(plan, nodeShape.getPlanRemovedStatements(connectionsGroup, null));
 
 		Path path = getPath();
 		if (path != null) {
-			plan = new UnionNode(plan, getPlanAddedStatements(shaclSailConnection, null));
-			plan = new UnionNode(plan, getPlanRemovedStatements(shaclSailConnection, null));
+			plan = new UnionNode(plan, getPlanAddedStatements(connectionsGroup, null));
+			plan = new UnionNode(plan, getPlanRemovedStatements(connectionsGroup, null));
 		}
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(shaclSailConnection, plan);
+		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
 	}
 }

@@ -36,11 +36,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
+	private final SailConnection previousStateConnection;
 	private boolean printed = false;
-	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection, String... variables) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 
 		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
@@ -49,6 +49,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
 		this.variables = variables;
+		this.previousStateConnection = previousStateConnection;
 
 	}
 
@@ -76,7 +77,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						left.addFirst(leftNodeIterator.next());
 					}
 
-					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection,
+							previousStateConnection, variables);
 
 					while (!right.isEmpty()) {
 
@@ -174,15 +176,12 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 		}
 
 		if (skipBasedOnPreviousConnection) {
-			if (connection instanceof ShaclSailConnection) {
-				NotifyingSailConnection previousStateConnection = ((ShaclSailConnection) connection)
-						.getPreviousStateConnection();
 
-				stringBuilder
-						.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-								+ " [label=\"skip if not present\"]")
-						.append("\n");
-			}
+			stringBuilder
+					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+							+ " [label=\"skip if not present\"]")
+					.append("\n");
+
 		}
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);

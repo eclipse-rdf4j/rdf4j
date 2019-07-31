@@ -52,6 +52,9 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code> */
 	public final static IRI PERFORMANCE_LOGGING = create("performanceLogging");
 
+	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
+	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
+
 	private static IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
 	}
