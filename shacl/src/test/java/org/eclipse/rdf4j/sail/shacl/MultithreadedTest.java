@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.Sail;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -294,7 +295,7 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
-	public void testLotsOfValidationFailures() throws IOException {
+	public void testLotsOfValidationFailuresSnapshot() throws IOException {
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -303,7 +304,7 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.SNAPSHOT);
+		runValidationFailuresTest(sail, IsolationLevels.SNAPSHOT, 100);
 
 	}
 
@@ -317,7 +318,7 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(true);
 
-		runValidationFailuresTest(sail, IsolationLevels.SNAPSHOT);
+		runValidationFailuresTest(sail, IsolationLevels.SNAPSHOT, 100);
 
 	}
 
@@ -331,7 +332,7 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE);
+		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 200);
 
 	}
 
@@ -345,7 +346,7 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.READ_COMMITTED);
+		runValidationFailuresTest(sail, IsolationLevels.READ_COMMITTED, 100);
 
 	}
 
@@ -359,11 +360,12 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.READ_UNCOMMITTED);
+		runValidationFailuresTest(sail, IsolationLevels.READ_UNCOMMITTED, 100);
 
 	}
 
-	private void runValidationFailuresTest(ShaclSail sail, IsolationLevels isolationLevels) throws IOException {
+	private void runValidationFailuresTest(Sail sail, IsolationLevels isolationLevels, int numberOfRuns)
+			throws IOException {
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 
@@ -379,17 +381,23 @@ public abstract class MultithreadedTest {
 			parse2 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
 		}
 
+		List<Statement> parse3;
+		try (InputStream resource = MultithreadedTest.class.getClassLoader()
+				.getResourceAsStream("complexBenchmark/smallFile.ttl")) {
+			parse3 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
+		}
+
 		Random r = new Random();
 
 		try {
 
 			Utils.loadShapeData(repository, "complexBenchmark/shacl.ttl");
 
-			IntStream.range(1, 100).parallel().forEach(i -> {
+			IntStream.range(1, numberOfRuns).parallel().forEach(i -> {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					ValueFactory vf = connection.getValueFactory();
 
-					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.begin(isolationLevels);
 					connection.add(parse);
 
 					try {
@@ -398,8 +406,26 @@ public abstract class MultithreadedTest {
 						connection.rollback();
 					}
 
-					connection.begin();
+					connection.begin(isolationLevels);
 					connection.add(parse2);
+
+					try {
+						connection.commit();
+					} catch (RepositoryException ignored) {
+						connection.rollback();
+					}
+
+					connection.begin(isolationLevels);
+					connection.add(parse3);
+
+					try {
+						connection.commit();
+					} catch (RepositoryException ignored) {
+						connection.rollback();
+					}
+
+					connection.begin(isolationLevels);
+					connection.remove(parse3);
 
 					try {
 						connection.commit();
