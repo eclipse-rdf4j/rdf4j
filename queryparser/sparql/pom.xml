@@ -67,17 +67,4 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-javadoc-plugin</artifactId>
-				<configuration>
-					<excludePackageNames>org.eclipse.rdf4j.query.parser.sparql.ast</excludePackageNames>
-				</configuration>
-			</plugin>
-		</plugins>
-	</build>
-
 </project>
