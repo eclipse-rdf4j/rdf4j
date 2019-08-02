@@ -249,14 +249,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		super.initialize();
 
-		if (getDataDir() != null) {
-			if (parallelValidation) {
-				logger.info("Automatically disabled parallel SHACL validation because persistent base sail "
-						+ "was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
-			}
-			setParallelValidation(false);
-		}
-
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
 			shapesRepo = null;
@@ -497,12 +489,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * <p>
 	 * May cause deadlock, especially when using NativeStore.
 	 *
-	 * @param parallelValidation default false
+	 * @param parallelValidation default true
 	 */
 	public void setParallelValidation(boolean parallelValidation) {
-		if (parallelValidation) {
-			logger.warn("Parallel SHACL validation enabled. This is an experimental feature and may cause deadlocks!");
-		}
 		this.parallelValidation = parallelValidation;
 	}
 

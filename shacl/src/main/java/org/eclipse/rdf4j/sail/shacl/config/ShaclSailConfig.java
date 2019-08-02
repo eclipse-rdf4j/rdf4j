@@ -36,7 +36,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_V
  */
 public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
-	public static final boolean PARALLEL_VALIDATION_DEFAULT = false;
+	public static final boolean PARALLEL_VALIDATION_DEFAULT = true;
 	public static final boolean UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT = false;
 	public static final boolean LOG_VALIDATION_PLANS_DEFAULT = false;
 	public static final boolean LOG_VALIDATION_VIOLATIONS_DEFAULT = false;

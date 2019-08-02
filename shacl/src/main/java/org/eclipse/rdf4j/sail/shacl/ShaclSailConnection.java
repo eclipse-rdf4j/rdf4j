@@ -602,8 +602,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (readStamp != 0 && !sail.holdsWriteLock(writeLockStamp)) {
 				readStamp = sail.releaseReadlock(readStamp);
 			}
-			super.prepare();
 			previousStateConnection.prepare();
+			super.prepare();
 		}
 
 	}
