@@ -1,4 +1,5 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
@@ -68,6 +69,7 @@
 					<dependencySourceIncludes>
 						<dependencySourceIncludes>org.eclipse.rdf4j:*</dependencySourceIncludes>
 					</dependencySourceIncludes>
+					<excludePackageNames>*.ast:*.AST</excludePackageNames>
 				</configuration>
 				<executions>
 					<execution>
@@ -79,44 +81,45 @@
 						</goals>
 
 						<configuration>
-							<doctitle>RDF4J ${project.version} API</doctitle>
-							<windowtitle>RDF4J ${project.version} API</windowtitle>
+							<doctitle>Eclipse rdf4j ${project.version} API</doctitle>
+							<windowtitle>Eclipse rdf4j ${project.version} API</windowtitle>
 							<groups>
-								<group>
-									<title>Repository API</title>
-									<packages>org.eclipse.rdf4j.repository*</packages>
-								</group>
 								<group>
 									<title>RDF Model API</title>
 									<packages>org.eclipse.rdf4j.model*</packages>
 								</group>
-
 								<group>
-									<title>Storage And Inference Layer (SAIL) API</title>
-									<packages>org.eclipse.rdf4j.sail*</packages>
+									<title>Repository API: database and SPARQL endpoint access</title>
+									<packages>org.eclipse.rdf4j.repository*</packages>
 								</group>
+
 								<group>
 									<title>Rio: RDF Parsers and Writers </title>
 									<packages>org.eclipse.rdf4j.rio*</packages>
 								</group>
-
+								
 								<group>
-									<title>Query API and query engines</title>
+									<title>Query API and query parsers</title>
 									<packages>org.eclipse.rdf4j.query:org.eclipse.rdf4j.query.impl:org.eclipse.rdf4j.query.algebra*:org.eclipse.rdf4j.query.parser*</packages>
-
 								</group>
+
 								<group>
 									<title>Query Result Parsers and Writers</title>
 									<packages>org.eclipse.rdf4j.query.resultio*</packages>
 								</group>
 
 								<group>
-									<title>RDF4J Web Client</title>
-									<packages>org.eclipse.rdf4j.http.webclient*</packages>
+									<title>SPARQLBuilder</title>
+									<packages>org.eclipse.rdf4j.sparqlbuilder*</packages>
 								</group>
 
 								<group>
-									<title>HTTP Protocol for Client/Server Communication</title>
+									<title>Storage And Inference Layer (SAIL) SPI</title>
+									<packages>org.eclipse.rdf4j.sail*</packages>
+								</group>
+								
+								<group>
+									<title>Rdf4j REST Client and Protocol</title>
 									<packages>org.eclipse.rdf4j.http*</packages>
 								</group>
 							</groups>
@@ -165,15 +168,18 @@
 					<transformers>
 						<transformer
 							implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-						<transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
 							<resource>edl-v1.0.txt</resource>
 							<file>../edl-v1.0.txt</file>
 						</transformer>
-						<transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
 							<resource>notice.md</resource>
 							<file>../notice.md</file>
 						</transformer>
-						<transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
 							<resource>about.md</resource>
 							<file>../about.md</file>
 						</transformer>
