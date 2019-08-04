@@ -1063,9 +1063,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		super.visit(node, null);
 
-		// remove filter conditions from graph pattern for inclusion as
-		// conditions
-		// in the OptionalTE
+		// remove filter conditions from graph pattern for inclusion as conditions in the OptionalTE
 		List<ValueExpr> optionalConstraints = graphPattern.removeAllConstraints();
 		TupleExpr optional = graphPattern.buildTupleExpr();
 
@@ -1264,9 +1262,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 			if (pathElement.isNegatedPropertySet()) {
 
-				// create a temporary negated property set object and set the
-				// correct subject and object vars to continue
-				// the path sequence.
+				// create a temporary negated property set object and set the correct subject and object vars to
+				// continue the path sequence.
 
 				NegatedPropertySet nps = new NegatedPropertySet();
 				nps.setScope(scope);
@@ -1339,17 +1336,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						pathSequencePattern.addRequiredTE(te);
 					}
 				} else {
-					// not the last element in the path, introduce an anonymous
-					// var
-					// to connect.
+					// not the last element in the path, introduce an anonymous var to connect.
 					Var nextVar = createAnonVar();
 
 					pathElement.jjtGetChild(0).jjtAccept(this, startVar);
 
 					TupleExpr te = graphPattern.buildTupleExpr();
 
-					// replace all object list occurrences with the intermediate
-					// var.
+					// replace all object list occurrences with the intermediate var.
 
 					te = replaceVarOccurrence(te, objectList, nextVar);
 					te = handlePathModifiers(scope, startVar, te, nextVar, contextVar, lowerBound, upperBound);
@@ -1367,15 +1361,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				TupleExpr te;
 
 				if (i == pathLength - 1) {
-					// last element in the path, connect to list of defined
-					// objects
+					// last element in the path, connect to list of defined objects
 					for (ValueExpr object : objectList) {
 						Var objVar = mapValueExprToVar(object);
 						boolean replaced = false;
 
-						// See SES-1685 we introduce a new var and a SameTerm
-						// filter
-						// to avoid problems in cyclic paths
+						// See SES-1685 we introduce a new var and a SameTerm filter to avoid problems in cyclic paths
 						if (objVar.equals(subjVar)) {
 							objVar = createAnonVar();
 							replaced = true;
@@ -1406,16 +1397,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					}
 				} else {
-					// not the last element in the path, introduce an anonymous
-					// var
-					// to connect.
+					// not the last element in the path, introduce an anonymous var to connect.
 					Var nextVar = createAnonVar();
 
-					if (invertSequence && startVar.equals(subjVar)) { // first
-																		// element
-																		// in
-																		// inverted
-																		// sequence
+					// first element in inverted sequence
+					if (invertSequence && startVar.equals(subjVar)) {
 						for (ValueExpr object : objectList) {
 							Var objVar = mapValueExprToVar(object);
 							startVar = objVar;
@@ -1495,12 +1481,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		TupleExpr patternMatch = null;
 
-		// build a regular statement pattern (or a join of several patterns if
-		// the
-		// object list has more than
-		// one item)
+		// build a regular statement pattern (or a join of several patterns if the object list has more than one item)
 		if (filterCondition != null) {
-			for (ValueExpr objVar : nps.getObjectList()) {
+			for (ValueExpr obj : nps.getObjectList()) {
+				final Var objVar = mapValueExprToVar(obj);
 				if (patternMatch == null) {
 					patternMatch = new StatementPattern(nps.getScope(), subjVar, predVar, (Var) objVar,
 							nps.getContextVar());
@@ -1514,10 +1498,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		TupleExpr patternMatchInverse = null;
 
-		// build a inverse statement pattern (or a join of several patterns if
-		// the
-		// object list has more than
-		// one item):
+		// build a inverse statement pattern (or a join of several patterns if the object list has more than one item):
 		if (filterConditionInverse != null) {
 			for (ValueExpr objVar : nps.getObjectList()) {
 				if (patternMatchInverse == null) {
@@ -1568,8 +1549,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (upperBound < Long.MAX_VALUE) {
 					// upperbound is fixed-length
 
-					// create set of unions for all path lengths between lower
-					// and upper bound.
+					// create set of unions for all path lengths between lower and upper bound.
 					Union union = new Union();
 					Union currentUnion = union;
 
