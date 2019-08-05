@@ -36,6 +36,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * Processes the prefix declarations in a SPARQL query model.
  * 
  * @author Arjohn Kampman
+ * 
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
 public class PrefixDeclProcessor {
 

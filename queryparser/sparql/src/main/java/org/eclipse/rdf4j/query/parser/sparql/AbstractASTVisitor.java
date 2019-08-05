@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.*;
  * Base class for visitors of the SPARQL AST.
  * 
  * @author arjohn
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
 public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
 
