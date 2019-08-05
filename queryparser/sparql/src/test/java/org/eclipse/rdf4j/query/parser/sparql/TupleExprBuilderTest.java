@@ -14,10 +14,12 @@ import static org.junit.Assert.fail;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
@@ -63,6 +65,22 @@ public class TupleExprBuilderTest {
 			fail("should parse ask query with solution modifiers");
 		}
 
+	}
+
+	@Test
+	public void testNegatedPathWithFixedObject() {
+		String query = "ASK WHERE { ?s !<http://example.org/p> <http://example.org/o> . }";
+
+		try {
+			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			TupleExpr result = builder.visit(qc, null);
+
+			assertTrue(result instanceof Slice);
+		} catch (Exception e) {
+			e.printStackTrace();
+			fail("should parse ask query with negated property path");
+		}
 	}
 
 	/**

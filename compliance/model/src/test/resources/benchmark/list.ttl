@@ -1,0 +1,13 @@
+@base <http://example.com/ns> .
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+
+[rdfs:label "test"] foaf:knows ( [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test2"] [foaf:knows ( [rdfs:label "test3"] [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test2"] [rdfs:label "test"] )] )] )] )] )] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ).
+ex:peter foaf:knows ( [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test4"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] )] )] )] )] )] [rdfs:label "test1"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ).
+ex:steve foaf:knows ( [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [foaf:knows ( [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( ex:peter [rdfs:label "test"] [rdfs:label "test5"] [rdfs:label "test"] [rdfs:label "test"] [foaf:knows ( [rdfs:label "test1"] [rdfs:label "test"] [rdfs:label "test"] ex:peter [rdfs:label "test"] [rdfs:label "test3"] [rdfs:label "test"] )] )] )] )] )] [rdfs:label "test"] ex:peter [rdfs:label "test4"] [rdfs:label "test"] [rdfs:label "test"] [rdfs:label "test"] ).
+ex:steve rdfs:label "test5".

@@ -14,7 +14,8 @@
         <modules>
           <module>repository</module>
           <module>rio</module>
-        </modules>
+        <module>model</module>
+    </modules>
 
 	<name>RDF4J Compliance tests</name>
 	<description>Eclipse RDF4J compliance and integration tests</description>
