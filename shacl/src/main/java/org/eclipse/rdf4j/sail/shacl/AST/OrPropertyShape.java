@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
@@ -66,7 +66,7 @@ public class OrPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -78,7 +78,7 @@ public class OrPropertyShape extends PathPropertyShape {
 			AndPropertyShape orPropertyShape = new AndPropertyShape(getId(), nodeShape, deactivated, this, null,
 					or);
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
 					overrideTargetNode, false, true);
 
 			return new EnrichWithShape(plan.getParent(), this);
@@ -88,13 +88,13 @@ public class OrPropertyShape extends PathPropertyShape {
 		if (or.stream().mapToLong(List::size).sum() == 1) {
 			PlanNode plan = or.get(0)
 					.get(0)
-					.getPlan(shaclSailConnection, false, overrideTargetNode, negateSubPlans, false);
+					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
 			return new EnrichWithShape(plan, this);
 		}
 
 		List<List<PlanNode>> initialPlanNodes = or.stream()
 				.map(shapes -> shapes.stream()
-						.map(shape -> shape.getPlan(shaclSailConnection, false, null, negateSubPlans, false))
+						.map(shape -> shape.getPlan(connectionsGroup, false, null, negateSubPlans, false))
 						.filter(Objects::nonNull)
 						.collect(Collectors.toList()))
 				.filter(list -> !list.isEmpty())
@@ -109,7 +109,7 @@ public class OrPropertyShape extends PathPropertyShape {
 			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
-			if (shaclSailConnection.sail.isCacheSelectNodes()) {
+			if (connectionsGroup.getSail().isCacheSelectNodes()) {
 				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
 			} else {
 				targetNodesToValidate = overrideTargetNode;
@@ -121,11 +121,11 @@ public class OrPropertyShape extends PathPropertyShape {
 				.map(shapes -> shapes
 						.stream()
 						.map(shape -> {
-							if (shaclSailConnection.stats.isBaseSailEmpty() && overrideTargetNode == null) {
-								return shape.getPlan(shaclSailConnection, false, null, negateSubPlans,
+							if (connectionsGroup.getStats().isBaseSailEmpty() && overrideTargetNode == null) {
+								return shape.getPlan(connectionsGroup, false, null, negateSubPlans,
 										false);
 							}
-							return shape.getPlan(shaclSailConnection, false, targetNodesToValidate,
+							return shape.getPlan(connectionsGroup, false, targetNodesToValidate,
 									negateSubPlans, false);
 						})
 						.filter(Objects::nonNull)
@@ -192,7 +192,7 @@ public class OrPropertyShape extends PathPropertyShape {
 		}
 
 		if (printPlans) {
-			String planAsGraphiz = getPlanAsGraphvizDot(ret, shaclSailConnection);
+			String planAsGraphiz = getPlanAsGraphvizDot(ret, connectionsGroup);
 			logger.info(planAsGraphiz);
 		}
 
@@ -258,11 +258,11 @@ public class OrPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 
 		Optional<PlanNode> reduce = or.stream()
 				.flatMap(Collection::stream)
-				.map(a -> a.getAllTargetsPlan(shaclSailConnection, negated))
+				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
 				.reduce((a, b) -> new UnionNode(a, b));
 
 		return new Unique(reduce.get());

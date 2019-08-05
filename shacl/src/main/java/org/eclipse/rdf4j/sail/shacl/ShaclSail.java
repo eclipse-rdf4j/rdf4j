@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.StampedLock;
 
@@ -159,7 +160,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
-	private boolean performanceLogging = false;
+	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
+	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
 
 	static {
 		try {
@@ -175,10 +177,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	private static String resourceAsString(String s) throws IOException {
-		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), StandardCharsets.UTF_8);
-	}
-
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
 
@@ -186,6 +184,22 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public ShaclSail() {
 		super();
+	}
+
+	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.
+	// If it is done in parallel, then this will catch that and the multipleConcurrentConnections == true.
+	private transient ShaclSailConnection currentConnection;
+	private transient boolean multipleConcurrentConnections;
+
+	synchronized void closeConnection(ShaclSailConnection connection) {
+		if (connection == currentConnection) {
+			currentConnection = null;
+		}
+	}
+
+	synchronized boolean usesSingleConnection() {
+//		return false; // if this method returns false, then the connection will always use the new serializable validation
+		return !multipleConcurrentConnections;
 	}
 
 	/**
@@ -235,14 +249,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		super.initialize();
 
-		if (getDataDir() != null) {
-			if (parallelValidation) {
-				logger.info("Automatically disabled parallel SHACL validation because persistent base sail "
-						+ "was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
-			}
-			setParallelValidation(false);
-		}
-
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
 			shapesRepo = null;
@@ -254,6 +260,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 				path = path.substring(0, path.length() - 1);
 			}
 			path = path + "-shapes-graph/";
+
+			logger.info("Shapes will be persisted in: " + path);
 
 			shapesRepo = new SailRepository(new MemoryStore(new File(path)));
 		} else {
@@ -305,8 +313,19 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
+	public synchronized NotifyingSailConnection getConnection() throws SailException {
+
+		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
+				super.getConnection(), super.getConnection(), super.getConnection(),
+				shapesRepo.getConnection());
+
+		if (currentConnection == null) {
+			currentConnection = shaclSailConnection;
+		} else {
+			multipleConcurrentConnections = true;
+		}
+
+		return shaclSailConnection;
 	}
 
 	List<NodeShape> getNodeShapes() {
@@ -356,13 +375,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Releases the exclusive write lock.
+	 *
+	 * @return
 	 */
-	void releaseExclusiveWriteLock(long stamp) {
+	long releaseExclusiveWriteLock(long stamp) {
+		assert stamp != 0;
 		threadHoldingWriteLock = null;
 		lock.unlockWrite(stamp);
+		return 0;
 	}
 
-	long readlock() {
+	long acquireReadlock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
 					"Deadlock detected when a single thread uses multiple connections " +
@@ -372,8 +395,23 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return lock.readLock();
 	}
 
-	void releaseReadlock(long stamp) {
+	long releaseReadlock(long stamp) {
+		assert stamp != 0;
+
 		lock.unlockRead(stamp);
+		return 0;
+	}
+
+	synchronized long convertToReadLock(long writeLockStamp) {
+		assert writeLockStamp != 0;
+		long l = lock.tryConvertToReadLock(writeLockStamp);
+		assert l != 0;
+		threadHoldingWriteLock = null;
+		return l;
+	}
+
+	void setNodeShapes(List<NodeShape> nodeShapes) {
+		this.nodeShapes = nodeShapes;
 	}
 
 	/**
@@ -451,12 +489,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * <p>
 	 * May cause deadlock, especially when using NativeStore.
 	 *
-	 * @param parallelValidation default false
+	 * @param parallelValidation default true
 	 */
 	public void setParallelValidation(boolean parallelValidation) {
-		if (parallelValidation) {
-			logger.warn("Parallel SHACL validation enabled. This is an experimental feature and may cause deadlocks!");
-		}
 		this.parallelValidation = parallelValidation;
 	}
 
@@ -564,7 +599,38 @@ public class ShaclSail extends NotifyingSailWrapper {
 		this.performanceLogging = performanceLogging;
 	}
 
-	public void setNodeShapes(List<NodeShape> nodeShapes) {
-		this.nodeShapes = nodeShapes;
+	/**
+	 * On transactions using SNAPSHOT isolation the ShaclSail can run the validation serializably. This stops the sail
+	 * from becoming inconsistent due to race conditions between two transactions. Serializable validation limits TPS
+	 * (transactions per second), it is however considerably faster than actually using SERIALIZABLE isolation.
+	 *
+	 * @return <code>true</code> if serializable validation is enabled, <code>false</code> otherwise.
+	 */
+	public boolean isSerializableValidation() {
+		return serializableValidation;
 	}
+
+	/**
+	 * Enable or disable serializable validation.On transactions using SNAPSHOT isolation the ShaclSail can run the
+	 * validation serializably. This stops the sail from becoming inconsistent due to race conditions between two
+	 * transactions. Serializable validation limits TPS (transactions per second), it is however considerably faster
+	 * than actually using SERIALIZABLE isolation.
+	 *
+	 * <p>
+	 * To increase TPS, serializable validation can be disabled. Validation will then be limited to the semantics of the
+	 * SNAPSHOT isolation level (or whichever is specified). If you use any other isolation level than SNAPSHOT,
+	 * disabling serializable validation will make no difference on performance.
+	 * </p>
+	 *
+	 * @param serializableValidation default true
+	 */
+	public void setSerializableValidation(boolean serializableValidation) {
+		this.serializableValidation = serializableValidation;
+	}
+
+	private static String resourceAsString(String s) throws IOException {
+		return IOUtils.toString(Objects.requireNonNull(ShaclSail.class.getClassLoader().getResourceAsStream(s)),
+				StandardCharsets.UTF_8);
+	}
+
 }

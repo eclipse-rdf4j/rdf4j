@@ -14,11 +14,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.ArrayDeque;
 
@@ -34,11 +32,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
+	private final SailConnection previousStateConnection;
 	private boolean printed = false;
-	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection, String... variables) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
@@ -46,6 +44,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.previousStateConnection = previousStateConnection;
 		this.variables = variables;
 
 	}
@@ -74,7 +73,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					return;
 				}
 
-				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, variables);
+				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection,
+						variables);
 
 			}
 
@@ -165,15 +165,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		}
 
 		if (skipBasedOnPreviousConnection) {
-			if (connection instanceof ShaclSailConnection) {
-				NotifyingSailConnection previousStateConnection = ((ShaclSailConnection) connection)
-						.getPreviousStateConnection();
+			stringBuilder
+					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+							+ " [label=\"skip if not present\"]")
+					.append("\n");
 
-				stringBuilder
-						.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-								+ " [label=\"skip if not present\"]")
-						.append("\n");
-			}
 		}
 
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");

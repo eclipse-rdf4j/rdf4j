@@ -11,10 +11,9 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -47,29 +46,29 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
-		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection,
-				getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner()), "?a", "?c"));
+		PlanNode parent = connectionsGroup.getCachedNodeFor(new Select(connectionsGroup.getBaseConnection(),
+				getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
-			planNode = shaclSailConnection
-					.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection.getAddedStatements(), null,
+			planNode = connectionsGroup
+					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
 							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 		} else {
-			planNode = shaclSailConnection.getCachedNodeFor(
-					new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+			planNode = connectionsGroup.getCachedNodeFor(
+					new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		}
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
@@ -77,17 +76,17 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection,
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
-			planNode = shaclSailConnection
-					.getCachedNodeFor(new Sort(new UnorderedSelect(shaclSailConnection.getRemovedStatements(), null,
+			planNode = connectionsGroup
+					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 		} else {
-			planNode = shaclSailConnection.getCachedNodeFor(
-					new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+			planNode = connectionsGroup.getCachedNodeFor(
+					new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		}
 		return new Unique(new TrimTuple(planNode, 0, 1));
 	}
@@ -125,7 +124,7 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
 	}
 

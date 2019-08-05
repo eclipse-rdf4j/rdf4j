@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
@@ -51,7 +51,7 @@ public class NotPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -59,7 +59,7 @@ public class NotPropertyShape extends PathPropertyShape {
 		}
 
 		if (this.getPath() != null) {
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
 					overrideTargetNode, false, !negateThisPlan);
 
 			PlanNode parent = plan.getParent();
@@ -68,8 +68,8 @@ public class NotPropertyShape extends PathPropertyShape {
 
 		} else {
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(shaclSailConnection, printPlans,
-					() -> getTargetsPlan(shaclSailConnection, overrideTargetNode, !negateThisPlan), false, false);
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+					() -> getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan), false, false);
 
 			// parents are the targets that are checked
 			PlanNode parent = plan.getParent();
@@ -79,7 +79,7 @@ public class NotPropertyShape extends PathPropertyShape {
 			}
 
 			// these are all the checkable targets
-			PlanNode targetsPlan = getTargetsPlan(shaclSailConnection, overrideTargetNode, !negateThisPlan);
+			PlanNode targetsPlan = getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan);
 
 //			targetsPlan = new BufferedSplitter(targetsPlan).getPlanNode();
 
@@ -92,13 +92,13 @@ public class NotPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ShaclSailConnection shaclSailConnection, boolean negated) {
-		return orPropertyShape.getAllTargetsPlan(shaclSailConnection, !negated);
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		return orPropertyShape.getAllTargetsPlan(connectionsGroup, !negated);
 	}
 
-	public PlanNode getTargetsPlan(ShaclSailConnection shaclSailConnection, PlanNodeProvider overrideTargetNode,
+	public PlanNode getTargetsPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
 			boolean negated) {
-		PlanNode targetsPlan = orPropertyShape.getAllTargetsPlan(shaclSailConnection, negated);
+		PlanNode targetsPlan = orPropertyShape.getAllTargetsPlan(connectionsGroup, negated);
 		if (overrideTargetNode != null) {
 			targetsPlan = new Unique(new UnionNode(targetsPlan, overrideTargetNode.getPlanNode()));
 		}
