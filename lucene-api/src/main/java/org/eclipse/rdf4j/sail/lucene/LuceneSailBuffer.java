@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -23,7 +24,12 @@ import org.eclipse.rdf4j.model.Value;
  * 
  * @author sauermann
  * @author andriy.nikolov
+ * 
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
+@Deprecated
+@InternalUseOnly
 public class LuceneSailBuffer {
 
 	private static class ContextAwareStatementImpl implements Statement {
