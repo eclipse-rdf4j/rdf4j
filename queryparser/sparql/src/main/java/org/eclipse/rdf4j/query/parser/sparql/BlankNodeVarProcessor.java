@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNode;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public class BlankNodeVarProcessor extends AbstractASTVisitor {
 
 	public static Set<String> process(ASTOperationContainer qc) throws MalformedQueryException {

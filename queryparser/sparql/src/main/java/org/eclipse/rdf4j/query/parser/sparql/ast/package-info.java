@@ -1,4 +1,5 @@
 @Deprecated
+@InternalUseOnly
 /**
  * SPARQL 1.1 Abstract Syntax Tree (AST) parser.
  * 
@@ -6,3 +7,5 @@
  *             warning from one release to the next.
  */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;

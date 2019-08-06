@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 /**
- * <b>This package is deprecated. Use the new rdf4j-sparqlbuilder module for query building instead.</b>
+ * This package is deprecated. Use the new rdf4j-sparqlbuilder module for query building instead.
  * 
  * @see org.eclipse.rdf4j.sparqlbuilder
  */

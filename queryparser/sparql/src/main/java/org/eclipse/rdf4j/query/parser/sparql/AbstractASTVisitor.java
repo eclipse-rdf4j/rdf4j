@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.parser.sparql.ast.*;
 
 /**
@@ -17,6 +18,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.*;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
 
 	@Override

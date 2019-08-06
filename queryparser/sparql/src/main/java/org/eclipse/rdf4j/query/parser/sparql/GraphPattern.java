@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public class GraphPattern {
 
 	/**
