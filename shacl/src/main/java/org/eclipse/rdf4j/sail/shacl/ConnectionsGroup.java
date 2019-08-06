@@ -8,16 +8,25 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-
 import java.io.Closeable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+
+/**
+ *
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
+ *
+ */
+@Deprecated
+@InternalUseOnly
 public class ConnectionsGroup implements Closeable {
 
 	private final ShaclSail sail;
