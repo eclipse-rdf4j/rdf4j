@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.Add;
 import org.eclipse.rdf4j.query.algebra.Clear;
@@ -58,6 +59,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public class UpdateExprBuilder extends TupleExprBuilder {
 
 	/**

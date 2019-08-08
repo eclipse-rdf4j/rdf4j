@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTString;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public class StringEscapesProcessor {
 
 	/**

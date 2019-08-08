@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -103,6 +104,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.*;
  *             warning from one release to the next.
  */
 @Deprecated
+@InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
 
 	/*-----------*
