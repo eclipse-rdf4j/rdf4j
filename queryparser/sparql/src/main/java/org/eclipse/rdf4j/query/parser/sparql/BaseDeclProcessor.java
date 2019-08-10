@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.net.URISyntaxException;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBaseDecl;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
@@ -98,10 +97,6 @@ public class BaseDeclProcessor {
 	private static class RelativeIRIResolver extends AbstractASTVisitor {
 
 		private ParsedIRI parsedBaseURI;
-
-		public RelativeIRIResolver(ParsedURI parsedBaseURI) {
-			this(ParsedIRI.create(parsedBaseURI.toString()));
-		}
 
 		public RelativeIRIResolver(ParsedIRI parsedBaseURI) {
 			this.parsedBaseURI = parsedBaseURI;
