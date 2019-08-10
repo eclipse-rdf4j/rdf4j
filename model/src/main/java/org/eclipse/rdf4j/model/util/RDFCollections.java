@@ -16,8 +16,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -89,6 +89,39 @@ public class RDFCollections {
 	}
 
 	/**
+	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
+	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
+	 * statements making up the new RDF Collection will be added to the supplied statement collection.
+	 * 
+	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
+	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
+	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
+	 *                 {@link LiteralUtilException} if the value's object type is not supported. See
+	 *                 {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported types.
+	 * @param head     a {@link Resource} which will be used as the head of the list, that is, the starting point of the
+	 *                 created RDF Collection. May be {@code null}, in which case a new resource is generated to
+	 *                 represent the list head.
+	 * @param sink     a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the RDF
+	 *                 Collection statements will be added. May not be {@code null}.
+	 * @param factory  the {@link ValueFactory} to be used for creation of RDF model objects. May not be {@code null}.
+	 * @param contexts the context(s) in which to add the RDF Collection. This argument is an optional vararg and can be
+	 *                 left out.
+	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
+	 *         Collection added.
+	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
+	 *      vocabulary</a>.
+	 * 
+	 * @since 3.0
+	 */
+	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
+			ValueFactory valueFactory, Resource... contexts) {
+		Objects.requireNonNull(sink);
+		consumeCollection(values, head, st -> sink.add(st), valueFactory, contexts);
+		return sink;
+	}
+
+	/**
 	 * Converts an RDF Collection to a Java {@link Collection} of {@link Value} objects. The RDF Collection is given by
 	 * the supplied {@link Model} and {@code head}. This method expects the RDF Collection to be well-formed. If the
 	 * collection is not well-formed the method may return part of the collection, or may throw a
@@ -138,10 +171,39 @@ public class RDFCollections {
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
 			Resource... contexts) {
+		consumeCollection(values, head, consumer, SimpleValueFactory.getInstance(), contexts);
+	}
+
+	/**
+	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
+	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
+	 * statements making up the new RDF Collection will be reported to the supplied {@link Consumer} function.
+	 * 
+	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
+	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
+	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
+	 *                 {@link LiteralUtilException} if the value's object type is not supported. See
+	 *                 {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported types.
+	 * @param head     a {@link Resource} which will be used as the head of the list, that is, the starting point of the
+	 *                 created RDF Collection. May be {@code null}, in which case a new resource is generated to
+	 *                 represent the list head.
+	 * @param consumer the {@link Consumer} function for the Statements of the RDF Collection. May not be {@code null}.
+	 * @param vf       the {@link ValueFactory} to use for creation of new model objects. May not be {@code null}
+	 * @param contexts the context(s) in which to add the RDF Collection. This argument is an optional vararg and can be
+	 *                 left out.
+	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
+	 *      vocabulary</a>.
+	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
+	 * 
+	 * @since 3.0
+	 */
+	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
+			ValueFactory vf,
+			Resource... contexts) {
 		Objects.requireNonNull(values, "input collection may not be null");
 		Objects.requireNonNull(consumer, "consumer may not be null");
-
-		final ValueFactory vf = SimpleValueFactory.getInstance();
+		Objects.requireNonNull(vf, "injected value factory may not be null");
 
 		Resource current = head != null ? head : vf.createBNode();
 
