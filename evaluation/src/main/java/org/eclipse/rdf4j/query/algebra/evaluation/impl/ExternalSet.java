@@ -19,7 +19,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * @author James Leigh
+ * 
+ * @deprecated since 3.0.
  */
+@Deprecated
 public abstract class ExternalSet extends AbstractQueryModelNode implements TupleExpr {
 
 	private static final long serialVersionUID = 3903453394409442226L;
