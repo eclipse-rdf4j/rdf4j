@@ -62,9 +62,182 @@ Both Rdf4j Server and Rdf4j Workbench use the Logback logging framework. In its 
 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[Rdf4j_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
-### Setting up Users and Permissions
+## Access Rights and Security
 
-It is possible to set up your Rdf4j Server to authenticate named users and restrict their permissions. See the blog post at http://rivuli-development.com/further-reading/sesame-cookbook/basic-security-with-http-authentication/ for a  tutorial on how to do so when using Tomcat as the application container. [TODO add permission tutorial here]
+It is possible to set up your Rdf4j Server to authenticate named users and
+restrict their permissions.  Rdf4j Server is a servlet-based Web
+application deployed to any standard servlet container (for the remainder of
+this section it is assumed that Tomcat is being used).
+
+The Rdf4j Server exposes its functionality using a [REST
+API](/documentation/rest-api) that is an extension of the SPARQL protocol for
+RDF. This protocol defines exactly what operations can be achieved using
+specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each
+combination of URL pattern and HTTP method can be associated with a set of user
+roles, thus giving very fine-grained control.
+
+In general, read operations are effected using `GET` and write operations using
+`PUT`, `POST` and `DELETE`. The exception to this is that POST is allowed for
+SPARQL queries. This is for practical reasons, because some HTTP servers have
+limits on the length of the parameter values for GET requests.
+
+### Security constraints and roles
+
+The association between operations and security roles is specified using
+security constraints in Rdf4j Server’s _deployment descriptor_ - a file
+called `web.xml` that can be found in the `.../webapps/rdf4j-server/WEB-INF`
+directory. `web.xml` becomes available immediately after the installation without
+any security roles defined.
+
+*Warning*: When redeployed, the `web.xml` file gets overwritten with the
+default version. Therefore, if you change it, make sure you create a backup. In
+particular, do not edit `web.xml` while Tomcat is running.
+
+The deployment descriptor defines:
+
+- authentication mechanism/configuration;
+- security constraints in terms of operations (URL pattern plus HTTP method);
+- security roles associated with security constraints.
+
+To enable authentication, add the following XML element to `web.xml` inside the `<web-app>` element:
+
+{{< highlight xml >}}
+    <login-config>
+        <auth-method>BASIC</auth-method>
+        <realm-name>rdf4j</realm-name>
+    </login-config>
+{{< / highlight >}}
+
+Security constraints associate operations (URL pattern plus HTTP method) with
+security roles. Both security constraints and security roles are nested in the
+`<web-app>` element.
+
+A security constraint minimally consists of a collection of web resources
+(defined in terms of URL patterns and HTTP methods) and an authorisation
+constraint (the role name that has access to the resource collection). Some
+example security constraints are shown below:
+
+{{< highlight xml >}}
+<security-constraint>
+    <web-resource-collection>
+        <web-resource-name>SPARQL query access to the 'test' repository</web-resource-name>
+        <url-pattern>/repositories/test</url-pattern>
+        <http-method>GET</http-method>
+        <http-method>POST</http-method>
+    </web-resource-collection>
+    <auth-constraint>
+        <role-name>viewer</role-name>
+        <role-name>editor</role-name>
+    </auth-constraint>
+</security-constraint>
+
+<security-constraint>
+    <web-resource-collection>
+        <web-resource-name>
+        Read access to 'test' repository's namespaces, size, contexts, etc
+        </web-resource-name>
+        <url-pattern>/repositories/test/*</url-pattern>
+        <http-method>GET</http-method>
+</web-resource-collection>
+    <auth-constraint>
+        <role-name>viewer</role-name>
+        <role-name>editor</role-name>
+    </auth-constraint>
+</security-constraint>
+
+<security-constraint>
+    <web-resource-collection>
+        <web-resource-name>Write access</web-resource-name>
+        <url-pattern>/repositories/test/*</url-pattern>
+        <http-method>POST</http-method>
+        <http-method>PUT</http-method>
+        <http-method>DELETE</http-method>
+    </web-resource-collection>
+    <auth-constraint>
+        <role-name>editor</role-name>
+    </auth-constraint>
+</security-constraint>
+{{< / highlight >}}
+
+The ability to create and delete repositories requires access to the SYSTEM repository. An administrator security constraint for this looks like the following:
+
+{{< highlight xml >}}
+<security-constraint>
+    <web-resource-collection>
+        <web-resource-name>Administrator access to SYSTEM</web-resource-name>
+        <url-pattern>/repositories/SYSTEM/</url-pattern>
+        <url-pattern>/repositories/SYSTEM/*/</url-pattern>
+        <http-method>GET</http-method>
+        <http-method>POST</http-method>
+        <http-method>PUT</http-method>
+        <http-method>DELETE</http-method>
+    </web-resource-collection>
+    <auth-constraint>
+        <role-name>administrator</role-name>
+    </auth-constraint>
+</security-constraint>
+{{< / highlight >}}
+
+Also nested inside the `<web-app>` element are definitions of security roles. The format is shown by the example:
+
+{{< highlight xml >}}
+<security-role>
+    <description>
+        Read only access to repository data
+    </description>
+    <role-name>viewer</role-name>
+</security-role>
+
+<security-role>
+    <description>
+        Read/write access to repository data
+    </description>
+    <role-name>editor</role-name>
+</security-role>
+
+<security-role>
+    <description>
+        Full control over the repository, as well as creating/deleting repositories
+    </description>
+    <role-name>administrator</role-name>
+</security-role>
+{{< / highlight >}}
+
+### User accounts
+
+Tomcat has a number of ways to manage user accounts. The different techniques
+are called 'realms' and the default one is called 'UserDatabaseRealm'. This is
+the simplest one to manage, but also the least secure, because usernames and
+passwords are stored in plain text.
+
+For the default security realm, usernames and passwords are stored in the file
+`tomcat-users.xml` in the Tomcat configuration directory, usually
+`/etc/tomcat/tomcat-users.xml` on Linux systems. To add user accounts, add
+`<user>` elements inside the `<tomcat-users>` element, for example:
+
+{{< highlight xml >}}
+<user username="adam" password="secret" roles="viewer" />
+<user username="eve" password="password" roles="viewer,editor,administrator" />
+{{< / highlight >}}
+
+### Programmatic authentication
+
+To use a remote repository where authentication has been enabled, it is
+necessary to provide the username and password to the rdf4j API. Remote
+repositories are usually accessed via the {{< javadoc "RemoteRepositoryManager"
+"repository/manager/RemoteRepositoryManager.html" >}} class. Tell the
+repository manager what the security credentials are using the following
+method:
+
+{{< highlight java >}}
+void setUsernameAndPassword(String username, String password)
+{{< / highlight >}}
+
+Alternatively, they can be passed in the factory method:
+
+{{< highlight java >}}
+static RemoteRepositoryManager getInstance(String serverURL, String username, String password)
+{{< / highlight >}}
 
 # Rdf4j Console
 
