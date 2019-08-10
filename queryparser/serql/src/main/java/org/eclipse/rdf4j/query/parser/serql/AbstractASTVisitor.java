@@ -76,6 +76,9 @@ import org.eclipse.rdf4j.query.parser.serql.ast.SimpleNode;
 import org.eclipse.rdf4j.query.parser.serql.ast.SyntaxTreeBuilderVisitor;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
+/**
+ * 
+ */
 public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
 
 	@Override

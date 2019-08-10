@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
+@SuppressWarnings("deprecation")
 public class SPARQLParser implements QueryParser {
 
 	@Override

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -20,7 +21,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * statement patterns.
  * 
  * @author Jeen
+ * 
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
+@Deprecated
+@InternalUseOnly
 public class NegatedPropertySet {
 
 	private Scope scope;

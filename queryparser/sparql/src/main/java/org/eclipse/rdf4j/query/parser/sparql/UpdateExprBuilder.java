@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.Add;
 import org.eclipse.rdf4j.query.algebra.Clear;
@@ -53,7 +54,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * Extension of TupleExprBuilder that builds Update Expressions.
  *
  * @author Jeen Broekstra
+ * 
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
+@Deprecated
+@InternalUseOnly
 public class UpdateExprBuilder extends TupleExprBuilder {
 
 	/**
