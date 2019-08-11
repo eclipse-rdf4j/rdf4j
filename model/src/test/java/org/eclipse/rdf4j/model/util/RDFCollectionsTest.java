@@ -11,6 +11,11 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -95,6 +100,14 @@ public class RDFCollectionsTest {
 		} catch (ModelException e) {
 			// fall through, expected
 		}
+	}
+
+	@Test
+	public void testInjectedValueFactoryIsUsed() {
+		Resource head = vf.createBNode();
+		ValueFactory injected = mock(SimpleValueFactory.class, CALLS_REAL_METHODS);
+		RDFCollections.asRDF(values, head, new TreeModel(), injected);
+		verify(injected, atLeastOnce()).createStatement(any(), any(), any());
 	}
 
 	@Test
