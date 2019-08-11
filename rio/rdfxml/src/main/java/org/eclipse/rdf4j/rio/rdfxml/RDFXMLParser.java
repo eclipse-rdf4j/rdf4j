@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -20,8 +19,7 @@ import java.util.Stack;
 import javax.xml.transform.sax.SAXResult;
 
 import org.apache.commons.io.input.BOMInputStream;
-import org.eclipse.rdf4j.common.net.ParsedURI;
-import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -42,8 +40,6 @@ import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
-import org.xml.sax.SAXNotRecognizedException;
-import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 
@@ -329,7 +325,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 *-----------------------------*/
 
 	@Override
-	protected void setBaseURI(ParsedURI baseURI) {
+	protected void setBaseURI(ParsedIRI baseURI) {
 		// Note: we need to override this method to allow SAXFilter to access it
 		super.setBaseURI(baseURI);
 	}
