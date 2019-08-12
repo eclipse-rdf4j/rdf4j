@@ -59,8 +59,8 @@ public class QueryResults extends Iterations {
 	 * Get a {@link Model} containing all elements obtained from the specified query result.
 	 * 
 	 * @param iteration the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
-	 *                  {@link RepositoryResult<Statement>}, or any other instance of {@link CloseableIteration
-	 *                  <Statement>}
+	 *                  {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
+	 *                  &lt;Statement&gt;}
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)

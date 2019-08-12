@@ -28,7 +28,6 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	 * 
 	 * @param mimeType A MIME type, e.g. "text/plain".
 	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
-	 * @see #getFileFormatForMIMEType(String, FileFormat)
 	 */
 	public Optional<FF> getFileFormatForMIMEType(String mimeType) {
 		return FileFormat.matchMIMEType(mimeType, this.getKeys());
@@ -39,7 +38,6 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	 * 
 	 * @param fileName A file name.
 	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
-	 * @see #getFileFormatForFileName(String, FileFormat)
 	 */
 	public Optional<FF> getFileFormatForFileName(String fileName) {
 		return FileFormat.matchFileName(fileName, this.getKeys());
