@@ -13,6 +13,7 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 /**
  * @author Håvard Ottestad
@@ -25,11 +26,11 @@ public class BenchmarkJunitTests {
 				.include("")
 				.exclude(ComplexLargeBenchmark.class.getSimpleName())
 				.exclude(NativeStoreBenchmark.class.getSimpleName())
-				.warmupBatchSize(1)
 				.measurementBatchSize(1)
+				.measurementTime(TimeValue.NONE)
 				.measurementIterations(1)
-				.warmupIterations(1)
-				.forks(1)
+				.warmupIterations(0)
+				.forks(0)
 				.build();
 
 		new Runner(opt).run();
