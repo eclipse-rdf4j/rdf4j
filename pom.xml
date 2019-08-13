@@ -119,6 +119,9 @@
 								</goals>
 							</execution>
 						</executions>
+						<configuration>
+							<source>8</source>
+						</configuration>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
@@ -181,6 +184,9 @@
 								</goals>
 							</execution>
 						</executions>
+						<configuration>
+							<source>8</source>
+						</configuration>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
