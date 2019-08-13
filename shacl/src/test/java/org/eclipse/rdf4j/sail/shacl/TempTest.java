@@ -16,6 +16,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -27,8 +29,15 @@ import java.io.StringReader;
  */
 public class TempTest {
 
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = true;
+	@BeforeClass
+	public static void beforeClass() {
+		// GlobalValidationExecutionLogging.loggingEnabled = true;
+
+	}
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
 	@Test

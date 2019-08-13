@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -30,8 +32,15 @@ import static junit.framework.TestCase.assertTrue;
  */
 public class LeftOuterJoinTest {
 
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = true;
+	@BeforeClass
+	public static void beforeClass() {
+		// GlobalValidationExecutionLogging.loggingEnabled = true;
+
+	}
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
 	@Test
