@@ -8,16 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-/**
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
- */
-@Deprecated
-@InternalUseOnly
 public enum SourceConstraintComponent {
 	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT),
 	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT),
