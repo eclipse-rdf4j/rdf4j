@@ -77,7 +77,7 @@ As of writing this documentation the following features are supported.
 - `sh:maxCount`
 - `sh:minLength`
 - `sh:maxLength`
-- `sh:pattern and sh:flags`
+- `sh:pattern` and `sh:flags`
 - `sh:nodeKind`
 - `sh:languageIn`
 - `sh:datatype`
