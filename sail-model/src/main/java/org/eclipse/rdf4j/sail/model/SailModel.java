@@ -40,6 +40,9 @@ import org.eclipse.rdf4j.sail.SailException;
  * Not thread-safe.
  * 
  * @author Mark
+ * 
+ * @deprecated this feature is for internal use only: its existence, signature or behavior may change without warning
+ *             from one release to the next.
  */
 public class SailModel extends AbstractModel {
 

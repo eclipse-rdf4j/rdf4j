@@ -20,6 +20,8 @@ import com.google.common.cache.CacheBuilder;
  * entries to be garbage-collected when no longer used.
  * 
  * @author Mark
+ * @deprecated this feature is for internal use only: its existence, signature or behavior may change without warning
+ *             from one release to the next.
  */
 public class NonSerializables {
 
