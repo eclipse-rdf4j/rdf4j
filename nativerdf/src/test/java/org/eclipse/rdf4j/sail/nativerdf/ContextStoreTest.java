@@ -8,15 +8,16 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
 
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -46,8 +47,9 @@ public class ContextStoreTest {
 	public void setUp() throws Exception {
 		dir = Files.createTempDir();
 		NativeSailStore sailStore = mock(NativeSailStore.class);
-		doNothing().when(sailStore).initializeContextCache();
+
 		when(sailStore.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		when(sailStore.getContexts()).thenReturn(new EmptyIteration<Resource, SailException>());
 
 		subject = new ContextStore(sailStore, dir);
 	}
