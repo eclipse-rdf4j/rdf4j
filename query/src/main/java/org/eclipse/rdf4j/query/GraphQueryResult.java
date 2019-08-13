@@ -25,7 +25,7 @@ public interface GraphQueryResult extends QueryResult<Statement> {
 	 * The contents of the Map may be modified after it is returned, as the initial return may be performed when the
 	 * first RDF Statement is encountered.
 	 * 
-	 * @return a Map<String, String> object containing (prefix, namespace) pairs.
+	 * @return a Map&lt;String, String&gt; object containing (prefix, namespace) pairs.
 	 * @throws QueryEvaluationException
 	 */
 	public Map<String, String> getNamespaces() throws QueryEvaluationException;
