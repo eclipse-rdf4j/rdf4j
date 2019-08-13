@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -36,6 +38,11 @@ import java.util.stream.IntStream;
 
 public abstract class MultithreadedTest {
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	@Test
 	public void testDataAndShapes() {
