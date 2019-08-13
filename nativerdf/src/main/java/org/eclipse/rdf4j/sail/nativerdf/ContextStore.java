@@ -24,9 +24,11 @@ import java.util.Map.Entry;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,12 +86,15 @@ class ContextStore implements Iterable<Resource> {
 
 	private final ValueFactory valueFactory;
 
+	private final NativeSailStore store;
+
 	ContextStore(NativeSailStore store, File dataDir) throws IOException {
 		Objects.requireNonNull(store);
 		Objects.requireNonNull(dataDir);
 
 		this.file = new File(dataDir, FILE_NAME);
 		this.valueFactory = store.getValueFactory();
+		this.store = store;
 
 		contextInfoMap = new HashMap<>(16);
 
@@ -98,7 +103,7 @@ class ContextStore implements Iterable<Resource> {
 		} catch (IOException e) {
 			logger.info("could not read context index: " + e.getMessage(), e);
 			logger.debug("attempting reconstruction from store (this may take a while)");
-			store.initializeContextCache();
+			initializeContextCache();
 			writeContextsToFile();
 			logger.info("context index reconstruction complete");
 		}
@@ -159,6 +164,15 @@ class ContextStore implements Iterable<Resource> {
 					out.writeBoolean(entry.getKey() instanceof IRI);
 					out.writeUTF(entry.getKey().stringValue());
 				}
+			}
+		}
+	}
+
+	private void initializeContextCache() throws IOException {
+		logger.debug("initializing context cache");
+		try (CloseableIteration<Resource, SailException> contextIter = store.getContexts()) {
+			while (contextIter.hasNext()) {
+				increment(contextIter.next());
 			}
 		}
 	}

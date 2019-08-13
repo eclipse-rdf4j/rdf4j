@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
@@ -52,13 +53,13 @@ class NativeSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(NativeSailStore.class);
 
-	final TripleStore tripleStore;
+	private final TripleStore tripleStore;
 
-	final ValueStore valueStore;
+	private final ValueStore valueStore;
 
-	final NamespaceStore namespaceStore;
+	private final NamespaceStore namespaceStore;
 
-	final ContextStore contextStore;
+	private final ContextStore contextStore;
 
 	/**
 	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and NamespaceStore.
@@ -174,8 +175,7 @@ class NativeSailStore implements SailStore {
 		return contextIDs;
 	}
 
-	void initializeContextCache() throws IOException {
-		logger.debug("initializing context cache");
+	CloseableIteration<Resource, SailException> getContexts() throws IOException {
 		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
 		CloseableIteration<? extends Statement, SailException> stIter1;
 		if (btreeIter == null) {
@@ -185,20 +185,20 @@ class NativeSailStore implements SailStore {
 			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 		}
 
-		// Filter statements without context resource
-		try (FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
 				stIter1) {
-
 			@Override
 			protected boolean accept(Statement st) {
 				return st.getContext() != null;
 			}
-		}) {
-			while (stIter2.hasNext()) {
-				Statement st = stIter2.next();
-				contextStore.increment(st.getContext());
+		};
+
+		return new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
+			@Override
+			protected Resource convert(Statement sourceObject) throws SailException {
+				return sourceObject.getContext();
 			}
-		}
+		};
 	}
 
 	/**
@@ -232,6 +232,7 @@ class NativeSailStore implements SailStore {
 		int objID = NativeValue.UNKNOWN_ID;
 		if (obj != null) {
 			objID = valueStore.getID(obj);
+
 			if (objID == NativeValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
