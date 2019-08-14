@@ -35,6 +35,16 @@ Rdf4j 3.0 contains several [backward incompatible changes](https://github.com/ec
 - we allow [injection of optimizers](https://github.com/eclipse/rdf4j/issues/1280) into a Sail object. 
 - as part of a massive restructure of our code repositories and the way in which the project is tested, [testsuites and compliance tests have been moved and refactored](https://github.com/eclipse/rdf4j/issues/1236). If you were depending on a particular testsuite and can no longer find it, contact us. 
 
+# 2.5.4
+
+Rdf4j 2.5.4 is a patch release containing several bug fixes, including:
+
+- handling of negation in property paths
+- stack overflow in Models.isomorphic
+- NullPointerException in Native Store Context Cache initialization 
+
+For a complete overview, see [all issues fixed in 2.5.4](https://github.com/eclipse/rdf4j/milestone/40?closed=1).
+
 # 2.5.3
 
 Rdf4j 2.5.3 is a patch release containing several bug fixes, including:
