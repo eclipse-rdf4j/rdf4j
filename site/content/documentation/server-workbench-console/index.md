@@ -325,10 +325,14 @@ On a MS-Windows system, forward slashes or double backward slashes are to be use
 
     verify C:\\data\\rdf\\data.jsonld
 
-or
+or:
 
     verify C:/data/rdf/data.jsonld
   
+Validating the file against a set of shapes and constraints in a SHACL file, and storing the validation report to a file, is equally straightforward:   
+
+   verify data.jsonld shacl-file.ttl validation-report.ttl
+
 ### Loading a file into a repository
 
 The `load` command loads a file into the opened repository.  Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name.
@@ -665,3 +669,49 @@ The “Export” link on the sidebar menu is convenient for bringing up a paged 
 - RDF/JSON
 - Turtle
 
+## SHACL
+
+NOTE: new in RDF4J 3.0
+
+Workbench supports two SHACL wrapped stores.
+
+ * memory-shacl
+ * native-shacl
+
+### Loading shapes
+
+Shapes need to be loaded into the following context:
+
+    <http://rdf4j.org/schema/rdf4j#SHACLShapeGraph>
+
+![Loading shapes](images/loadShapes.png)
+
+This context is a hidden context that is only available through the following commands:
+
+ * Add
+ * Remove
+ * Clear
+
+To update your shapes you should first clear the shapes context and then add your shapes again.
+
+### Retrieving shapes
+
+There is no functionality in the user interface to retrieve the loaded shapes. Instead the loaded
+shapes can be retrieved through the REST interface.
+
+Assuming you are running the server and workbench locally, and the repository ID you
+want to use is `1`, you can use the following URL to download your shapes as RDF-XML:
+`http://localhost:8080/rdf4j-server/repositories/1/statements?context=%3Chttp%3A%2F%2Frdf4j.org%2Fschema%2Frdf4j%23SHACLShapeGraph%3E`
+
+### Validation
+
+All transactions are validated before being committed. A validation error when uploading data in
+the workbench looks like this:
+
+![Validation error](images/shaclValidationError.png)
+
+Your data will only be committed if it passes validation.
+
+### Supported features and more info
+
+For a list of supported features and more info on how to use SHACL - see <a href="/documentation/programming/shacl/">Programming with SHACL</a>.

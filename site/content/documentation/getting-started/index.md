@@ -379,7 +379,7 @@ We have more sophisticated options at our disposal, however.
 
 ### Example 09: filtering on a specific subject
 
-{{< example "Example 09" "model/Example07Filter.java" >}} shows how we can use {{< javadoc "Model.filter" "model/Model.html#filter-org.eclipse.rdf4j.model.Resource-org.eclipse.rdf4j.model.IRI-org.eclipse.rdf4j.model.Value-org.eclipse.rdf4j.model.Resource...-" >}} to "zoom in" on a specific subject in our model. We're also using the opportunity to show how you can print out RDF statements in a slightly prettier way:
+{{< example "Example 09" "model/Example09Filter.java" >}} shows how we can use {{< javadoc "Model.filter" "model/Model.html#filter-org.eclipse.rdf4j.model.Resource-org.eclipse.rdf4j.model.IRI-org.eclipse.rdf4j.model.Value-org.eclipse.rdf4j.model.Resource...-" >}} to "zoom in" on a specific subject in our model. We're also using the opportunity to show how you can print out RDF statements in a slightly prettier way:
 
 
 {{< highlight java "linenos=table" >}}
@@ -544,7 +544,7 @@ In this tutorial, we will show the basics of how to use the Repository API and e
 
 ### Example 13: Adding an RDF Model to a database
 
-{{< example "Example 13" "repository/Example11AddRDFToDatabase.java" >}} shows how we can add our RDF Model to a database:
+{{< example "Example 13" "repository/Example13AddRDFToDatabase.java" >}} shows how we can add our RDF Model to a database:
 
 {{< highlight java "linenos=table" >}}
 // First load our RDF file as a Model.
