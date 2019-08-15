@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -38,7 +38,7 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, boolean printPlans,
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
@@ -46,11 +46,11 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
-		PlanNode invalidValues = getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
 				(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
-			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
 			logger.info(planAsGraphvizDot);
 		}
 

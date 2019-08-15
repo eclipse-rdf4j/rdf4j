@@ -9,13 +9,16 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import ch.qos.logback.classic.Logger;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -34,6 +37,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
@@ -333,11 +337,14 @@ public class ComplexLargeBenchmark {
 	}
 
 	@Benchmark
-	public void noPreloadingRevalidateNativeStore() {
+	public void noPreloadingRevalidateNativeStore() throws IOException {
+		File file = Files.newTemporaryFolder();
 
 		try {
+
 			SailRepository repository = new SailRepository(
-					Utils.getInitializedShaclSailNativeStore("complexBenchmark/shacl.ttl"));
+					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"),
+							"complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -364,6 +371,9 @@ public class ComplexLargeBenchmark {
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
+		} finally {
+			FileUtils.deleteDirectory(file);
+
 		}
 
 	}

@@ -7,11 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
@@ -60,6 +65,24 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 		con = sail.getConnection();
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
+	}
+
+	@Test
+	public void testContextCacheReconstruction() throws Exception {
+		con.begin();
+		con.addStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, RDF.ALT);
+		con.commit();
+		con.close();
+		sail.shutDown();
+
+		File contextFile = new File(tempDir.getRoot(), "/nativestore/contexts.dat");
+		Files.delete(contextFile);
+
+		sail.init();
+		con = sail.getConnection();
+
+		assertTrue(contextFile.exists());
+		assertThat(QueryResults.asList(con.getContextIDs()).size()).isEqualTo(1);
 	}
 
 }

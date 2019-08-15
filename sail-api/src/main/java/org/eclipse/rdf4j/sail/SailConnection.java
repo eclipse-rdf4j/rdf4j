@@ -122,10 +122,19 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts)) {
+
+		CloseableIteration<? extends Statement, SailException> stIter = null;
+		try {
+
+			stIter = getStatements(subj, pred, obj, includeInferred, contexts);
 			return stIter.hasNext();
+
+		} finally {
+			if (stIter != null) {
+				stIter.close();
+			}
 		}
+
 	}
 
 	/**
