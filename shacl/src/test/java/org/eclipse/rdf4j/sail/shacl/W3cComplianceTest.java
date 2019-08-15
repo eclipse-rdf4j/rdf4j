@@ -37,11 +37,9 @@ public class W3cComplianceTest {
 
 	private URL testCasePath;
 
-
 	public W3cComplianceTest(URL testCasePath) {
 		this.testCasePath = testCasePath;
 	}
-
 
 	@Parameterized.Parameters(name = "{0}")
 	public static Collection<URL> data() {
@@ -58,7 +56,6 @@ public class W3cComplianceTest {
 		runTest(testCasePath);
 
 	}
-
 
 	private static Set<URL> getTestFiles() {
 
@@ -99,23 +96,26 @@ public class W3cComplianceTest {
 			}
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, connection.getValueFactory().createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"), null))) {
+				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null,
+						connection.getValueFactory()
+								.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
+						null))) {
 					include = stream
-						.map(Statement::getObject)
-						.map(Value::stringValue)
-						.map(v -> {
-							try {
-								return new URL(v);
-							} catch (MalformedURLException e) {
+							.map(Statement::getObject)
+							.map(Value::stringValue)
+							.map(v -> {
+								try {
+									return new URL(v);
+								} catch (MalformedURLException e) {
 
-								throw new RuntimeException(e);
-							}
-						}).collect(Collectors.toList());
+									throw new RuntimeException(e);
+								}
+							})
+							.collect(Collectors.toList());
 				}
 			}
 
 		}
-
 
 	}
 
@@ -138,19 +138,20 @@ public class W3cComplianceTest {
 		assertEquals(expected.conforms, !failedShacl);
 	}
 
-
 	class W3C_shaclTestValidate {
 
 		W3C_shaclTestValidate(URL filename) {
 			this.filename = filename.getPath();
 			SailRepository sailRepository = Utils.getSailRepository(filename);
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, SHACL.CONFORMS, null))) {
+				try (Stream<Statement> stream = Iterations
+						.stream(connection.getStatements(null, SHACL.CONFORMS, null))) {
 					conforms = stream
-						.map(Statement::getObject)
-						.map(o -> (Literal) o)
-						.map(Literal::booleanValue)
-						.findFirst().get();
+							.map(Statement::getObject)
+							.map(o -> (Literal) o)
+							.map(Literal::booleanValue)
+							.findFirst()
+							.get();
 				}
 			}
 		}
@@ -159,6 +160,5 @@ public class W3cComplianceTest {
 
 		boolean conforms;
 	}
-
 
 }
