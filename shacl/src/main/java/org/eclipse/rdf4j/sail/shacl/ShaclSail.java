@@ -259,7 +259,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			if (path.endsWith("/")) {
 				path = path.substring(0, path.length() - 1);
 			}
-			path = path + "-shapes-graph/";
+			path = path + "/shapes-graph/";
 
 			logger.info("Shapes will be persisted in: " + path);
 
