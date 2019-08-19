@@ -15,10 +15,6 @@
 	<name>RDF4J Elastic Search Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Elastic Search.</description>
 
-	<properties>
-		<elasticsearch.version>6.5.4</elasticsearch.version>
-	</properties>
-
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -43,4 +39,32 @@
 			</exclusions>
 		</dependency>
 	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<configuration>
+					<additionnalDependencies>
+						<additionnalDependency>
+							<groupId>org.elasticsearch</groupId>
+							<artifactId>elasticsearch</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.elasticsearch</groupId>
+							<artifactId>elasticsearch-x-content</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.elasticsearch</groupId>
+							<artifactId>elasticsearch</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+					</additionnalDependencies>
+				</configuration>
+			</plugin>
+			</plugins>
+	</build>
 </project>
