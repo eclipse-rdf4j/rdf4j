@@ -13,10 +13,6 @@
 	<name>RDF4J Solr Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Solr.</description>
 
-	<properties>
-		<solr.version>7.5.0</solr.version>
-	</properties>
-
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -89,7 +85,6 @@
 			</build>
 		</profile>
 	</profiles>
-	
 	<repositories>
 		<repository>
 			<!-- contains a solr-core transitive dependency -->
@@ -98,5 +93,4 @@
 			<url>https://maven.restlet.com</url>
 		</repository>
 	</repositories>
-	
 </project>

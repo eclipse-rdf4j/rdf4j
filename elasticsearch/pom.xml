@@ -15,10 +15,6 @@
 	<name>RDF4J Elastic Search Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Elastic Search.</description>
 
-	<properties>
-		<elasticsearch.version>6.5.4</elasticsearch.version>
-	</properties>
-
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
