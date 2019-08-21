@@ -5,7 +5,7 @@ hide_page_title: "true"
 ---
 
 # Getting Started with rdf4j, Maven, and Eclipse
-The link:/programming/[rdf4j programmer documentation] is pretty extensive, but also perhaps a bit daunting,  especially if you are relatively new to rdf4j, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
+The [rdf4j programmer documentation](../programming) is pretty extensive, but also perhaps a bit daunting,  especially if you are relatively new to rdf4j, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
 
 NOTE: using Maven or Eclipse is not required if you want to use rdf4j. These are simply very useful tools for quickly getting a Java project started. Maven is good because it allows you to just define which libraries you want to use and never worry about any further third-party libraries you might need, and Eclipse IDE is good because it has good integration with Maven, code completion features, and is just generally a great Java development environment.
 
@@ -242,4 +242,4 @@ Add these lines to your code, directly after where you have created the model. T
 
 ![Image](images/eclipse-app3.png)
 
-That’s it! Obviously there is still loads to learn about how to use rdf4j effectively, but you’ve got the basics under control now: you can set up a new project using rdf4j,  and have seen some basic ways to add, write, and retrieve data. The rest is up to you. Good sources of further documentation are link:/programming/[Programming with rdf4j], and of course the link:/javadoc/latest[API Javadoc].
+That’s it! Obviously there is still loads to learn about how to use rdf4j effectively, but you’ve got the basics under control now: you can set up a new project using rdf4j,  and have seen some basic ways to add, write, and retrieve data. The rest is up to you. Good sources of further documentation are [Programming with rdf4j](../programming), and of course the [API Javadoc](/javadoc/latest).
