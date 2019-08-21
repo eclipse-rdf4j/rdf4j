@@ -86,7 +86,10 @@ All query elements created by SparqlBuilder implement the QueryElement interface
 
 ## Graph Patterns
 
-SparqlBuilder uses three classes to represent the SPARQL graph patterns, all of which implement the GraphPattern interface: - The TriplePattern class represents triple patterns. - The GraphPatternNotTriple class represents collections of graph patterns. - The SubSelect class represents a SPARQL sub query.
+SparqlBuilder uses three classes to represent the SPARQL graph patterns, all of which implement the GraphPattern interface: 
+- The TriplePattern class represents triple patterns. 
+- The GraphPatternNotTriple class represents collections of graph patterns.
+- The SubSelect class represents a SPARQL sub query.
 
 Graph patterns are created by the more aptly named GraphPatterns class.
 
@@ -129,7 +132,7 @@ System.out.println(triple.getQueryString());
 
 ### Compound graph patterns
 
-Three methods in GraphPatterns exist to create GraphPatternNotTriple instances. GraphPatterns#and() creates a group graph pattern, consisting of the GraphPattern instances passed as parameters:
+Three methods in GraphPatterns exist to create GraphPatternNotTriple instances. `GraphPatterns#and()` creates a group graph pattern, consisting of the GraphPattern instances passed as parameters:
 
 {{< highlight java "linenos=table" >}}
 Variable mbox = SparqlBuilder.var("mbox"), x = SparqlBuilder.var("x");
@@ -139,7 +142,7 @@ System.out.println(groupPattern.getQueryString());
 // ==> { ?x foaf:mbox ?mbox . ?x foaf:name ?name }
 {{< / highlight >}}
 
-GraphPatterns#union() creates an alternative graph pattern, taking the union of the provided GraphPattern instances:
+`GraphPatterns#union()` creates an alternative graph pattern, taking the union of the provided GraphPattern instances:
 
 {{< highlight java "linenos=table" >}}
 Prefix dc10 = SparqlBuilder.prefix("dc10", iri("http://purl.org/dc/elements/1.0/")),
@@ -152,7 +155,7 @@ System.out.println(union.getQueryString());
 // ==> { ?book dc10:title ?title } UNION { ?book dc11:title ?title }
 {{< / highlight >}}
 
-GraphPatterns#optional() creates an optional group graph pattern, consisting of the passed in `GraphPattern`s:
+`GraphPatterns#optional()` creates an optional group graph pattern, consisting of the passed in `GraphPattern`s:
 
 {{< highlight java "linenos=table" >}}
 GraphPatternNotTriple optionalPattern = GraphPatterns.optional(GraphPatterns.tp(x, foaf.iri("mbox"), mbox));
@@ -179,7 +182,7 @@ System.out.println(regexExpression.getQueryString());
 // ==> REGEX( ?name, "Smith" )
 {{< / highlight >}}
 
-Expression`s take `Operand instances as arguments. Operand is implemented by the types you would expect (Variable, the RDF model interface RdfValue, and Expression itself). Where possible, Expressions has included wrappers to take appropriate Java primitives as parameters as well:
+`Expression`s take `Operand` instances as arguments. Operand is implemented by the types you would expect (Variable, the RDF model interface RdfValue, and Expression itself). Where possible, Expressions has included wrappers to take appropriate Java primitives as parameters as well:
 
 {{< highlight java "linenos=table" >}}
 Variable price = SparqlBuilder.var("price");
@@ -188,7 +191,7 @@ System.out.println(priceLimit.getQueryString());
 // ==> ?price < 100
 {{< / highlight >}}
 
-For those places where a wrapper has not (yet) been created, RdfLiteral`s can be used instead. The `Rdf class provides factory methods to create StringLiteral, NumericLiteral, and BooleanLiteral instances:
+For those places where a wrapper has not (yet) been created, `RdfLiteral`s can be used instead. The `Rdf` class provides factory methods to create StringLiteral, NumericLiteral, and BooleanLiteral instances:
 
 {{< highlight java "linenos=table" >}}
 Variable price = SparqlBuilder.var("price");
