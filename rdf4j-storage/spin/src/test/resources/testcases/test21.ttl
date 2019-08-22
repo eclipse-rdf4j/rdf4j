@@ -1,0 +1,49 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix ex: <ex:>.
+
+[ a sp:Select ;
+	sp:text """
+PREFIX ex: <ex:>
+
+SELECT ?name ?pop
+WHERE {
+	?country a ex:Country .
+	?country ex:population ?pop .
+	?country rdfs:label ?name .
+    VALUES (?country) {
+        (ex:Germany)
+        (ex:Norway)
+        (ex:Endor)
+    } .
+}
+""";
+    sp:resultVariables  (_:name _:pop) ;
+    sp:where            (
+    	[
+    		sp:subject _:country ;
+    		sp:predicate rdf:type ;
+    		sp:object ex:Country
+    	]
+    	[
+    		sp:subject _:country ;
+    		sp:predicate ex:population ;
+    		sp:object _:pop
+    	]
+    	[
+    		sp:subject _:country ;
+    		sp:predicate rdfs:label ;
+    		sp:object _:name
+    	]
+        [   a  sp:Values ;
+            sp:bindings  ( 
+                ( ex:Germany )
+                ( ex:Norway ) 
+                ( ex:Endor ) 
+            ) ;
+            sp:varNames  ( "country" )
+        ] )
+].
+
+_:country sp:varName "country" .
+_:name    sp:varName "name" .
+_:pop     sp:varName "pop" .

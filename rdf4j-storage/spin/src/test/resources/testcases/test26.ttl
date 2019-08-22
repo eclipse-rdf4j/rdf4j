@@ -1,0 +1,16 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:DeleteWhere ;
+	sp:text """
+PREFIX ex: <ex:>
+DELETE WHERE {
+	ex:subj ex:pred ex:obj .
+}
+""";
+  sp:where ([sp:object ex:obj ;
+	              sp:predicate ex:pred ;
+	              sp:subject ex:subj
+            ]) ;
+].

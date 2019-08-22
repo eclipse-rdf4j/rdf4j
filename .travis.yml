@@ -1,6 +1,17 @@
 language: java
 jdk:
   - oraclejdk8
+
+cache:
+  directories:
+  - $HOME/.m2
+
+before_install:
+  - rm -rf $HOME/.m2/repository/org/eclipse/rdf4j
+
+install:
+  - mvn dependency:go-offline -T 2C
+
 script: mvn verify
 branches:
   only:

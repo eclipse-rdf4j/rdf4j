@@ -1,0 +1,69 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX ex: <ex:>
+
+ASK WHERE {
+	?this ex:prop ?object
+	BIND(str(?object) as ?a1)
+	BIND(lang(?object) as ?a2)
+	BIND(datatype(?object) as ?a3)
+	BIND(iri(?object) as ?a4)
+	BIND(bnode(?object) as ?a5)
+	BIND(regex(?object, 'sesame') as ?a6)
+}
+""";
+  sp:where ([ sp:object _:object ;
+              sp:predicate ex:prop ;
+              sp:subject spin:_this
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a1'] ;
+            	sp:expression [
+            		a	sp:str ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a2'] ;
+            	sp:expression [
+            		a	sp:lang ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a3'] ;
+            	sp:expression [
+            		a	sp:datatype ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a4'] ;
+            	sp:expression [
+            		a	sp:iri ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a5'] ;
+            	sp:expression [
+            		a	sp:bnode ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Bind ;
+            	sp:variable [sp:varName 'a6'] ;
+            	sp:expression [
+            		a	sp:regex ;
+            		sp:arg1 _:object ;
+            		sp:arg2 'sesame'
+            	]
+            ]
+            )
+].
+
+_:object sp:varName "object" .

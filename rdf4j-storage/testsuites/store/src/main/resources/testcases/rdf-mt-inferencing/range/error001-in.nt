@@ -1,0 +1,7 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: domain restrictions do not apply when the domain is a literal
+# Relevant inferencing rules: rdfs3
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/prop> <http://www.w3.org/2000/01/rdf-schema#range> "Hello World!".
+<http://example.org/subj> <http://example.org/prop> <http://example.org/obj>.

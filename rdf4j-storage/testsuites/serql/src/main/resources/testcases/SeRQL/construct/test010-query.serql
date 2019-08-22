@@ -1,0 +1,4 @@
+CONSTRUCT
+  *
+FROM
+  {S} rdfs:subClassOf {<foo:Document>}

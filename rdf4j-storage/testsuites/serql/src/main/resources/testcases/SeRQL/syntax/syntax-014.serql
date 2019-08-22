@@ -1,0 +1,4 @@
+SELECT
+   S AS "Sub", P AS "Pred", O as "Obj"
+FROM
+  {S} P {O}

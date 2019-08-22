@@ -1,0 +1,11 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Create ;
+	sp:text """
+PREFIX ex: <ex:>
+CREATE GRAPH ex:g
+""";
+	sp:graphIRI ex:g
+].

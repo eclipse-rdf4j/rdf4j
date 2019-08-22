@@ -1,0 +1,1 @@
+Ensure target/classes is built - required by elasticsearch testing framework

@@ -1,0 +1,10 @@
+PREFIX : <http://foo.org/bar#>
+
+CONSTRUCT 
+{ 
+	?uncle :uncleOf ?nephew 
+} 
+WHERE 
+{ 
+	?uncle :brotherOf/:parentOf ?nephew
+}

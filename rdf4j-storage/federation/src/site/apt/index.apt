@@ -1,0 +1,107 @@
+ ----------------------------------------
+ Federation Sail
+ ----------------
+ James Leigh
+ ----------------
+ May 2009
+
+
+Federation Sail
+ 
+ The Federation SAIL allows multiple datasets to be virtually combined
+ into a single dataset. The Federation SAIL combines multiple RDF stores
+ that may exist on a remote server or are embedded in the same JVM. The
+ Federation distributes sections of the query
+ to different members based on the data contained in each of the members.
+ These results are then joined together within the federation to provide
+ the same result as if all the data was co-located within a single store.
+ 
+ The federation has a complex configuration, when compared to other
+ repositories, and requires its own configuration template. A
+ configuration template, like the one shown in Figure 10, should be placed in a "templates" directory
+ within the console's data directory
+ (~/.aduna/openrdf-sesame-console/templates/bsbm-federation.ttl). A
+ federation can then be created using the create command and the file
+ name without the .ttl suffix.
+ 
+ <<Figure 10. BSBM Federation>>
+
++--
+#
+# Sesame configuration template for three federated repositories
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix sparql: <http://www.openrdf.org/config/repository/sparql#>.
+@prefix fed: <http://www.openrdf.org/config/sail/federation#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix rev: <http://purl.org/stuff/rev#> .
+@prefix bsbm: <http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/> .
+@prefix bsbm-inst: <http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/> .
+
+[] a rep:Repository ;
+   rep:repositoryID "{%Repository ID|bsbm-federation%}" ;
+   rdfs:label "{%Repository title|BSBM Federation%}" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "openrdf:Federation" ;
+         fed:distinct true ;
+         fed:localPropertySpace rdf: ;
+         fed:localPropertySpace rdfs: ;
+         fed:localPropertySpace foaf: ;
+         fed:localPropertySpace dc: ;
+         fed:localPropertySpace rev: ;
+         fed:localPropertySpace bsbm: ;
+         fed:member [
+            rep:repositoryType "openrdf:SPARQLRepository" ;
+            sparql:endpoint <http://localhost:8080/openrdf-sesame/repositories/producers> ;
+            sparql:subjectSpace bsbm: ;
+            sparql:subjectSpace bsbm-inst:Product ;
+            sparql:subjectSpace bsbm-inst:dataFromProducer
+         ];
+         fed:member [
+            rep:repositoryType "openrdf:SPARQLRepository" ;
+            sparql:endpoint <http://localhost:8080/openrdf-sesame/repositories/vendors> ;
+            sparql:subjectSpace bsbm-inst:dataFromVendor
+         ];
+         fed:member [
+            rep:repositoryType "openrdf:SPARQLRepository" ;
+            sparql:endpoint <http://localhost:8080/openrdf-sesame/repositories/ratings> ;
+            sparql:subjectSpace bsbm-inst:dataFromRatingSite
+         ]
+      ]
+   ].
++--
+ 
+ Perhaps the most significant option is the fed:distinct option. When
+ absent, the federation passes the results from multiple members through
+ a distinct filter. By setting this option to true, this step is avoid
+ and can greatly improve performance, but may result in duplicate results
+ if some member include duplicate quads (the same subject, predicate,
+ object, and context combination appears in multiple members).
+ 
+ The fed:localPropertySpace option is the namespaces of predicates used
+ in statements that are stored in the same member for the same subject.
+ For the BSBM datasets, this is all predicates, because each subject is
+ only described in one member. The effect of this option is that if
+ multiple basic graph patterns use predicates that start with one of
+ these values and have the same subject variable, they will only be
+ joined within the same member. If the data is partitioned by predicates
+ (every predicate appears in at most one member) this option has no effect.
+ 
+ The sparql:subjectSpace is an SPARQLRepository optimization that is used
+ by the client to indicate what subject URI prefixes are located on the
+ server. This option reduces bandwidth by allowing the client to
+ predetermine if a statement might exist on the server without connecting
+ to it remotely.
+ 
+ The Federation configuration above, uses the SPARQL protocol exclusively
+ to communicate with its members. It would work with any SPARQL compliant
+ endpoint and therefore is also read only.
+ 
+

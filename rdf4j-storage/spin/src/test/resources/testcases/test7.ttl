@@ -1,0 +1,30 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a sp:Select ;
+	sp:text """
+PREFIX ex: <ex:>
+
+SELECT *
+WHERE {
+    SERVICE <http://dbpedia.org/sparql>
+    { 
+        ?this ex:firstName ?value
+	}
+}
+""";
+    sp:resultVariables  (
+    	spin:_this 
+    	_:value );
+	sp:where (
+	[ a       sp:Service ;
+	  sp:serviceURI <http://dbpedia.org/sparql>;
+	  sp:elements ([ sp:subject spin:_this ;
+	                 sp:predicate ex:firstName ;
+	                 sp:object  _:value
+	               ])
+		]);
+].
+
+_:value sp:varName "value" .

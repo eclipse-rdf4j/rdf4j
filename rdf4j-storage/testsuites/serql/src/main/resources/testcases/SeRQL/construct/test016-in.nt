@@ -1,0 +1,6 @@
+# Input file for SeRQL CfwQuery test
+# description: lexicographical comparisons of literal labels.
+<http://www.foo.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "foo".
+<http://www.foo.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "bar".
+<http://www.foo.com/stat2> <http://www.w3.org/2000/01/rdf-schema#label> "foo"@nl.
+<http://www.foo.com/stat2> <http://www.w3.org/2000/01/rdf-schema#label> "bar"@nl.

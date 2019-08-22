@@ -1,0 +1,8 @@
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix geo: <http://www.opengis.net/ont/geosparql#>
+prefix geof: <http://www.opengis.net/def/function/geosparql/>
+
+select distinct (geof:envelope(?xGeom) as ?s)
+where {
+	?x geo:asWKT ?xGeom.
+}
