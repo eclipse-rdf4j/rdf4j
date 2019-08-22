@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
@@ -61,14 +60,6 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #object(Model)} instead.
-	 */
-	@Deprecated
-	public static Value anyObject(Model m) {
-		return object(m).orElse(null);
-	}
-
-	/**
 	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one possible
 	 * Literal value exists, any one Literal value is picked and returned.
 	 *
@@ -93,14 +84,6 @@ public class Models {
 				.filter(o -> o instanceof Literal)
 				.map(l -> (Literal) l)
 				.collect(Collectors.toSet());
-	}
-
-	/**
-	 * @deprecated since 2.0. Use {@link #objectLiteral(Model)} instead.
-	 */
-	@Deprecated
-	public static Literal anyObjectLiteral(Model m) {
-		return objectLiteral(m).orElse(null);
 	}
 
 	/**
@@ -129,14 +112,6 @@ public class Models {
 				.filter(o -> o instanceof Resource)
 				.map(r -> (Resource) r)
 				.collect(Collectors.toSet());
-	}
-
-	/**
-	 * @deprecated since 2.0. Use {@link #objectResource(Model)} instead.
-	 */
-	@Deprecated
-	public static Resource anyObjectResource(Model m) {
-		return objectResource(m).orElse(null);
 	}
 
 	/**
@@ -192,14 +167,6 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #objectIRI(Model)} instead.
-	 */
-	@Deprecated
-	public static URI anyObjectURI(Model m) {
-		return objectIRI(m).orElse(null);
-	}
-
-	/**
 	 * Retrieves a subject {@link Resource} from the statements in the given model. If more than one possible resource
 	 * value exists, any one resource value is picked and returned.
 	 *
@@ -209,14 +176,6 @@ public class Models {
 	 */
 	public static Optional<Resource> subject(Model m) {
 		return m.stream().map(st -> st.getSubject()).findAny();
-	}
-
-	/**
-	 * @deprecated since 2.0. Use {@link #subject(Model)} instead.
-	 */
-	@Deprecated
-	public static Resource anySubject(Model m) {
-		return subject(m).orElse(null);
 	}
 
 	/**
@@ -242,14 +201,6 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #subjectIRI(Model)} instead.
-	 */
-	@Deprecated
-	public static URI anySubjectURI(Model m) {
-		return subjectIRI(m).orElse(null);
-	}
-
-	/**
 	 * Retrieves a subject {@link BNode} from the statements in the given model. If more than one possible blank node
 	 * value exists, any one blank node value is picked and returned.
 	 *
@@ -272,14 +223,6 @@ public class Models {
 	}
 
 	/**
-	 * @deprecated since 2.0. Use {@link #subjectBNode(Model)} instead.
-	 */
-	@Deprecated
-	public static BNode anySubjectBNode(Model m) {
-		return subjectBNode(m).orElse(null);
-	}
-
-	/**
 	 * Retrieves a predicate from the statements in the given model. If more than one possible predicate value exists,
 	 * any one value is picked and returned.
 	 *
@@ -289,14 +232,6 @@ public class Models {
 	 */
 	public static Optional<IRI> predicate(Model m) {
 		return m.stream().map(st -> st.getPredicate()).findAny();
-	}
-
-	/**
-	 * @deprecated since 2.0. Use {@link #predicate(Model)} instead.
-	 */
-	@Deprecated
-	public static URI anyPredicate(Model m) {
-		return predicate(m).orElse(null);
 	}
 
 	/**
@@ -526,18 +461,6 @@ public class Models {
 		}
 
 		return isSubsetInternal(set1, set2);
-	}
-
-	/**
-	 * Compares two RDF models, defined by two statement collections, and returns <tt>true</tt> if they are equal.
-	 * Models are equal if they contain the same set of statements. Blank node IDs are not relevant for model equality,
-	 * they are mapped from one model to the other by using the attached properties.
-	 *
-	 * @deprecated since 2.0. Use {@link Models#isomorphic(Iterable, Iterable)} instead.
-	 */
-	@Deprecated
-	public static boolean equals(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
-		return isomorphic(model1, model2);
 	}
 
 	/**

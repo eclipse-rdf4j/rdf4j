@@ -21,7 +21,6 @@ import java.util.UUID;
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -306,7 +305,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Sets the base URI for resolving relative URIs.
 	 */
-	protected void setBaseURI(ParsedURI baseURI) {
+	protected void setBaseURI(ParsedIRI baseURI) {
 		setBaseURI(baseURI.toString());
 	}
 

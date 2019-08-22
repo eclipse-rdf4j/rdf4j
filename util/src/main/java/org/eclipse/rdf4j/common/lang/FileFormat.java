@@ -299,7 +299,6 @@ public class FileFormat {
 	 * @param mimeType    A MIME type, e.g. "text/plain".
 	 * @param fileFormats The file formats to match the MIME type against.
 	 * @return A FileFormat object if the MIME type was recognized, or {@link Optional#empty()} otherwise.
-	 * @see #matchMIMEType(String, Iterable, FileFormat)
 	 */
 	public static <FF extends FileFormat> Optional<FF> matchMIMEType(String mimeType, Iterable<FF> fileFormats) {
 		// First try to match with the default MIME type
@@ -325,7 +324,6 @@ public class FileFormat {
 	 * @param fileName    A file name.
 	 * @param fileFormats The file formats to match the file name extension against.
 	 * @return A FileFormat that matches the file name extension, or {@link Optional#empty()} otherwise.
-	 * @see #matchFileName(String, Iterable, FileFormat)
 	 */
 	public static <FF extends FileFormat> Optional<FF> matchFileName(String fileName, Iterable<FF> fileFormats) {
 		// Strip any directory info from the file name

@@ -1,0 +1,6 @@
+{
+  "_:anna" : {
+      "http://purl.org/dc/terms/creator" : [ { "value" : "_:anna", 
+                                               "type" : "bnode" } ] 
+  }
+}

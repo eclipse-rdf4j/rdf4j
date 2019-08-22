@@ -1,0 +1,9 @@
+# Default graph
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:x-local:graph1> dc:publisher "Bob" .
+<urn:x-local:graph1> dc:date "2004-12-06T00:00:00Z"^^xsd:dateTime .
+
+<urn:x-local:graph2> dc:publisher "Alice" .
+<urn:x-local:graph2> dc:date "2005-01-10T00:00:00Z"^^xsd:dateTime .

@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
@@ -29,6 +32,8 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 */
 	private final RDFHandler[] rdfHandlers;
 
+	private final ModelFactory modelFactory;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -42,8 +47,22 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 *                    <tt>null</tt>.
 	 */
 	public RDFHandlerWrapper(RDFHandler... rdfHandlers) {
+		this(new LinkedHashModelFactory(), rdfHandlers);
+	}
+
+	/**
+	 * Creates a new RDFHandlerWrapper that wraps the supplied RDF handler(s). If more than one RDFHandler is supplied
+	 * for wrapping, the RDFHandlerWrapper forwards every method call to each of the supplied handlers, in the order in
+	 * which the handlers are supplied.
+	 * 
+	 * @param modelFactory a {@link ModelFactory} that can be used for creating new empty {@link Model}s by the handler.
+	 * @param rdfHandlers  One or more wrapped RDF handlers for this <tt>RDFHandlerWrapper</tt>, must not be
+	 *                     <tt>null</tt>.
+	 */
+	public RDFHandlerWrapper(ModelFactory modelFactory, RDFHandler... rdfHandlers) {
 		assert rdfHandlers != null;
 		this.rdfHandlers = rdfHandlers;
+		this.modelFactory = modelFactory;
 	}
 
 	/*---------*
@@ -83,5 +102,9 @@ public class RDFHandlerWrapper implements RDFHandler {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.handleComment(comment);
 		}
+	}
+
+	public ModelFactory getModelFactory() {
+		return modelFactory;
 	}
 }

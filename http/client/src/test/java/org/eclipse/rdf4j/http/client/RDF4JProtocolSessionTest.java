@@ -21,12 +21,14 @@ import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -46,7 +48,6 @@ public class RDF4JProtocolSessionTest {
 
 	@Before
 	public void setUp() throws Exception {
-
 		httpclient = mock(HttpClient.class);
 		response = mock(HttpResponse.class);
 		StatusLine statusLine = mock(StatusLine.class);
@@ -61,6 +62,14 @@ public class RDF4JProtocolSessionTest {
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);
 		subject.setAdditionalHttpHeaders(additionalHeaders);
+	}
+
+	@Test
+	public void testCreateRepositoryExecutesPut() throws Exception {
+		RepositoryConfig config = new RepositoryConfig("test");
+		subject.createRepository(config);
+		verify(httpclient).execute(any(HttpPut.class), any(HttpContext.class));
+		verifyHeaders();
 	}
 
 	@Test

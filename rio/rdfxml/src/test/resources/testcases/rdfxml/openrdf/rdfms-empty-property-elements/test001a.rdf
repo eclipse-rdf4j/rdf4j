@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+
+<!--
+	Modification of test case
+	http://www.w3.org/2000/10/rdf-tests/rdfcore/rdfms-empty-property-elements/test009.rdf
+
+	Empty property element now followed by an additional element.
+-->
+
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:random="http://random.ioctl.org/#">
+
+<rdf:Description rdf:about="http://random.ioctl.org/#bar">
+  <random:someProperty rdf:parseType="Literal"></random:someProperty>
+  <random:label>Some label</random:label>
+</rdf:Description>
+
+</rdf:RDF>
+

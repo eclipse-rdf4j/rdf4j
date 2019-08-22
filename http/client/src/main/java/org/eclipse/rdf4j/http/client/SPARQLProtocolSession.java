@@ -170,7 +170,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	private ParserConfig parserConfig = new ParserConfig();
 
-	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.BINARY;
+	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.SPARQL;
 
 	private BooleanQueryResultFormat preferredBQRFormat = BooleanQueryResultFormat.TEXT;
 
