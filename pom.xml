@@ -9,9 +9,9 @@
 	<version>3.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
-	<name>RDF4J Storage</name>
-	<description>RDF4J storage-related libraries: Repositories and SAILs</description>
-	<url>http://www.rdf4j.org/</url>
+	<name>Eclipse RDF4J</name>
+	<description>An extensible Java framework for RDF and SPARQL</description>
+	<url>https://rdf4j.eclipse.org/</url>
 	<inceptionYear>2015</inceptionYear>
 
 	<organization>
@@ -27,16 +27,12 @@
 			<timezone>GMT+10</timezone>
 		</developer>
 		<developer>
-			<id>james_leigh</id>
-			<name>James Leigh</name>
-			<email>james@ontotext.com</email>
+			<id>hmottestad</id>
+			<name>Havard Ottestad</name>
 		</developer>
 		<developer>
-			<id>ansell</id>
-			<name>Peter Ansell</name>
-			<email>p_ansell@yahoo.com</email>
-			<url>https://github.com/ansell</url>
-			<timezone>GMT+10</timezone>
+			<id>barthanssens</id>
+			<name>Bart Hanssens</name>
 		</developer>
 	</developers>
 
@@ -112,13 +108,6 @@
 						</executions>
 						<configuration>
 							<source>8</source>
-						</configuration>
-					</plugin>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-shade-plugin</artifactId>
-						<configuration>
-							<createSourcesJar>true</createSourcesJar>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -272,30 +261,16 @@
 				<scope>runtime</scope>
 			</dependency>
 			<dependency>
-				<groupId>org.apache.httpcomponents</groupId>
-				<artifactId>httpclient</artifactId>
-				<version>${httpclient.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-text</artifactId>
+				<version>1.3</version>
+			</dependency>
+                        <dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-lang3</artifactId>
 				<version>3.8.1</version>
 			</dependency>
 			<dependency>
-				<groupId>org.apache.commons</groupId>
-				<artifactId>commons-text</artifactId>
-				<version>1.3</version>
-			</dependency>
-			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpclient</artifactId>
 				<version>${httpclient.version}</version>
@@ -309,8 +284,8 @@
 						<groupId>commons-codec</groupId>
 						<artifactId>commons-codec</artifactId>
 					</exclusion>
-				</exclusions>
-			</dependency>
+                                      </exclusions>
+                        </dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpclient-cache</artifactId>
@@ -530,6 +505,7 @@
 				<type>test-jar</type>
 				<scope>test</scope>
 			</dependency>
+
 			<dependency>
 				<groupId>org.mapdb</groupId>
 				<artifactId>mapdb</artifactId>
@@ -907,9 +883,9 @@
 		</repository>
 	</repositories>
 	<scm>
-		<connection>scm:git:git://github.com:eclipse/rdf4j-storage.git</connection>
-		<developerConnection>scm:git:git@github.com:eclipse/rdf4j-storage.git</developerConnection>
-		<url>https://github.com/eclipse/rdf4j-storage</url>
+		<connection>scm:git:git://github.com:eclipse/rdf4j.git</connection>
+		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>
+		<url>https://github.com/eclipse/rdf4j</url>
 	</scm>
 
 </project>
