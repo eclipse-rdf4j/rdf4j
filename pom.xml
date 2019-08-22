@@ -5,11 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.eclipse.rdf4j</groupId>
-<<<<<<< HEAD:pom.xml
 	<artifactId>rdf4j-parent</artifactId>
-=======
-	<artifactId>rdf4j-storage-parent</artifactId>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 	<version>3.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
@@ -54,7 +50,6 @@
 	</licenses>
 
 	<modules>
-<<<<<<< HEAD:pom.xml
 		<module>client</module>
 		<module>util</module>
 		<module>model</module>
@@ -67,28 +62,6 @@
 		<module>repository</module>
 		<module>http</module>
 		<module>sparqlbuilder</module>
-=======
-		<module>elasticsearch</module>
-		<module>evaluation</module>
-		<module>federation</module>
-		<module>geosparql</module>
-		<module>inferencer</module>
-		<module>lucene-api</module>
-		<module>lucene</module>
-		<module>lucene-spin</module>
-		<module>memory</module>
-		<module>nativerdf</module>
-		<module>repository-dataset</module>
-		<module>repository-sail</module>
-		<module>sail-api</module>
-		<module>sail-base</module>
-		<module>sail-model</module>
-		<module>sail-spin</module>
-		<module>solr</module>
-		<module>spin</module>
-		<module>shacl</module>
-		<module>storage</module>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 		<module>testsuites</module>
 	</modules>
 
@@ -186,12 +159,9 @@
 								</goals>
 							</execution>
 						</executions>
-<<<<<<< HEAD:pom.xml
-=======
 						<configuration>
 							<source>8</source>
 						</configuration>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
@@ -251,17 +221,14 @@
 		<httpclient.version>4.5.9</httpclient.version>
 		<httpcore.version>4.4.11</httpcore.version>
 		<jackson.version>2.9.9</jackson.version>
-<<<<<<< HEAD:pom.xml
 		<jsonldjava.version>0.12.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.0</jaxb.version>
-=======
 		<jsonldjava.version>0.12.1</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.0</jaxb.version>
 		<solr.version>7.5.0</solr.version>
 		<elasticsearch.version>6.5.4</elasticsearch.version>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 	</properties>
 
 	<dependencyManagement>
@@ -305,7 +272,6 @@
 				<scope>runtime</scope>
 			</dependency>
 			<dependency>
-<<<<<<< HEAD:pom.xml
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpclient</artifactId>
 				<version>${httpclient.version}</version>
@@ -320,7 +286,6 @@
 						<artifactId>commons-codec</artifactId>
 					</exclusion>
 				</exclusions>
-=======
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-lang3</artifactId>
 				<version>3.8.1</version>
@@ -329,7 +294,6 @@
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-text</artifactId>
 				<version>1.3</version>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
@@ -349,8 +313,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
-<<<<<<< HEAD:pom.xml
-=======
 				<artifactId>httpclient-cache</artifactId>
 				<version>${httpclient.version}</version>
 				<exclusions>
@@ -367,7 +329,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 				<artifactId>httpmime</artifactId>
 				<version>${httpclient.version}</version>
 				<exclusions>
@@ -414,8 +375,6 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
-<<<<<<< HEAD:pom.xml
-=======
 			<dependency>
 				<groupId>org.locationtech.spatial4j</groupId>
 				<artifactId>spatial4j</artifactId>
@@ -426,8 +385,6 @@
 				<artifactId>jts-core</artifactId>
 				<version>1.15.1</version>
 			</dependency>
->>>>>>> storage/master:rdf4j-storage/pom.xml
-
 			<!-- Java Enterprise Edition -->
 			<dependency>
 				<groupId>javax.servlet</groupId>
@@ -523,10 +480,6 @@
 				<artifactId>slf4j-simple</artifactId>
 				<version>${slf4j.version}</version>
 			</dependency>
-<<<<<<< HEAD:pom.xml
-=======
-
->>>>>>> storage/master:rdf4j-storage/pom.xml
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-core</artifactId>
@@ -577,14 +530,11 @@
 				<type>test-jar</type>
 				<scope>test</scope>
 			</dependency>
-<<<<<<< HEAD:pom.xml
-=======
 			<dependency>
 				<groupId>org.mapdb</groupId>
 				<artifactId>mapdb</artifactId>
 				<version>1.0.8</version>
 			</dependency>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 		</dependencies>
 	</dependencyManagement>
 
@@ -899,11 +849,8 @@
 									<excludes>
 										<exclude>org.apache.logging.log4j:log4j-api</exclude>
 										<exclude>org.elasticsearch:elasticsearch</exclude>
-<<<<<<< HEAD:pom.xml
 										<exclude>javax.xml.bind:jaxb-api</exclude>
-=======
 										<exclude>org.elasticsearch:elasticsearch-core</exclude>
->>>>>>> storage/master:rdf4j-storage/pom.xml
 									</excludes>
 								</enforceBytecodeVersion>
 							</rules>
