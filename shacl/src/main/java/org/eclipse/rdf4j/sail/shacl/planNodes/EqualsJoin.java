@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -16,6 +16,7 @@ public class EqualsJoin implements PlanNode {
 	private PlanNode right;
 	private boolean useAsFilter;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;
@@ -25,7 +26,7 @@ public class EqualsJoin implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
 			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
@@ -48,16 +49,6 @@ public class EqualsJoin implements PlanNode {
 				}
 
 				if (nextLeft == null) {
-//					if (discardedRight != null) {
-//						while(nextRight != null){
-//							discardedRight.push(nextRight);
-//							if(rightIterator.hasNext()){
-//								nextRight = rightIterator.next();
-//							}else{
-//								nextRight = null;
-//							}
-//						}
-//					}
 					return;
 				}
 
@@ -78,9 +69,6 @@ public class EqualsJoin implements PlanNode {
 							int compareTo = nextLeft.compareTo(nextRight);
 
 							if (compareTo < 0) {
-//								if (discardedLeft != null) {
-//									discardedLeft.push(nextLeft);
-//								}
 								if (leftIterator.hasNext()) {
 									nextLeft = leftIterator.next();
 								} else {
@@ -88,9 +76,6 @@ public class EqualsJoin implements PlanNode {
 									break;
 								}
 							} else {
-//								if (discardedRight != null) {
-//									discardedRight.push(nextRight);
-//								}
 								if (rightIterator.hasNext()) {
 									nextRight = rightIterator.next();
 								} else {
@@ -114,13 +99,13 @@ public class EqualsJoin implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 				Tuple temp = next;
 				next = null;
@@ -152,21 +137,6 @@ public class EqualsJoin implements PlanNode {
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
-
-		// if this plan node implements discardedRight/Left, then this is the code to print the plan.
-//		if(discardedRight != null){
-//			if(discardedRight instanceof PlanNode){
-//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];").append("\n");
-//			}
-//
-//		}
-//		if(discardedLeft != null){
-//			if(discardedLeft instanceof PlanNode){
-//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];").append("\n");
-//			}
-//
-//
-//		}
 	}
 
 	@Override
@@ -186,5 +156,12 @@ public class EqualsJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "EqualsJoin{" + "useAsFilter=" + useAsFilter + '}';
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		left.receiveLogger(validationExecutionLogger);
+		right.receiveLogger(validationExecutionLogger);
 	}
 }

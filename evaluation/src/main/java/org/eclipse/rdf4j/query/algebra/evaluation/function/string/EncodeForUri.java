@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -64,29 +65,24 @@ public class EncodeForUri implements Function {
 				buf.append(c);
 			} else {
 				// use UTF-8 hex encoding for character.
-				try {
-					byte[] utf8 = Character.toString(c).getBytes("UTF-8");
+				byte[] utf8 = Character.toString(c).getBytes(StandardCharsets.UTF_8);
 
-					for (byte b : utf8) {
-						// Escape character
-						buf.append('%');
+				for (byte b : utf8) {
+					// Escape character
+					buf.append('%');
 
-						char cb = (char) (b & 0xFF);
+					char cb = (char) (b & 0xFF);
 
-						String hexVal = Integer.toHexString(cb).toUpperCase();
+					String hexVal = Integer.toHexString(cb).toUpperCase();
 
-						// Ensure use of two characters
-						if (hexVal.length() == 1) {
-							buf.append('0');
-						}
-
-						buf.append(hexVal);
+					// Ensure use of two characters
+					if (hexVal.length() == 1) {
+						buf.append('0');
 					}
 
-				} catch (UnsupportedEncodingException e) {
-					// UTF-8 is always supported
-					throw new RuntimeException(e);
+					buf.append(hexVal);
 				}
+
 			}
 		}
 

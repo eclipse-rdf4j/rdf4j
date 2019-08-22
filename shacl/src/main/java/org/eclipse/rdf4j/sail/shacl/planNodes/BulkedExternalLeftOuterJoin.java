@@ -8,28 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.ArrayDeque;
 
 /**
  * @author Håvard Ottestad
@@ -37,16 +26,17 @@ import java.util.stream.Collectors;
  *         External means that this plan node can join the iterator from a plan node with an external source (Repository
  *         or SailConnection) based on a query or a predicate.
  */
-public class BulkedExternalLeftOuterJoin implements PlanNode {
+public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	private final SailConnection connection;
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
+	private final SailConnection previousStateConnection;
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
@@ -54,16 +44,18 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.previousStateConnection = previousStateConnection;
+		this.variables = variables;
 
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			LinkedList<Tuple> left = new LinkedList<>();
+			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
-			LinkedList<Tuple> right = new LinkedList<>();
+			ArrayDeque<Tuple> right = new ArrayDeque<>();
 
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
@@ -73,7 +65,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
-				while (left.size() < 100 && leftNodeIterator.hasNext()) {
+				while (left.size() < 200 && leftNodeIterator.hasNext()) {
 					left.addFirst(leftNodeIterator.next());
 				}
 
@@ -81,43 +73,8 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
-				List<BindingSet> newBindindingset = left.stream()
-						.map(tuple -> tuple.line.get(0))
-						.map(v -> (Resource) v)
-						.filter(r -> {
-							if (!skipBasedOnPreviousConnection)
-								return true;
-
-							if (connection instanceof ShaclSailConnection) {
-								return ((ShaclSailConnection) connection).getPreviousStateConnection()
-										.hasStatement(r, null, null, true);
-							}
-							return true;
-
-						})
-						.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-						.collect(Collectors.toList());
-
-				if (!newBindindingset.isEmpty()) {
-					try {
-						parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
-							@Override
-							public void meet(BindingSetAssignment node) throws Exception {
-								node.setBindingSets(newBindindingset);
-							}
-						});
-					} catch (Exception e) {
-						throw new RuntimeException(e);
-					}
-
-					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
-							.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
-						while (evaluate.hasNext()) {
-							BindingSet next = evaluate.next();
-							right.addFirst(new Tuple(next));
-						}
-					}
-				}
+				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection,
+						variables);
 
 			}
 
@@ -127,13 +84,13 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return !left.isEmpty();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 
 				if (!left.isEmpty()) {
@@ -189,8 +146,9 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
@@ -206,13 +164,22 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					.append("\n");
 		}
 
+		if (skipBasedOnPreviousConnection) {
+			stringBuilder
+					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+							+ " [label=\"skip if not present\"]")
+					.append("\n");
+
+		}
+
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 	}
 
 	@Override
 	public String toString() {
-		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
+		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ")
+				+ '}';
 	}
 
 	@Override
@@ -223,5 +190,11 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return leftNode.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		leftNode.receiveLogger(validationExecutionLogger);
 	}
 }

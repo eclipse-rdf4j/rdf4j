@@ -8,20 +8,22 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 public class Sort implements PlanNode {
 
 	private final PlanNode parent;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Sort(PlanNode parent) {
 		this.parent = parent;
@@ -29,7 +31,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> iterator = parent.iterator();
 
@@ -37,13 +39,15 @@ public class Sort implements PlanNode {
 
 			Iterator<Tuple> sortedTuplesIterator;
 
+			ValueComparator valueComparator = new ValueComparator();
+
 			@Override
 			public void close() throws SailException {
 				iterator.close();
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				sortTuples();
 				return sortedTuplesIterator.hasNext();
 			}
@@ -51,19 +55,34 @@ public class Sort implements PlanNode {
 			private void sortTuples() {
 				if (sortedTuples == null) {
 					sortedTuples = new ArrayList<>();
+					boolean alreadySorted = true;
+					Tuple prev = null;
 					while (iterator.hasNext()) {
-						sortedTuples.add(iterator.next());
+						Tuple next = iterator.next();
+						sortedTuples.add(next);
+						if (prev != null && valueComparator.compare(prev.line.get(0), next.line.get(0)) > 0) {
+							alreadySorted = false;
+						}
+						prev = next;
 					}
 
-					Collections.sort(sortedTuples, Comparator.comparing(a -> a.line.get(0).stringValue()));
-
+					if (!alreadySorted && sortedTuples.size() > 1) {
+						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
+							Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
+							Arrays.parallelSort(objects,
+									(a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+							sortedTuples = Arrays.asList(objects);
+						} else {
+							sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+						}
+					}
 					sortedTuplesIterator = sortedTuples.iterator();
 
 				}
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				sortTuples();
 
 				return sortedTuplesIterator.next();
@@ -84,8 +103,9 @@ public class Sort implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -106,5 +126,28 @@ public class Sort implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Sort)) {
+			return false;
+		}
+		Sort sort = (Sort) o;
+		return parent.equals(sort.parent);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent);
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

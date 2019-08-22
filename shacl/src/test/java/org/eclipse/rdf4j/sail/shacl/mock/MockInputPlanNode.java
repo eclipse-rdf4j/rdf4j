@@ -11,10 +11,12 @@ package org.eclipse.rdf4j.sail.shacl.mock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
 import java.util.Arrays;
 import java.util.Iterator;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 public class MockInputPlanNode implements PlanNode {
 
 	List<Tuple> initialData;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public MockInputPlanNode(List<Tuple> initialData) {
 		this.initialData = initialData;
@@ -40,7 +43,7 @@ public class MockInputPlanNode implements PlanNode {
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
 				.map(Tuple::new)
-				.sorted()
+				.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
 				.collect(Collectors.toList());
 
 	}
@@ -90,6 +93,13 @@ public class MockInputPlanNode implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return IteratorData.tripleBased;
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		if (this.validationExecutionLogger == null) {
+			this.validationExecutionLogger = validationExecutionLogger;
+		}
 	}
 
 }

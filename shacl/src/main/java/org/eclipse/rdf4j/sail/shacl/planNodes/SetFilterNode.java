@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
@@ -23,6 +23,7 @@ public class SetFilterNode implements PlanNode {
 	private int index;
 	private boolean returnValid;
 	private boolean printed;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public SetFilterNode(Set<Value> targetNodeList, PlanNode parent, int index, boolean returnValid) {
 		this.targetNodeList = targetNodeList;
@@ -33,7 +34,7 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> iterator = parent.iterator();
 
@@ -57,13 +58,13 @@ public class SetFilterNode implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calulateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calulateNext();
 
 				Tuple temp = next;
@@ -108,7 +109,14 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SetFilterNode{" + "targetNodeList=" + Arrays.toString(targetNodeList.toArray()) + ", index=" + index
+		return "SetFilterNode{" + "targetNodeList="
+				+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
 				+ ", returnValid=" + returnValid + '}';
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

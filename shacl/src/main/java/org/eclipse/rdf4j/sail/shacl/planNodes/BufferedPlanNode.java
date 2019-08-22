@@ -7,23 +7,30 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
 
 public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implements PushablePlanNode {
+	private final Logger logger = LoggerFactory.getLogger(BufferedPlanNode.class);
 
-	private T parent;
+	private final T parent;
+	private final String name;
 
 	private Queue<Tuple> buffer = new ArrayDeque<>();
 	private boolean closed;
 	private boolean printed;
+	private ValidationExecutionLogger validationExecutionLogger;
 
-	BufferedPlanNode(T parent) {
+	BufferedPlanNode(T parent, String name) {
 		this.parent = parent;
+		this.name = name;
 	}
 
 	@Override
@@ -58,13 +65,20 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			@Override
 			public Tuple next() throws SailException {
 				calculateNext();
-				return buffer.remove();
+				Tuple tuple = buffer.remove();
+				if (GlobalValidationExecutionLogging.loggingEnabled) {
+					validationExecutionLogger.log(depth(),
+							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
+							getId());
+				}
+				return tuple;
 			}
 
 			@Override
 			public void remove() throws SailException {
 
 			}
+
 		};
 	}
 
@@ -108,5 +122,13 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	@Override
 	public String toString() {
 		return "BufferedPlanNode";
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		if (this.validationExecutionLogger == null) {
+			this.validationExecutionLogger = validationExecutionLogger;
+			parent.receiveLogger(validationExecutionLogger);
+		}
 	}
 }

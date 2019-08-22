@@ -30,6 +30,12 @@ public class PrepareCommitTest {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			// due to optimizations in the ShaclSail, changes after prepare has run will only be detected if there is
+			// data in the base sail already!
+			connection.begin();
+			connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("label"));
+			connection.commit();
+
 			connection.begin();
 			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 			connection.prepare();

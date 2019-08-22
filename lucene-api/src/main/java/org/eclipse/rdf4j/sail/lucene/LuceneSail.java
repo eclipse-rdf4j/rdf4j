@@ -201,7 +201,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * need separate threads? Leo: we have separate threads, but we don't care much for now.
 	 */
 
-	final private Logger logger = LoggerFactory.getLogger(this.getClass());
+	final static private Logger logger = LoggerFactory.getLogger(LuceneSail.class);
 
 	/**
 	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is "SELECT ?s ?p ?o ?c
@@ -512,14 +512,17 @@ public class LuceneSail extends NotifyingSailWrapper {
 			SailRepository repo = new SailRepository(new NotifyingSailWrapper(getBaseSail()) {
 
 				@Override
+				public void init() {
+					// don't re-initialize the Sail when we initialize the repo
+				}
+
+				@Override
 				public void shutDown() {
 					// don't shutdown the underlying sail
 					// when we shutdown the repo.
 				}
 			});
-			try ( // repo.initialize(); we don't need to initialize, that should be done
-					// already by others
-					SailRepositoryConnection connection = repo.getConnection()) {
+			try (SailRepositoryConnection connection = repo.getConnection()) {
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, reindexQuery);
 				TupleQueryResult res = query.evaluate();
 				Resource current = null;

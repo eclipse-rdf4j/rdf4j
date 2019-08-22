@@ -99,7 +99,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(Projection.class,
 			MultiProjection.class);
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(LuceneSailConnection.class);
 
 	private final SearchIndex luceneIndex;
 

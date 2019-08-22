@@ -8,29 +8,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.ArrayDeque;
 
 /**
  * @author Håvard Ottestad
@@ -41,125 +30,66 @@ import java.util.stream.Collectors;
  *         External means that this plan node can join the iterator from a plan node with an external source (Repository
  *         or SailConnection) based on a query or a predicate.
  */
-public class BulkedExternalInnerJoin implements PlanNode {
+public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	private final SailConnection connection;
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
+	private final SailConnection previousStateConnection;
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
-		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+
+		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
+		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
+		this.variables = variables;
+		this.previousStateConnection = previousStateConnection;
 
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			LinkedList<Tuple> left = new LinkedList<>();
+			ArrayDeque<Tuple> left = new ArrayDeque<>();
 
-			LinkedList<Tuple> right = new LinkedList<>();
+			ArrayDeque<Tuple> right = new ArrayDeque<>();
+
+			ArrayDeque<Tuple> joined = new ArrayDeque<>();
 
 			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
-				boolean empty = !connection.hasStatement((Resource) null, (IRI) null, null, true);
-				if (empty) {
+				if (!joined.isEmpty()) {
 					return;
 				}
 
-				if (!left.isEmpty()) {
-					return;
-				}
+				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
-				while (left.size() < 200 && leftNodeIterator.hasNext()) {
-					left.addFirst(leftNodeIterator.next());
-				}
-
-				if (left.isEmpty()) {
-					return;
-				}
-
-				List<BindingSet> newBindindingset = left.stream()
-						.map(tuple -> tuple.line.get(0))
-						.map(v -> (Resource) v)
-						.filter(r -> {
-							if (!skipBasedOnPreviousConnection)
-								return true;
-
-							if (connection instanceof ShaclSailConnection) {
-								return ((ShaclSailConnection) connection).getPreviousStateConnection()
-										.hasStatement(r, null, null, true);
-							}
-							return true;
-
-						})
-						.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-						.collect(Collectors.toList());
-
-				if (!newBindindingset.isEmpty()) {
-
-					try {
-						parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
-							@Override
-							public void meet(BindingSetAssignment node) throws Exception {
-								node.setBindingSets(newBindindingset);
-							}
-						});
-					} catch (Exception e) {
-						throw new RuntimeException(e);
+					while (left.size() < 200 && leftNodeIterator.hasNext()) {
+						left.addFirst(leftNodeIterator.next());
 					}
 
-					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
-							.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(),
-									true)) {
-						while (evaluate.hasNext()) {
-							BindingSet next = evaluate.next();
-							right.addFirst(new Tuple(next));
-						}
-					}
-				}
+					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection,
+							previousStateConnection, variables);
 
-			}
+					while (!right.isEmpty()) {
 
-			@Override
-			public void close() throws SailException {
-				leftNodeIterator.close();
-			}
+						Tuple leftPeek = left.peekLast();
 
-			@Override
-			public boolean hasNext() throws SailException {
-				calculateNext();
-				return !left.isEmpty() && !right.isEmpty();
-			}
-
-			@Override
-			public Tuple next() throws SailException {
-				calculateNext();
-
-				Tuple joined = null;
-
-				while (joined == null) {
-
-					Tuple leftPeek = left.peekLast();
-
-					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
 
 						if (rightPeek.line.get(0) == leftPeek.line.get(0)
 								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
 							// we have a join !
-							joined = TupleHelper.join(leftPeek, rightPeek);
+							joined.addLast(TupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();
 
 							Tuple rightPeek2 = right.peekLast();
@@ -191,9 +121,27 @@ public class BulkedExternalInnerJoin implements PlanNode {
 						}
 
 					}
+
+					left.clear();
 				}
 
-				return joined;
+			}
+
+			@Override
+			public void close() throws SailException {
+				leftNodeIterator.close();
+			}
+
+			@Override
+			boolean localHasNext() throws SailException {
+				calculateNext();
+				return !joined.isEmpty();
+			}
+
+			@Override
+			Tuple loggingNext() throws SailException {
+				calculateNext();
+				return joined.removeFirst();
 
 			}
 
@@ -211,8 +159,9 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -226,12 +175,21 @@ public class BulkedExternalInnerJoin implements PlanNode {
 					.append("\n");
 		}
 
+		if (skipBasedOnPreviousConnection) {
+
+			stringBuilder
+					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+							+ " [label=\"skip if not present\"]")
+					.append("\n");
+
+		}
+
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString() + '}';
+		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ") + '}';
 	}
 
 	@Override
@@ -242,5 +200,11 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return leftNode.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		leftNode.receiveLogger(validationExecutionLogger);
 	}
 }

@@ -10,16 +10,17 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -28,113 +29,183 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad
  */
-public class OrPropertyShape extends PropertyShape {
+public class OrPropertyShape extends PathPropertyShape {
 
-	private final List<List<PropertyShape>> or;
+	private final List<List<PathPropertyShape>> or;
 
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
-	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource or) {
-		super(id, nodeShape);
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path, Resource or) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v))
+				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
 				.collect(Collectors.toList());
 
 	}
 
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path,
+			List<List<PathPropertyShape>> or) {
+		super(id, connection, nodeShape, deactivated, parent, path);
+		this.or = or;
+
+	}
+
+	public OrPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
+			List<List<PathPropertyShape>> or) {
+		super(id, nodeShape, deactivated, parent, path);
+		this.or = or;
+	}
+
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+
+		if (deactivated) {
+			return null;
+		}
+
+		if (negateThisPlan) { // De Morgan's laws
+
+			AndPropertyShape orPropertyShape = new AndPropertyShape(getId(), nodeShape, deactivated, this, null,
+					or);
+
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+					overrideTargetNode, false, true);
+
+			return new EnrichWithShape(plan.getParent(), this);
+
+		}
+
+		if (or.stream().mapToLong(List::size).sum() == 1) {
+			PlanNode plan = or.get(0)
+					.get(0)
+					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
+			return new EnrichWithShape(plan, this);
+		}
 
 		List<List<PlanNode>> initialPlanNodes = or.stream()
 				.map(shapes -> shapes.stream()
-						.map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null))
+						.map(shape -> shape.getPlan(connectionsGroup, false, null, negateSubPlans, false))
+						.filter(Objects::nonNull)
 						.collect(Collectors.toList()))
+				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
-		BufferedSplitter targetNodesToValidate;
+		PlanNodeProvider targetNodesToValidate;
 		if (overrideTargetNode == null) {
-			targetNodesToValidate = new BufferedSplitter(unionAll(initialPlanNodes.stream()
+			List<PlanNode> collect = initialPlanNodes.stream()
 					.flatMap(Collection::stream)
 					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
-					.collect(Collectors.toList())));
+					.collect(Collectors.toList());
+			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
-			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
+			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
+			} else {
+				targetNodesToValidate = overrideTargetNode;
+			}
 		}
 
-		List<List<PlanNode>> plannodes = or.stream().map(shapes -> shapes.stream().map(shape -> {
-			if (shaclSailConnection.stats.isBaseSailEmpty()) {
-				return shape.getPlan(shaclSailConnection, nodeShape, false, null);
-			}
-			return shape.getPlan(shaclSailConnection, nodeShape, false,
-					new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
-		}).collect(Collectors.toList())).collect(Collectors.toList());
+		List<List<PlanNode>> plannodes = or
+				.stream()
+				.map(shapes -> shapes
+						.stream()
+						.map(shape -> {
+							if (connectionsGroup.getStats().isBaseSailEmpty() && overrideTargetNode == null) {
+								return shape.getPlan(connectionsGroup, false, null, negateSubPlans,
+										false);
+							}
+							return shape.getPlan(connectionsGroup, false, targetNodesToValidate,
+									negateSubPlans, false);
+						})
+						.filter(Objects::nonNull)
+						.collect(Collectors.toList()))
+				.filter(list -> !list.isEmpty())
+				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes = plannodes.stream()
 				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
 				.distinct()
 				.collect(Collectors.toList());
 
-		if (iteratorDataTypes.size() > 1) {
-			throw new UnsupportedOperationException(
-					"No support for OR shape with mix between aggregate and raw triples");
-		}
-
 		IteratorData iteratorData = iteratorDataTypes.get(0);
+
+		if (iteratorDataTypes.size() > 1) {
+			iteratorData = IteratorData.aggregated;
+		}
 
 		if (iteratorData == IteratorData.tripleBased) {
 
-			List<Path> collect = getPaths().stream().distinct().collect(Collectors.toList());
-			if (collect.size() > 1) {
+			if (childrenHasOwnPath()) {
 				iteratorData = IteratorData.aggregated;
 			}
+
 		}
 
 		PlanNode ret;
 
-		if (iteratorData == IteratorData.tripleBased) {
+		if (plannodes.size() == 1) {
+			if (iteratorData == IteratorData.tripleBased) {
+				ret = unionAll(plannodes.get(0));
+			} else if (iteratorData == IteratorData.aggregated) {
+				ret = new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1));
 
-			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
-
-			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
+			} else {
+				throw new IllegalStateException("Should not get here!");
 			}
-
-			ret = new LoggingNode(equalsJoin, "");
-		} else if (iteratorData == IteratorData.aggregated) {
-
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)))
-					.getJoined(BufferedPlanNode.class), "");
-
-			for (int i = 2; i < or.size(); i++) {
-				innerJoin = new LoggingNode(
-						new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
-			}
-
-			ret = new LoggingNode(innerJoin, "");
 		} else {
-			throw new IllegalStateException("Should not get here!");
 
+			if (iteratorData == IteratorData.tripleBased) {
+
+				PlanNode equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
+
+				for (int i = 2; i < plannodes.size(); i++) {
+					equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
+				}
+
+				ret = equalsJoin;
+			} else if (iteratorData == IteratorData.aggregated) {
+
+				PlanNode innerJoin = new InnerJoin(new Unique(new TrimTuple(unionAll(plannodes.get(0)), 0, 1)),
+						new Unique(new TrimTuple(unionAll(plannodes.get(1)), 0, 1)))
+								.getJoined(BufferedPlanNode.class);
+
+				for (int i = 2; i < plannodes.size(); i++) {
+					innerJoin = new InnerJoin(innerJoin, new Unique(new TrimTuple(unionAll(plannodes.get(i)), 0, 1)))
+							.getJoined(BufferedPlanNode.class);
+				}
+
+				ret = innerJoin;
+			} else {
+				throw new IllegalStateException("Should not get here!");
+			}
 		}
 
 		if (printPlans) {
-			String planAsGraphiz = getPlanAsGraphvizDot(ret, shaclSailConnection);
+			String planAsGraphiz = getPlanAsGraphvizDot(ret, connectionsGroup);
 			logger.info(planAsGraphiz);
+		}
+
+		if (iteratorData == IteratorData.aggregated) {
+			ret = new AggregateIteratorTypeOverride(ret);
 		}
 
 		return new EnrichWithShape(ret, this);
 
 	}
 
-	@Override
-	public List<Path> getPaths() {
-		return or.stream().flatMap(a -> a.stream().flatMap(b -> b.getPaths().stream())).collect(Collectors.toList());
+	public boolean childrenHasOwnPath() {
+		return or.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
 	}
 
 	private PlanNode unionAll(List<PlanNode> planNodes) {
@@ -143,6 +214,10 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return super.requiresEvaluation(addedStatements, removedStatements) || or.stream()
 				.flatMap(Collection::stream)
 				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
@@ -153,5 +228,44 @@ public class OrPropertyShape extends PropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.OrConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		OrPropertyShape that = (OrPropertyShape) o;
+		return or.equals(that.or);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), or);
+	}
+
+	@Override
+	public String toString() {
+		return "OrPropertyShape{" +
+				"or=" + toString(or) +
+				'}';
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+
+		Optional<PlanNode> reduce = or.stream()
+				.flatMap(Collection::stream)
+				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
+				.reduce((a, b) -> new UnionNode(a, b));
+
+		return new Unique(reduce.get());
+
 	}
 }

@@ -48,11 +48,6 @@ public class TestProxyRepository {
 		repository.shutDown();
 	}
 
-	@Test(expected = IllegalStateException.class)
-	public final void testDisallowAccessBeforeInitialize() throws RepositoryException {
-		repository.getConnection();
-	}
-
 	@Test
 	public final void testProperInitialization() throws RepositoryException {
 		assertThat(repository.getDataDir()).isEqualTo(dataDir.getRoot());
@@ -63,13 +58,6 @@ public class TestProxyRepository {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection).isInstanceOf(SailRepositoryConnection.class);
 		}
-	}
-
-	@Test(expected = IllegalStateException.class)
-	public final void testNoAccessAfterShutdown() throws RepositoryException {
-		repository.initialize();
-		repository.shutDown();
-		repository.getConnection();
 	}
 
 	@Test

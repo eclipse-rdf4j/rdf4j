@@ -7,52 +7,52 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Optional;
-import java.util.stream.Stream;
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
  */
-public class PatternPropertyShape extends PathPropertyShape {
+public class PatternPropertyShape extends AbstractSimplePropertyShape {
 
 	private final String pattern;
-	private final Optional<String> flags;
+	private final String flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, String pattern) {
-		super(id, connection, nodeShape);
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+			PathPropertyShape parent, Resource path,
+			String pattern, String flags) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.pattern = pattern;
-
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.FLAGS, null, true))) {
-			flags = stream.map(Statement::getObject).map(Value::stringValue).findAny();
-		}
+		this.flags = flags;
 
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
-				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode);
+		if (deactivated) {
+			return null;
+		}
+		assert !negateSubPlans : "There are no subplans!";
+
+		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
+				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
-			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
 			logger.info(planAsGraphvizDot);
 		}
 
@@ -63,5 +63,35 @@ public class PatternPropertyShape extends PathPropertyShape {
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.PatternConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		PatternPropertyShape that = (PatternPropertyShape) o;
+		return pattern.equals(that.pattern) &&
+				Objects.equals(flags, that.flags);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), pattern, flags);
+	}
+
+	@Override
+	public String toString() {
+		return "PatternPropertyShape{" +
+				"pattern='" + pattern + '\'' +
+				", flags='" + flags + '\'' +
+				", path=" + getPath() +
+				'}';
 	}
 }

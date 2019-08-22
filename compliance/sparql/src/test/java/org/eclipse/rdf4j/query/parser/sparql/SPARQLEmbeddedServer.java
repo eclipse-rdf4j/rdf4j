@@ -10,9 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.io.File;
 import java.util.List;
 
-import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.nio.BlockingChannelConnector;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
@@ -36,7 +34,7 @@ public class SPARQLEmbeddedServer {
 
 	private static final String HOST = "localhost";
 
-	private static final int PORT = 18080;
+	private static final int PORT = 18080; // this port is hardcoded in some (service) query fixtures
 
 	private static final String SERVER_CONTEXT = "/rdf4j-server";
 
@@ -51,12 +49,7 @@ public class SPARQLEmbeddedServer {
 		this.repositoryIds = repositoryIds;
 		System.clearProperty("DEBUG");
 
-		jetty = new Server();
-
-		Connector conn = new BlockingChannelConnector();
-		conn.setHost(HOST);
-		conn.setPort(PORT);
-		jetty.addConnector(conn);
+		jetty = new Server(PORT);
 
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(SERVER_CONTEXT);

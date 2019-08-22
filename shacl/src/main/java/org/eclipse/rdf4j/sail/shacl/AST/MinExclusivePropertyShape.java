@@ -10,50 +10,85 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LiteralComparatorFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
  */
-public class MinExclusivePropertyShape extends PathPropertyShape {
+public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 
 	private final Literal minExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
 	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			Literal minExclusive) {
-		super(id, connection, nodeShape);
+			boolean deactivated, PathPropertyShape parent, Resource path, Literal minExclusive) {
+		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minExclusive = minExclusive;
 
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
-		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(shaclSailConnection, nodeShape,
+		if (deactivated) {
+			return null;
+		}
+		assert !negateSubPlans : "There are no subplans!";
+
+		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
 				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,
-				overrideTargetNode);
+				overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
-			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(invalidValues, ""), this);
+		return new EnrichWithShape(invalidValues, this);
 
 	}
 
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MinExclusiveConstraintComponent;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		MinExclusivePropertyShape that = (MinExclusivePropertyShape) o;
+		return minExclusive.equals(that.minExclusive);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), minExclusive);
+	}
+
+	@Override
+	public String toString() {
+		return "MinExclusivePropertyShape{" +
+				"minExclusive=" + minExclusive +
+				", path=" + getPath() +
+				'}';
 	}
 }

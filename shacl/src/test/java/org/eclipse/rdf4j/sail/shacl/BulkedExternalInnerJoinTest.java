@@ -46,7 +46,7 @@ public class BulkedExternalInnerJoinTest {
 		try (SailConnection connection = sailRepository.getConnection()) {
 
 			BulkedExternalInnerJoin bulkedExternalInnerJoin = new BulkedExternalInnerJoin(left, connection,
-					"?a <http://www.w3.org/ns/dcat#accessURL> ?c. ", false);
+					"?a <http://www.w3.org/ns/dcat#accessURL> ?c. ", false, null, "?a", "?c");
 
 			List<Tuple> tuples = new MockConsumePlanNode(bulkedExternalInnerJoin).asList();
 

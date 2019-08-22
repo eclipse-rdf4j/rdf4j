@@ -8,8 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.NotImplementedException;
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -17,6 +17,7 @@ public class ModifyTuple implements PlanNode {
 	PlanNode parent;
 	ModifyTupleInterface function;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ModifyTuple(PlanNode parent, ModifyTupleInterface function) {
 		this.parent = parent;
@@ -25,7 +26,7 @@ public class ModifyTuple implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
@@ -35,18 +36,18 @@ public class ModifyTuple implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				return parentIterator.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				return function.modify(parentIterator.next());
 			}
 
 			@Override
 			public void remove() throws SailException {
-				throw new NotImplementedException();
+				throw new NotImplementedException("Not implemented yet");
 			}
 		};
 	}
@@ -84,6 +85,11 @@ public class ModifyTuple implements PlanNode {
 
 	public interface ModifyTupleInterface {
 		Tuple modify(Tuple t);
+	}
 
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

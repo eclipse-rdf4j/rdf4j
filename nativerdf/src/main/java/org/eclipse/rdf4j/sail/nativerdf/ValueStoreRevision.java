@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.Serializable;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 
 /**
@@ -17,7 +18,12 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  * ValueStore's revision object is changed whenever values are removed from it or IDs are changed.
  * 
  * @author Arjohn Kampman
+ * 
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
  */
+@Deprecated
+@InternalUseOnly
 public class ValueStoreRevision implements Serializable {
 
 	/*-----------*

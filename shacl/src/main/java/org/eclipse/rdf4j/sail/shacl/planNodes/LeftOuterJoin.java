@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -20,6 +20,7 @@ public class LeftOuterJoin implements PlanNode {
 	private PlanNode left;
 	private PlanNode right;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public LeftOuterJoin(PlanNode left, PlanNode right) {
 		this.left = left;
@@ -28,7 +29,7 @@ public class LeftOuterJoin implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
 			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
@@ -112,13 +113,13 @@ public class LeftOuterJoin implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 				Tuple temp = next;
 				next = null;
@@ -169,5 +170,12 @@ public class LeftOuterJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "LeftOuterJoin";
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		left.receiveLogger(validationExecutionLogger);
+		right.receiveLogger(validationExecutionLogger);
 	}
 }

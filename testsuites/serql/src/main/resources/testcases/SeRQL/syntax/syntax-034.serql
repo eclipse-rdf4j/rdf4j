@@ -1,0 +1,6 @@
+SELECT
+   S
+FROM	
+   {S} ex:property {"WE ARE USING NAMESPACE foo"}
+USING NAMESPACE
+    ex = <http://example.org/>

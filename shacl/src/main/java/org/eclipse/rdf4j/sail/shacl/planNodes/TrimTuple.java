@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -21,6 +21,7 @@ public class TrimTuple implements PlanNode {
 	private int newLength;
 	private int startIndex;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TrimTuple(PlanNode parent, int startIndex, int newLength) {
 		this.parent = parent;
@@ -30,7 +31,7 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
@@ -40,12 +41,12 @@ public class TrimTuple implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				return parentIterator.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 
 				Tuple next = parentIterator.next();
 
@@ -101,5 +102,11 @@ public class TrimTuple implements PlanNode {
 		if (newLength == 1)
 			return IteratorData.tripleBased;
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

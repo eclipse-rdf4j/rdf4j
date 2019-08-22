@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class GenerateFullAxioms {
@@ -23,7 +24,7 @@ public class GenerateFullAxioms {
 	public static void main(String[] args) throws Exception {
 		MemoryStore baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
-		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
+		SchemaCachingRDFSInferencer rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		Repository repo = new SailRepository(spinSail);
 		repo.initialize();

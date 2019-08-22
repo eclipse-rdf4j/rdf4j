@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
@@ -21,7 +21,8 @@ public class EnrichWithShape implements PlanNode {
 	private final PropertyShape propertyShape;
 	private final PlanNode parent;
 	private boolean printed = false;
-	boolean closed;
+	private boolean closed;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EnrichWithShape(PlanNode parent, PropertyShape propertyShape) {
 		this.parent = parent;
@@ -33,17 +34,17 @@ public class EnrichWithShape implements PlanNode {
 		if (closed) {
 			throw new IllegalStateException();
 		}
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				return parentIterator.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				Tuple next = parentIterator.next();
 				next.addCausedByPropertyShape(propertyShape);
 				return next;
@@ -67,7 +68,7 @@ public class EnrichWithShape implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth();
+		return parent.depth() + 1;
 	}
 
 	@Override
@@ -101,5 +102,15 @@ public class EnrichWithShape implements PlanNode {
 
 	public PropertyShape getPropertyShape() {
 		return propertyShape;
+	}
+
+	public PlanNode getParent() {
+		return parent;
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

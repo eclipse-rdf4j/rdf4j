@@ -50,12 +50,11 @@ import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.InetSocketTransportAddress;
-import org.elasticsearch.common.transport.LocalTransportAddress;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.GeoShapeQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
@@ -77,6 +76,7 @@ import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.elasticsearch.common.Strings;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
@@ -217,7 +217,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			TransportAddress addr;
 			if (addrStr.startsWith("local[")) {
 				String id = addrStr.substring("local[".length(), addrStr.length() - 1);
-				addr = new LocalTransportAddress(id);
+				// addr = new LocalTransportAddress(id);
+				throw new UnsupportedOperationException("Local Transport Address no longer supported");
 			} else {
 				String host;
 				int port;
@@ -228,7 +229,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				} else {
 					port = 9300;
 				}
-				addr = new InetSocketTransportAddress(InetAddress.getByName(host), port);
+				addr = new TransportAddress(InetAddress.getByName(host), port);
 			}
 			client.addTransportAddress(addr);
 		}
@@ -299,7 +300,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	private void createIndex() throws IOException {
-		String settings = XContentFactory.jsonBuilder()
+		try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
 				.startObject()
 				.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
 				.startObject("analysis")
@@ -309,38 +310,40 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				.endObject()
 				.endObject()
 				.endObject()
-				.endObject()
-				.string();
+				.endObject()) {
 
-		doAcknowledgedRequest(client.admin()
-				.indices()
-				.prepareCreate(indexName)
-				.setSettings(Settings.builder().loadFromSource(settings)));
+			doAcknowledgedRequest(client.admin()
+					.indices()
+					.prepareCreate(indexName)
+					.setSettings(
+							Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
+		}
 
 		// use _source instead of explicit stored = true
 		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
-		typeMapping.startObject()
-				.startObject(documentType)
-				.startObject("_all")
-				.field("enabled", false)
-				.endObject()
-				.startObject("properties");
+		typeMapping.startObject().startObject(documentType).startObject("properties");
 		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
-				.field("type", "string")
-				.field("index", "not_analyzed")
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
 				.endObject();
 		typeMapping.startObject(SearchFields.URI_FIELD_NAME)
-				.field("type", "string")
-				.field("index", "not_analyzed")
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
 				.endObject();
 		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
-				.field("type", "string")
-				.field("index", "analyzed")
+				.field("type", "text")
+				.field("index", true)
+				.field("copy_to", "_all")
 				.endObject();
 		for (String wktField : wktFields) {
 			typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
 			if (supportsShapes(wktField)) {
-				typeMapping.startObject(toGeoShapeFieldName(wktField)).field("type", "geo_shape").endObject();
+				typeMapping.startObject(toGeoShapeFieldName(wktField))
+						.field("type", "geo_shape")
+						.field("copy_to", "_all")
+						.endObject();
 			}
 		}
 		typeMapping.endObject().endObject().endObject();
@@ -626,7 +629,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		QueryBuilder qb = QueryBuilders.functionScoreQuery(
 				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
 				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
-						new DistanceUnit.Distance(unitDist, unit)));
+						new DistanceUnit.Distance(unitDist, unit).toString()));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource) contextVar.getValue());
 		}
@@ -634,12 +637,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, qb);
 		final GeoPoint srcPoint = new GeoPoint(lat, lon);
-		return Iterables.transform(hits, new Function<SearchHit, DocumentDistance>() {
-
-			@Override
-			public DocumentDistance apply(SearchHit hit) {
-				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);
-			}
+		return Iterables.transform(hits, (Function<SearchHit, DocumentDistance>) hit -> {
+			return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);
 		});
 	}
 
@@ -739,7 +738,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
 	@Override

@@ -1,0 +1,6 @@
+SELECT
+  S, O
+FROM
+  {S} P {O} 
+WHERE
+  S = xsd:string(O)

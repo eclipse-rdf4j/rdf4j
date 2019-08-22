@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  */
 public class QuerySpecBuilder implements SearchQueryInterpreter {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final static Logger logger = LoggerFactory.getLogger(QuerySpecBuilder.class);
 
 	private final boolean incompleteQueryFails;
 

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
  * 
  * @author Arjohn Kampman
  */
+@SuppressWarnings("deprecation")
 final class SortedRecordCache extends RecordCache {
 
 	/*------------*

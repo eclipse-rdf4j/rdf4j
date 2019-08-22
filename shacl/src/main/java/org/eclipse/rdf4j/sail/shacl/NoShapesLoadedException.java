@@ -10,6 +10,12 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 
+/**
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
+ */
+@Deprecated
+// FIXME should extend SailException
 public class NoShapesLoadedException extends RuntimeException {
 
 	private static final long serialVersionUID = 1L;

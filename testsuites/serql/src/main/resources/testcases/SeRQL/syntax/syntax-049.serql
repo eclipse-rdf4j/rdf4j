@@ -1,0 +1,4 @@
+CONSTRUCT REDUCED
+  {P} rdf:type {rdf:Property}
+FROM
+  {S} P {O}

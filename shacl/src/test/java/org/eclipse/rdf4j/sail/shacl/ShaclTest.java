@@ -24,13 +24,38 @@ public class ShaclTest extends AbstractShaclTest {
 	}
 
 	@Test
-	public void test() throws Exception {
-		runTestCase(testCasePath, path, expectedResult, isolationLevel);
+	public void test() {
+		runWithAutomaticLogging(() -> runTestCase(testCasePath, path, expectedResult, isolationLevel, false));
 	}
 
 	@Test
-	public void testSingleTransaction() throws Exception {
-		runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel);
+	public void testSingleTransaction() {
+		runWithAutomaticLogging(() -> runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel));
+	}
+
+	@Test
+	public void testRevalidation() {
+		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel));
+	}
+
+	@Test
+	public void testNonEmpty() {
+		runWithAutomaticLogging(() -> runTestCase(testCasePath, path, expectedResult, isolationLevel, true));
+	}
+
+	private void runWithAutomaticLogging(Runnable r) {
+		try {
+			r.run();
+		} catch (Throwable t) {
+			fullLogging = true;
+			System.out.println("\n##############################################");
+			System.out.println("###### Re-running test with full logging #####");
+			System.out.println("##############################################\n");
+
+			r.run();
+		} finally {
+			fullLogging = false;
+		}
 	}
 
 }

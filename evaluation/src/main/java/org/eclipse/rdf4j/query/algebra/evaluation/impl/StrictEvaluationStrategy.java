@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -110,6 +111,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -176,6 +179,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	private final UUID uuid;
 
+	private QueryOptimizerPipeline pipeline;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -186,17 +191,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver) {
-		this(tripleSource, dataset, serviceResolver, 0);
+		this(tripleSource, dataset, serviceResolver, 0, new EvaluationStatistics());
 	}
 
 	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold) {
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics) {
 		this.tripleSource = tripleSource;
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
+		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
 		this.uuid = UUID.randomUUID();
-
 		EvaluationStrategies.register(this);
 	}
 
@@ -217,6 +223,22 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 		return serviceResolver.getService(serviceUrl);
+	}
+
+	@Override
+	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+		Objects.requireNonNull(pipeline);
+		this.pipeline = pipeline;
+	}
+
+	@Override
+	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		TupleExpr optimizedExpr = expr;
+
+		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+			optimizer.optimize(optimizedExpr, dataset, bindings);
+		}
+		return optimizedExpr;
 	}
 
 	@Override

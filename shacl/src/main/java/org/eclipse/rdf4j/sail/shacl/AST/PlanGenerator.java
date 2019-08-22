@@ -8,8 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
 import java.util.List;
 
@@ -18,12 +19,16 @@ import java.util.List;
  */
 public interface PlanGenerator {
 
-	PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans,
-			PlanNode overrideTargetNode);
+	PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans);
 
-	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
+	PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
+			PlaneNodeWrapper planeNodeWrapper);
 
-	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
+	PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
+			PlaneNodeWrapper planeNodeWrapper);
+
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated);
 
 	List<Path> getPaths();
 

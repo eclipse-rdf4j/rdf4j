@@ -16,7 +16,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -28,8 +29,15 @@ import java.io.StringReader;
  */
 public class TempTest {
 
-	{
-		LoggingNode.loggingEnabled = true;
+	@BeforeClass
+	public static void beforeClass() {
+		// GlobalValidationExecutionLogging.loggingEnabled = true;
+
+	}
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
 	@Test
@@ -273,33 +281,6 @@ public class TempTest {
 
 	}
 
-	@Test(expected = NoShapesLoadedException.class)
-	public void testShapeWithoutTargetClassInvalid() throws Exception {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", false);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.remove(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.commit();
-
-		}
-
-	}
-
 	@Test
 	@Ignore // this method is used to produce the log examples in the documentation
 	public void doc() throws IOException {
@@ -320,19 +301,29 @@ public class TempTest {
 
 			connection.begin();
 
-			StringReader shaclRules = new StringReader(String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"ex:PersonShape\n" + "        a sh:NodeShape  ;\n" + "        sh:targetClass ex:Person ;\n"
-							+ "        sh:property [\n" + "                sh:path ex:age ;\n"
-							+ "                sh:datatype xsd:integer ;\n" + "        ] ."));
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:datatype xsd:integer ;",
+					"        ] ."
+
+			));
 
 			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
-			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			add(connection, String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
 					"ex:pete a ex:Person ."
 
@@ -342,8 +333,10 @@ public class TempTest {
 			shaclSail.setGlobalLogValidationExecution(true);
 			shaclSail.setLogValidationViolations(true);
 
-			add(connection, String.join("\n", "", "@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.", "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+			add(connection, String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
 					"ex:pete ex:age \"eighteen\" ."
 

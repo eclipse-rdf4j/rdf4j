@@ -58,6 +58,9 @@ public class ShaclSailFactoryTest {
 		config.setParallelValidation(!config.isParallelValidation());
 		config.setUndefinedTargetValidatesAllSubjects(!config.isUndefinedTargetValidatesAllSubjects());
 		config.setValidationEnabled(!config.isValidationEnabled());
+		config.setPerformanceLogging(!config.isPerformanceLogging());
+		config.setSerializableValidation(!config.isSerializableValidation());
+		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -73,6 +76,9 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isUndefinedTargetValidatesAllSubjects())
 				.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
 		assertThat(sail.isValidationEnabled()).isEqualTo(config.isValidationEnabled());
+		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
+		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
+		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
 	}
 
 }

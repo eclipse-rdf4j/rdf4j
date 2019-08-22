@@ -17,10 +17,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 
 import static junit.framework.TestCase.assertTrue;
 
@@ -79,7 +82,8 @@ public class ValidationReportTest {
 
 			connection.begin();
 			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader()
-					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), "utf-8")).execute();
+					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8))
+					.execute();
 			connection.commit();
 
 		} catch (RepositoryException e) {
@@ -90,24 +94,36 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-			Rio.write(actual, System.out, RDFFormat.TURTLE);
+			WriterConfig writerConfig = new WriterConfig();
+			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 
-			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n"
+			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+
+			Model expected = Rio.parse(new StringReader(""
+					+ "@prefix ex: <http://example.com/ns#> .\n"
 					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
 					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
-					+ "_:node1d1giv2b9x25 a sh:ValidationReport;\n" + "  sh:conforms false;\n"
-					+ "  sh:result _:node1d1giv2b9x26 .\n" + "\n" + "_:node1d1giv2b9x26 a sh:ValidationResult;\n"
-					+ "  sh:detail _:node1d1giv2b9x27 .\n" + "\n" + "_:node1d1giv2b9x27 a sh:ValidationResult;\n"
-					+ "  sh:detail _:node1d1giv2b9x28 .\n" + "\n" + "_:node1d1giv2b9x28 a sh:ValidationResult;\n"
-					+ "  sh:focusNode ex:validPerson1;\n" + "  sh:resultPath ex:age;\n"
-					+ "  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n"
-					+ "  sh:sourceShape ex:personShapeAgeLong .\n" + "\n"
-					+ "_:node1d1giv2b9x27 sh:focusNode ex:validPerson1;\n" + "  sh:resultPath ex:age;\n"
-					+ "  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n"
-					+ "  sh:sourceShape ex:personShapeAgeInteger .\n" + "\n"
-					+ "_:node1d1giv2b9x26 sh:focusNode ex:validPerson1;\n"
-					+ "  sh:sourceConstraintComponent sh:OrConstraintComponent;\n"
-					+ "  sh:sourceShape ex:personShapeOr ." + ""), "", RDFFormat.TURTLE);
+					+ "[] a sh:ValidationReport;\n" +
+					"  sh:conforms false;\n" +
+					"  sh:result [ a sh:ValidationResult;\n" +
+					"      sh:detail [ a sh:ValidationResult;\n" +
+					"          sh:detail [ a sh:ValidationResult;\n" +
+					"              sh:focusNode ex:validPerson1;\n" +
+					"              sh:resultPath ex:age;\n" +
+					"              sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
+					"              sh:sourceShape ex:personShapeAgeLong\n" +
+					"            ];\n" +
+					"          sh:focusNode ex:validPerson1;\n" +
+					"          sh:resultPath ex:age;\n" +
+					"          sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
+					"          sh:sourceShape ex:personShapeAgeInteger\n" +
+					"        ];\n" +
+					"      sh:focusNode ex:validPerson1;\n" +
+					"      sh:resultPath ex:age;\n" +
+					"      sh:sourceConstraintComponent sh:OrConstraintComponent;\n" +
+					"      sh:sourceShape ex:personShapeOr\n" +
+					"    ] ." + ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
 

@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -40,6 +41,8 @@ public class NativeStoreConnection extends SailSourceConnection {
 	 */
 	private volatile Lock txnLock;
 
+	private int addedCount;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -56,6 +59,7 @@ public class NativeStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void startTransactionInternal() throws SailException {
+		addedCount = 0;
 		if (!nativeStore.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
 		}
@@ -105,6 +109,14 @@ public class NativeStoreConnection extends SailSourceConnection {
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
+
+		if (getTransactionIsolation() == IsolationLevels.NONE) {
+			addedCount++;
+			if (addedCount % 10000 == 0) {
+				flushUpdates();
+				addedCount = 0;
+			}
+		}
 	}
 
 	@Override

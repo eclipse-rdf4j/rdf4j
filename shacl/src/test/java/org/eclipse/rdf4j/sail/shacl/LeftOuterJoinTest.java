@@ -13,9 +13,10 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -31,8 +32,15 @@ import static junit.framework.TestCase.assertTrue;
  */
 public class LeftOuterJoinTest {
 
-	{
-		LoggingNode.loggingEnabled = true;
+	@BeforeClass
+	public static void beforeClass() {
+		// GlobalValidationExecutionLogging.loggingEnabled = true;
+
+	}
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
 	@Test
@@ -157,7 +165,7 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"),
 				Arrays.asList("a3", "b3"));
 
-		PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(left, right), "");
+		PlanNode leftOuterJoin = new LeftOuterJoin(left, right);
 
 		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
 

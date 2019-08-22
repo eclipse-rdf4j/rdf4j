@@ -1,0 +1,5 @@
+SELECT
+   S
+FROM	
+   {S} <http://example.org/property> {O}
+USING NAMESPACE

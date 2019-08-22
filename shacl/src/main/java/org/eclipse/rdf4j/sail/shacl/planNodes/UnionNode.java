@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -23,6 +23,7 @@ public class UnionNode implements PlanNode {
 
 	private PlanNode[] nodes;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnionNode(PlanNode... nodes) {
 		this.nodes = nodes;
@@ -30,7 +31,7 @@ public class UnionNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			List<CloseableIteration<Tuple, SailException>> iterators = Arrays.stream(nodes)
 					.map(PlanNode::iterator)
@@ -88,13 +89,13 @@ public class UnionNode implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			Tuple loggingNext() throws SailException {
 				calculateNext();
 
 				Tuple temp = next;
@@ -151,5 +152,13 @@ public class UnionNode implements PlanNode {
 		throw new IllegalStateException(
 				"Not implemented support for when union node operates on nodes with different iterator data types");
 
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		for (PlanNode node : nodes) {
+			node.receiveLogger(validationExecutionLogger);
+		}
 	}
 }

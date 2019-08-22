@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -26,7 +26,7 @@ public class NativeStoreInferencingTest extends InferencingTest {
 	protected Repository createRepository() {
 		try {
 			NotifyingSail sailStack = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-			sailStack = new ForwardChainingRDFSInferencer(sailStack);
+			sailStack = new SchemaCachingRDFSInferencer(sailStack);
 			return new SailRepository(sailStack);
 		} catch (IOException e) {
 			throw new AssertionError(e);

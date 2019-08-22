@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Abstract Class offering base functionality for SailConnection implementations.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
@@ -52,7 +52,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	private static final int BLOCK_SIZE = 1000;
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(AbstractSailConnection.class);
 
 	/*-----------*
 	 * Variables *
@@ -134,7 +134,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	/**
 	 * Verifies if a transaction is currently active. Throws a {@link SailException} if no transaction is active.
-	 * 
+	 *
 	 * @throws SailException if no transaction is active.
 	 */
 	protected void verifyIsActive() throws SailException {
@@ -185,7 +185,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	/**
 	 * Retrieve the currently set {@link IsolationLevel}.
-	 * 
+	 *
 	 * @return the current {@link IsolationLevel}. If no transaction is active, this may be <code>null</code>.
 	 */
 	protected IsolationLevel getTransactionIsolation() {
@@ -331,7 +331,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * purposes only. Sail implementors are advised that by contract, any update operation on the Sail should check if a
 	 * transaction has been started via {@link SailConnection#isActive} and throw a SailException if not. Implementors
 	 * can use {@link AbstractSailConnection#verifyIsActive()} as a convenience method for this check.
-	 * 
+	 *
 	 * @deprecated since 2.7.0. Use {@link #verifyIsActive()} instead. We should not automatically start a transaction
 	 *             at the sail level. Instead, an exception should be thrown when an update is executed without first
 	 *             starting a transaction.
@@ -812,7 +812,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	/**
 	 * If there are no open operations.
-	 * 
+	 *
 	 * @throws SailException
 	 */
 	private void flushPendingUpdates() throws SailException {
@@ -826,7 +826,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	/**
 	 * Statement pattern that uses null values as wild cards.
-	 * 
+	 *
 	 * @author James Leigh
 	 */
 	private class WildStatement implements Statement {
@@ -859,7 +859,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		/**
 		 * Creates a new Statement with the supplied subject, predicate and object.
-		 * 
+		 *
 		 * @param subject   The statement's subject, may be <tt>null</tt>.
 		 * @param predicate The statement's predicate, may be <tt>null</tt>.
 		 * @param object    The statement's object, may be <tt>null</tt>.
@@ -870,7 +870,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		/**
 		 * Creates a new Statement with the supplied subject, predicate and object for the specified associated context.
-		 * 
+		 *
 		 * @param subject   The statement's subject, may be <tt>null</tt>.
 		 * @param predicate The statement's predicate, may be <tt>null</tt>.
 		 * @param object    The statement's object, may be <tt>null</tt>.

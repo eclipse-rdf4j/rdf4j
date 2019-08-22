@@ -41,19 +41,28 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold) {
-		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance(), iterationCacheSyncThreshold);
-	}
-
-	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFuncRegistry,
-			long iterationCacheSyncThreshold) {
-		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold);
-		this.tupleFuncRegistry = tupleFuncRegistry;
+		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance(), iterationCacheSyncThreshold,
+				new EvaluationStatistics());
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry) {
-		this(tripleSource, dataset, serviceResolver, tupleFunctionRegistry, 0);
+		this(tripleSource, dataset, serviceResolver, tupleFunctionRegistry, 0, new EvaluationStatistics());
+	}
+
+	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFuncRegistry,
+			long iterationCacheSyncThreshold, EvaluationStatistics evaluationStatistics) {
+		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold, evaluationStatistics);
+		this.tupleFuncRegistry = tupleFuncRegistry;
+	}
+
+	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold,
+			EvaluationStatistics evaluationStatistics) {
+		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance(), iterationCacheSyncThreshold,
+				evaluationStatistics);
+
 	}
 
 	@Override

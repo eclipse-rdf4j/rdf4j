@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  */
 class NativeEvaluationStatistics extends EvaluationStatistics {
 
-	private final Logger log = LoggerFactory.getLogger(this.getClass());
+	private static final Logger log = LoggerFactory.getLogger(NativeEvaluationStatistics.class);
 
 	private final ValueStore valueStore;
 

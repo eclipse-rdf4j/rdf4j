@@ -106,7 +106,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 					FunctionRegistry.getInstance());
 			Map<IRI, Argument> funcArgs = parser.parseArguments(func, qpTripleSource);
 			List<IRI> funcArgList = SpinParser.orderArguments(funcArgs.keySet());
-			final Map<IRI, Value> argValues = new HashMap<>(funcArgList.size());
+			final Map<IRI, Value> argValues = new HashMap<>(funcArgList.size() * 3);
 			for (int i = 0; i < funcArgList.size(); i++) {
 				IRI argName = funcArgList.get(i);
 				Argument funcArg = funcArgs.get(argName);

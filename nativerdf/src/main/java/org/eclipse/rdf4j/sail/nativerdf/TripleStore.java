@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Arjohn Kampman
  */
+@SuppressWarnings("deprecation")
 class TripleStore implements Closeable {
 
 	/*-----------*
@@ -121,7 +122,7 @@ class TripleStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
 
 	/**
 	 * The directory that is used to store the index files.
@@ -405,10 +406,6 @@ class TripleStore implements Closeable {
 		for (String fieldSeq : newIndexSpecs) {
 			indexes.add(currentIndexes.remove(fieldSeq));
 		}
-	}
-
-	private String getCurrentIndexSpecStr() {
-		return properties.getProperty(INDEXES_KEY);
 	}
 
 	@Override

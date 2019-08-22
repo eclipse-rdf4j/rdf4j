@@ -8,13 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,7 +18,25 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *             warning from one release to the next.
+ */
+@Deprecated
+@InternalUseOnly
 public class RdfsSubClassOfReasoner {
+
+	private static final Logger logger = LoggerFactory.getLogger(RdfsSubClassOfReasoner.class);
 
 	private final Collection<Statement> subClassOfStatements = new ArrayList<>();
 	private final Collection<Resource> types = new ArrayList<>();
@@ -50,14 +61,14 @@ public class RdfsSubClassOfReasoner {
 
 	public Set<Resource> backwardsChain(Resource type) {
 		if (backwardsChainCache.isEmpty()) {
-			return Collections.emptySet();
+			return Collections.singleton(type);
 		}
 
 		Set<Resource> resources = backwardsChainCache.get(type);
 		if (resources != null) {
 			return resources;
 		}
-		return Collections.emptySet();
+		return Collections.singleton(type);
 	}
 
 	private void addSubClassOfStatement(Statement st) {
@@ -135,6 +146,11 @@ public class RdfsSubClassOfReasoner {
 	}
 
 	static RdfsSubClassOfReasoner createReasoner(ShaclSailConnection shaclSailConnection) {
+		long before = 0;
+		if (shaclSailConnection.sail.isPerformanceLogging()) {
+			before = System.currentTimeMillis();
+		}
+
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
 		try (Stream<? extends Statement> stream = Iterations
@@ -143,7 +159,14 @@ public class RdfsSubClassOfReasoner {
 		}
 
 		rdfsSubClassOfReasoner.calculateSubClassOf(rdfsSubClassOfReasoner.subClassOfStatements);
+		if (shaclSailConnection.sail.isPerformanceLogging()) {
+			logger.info("RdfsSubClassOfReasoner.createReasoner() took {} ms", System.currentTimeMillis() - before);
+		}
 		return rdfsSubClassOfReasoner;
+	}
+
+	public boolean isEmpty() {
+		return subClassOfStatements.isEmpty() && forwardChainCache.isEmpty() && backwardsChainCache.isEmpty();
 	}
 }
 

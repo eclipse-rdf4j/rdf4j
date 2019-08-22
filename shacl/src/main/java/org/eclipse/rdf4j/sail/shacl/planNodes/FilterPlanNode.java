@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,10 +24,11 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	PlanNode parent;
 
-	PushablePlanNode trueNode;
-	PushablePlanNode falseNode;
+	private PushablePlanNode trueNode;
+	private PushablePlanNode falseNode;
 
 	private CloseableIteration<Tuple, SailException> iterator;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	abstract boolean checkTuple(Tuple t);
 
@@ -40,9 +41,9 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			throw new IllegalStateException();
 		}
 		if (type == BufferedPlanNode.class) {
-			trueNode = new BufferedPlanNode<>(this);
+			trueNode = new BufferedPlanNode<>(this, "True");
 		} else {
-			trueNode = new UnBufferedPlanNode<>(this);
+			trueNode = new UnBufferedPlanNode<>(this, "True");
 
 		}
 
@@ -54,9 +55,9 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			throw new IllegalStateException();
 		}
 		if (type == BufferedPlanNode.class) {
-			falseNode = new BufferedPlanNode<>(this);
+			falseNode = new BufferedPlanNode<>(this, "False");
 		} else {
-			falseNode = new UnBufferedPlanNode<>(this);
+			falseNode = new UnBufferedPlanNode<>(this, "False");
 
 		}
 
@@ -64,6 +65,8 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 	public CloseableIteration<Tuple, SailException> iterator() {
+
+		FilterPlanNode that = this;
 
 		return new CloseableIteration<Tuple, SailException>() {
 
@@ -85,21 +88,22 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
-							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";trueNode: " + " "
-										+ temp.toString());
-							}
 							trueNode.push(temp);
-
+						} else {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								validationExecutionLogger.log(that.depth(),
+										that.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp, that, getId());
+							}
 						}
 					} else {
 						if (falseNode != null) {
-							if (LoggingNode.loggingEnabled) {
-								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";falseNode: " + " "
-										+ temp.toString());
-							}
 							falseNode.push(temp);
-
+						} else {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								validationExecutionLogger.log(that.depth(),
+										that.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp, that,
+										getId());
+							}
 						}
 					}
 
@@ -175,10 +179,6 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	private String leadingSpace() {
-		return StringUtils.leftPad("", parent.depth() + 1, "    ");
-	}
-
 	@Override
 	public void init() {
 		if (iterator == null) {
@@ -212,5 +212,11 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

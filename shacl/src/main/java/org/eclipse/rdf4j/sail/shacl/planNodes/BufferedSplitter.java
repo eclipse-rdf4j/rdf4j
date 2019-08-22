@@ -8,9 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -23,12 +26,13 @@ import java.util.List;
  *         parent iterator. This will potentially take a fair bit of memory, but maybe be useful for perfomance so that
  *         we don't query the underlying datastores for the same data multiple times.
  */
-public class BufferedSplitter {
+public class BufferedSplitter implements PlanNodeProvider {
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	PlanNode parent;
 	private List<Tuple> tuplesBuffer;
 	private BufferedSplitter that = this;
-	private boolean printed = false;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
@@ -51,6 +55,11 @@ public class BufferedSplitter {
 	public PlanNode getPlanNode() {
 
 		return new PlanNode() {
+			private boolean printed = false;
+
+			private ValidationExecutionLogger validationExecutionLogger;
+			PlanNode that = this;
+
 			@Override
 			public CloseableIteration<Tuple, SailException> iterator() {
 
@@ -71,7 +80,13 @@ public class BufferedSplitter {
 
 					@Override
 					public Tuple next() throws SailException {
-						return new Tuple(iterator.next());
+						Tuple tuple = new Tuple(iterator.next());
+						if (GlobalValidationExecutionLogging.loggingEnabled) {
+							validationExecutionLogger.log(depth(),
+									parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
+									getId());
+						}
+						return tuple;
 					}
 
 					@Override
@@ -88,8 +103,9 @@ public class BufferedSplitter {
 
 			@Override
 			public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-				if (printed)
+				if (printed) {
 					return;
+				}
 				printed = true;
 				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 						.append("\n");
@@ -111,7 +127,15 @@ public class BufferedSplitter {
 			public String toString() {
 				return "BufferedSplitter";
 			}
+
+			@Override
+			public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+				this.validationExecutionLogger = validationExecutionLogger;
+				parent.receiveLogger(validationExecutionLogger);
+			}
+
 		};
 
 	}
+
 }

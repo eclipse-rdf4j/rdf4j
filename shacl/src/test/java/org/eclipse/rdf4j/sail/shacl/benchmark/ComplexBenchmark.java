@@ -38,6 +38,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -47,8 +48,8 @@ import java.util.stream.Stream;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=ProfilingAggressive.jfc", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=ProfilingAggressive.jfc", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ComplexBenchmark {
@@ -60,10 +61,10 @@ public class ComplexBenchmark {
 		try {
 			transaction1 = IOUtils.toString(
 					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction2 = IOUtils.toString(
 					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException();
@@ -73,14 +74,17 @@ public class ComplexBenchmark {
 	@Setup(Level.Iteration)
 	public void setUp() {
 		System.gc();
-		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
-		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
+		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
 	@Benchmark
 	public void shaclParallelCache() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
@@ -180,6 +184,8 @@ public class ComplexBenchmark {
 	public void shaclParallelCacheSingleTransactionNoIsolation() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
@@ -200,6 +206,7 @@ public class ComplexBenchmark {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 
+		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

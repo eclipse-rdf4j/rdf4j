@@ -39,24 +39,27 @@ public class ReduceNumberOfPlansTest {
 			connection.begin();
 
 			refreshAddedRemovedStatements(connection);
+			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-			List<PlanNode> collect = shaclSail.getNodeShapes()
-					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-					.collect(Collectors.toList());
+				List<PlanNode> collect = shaclSail.getNodeShapes()
+						.stream()
+						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.collect(Collectors.toList());
 
-			assertEquals(0, collect.size());
-
+				assertEquals(0, collect.size());
+			}
 			IRI person1 = Utils.Ex.createIri();
 			connection.addStatement(person1, RDF.TYPE, Utils.Ex.Person);
 			refreshAddedRemovedStatements(connection);
+			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-			List<PlanNode> collect2 = shaclSail.getNodeShapes()
-					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-					.collect(Collectors.toList());
+				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+						.stream()
+						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.collect(Collectors.toList());
+				assertEquals(2, collect2.size());
 
-			assertEquals(2, collect2.size());
+			}
 			ValueFactory vf = shaclSail.getValueFactory();
 			connection.addStatement(person1, Utils.Ex.ssn, vf.createLiteral("a"));
 			connection.addStatement(person1, Utils.Ex.ssn, vf.createLiteral("b"));
@@ -92,32 +95,37 @@ public class ReduceNumberOfPlansTest {
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("b"));
 
 			refreshAddedRemovedStatements(connection);
+			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-			List<PlanNode> collect1 = shaclSail.getNodeShapes()
-					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-					.collect(Collectors.toList());
-			assertEquals(1, collect1.size());
+				List<PlanNode> collect1 = shaclSail.getNodeShapes()
+						.stream()
+						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.collect(Collectors.toList());
+				assertEquals(1, collect1.size());
+
+			}
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("a"));
 
 			refreshAddedRemovedStatements(connection);
+			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-			List<PlanNode> collect2 = shaclSail.getNodeShapes()
-					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-					.collect(Collectors.toList());
-			assertEquals(1, collect2.size());
-
+				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+						.stream()
+						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.collect(Collectors.toList());
+				assertEquals(1, collect2.size());
+			}
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
 			refreshAddedRemovedStatements(connection);
+			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-			List<PlanNode> collect3 = shaclSail.getNodeShapes()
-					.stream()
-					.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
-					.collect(Collectors.toList());
-			assertEquals(2, collect3.size());
-
+				List<PlanNode> collect3 = shaclSail.getNodeShapes()
+						.stream()
+						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.collect(Collectors.toList());
+				assertEquals(2, collect3.size());
+			}
 			connection.rollback();
 
 		}
