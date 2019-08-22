@@ -18,10 +18,11 @@ import org.apache.commons.cli.ParseException;
 
 /**
  * Helper class for configuring console
- * 
+ *
  * @author Bart Hanssens
  */
 class CmdLineParser {
+
 	private final static Option HELP = new Option("h", "help", false, "print this help");
 	private final static Option VERSION = new Option("v", "version", false, "print version information");
 	private final static Option SERVER = new Option("s", "serverURL", true,
@@ -53,7 +54,7 @@ class CmdLineParser {
 
 	/**
 	 * Parse command line arguments
-	 * 
+	 *
 	 * @param args arguments
 	 * @return parsed command line or null
 	 */
@@ -83,7 +84,7 @@ class CmdLineParser {
 
 	/**
 	 * Handle help or version parameter at the command line
-	 * 
+	 *
 	 * @return false if an information option was given
 	 */
 	protected boolean handleInfoOptions() {
@@ -117,7 +118,7 @@ class CmdLineParser {
 
 	/**
 	 * Handle command line caution group
-	 * 
+	 *
 	 * @return location of the (remote or local) repository
 	 */
 	protected boolean handleCautionGroup() {
@@ -141,7 +142,7 @@ class CmdLineParser {
 
 	/**
 	 * Handle command line location group
-	 * 
+	 *
 	 * @return location of the (remote or local) repository
 	 */
 	protected String handleLocationGroup() {
@@ -164,7 +165,7 @@ class CmdLineParser {
 
 	/**
 	 * Get selected location from location group. Can be d(irectory) or s(erver)
-	 * 
+	 *
 	 * @return string
 	 */
 	protected String getSelectedLocation() {
@@ -173,7 +174,7 @@ class CmdLineParser {
 
 	/**
 	 * Get remaining argument from command line, if any. Returns empty string if there is no argument, null on error
-	 * 
+	 *
 	 * @return argument as string, or null on error
 	 */
 	protected String handleOtherArg() {
@@ -187,7 +188,7 @@ class CmdLineParser {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param console
 	 */
 	protected CmdLineParser(Console console) {

@@ -32,6 +32,7 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
+import javax.servlet.http.HttpUpgradeHandler;
 import javax.servlet.http.Part;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
@@ -601,5 +602,19 @@ public class HttpServerUtilTest {
 			return null;
 		}
 
+		@Override
+		public <T extends HttpUpgradeHandler> T upgrade(Class<T> handlerClass) {
+			return null;
+		}
+
+		@Override
+		public String changeSessionId() {
+			return null;
+		}
+
+		@Override
+		public long getContentLengthLong() {
+			return 0;
+		}
 	}
 }

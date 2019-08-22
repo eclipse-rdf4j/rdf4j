@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.console.command;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
@@ -42,18 +41,6 @@ public class Serql extends QueryEvaluator {
 				+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
 				+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
 				+ "serql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n";
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param params
-	 */
-	@Deprecated
-	public Serql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
-		super(consoleIO, state, params);
 	}
 
 	/**

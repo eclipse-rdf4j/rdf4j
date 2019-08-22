@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -61,9 +63,13 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextException;
@@ -84,9 +90,10 @@ public class RepositoryController extends AbstractController {
 	private RepositoryManager repositoryManager;
 
 	private static final String METHOD_DELETE = "DELETE";
+	private static final String METHOD_PUT = "PUT";
 
 	public RepositoryController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_DELETE, METHOD_HEAD });
+		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_PUT, METHOD_DELETE, METHOD_HEAD });
 	}
 
 	public void setRepositoryManager(RepositoryManager repMan) {
@@ -144,6 +151,22 @@ public class RepositoryController extends AbstractController {
 			} catch (RDF4JException e) {
 				logger.error("error while attempting to delete repository '" + repId + "'", e);
 				throw new ServerHTTPException("Repository delete error: " + e.getMessage(), e);
+			}
+		} else if (METHOD_PUT.equals(reqMethod)) {
+			// create new repo or update repository config
+			String repId = RepositoryInterceptor.getRepositoryID(request);
+			logger.info("PUT request invoked for repository '" + repId + "'");
+			try {
+				Model model = Rio.parse(request.getInputStream(), "",
+						Rio.getParserFormatForMIMEType(request.getContentType())
+								.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
+										"unrecognized content type " + request.getContentType())));
+				RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, repId);
+				repositoryManager.addRepositoryConfig(config);
+				return new ModelAndView(EmptySuccessView.getInstance());
+			} catch (RDF4JException e) {
+				logger.error("error while attempting to create/configure repository '" + repId + "'", e);
+				throw new ServerHTTPException("Repository create error: " + e.getMessage(), e);
 			}
 		}
 
