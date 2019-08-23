@@ -1,0 +1,418 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Full-text indexing with the Lucene SAIL | The Eclipse Foundation</title>
+<meta property="og:title" content="Full-text indexing with the Lucene SAIL | The Eclipse Foundation" />
+<meta name="twitter:title" content="Full-text indexing with the Lucene SAIL | The Eclipse Foundation" />
+<meta name="description" content="Full text indexing with the Lucene SAIL The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following statement patterns:
+PREFIX search: &lt;http://www.openrdf.org/contrib/lucenesail#&gt; ?subj search:matches [ search:query &quot;search terms...&quot;; search:property my:property; search:score ?score; search:snippet ?snippet ] .  The &lsquo;virtual&rsquo; properties in the search: namespace have the following meaning:
+ search:matches – links the resource to be found with the following query statements (required) search:query – specifies the Lucene query (required) search:property – specifies the property to search.">
+<meta property="og:description" content="Full text indexing with the Lucene SAIL The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following statement patterns:
+PREFIX search: &lt;http://www.openrdf.org/contrib/lucenesail#&gt; ?subj search:matches [ search:query &quot;search terms...&quot;; search:property my:property; search:score ?score; search:snippet ?snippet ] .  The &lsquo;virtual&rsquo; properties in the search: namespace have the following meaning:
+ search:matches – links the resource to be found with the following query statements (required) search:query – specifies the Lucene query (required) search:property – specifies the property to search.">
+<meta name="twitter:description" content="Full text indexing with the Lucene SAIL The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/programming/lucene/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/programming/lucene/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/programming/">Programming with rdf4j</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/programming/lucene/">Full-text indexing with the Lucene SAIL</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="full-text-indexing-with-the-lucene-sail">Full text indexing with the Lucene SAIL</h1>
+
+<p>The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following statement patterns:</p>
+
+<pre><code>PREFIX search: &lt;http://www.openrdf.org/contrib/lucenesail#&gt;
+
+?subj search:matches [
+              search:query &quot;search terms...&quot;;
+              search:property my:property;
+              search:score ?score;
+              search:snippet ?snippet ] .
+</code></pre>
+
+<p>The &lsquo;virtual&rsquo; properties in the <code>search:</code> namespace have the following meaning:</p>
+
+<ul>
+<li><code>search:matches</code> – links the resource to be found with the following query statements (required)</li>
+<li><code>search:query</code> – specifies the Lucene query (required)</li>
+<li><code>search:property</code> – specifies the property to search. If omitted all properties are searched (optional)</li>
+<li><code>search:score</code> – specifies a variable for the score (optional)</li>
+<li><code>search:snippet</code> – specifies a variable for a highlighted snippet (optional)</li>
+</ul>
+
+<h2 id="configuration">Configuration</h2>
+
+<p>The LuceneSail is a stacked Sail: to use it, simply wrap your base SAIL with it:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Sail baseSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> NativeStore<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> File<span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;.&#34;</span><span style="color:#000;font-weight:bold">));</span>
+LuceneSail lucenesail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> LuceneSail<span style="color:#000;font-weight:bold">();</span>
+<span style="color:#998;font-style:italic">// set any parameters, this one stores the Lucene index files into memory
+</span><span style="color:#998;font-style:italic"></span>lucenesail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setParameter</span><span style="color:#000;font-weight:bold">(</span>LuceneSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">LUCENE_RAMDIR_KEY</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;true&#34;</span><span style="color:#000;font-weight:bold">);</span>
+<span style="color:#000;font-weight:bold">...</span>
+<span style="color:#998;font-style:italic">// wrap base sail
+</span><span style="color:#998;font-style:italic"></span>lucenesail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setBaseSail</span><span style="color:#000;font-weight:bold">(</span>baseSail<span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<h2 id="full-text-search">Full text search</h2>
+
+<p>Search is case-insensitive, wildcards and other modifiers can be used to broaden the search. For example, search all literals containing words starting with &ldquo;alic&rdquo; (e.g. persons named &ldquo;Alice&rdquo;):</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">....</span>
+Repository repo <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span>lucenesail<span style="color:#000;font-weight:bold">);</span>
+repo<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">initialize</span><span style="color:#000;font-weight:bold">();</span>
+
+<span style="color:#998;font-style:italic">// Get the subjects and a highlighted snippet
+</span><span style="color:#998;font-style:italic"></span>String qry <span style="color:#000;font-weight:bold">=</span> <span style="color:#d14">&#34;PREFIX search: &lt;http://www.openrdf.org/contrib/lucenesail#&gt; &#34;</span> <span style="color:#000;font-weight:bold">+</span>
+			<span style="color:#d14">&#34;SELECT ?subj ?text &#34;</span> <span style="color:#000;font-weight:bold">+</span>
+			<span style="color:#d14">&#34;WHERE { ?subj search:matches [&#34;</span> <span style="color:#000;font-weight:bold">+</span>
+					<span style="color:#d14">&#34; search:query ?term ; &#34;</span> <span style="color:#000;font-weight:bold">+</span>
+					<span style="color:#d14">&#34; search:snippet ?text ] } &#34;</span><span style="color:#000;font-weight:bold">;</span>
+
+List<span style="color:#000;font-weight:bold">&lt;</span>BindingSet<span style="color:#000;font-weight:bold">&gt;</span> results<span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">(</span>RepositoryConnection con <span style="color:#000;font-weight:bold">=</span> repo<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getConnection</span><span style="color:#000;font-weight:bold">())</span> <span style="color:#000;font-weight:bold">{</span>
+	ValueFactory fac <span style="color:#000;font-weight:bold">=</span> con<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getValueFactory</span><span style="color:#000;font-weight:bold">();</span>
+
+	TupleQuery tq <span style="color:#000;font-weight:bold">=</span> con<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prepareTupleQuery</span><span style="color:#000;font-weight:bold">(</span>QueryLanguage<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">SPARQL</span><span style="color:#000;font-weight:bold">,</span> qry<span style="color:#000;font-weight:bold">);</span>
+	<span style="color:#998;font-style:italic">// add wildcard &#39;*&#39; to perform wildcard search
+</span><span style="color:#998;font-style:italic"></span>	tq<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setBinding</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;term&#34;</span><span style="color:#000;font-weight:bold">,</span> fac<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">createLiteral</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;alic&#34;</span> <span style="color:#000;font-weight:bold">+</span> <span style="color:#d14">&#34;*&#34;</span><span style="color:#000;font-weight:bold">));</span>
+
+	<span style="color:#998;font-style:italic">// copy the results and processs them after the connection is closed
+</span><span style="color:#998;font-style:italic"></span>	results <span style="color:#000;font-weight:bold">=</span> QueryResults<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">asList</span><span style="color:#000;font-weight:bold">(</span>tq<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">evaluate</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">}</span>
+
+results<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">forEach</span><span style="color:#000;font-weight:bold">(</span>res <span style="color:#000;font-weight:bold">-&gt;</span> <span style="color:#000;font-weight:bold">{</span>
+		System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>res<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getValue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;subj&#34;</span><span style="color:#000;font-weight:bold">).</span><span style="color:#008080">stringValue</span><span style="color:#000;font-weight:bold">());</span>
+		System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>res<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getValue</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;text&#34;</span><span style="color:#000;font-weight:bold">).</span><span style="color:#008080">stringValue</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">});</span></code></pre></div>
+
+<h2 id="searchindex-implementations">SearchIndex implementations</h2>
+
+<p>The LuceneSail can currently be used with five SearchIndex implementations:</p>
+
+<table border=1 style="padding: 10px;">
+<tr>
+<th></th>
+<th style="padding: 4px">SearchIndex implementation</th>
+<th style="padding: 4px">Maven module</th>
+</tr>
+<tr>
+<td style="padding: 4px">Apache Lucene 5</td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j.sail.lucene.LuceneIndex</code></td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j:rdf4j-sail-lucene</code></td>
+</tr>
+<tr>
+<td style="padding: 4px">ElasticSearch</td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j.sail.elasticsearch.ElasticSearchIndex</code></td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j:rdf4j-sail-elasticsearch</code></td>
+</tr>
+<tr>
+<td style="padding: 4px">Apache Solr Embedded</td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j.sail.solr.SolrIndex</code></td>
+<td style="padding: 4px"><code>org.eclipse.rdf4j:rdf4j-sail-solr</code></td>
+</tr>
+</table>
+
+<p>Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.</p>
+
+<p>The following example uses a local Solr instance running on the default port 8983. Make sure that both the Apache httpcore and commons-logging jars are in the classpath, and that the Solr core uses an appropriate schema (an example can be found in RDF4J’s embedded solr source code on GitHub).</p>
+
+<p><div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.sail.solr.SolrIndex</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">....</span>
+LuceneSail luceneSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> LuceneSail<span style="color:#000;font-weight:bold">();</span>
+luceneSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setParameter</span><span style="color:#000;font-weight:bold">(</span>LuceneSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">INDEX_CLASS_KEY</span><span style="color:#000;font-weight:bold">,</span> SolrIndex<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">class</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getName</span><span style="color:#000;font-weight:bold">());</span>
+luceneSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setParameter</span><span style="color:#000;font-weight:bold">(</span>SolrIndex<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">SERVER_KEY</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;http://localhost:8983/solr/rdf4j&#34;</span><span style="color:#000;font-weight:bold">);</span>
+
+If needed<span style="color:#000;font-weight:bold">,</span> the Solr Client can be accessed <span style="color:#900;font-weight:bold">via:</span>
+
+SolrIndex index <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">(</span>SolrIndex<span style="color:#000;font-weight:bold">)</span> luceneSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getLuceneIndex</span><span style="color:#000;font-weight:bold">();</span>
+SolrClient client <span style="color:#000;font-weight:bold">=</span> index<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getClient</span><span style="color:#000;font-weight:bold">();</span></code></pre></div></p>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#full-text-indexing-with-the-lucene-sail">Full text indexing with the Lucene SAIL</a>
+<ul>
+<li><a href="#configuration">Configuration</a></li>
+<li><a href="#full-text-search">Full text search</a></li>
+<li><a href="#searchindex-implementations">SearchIndex implementations</a></li>
+</ul></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

@@ -44,11 +44,6 @@ pygmentsStyle = "github"
 
 
 [[menu.main]]
-    name = "News"
-    url = "/news/"
-    weight = 1
-
-[[menu.main]]
     name = "About"
     weight = 2
 

@@ -1,0 +1,1543 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>The rdf4j REST API | The Eclipse Foundation</title>
+<meta property="og:title" content="The rdf4j REST API | The Eclipse Foundation" />
+<meta name="twitter:title" content="The rdf4j REST API | The Eclipse Foundation" />
+<meta name="description" content="The rdf4j server REST API The rdf4j server REST API is a HTTP Protocol that covers a fully compliant implementation of the SPARQL 1.1 Protocol W3C Recommendation. This ensures that rdf4j server functions as a fully standards-compliant SPARQL endpoint. The current version of the API additionally supports the SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation. The rdf4j REST API extends the W3C standards in several aspects, the most important of which is that it supports a full database transaction mechanism.">
+<meta property="og:description" content="The rdf4j server REST API The rdf4j server REST API is a HTTP Protocol that covers a fully compliant implementation of the SPARQL 1.1 Protocol W3C Recommendation. This ensures that rdf4j server functions as a fully standards-compliant SPARQL endpoint. The current version of the API additionally supports the SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation. The rdf4j REST API extends the W3C standards in several aspects, the most important of which is that it supports a full database transaction mechanism.">
+<meta name="twitter:description" content="The rdf4j server REST API The rdf4j server REST API is a HTTP Protocol that covers a fully compliant implementation of the SPARQL 1.1 Protocol W3C Recommendation. This ensures that rdf4j server …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/rest-api/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/rest-api/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/rest-api/">The rdf4j REST API</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="the-rdf4j-server-rest-api">The rdf4j server REST API</h1>
+
+<p>The rdf4j server REST API is a HTTP Protocol that covers a fully compliant implementation of the <a href="https://www.w3.org/TR/sparql11-protocol/" target="_blank">SPARQL 1.1 Protocol W3C Recommendation</a>. This ensures that rdf4j server functions as a fully standards-compliant <strong>SPARQL endpoint</strong>. The current version of the API additionally supports the <a href="https://www.w3.org/TR/sparql11-http-rdf-update/" target="_blank">SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation</a>. The rdf4j REST API extends the W3C standards in several aspects, the most important of which is that it supports a full database transaction mechanism.</p>
+
+<p>The <a href="https://en.wikipedia.org/wiki/Representational_state_transfer" target="_blank">REST architectural style</a> implies that URLs are used to represent the various resources that are available on a server. Here, we give a summary of the resources that are available from a rdf4j server sinstance with the HTTP-methods that can be used on them. In this overview, <code>&lt;RDF4J_URL&gt;</code> is used to denote the location of the rdf4j server instance, e.g. <code>http://localhost:8080/rdf4j-server</code>. Likewise, <code>&lt;REP_ID&gt;</code> denotes the ID of a specific repository (e.g. “mem-rdf”), and <code>&lt;PREFIX&gt;</code> denotes a namespace prefix (e.g. “rdfs”).</p>
+
+<p>The following is an overview of the resources that are available from rdf4j server.</p>
+
+<pre><code>&lt;RDF4J_URL&gt;
+   /protocol         : protocol version (GET)
+   /repositories     : overview of available repositories (GET)
+   /&lt;REP_ID&gt;         : query evaluation and administration tasks on a repository
+                       (GET/POST/PUT/DELETE)
+       /statements   : repository statements (GET/POST/PUT/DELETE)
+       /contexts     : context overview (GET)
+       /size         : # statements in repository (GET)
+       /rdf-graphs   : named graphs overview (GET)
+           /service  : SPARQL Graph Store operations on indirectly referenced named
+                       graphs in repository (GET/PUT/POST/DELETE)
+           /&lt;NAME&gt;   : SPARQL Graph Store operations on directly referenced named
+                       graphs in repository (GET/PUT/POST/DELETE)
+       /namespaces   : overview of namespace definitions (GET/DELETE)
+           /&lt;PREFIX&gt; : namespace-prefix definition (GET/PUT/DELETE)
+       /transactions : starting point for creating transactions on the current repository (POST)
+           /&lt;TXN_ID&gt; : a specific transaction which can be updated (PUT/DELETE)
+</code></pre>
+
+<h1 id="protocol-version">Protocol version</h1>
+
+<p>The version of the protocol that the server uses to communicate over HTTP is available at: <code>&lt;RDF4J_URL&gt;/protocol</code>. The version described by this chapter is “8”.</p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Gets the protocol version string, e.g. “1”, “2”, etc.</li>
+</ul>
+
+<h2 id="request-examples">Request examples</h2>
+
+<h3 id="fetch-the-protocol-version">Fetch the protocol version</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/protocol HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 1
+
+4
+</code></pre>
+
+<h1 id="repository-list">Repository list</h1>
+
+<p>An overview of the repositories that are available on a server can be retrieved from <code>&lt;RDF4J_URL&gt;/repositories</code>.</p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Gets an list of available repositories, including ID, title, read- and write access parameters for each listed repository. The list is formatted as a tuple query result with variables “uri”, “id”, “title”, “readable” and “writable”. The “uri” value gives the URI/URL for the repository and the “readable” and “writable” values are xsd:boolean typed literals indicating read- and write permissions.</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values are the MIME types of supported variable binding formats.</li>
+</ul>
+
+<h2 id="request-examples-1">Request examples</h2>
+
+<h3 id="fetch-the-repository-list">Fetch the repository list</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories HTTP/1.1
+Host: localhost
+Accept: application/sparql-results+xml, */*;q=0.5
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/sparql-results+xml;charset=UTF-8
+
+&lt;?xml version='1.0' encoding='UTF-8'?&gt;
+&lt;sparql xmlns='http://www.w3.org/2005/sparql-results#'&gt;
+  &lt;head&gt;
+         &lt;variable name='uri'/&gt;
+         &lt;variable name='id'/&gt;
+         &lt;variable name='title'/&gt;
+         &lt;variable name='readable'/&gt;
+         &lt;variable name='writable'/&gt;
+  &lt;/head&gt;
+  &lt;results ordered='false' distinct='false'&gt;
+         &lt;result&gt;
+                &lt;binding name='uri'&gt;
+                  &lt;uri&gt;http://localhost/rdf4j-server/repositories/mem-rdf&lt;/uri&gt;
+                &lt;/binding&gt;
+                &lt;binding name='id'&gt;
+                  &lt;literal&gt;mem-rdf&lt;/literal&gt;
+                &lt;/binding&gt;
+                &lt;binding name='title'&gt;
+                  &lt;literal&gt;Main Memory RDF repository&lt;/literal&gt;
+                &lt;/binding&gt;
+                &lt;binding name='readable'&gt;
+                  &lt;literal datatype='http://www.w3.org/2001/XMLSchema#boolean'&gt;true&lt;/literal&gt;
+                &lt;/binding&gt;
+                &lt;binding name='writable'&gt;
+                  &lt;literal datatype='http://www.w3.org/2001/XMLSchema#boolean'&gt;false&lt;/literal&gt;
+                &lt;/binding&gt;
+         &lt;/result&gt;
+  &lt;/results&gt;
+&lt;/sparql&gt;
+</code></pre>
+
+<h1 id="repository-queries">Repository queries</h1>
+
+<p>Queries on a specific repository with ID <code>&lt;ID&gt;</code> can be evaluated by sending requests to: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;</code>. This resource represents a SPARQL query endpoint. Both <code>GET</code> and <code>POST</code> methods are supported. The <code>GET</code> method is preferred as it adheres to the REST architectural style. The <code>POST</code> method should be used in cases where the length of the (URL-encoded) query exceeds practicable limits of proxies, servers, etc. In case a <code>POST</code> request is used, the query parameters should be sent to the server as www-form-urlencoded data.</p>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>query</code>: The query to evaluate.</li>
+<li><code>queryLn</code> (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e. “serql” for SeRQL queries and “sparql” for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.</li>
+<li><code>infer</code> (optional): Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than “true” (ignoring case) restricts the query evluation to explicit statements only.</li>
+<li><code>$&lt;varname&gt;</code> (optional): specifies variable bindings. Variables appearing in the query can be bound to a specific value outside the actual query using this option. The value should be an N-Triples encoded RDF value.</li>
+<li><code>timeout</code> (optional): specifies a maximum query execution time, in whole seconds. The value should be an integer. A setting of 0 or a negative number indicates unlimited query time (the default).</li>
+<li><code>distinct</code> (optional): specifies if only distinct query solutions should be returned. The value should be <code>true</code> or <code>false</code>. If the supplied SPARQL query itself already has a <code>DISTINCT</code> modifier, this parameter will have no effect.</li>
+<li><code>limit</code> (optional): specifies the maximum number of query solutions to return. The value should be a positive integer. If the supplied SPARQL query itself already has a <code>LIMIT</code> modifier, this parameter will only have an effect if the supplied value is lower than the <code>LIMIT</code> value in the query.</li>
+<li><code>offset</code> (optional): specifies the number of query solutions to skip. The value should be a positive inteer. This parameter is cumulative with any <code>OFFSET</code> modifier in the supplied SPARQL query itself.</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values are the MIME types of supported RDF formats for graph queries, the MIME types of supported variable binding formats for tuple queries, and the MIME types of supported boolean result formats for boolean queries.</li>
+<li><code>Content-Type</code>: specifies the mediatype of a POST request body. Possible values are “application/x-www-form-urlencoded” (for a SPARQL query or update encoded as a form parameter), “application/sparql-query” (for an unencoded SPARQL query string) or “application/sparql-update” (for an unencoded SPARQL update string).</li>
+</ul>
+
+<h2 id="request-examples-2">Request examples</h2>
+
+<h3 id="evaluate-a-serql-select-query-on-repository-mem-ref">Evaluate a SeRQL-select query on repository “mem-ref”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf?query=select%20%3Cfoo:bar%3E&amp;queryLn=serql HTTP/1.1
+Host: localhost
+Accept: application/sparql-results+xml, */*;q=0.5
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/sparql-results+xml;charset=UTF-8
+
+&lt;?xml version='1.0' encoding='UTF-8'?&gt;
+&lt;sparql xmlns='http://www.w3.org/2005/sparql-results#'&gt;
+  &lt;head&gt;
+         &lt;variable name='&amp;lt;foo:bar&amp;gt;'/&gt;
+  &lt;/head&gt;
+  &lt;results ordered='false' distinct='false'&gt;
+         &lt;result&gt;
+                &lt;binding name='&amp;lt;foo:bar&amp;gt;'&gt;
+                  &lt;uri&gt;foo:bar&lt;/uri&gt;
+                &lt;/binding&gt;
+         &lt;/result&gt;
+  &lt;/results&gt;
+&lt;/sparql&gt;
+</code></pre>
+
+<h3 id="evaluate-a-sparql-construct-query-on-repository-mem-rdf-using-a-post-request">Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf HTTP/1.1
+Host: localhost
+Content-Type: application/sparql-query
+Accept: application/rdf+xml, */*;q=0.5
+
+construct {?s ?p ?o} where {?s ?p ?o}
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;rdf:RDF xmlns:rdf=&quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#&quot;&gt;
+&lt;/rdf:RDF&gt;
+</code></pre>
+
+<h3 id="evaluate-a-sparql-construct-query-on-repository-mem-rdf-using-a-post-request-and-form-encoding">Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request and form encoding</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf HTTP/1.1
+Host: localhost
+Content-Type: application/x-www-form-urlencoded
+Accept: application/rdf+xml, */*;q=0.5
+
+query=construct%20{?s%20?p%20?o}%20where%20{?s%20?p%20?o}
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;rdf:RDF xmlns:rdf=&quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#&quot;&gt;
+&lt;/rdf:RDF&gt;
+</code></pre>
+
+<h3 id="evaluate-a-sparql-ask-query-on-repository-mem-ref">Evaluate a SPARQL-ask query on repository “mem-ref”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf?query=ask%20{?s%20?p%20?o} HTTP/1.1
+Host: localhost
+Accept: text/boolean, */*;q=0.5
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/boolean;charset=US-ASCII
+
+true
+</code></pre>
+
+<h1 id="repository-creation-and-reconfiguration">Repository creation and reconfiguration</h1>
+
+<p>A specific repository with ID <code>&lt;ID&gt;</code> can be deleted from the server by sending requests to: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;</code>. The <code>PUT</code> method should be used for this.</p>
+
+<p>The payload supplied with this request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. If the repository with the specified id previously existed, the Server will attempt to reconfigure it using the supplied configuration. If it does not exist, a new, empty, repository will be created.</p>
+
+<p>An example payload, containing a repository configuration for an in-memory store:</p>
+
+<pre><code>@prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt;.
+@prefix rep: &lt;http://www.openrdf.org/config/repository#&gt;.
+@prefix sr: &lt;http://www.openrdf.org/config/repository/sail#&gt;.
+@prefix sail: &lt;http://www.openrdf.org/config/sail#&gt;.
+@prefix ms: &lt;http://www.openrdf.org/config/sail/memory#&gt;.
+
+[] a rep:Repository ;
+   rep:repositoryID &quot;test&quot; ;
+   rdfs:label &quot;test memory store&quot; ;
+   rep:repositoryImpl [
+      rep:repositoryType &quot;openrdf:SailRepository&quot; ;
+      sr:sailImpl [
+         sail:sailType &quot;openrdf:MemoryStore&quot; ;
+         ms:persist true ;
+         ms:syncDelay 120
+      ]
+   ].
+</code></pre>
+
+<p>Care should be taken with the use of this method: the result of this operation on an existing repository risks wiping that repository&rsquo;s data, if the configuration is not compatible with existing repository.</p>
+
+<h1 id="repository-removal">Repository removal</h1>
+
+<p>A specific repository with ID <code>&lt;ID&gt;</code> can be deleted from the server by sending requests to: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;</code>. The <code>DELETE</code> method should be used for this, and the request accepts no parameters.</p>
+
+<p>Care should be taken with the use of this method: the result of this operation is the complete removal of the repository from the server, including its configuration settings and (if present) data directory.</p>
+
+<h2 id="request-examples-3">Request examples</h2>
+
+<h3 id="remove-the-mem-rdf-repository">Remove the “mem-rdf” repository</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-server/repositories/mem-rdf HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h1 id="repository-statements">Repository statements</h1>
+
+<p>The statements for a specific repository with ID <code>&lt;ID&gt;</code> are available at: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/statements</code></p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Fetches statements from the repository.</li>
+<li><code>PUT</code>: Updates data in the repository, replacing any existing data with the supplied data. The data supplied with this request is expected to contain an RDF document in one of the supported RDF formats.</li>
+<li><code>DELETE</code>: Deletes statements from the repository.</li>
+<li><code>POST</code>: Performs updates on the data in the repository. The data supplied with this request is expected to contain either an RDF document, a SPARQL 1.1 Update string, or a special purpose transaction document. If an RDF document is supplied, the statements found in the RDF document will be added to the repository. If a SPARQL 1.1 Update string is supplied, the update operation will be parsed and executed. If a transaction document is supplied, the updates specified in the transaction document will be executed.</li>
+</ul>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>subj</code> (optional): Restricts a GET or DELETE operation to statements with the specified N-Triples encoded resource as subject.</li>
+<li><code>pred</code> (optional): Restricts a GET or DELETE operation to statements with the specified N-Triples encoded URI as predicate.</li>
+<li><code>obj</code> (optional): Restricts a GET or DELETE operation to statements with the specified N-Triples encoded value as object.</li>
+<li><code>update</code> (optional): Only relevant for POST operations. Specifies the SPARQL 1.1 Update string to be executed. The value is expected to be a syntactically valid SPARQL 1.1 Update string.</li>
+<li><code>context</code> (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value ‘null’ which represents all context-less statements. If multiple ‘context’ parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.</li>
+<li><code>infer</code> (optional): Specifies whether inferred statements should be included in the result of GET requests. Inferred statements are included by default. Specifying any value other than “true” (ignoring case) restricts the request to explicit statements only.</li>
+<li><code>baseURI</code> (optional): Specifies the base URI to resolve any relative URIs found in uploaded data against. This parameter only applies to the PUT and POST method.</li>
+<li><code>timeout</code> (optional): specifies a maximum update execution time, in whole seconds. The value should be an integer. A setting of 0 or a negative number indicates unlimited execution time (the default). This parameter only applies to SPARQL update operations.</li>
+</ul>
+
+<p>Optionally, update operations can specify a custom dataset on which the operation is to be executed. Dataset parameters:</p>
+
+<ul>
+<li><code>using-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for retrieving statements</li>
+<li><code>using-named-graph-uri</code> (optional): one or more named graph URIs to be used as named graphs for retrieving statements</li>
+<li><code>remove-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for removing statements</li>
+<li><code>insert-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for inserting statements</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values for GET requests are the MIME types of supported RDF formats.</li>
+<li><code>Content-Type</code>: Must specify the encoding of any request data that is sent to a server. Relevant values are the MIME types of supported RDF formats, <code>application/x-rdftransaction</code> for a transaction document and <code>application/x-www-form-urlencoded</code> in case the parameters are encoded in the request body (as opposed to the being part of the request URL).</li>
+</ul>
+
+<h2 id="request-examples-4">Request examples</h2>
+
+<h3 id="fetch-all-statements-from-repository-mem-rdf">Fetch all statements from repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+Accept: application/rdf+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<h3 id="fetch-all-statements-from-a-specific-context-in-repository-mem-rdf">Fetch all statements from a specific context in repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/statements?context=_:n1234x5678 HTTP/1.1
+Host: localhost
+Accept: application/rdf+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<h3 id="remove-all-statements-from-the-mem-rdf-repository">Remove all statements from the “mem-rdf” repository</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="add-data-to-the-mem-rdf-repository">Add data to the “mem-rdf” repository</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="add-data-to-the-mem-rdf-repository-replacing-any-and-all-existing-data">Add data to the “mem-rdf” repository, replacing any and all existing data</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="add-data-to-a-specific-context-in-the-mem-rdf-repository-replacing-any-data-that-is-currently-in-this-context">Add data to a specific context in the “mem-rdf” repository, replacing any data that is currently in this context</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/mem-rdf/statements?context=%3Curn:x-local:graph1%3E&amp;baseURI=%3Curn:x-local:graph1%3E HTTP/1.1
+Host: localhost
+Content-Type: application/x-turtle;charset=UTF-8
+
+[TURTLE ENCODED RDF DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="add-statements-without-a-context-to-the-mem-rdf-repository-ignoring-any-context-information-that-is-encoded-in-the-supplied-data">Add statements without a context to the “mem-rdf” repository, ignoring any context information that is encoded in the supplied data</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf/statements?context=null HTTP/1.1
+Host: localhost
+Content-Type: application/x-turtle;charset=UTF-8
+
+[TURTLE ENCODED RDF DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="perform-update-described-in-a-sparql-1-1-update-string">Perform update described in a SPARQL 1.1 Update string</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+Content-Type: application/x-www-form-urlencoded
+
+update=INSERT%20{?s%20?p%20?o}%20WHERE%20{?s%20?p%20?o}
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="perform-updates-described-in-a-transaction-document-and-treat-it-as-a-single-transaction">Perform updates described in a transaction document and treat it as a single transaction</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf/statements HTTP/1.1
+Host: localhost
+Content-Type: application/x-rdftransaction
+
+[TRANSACTION DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h1 id="repository-size">Repository size</h1>
+
+<p>The repository size (defined as the number of statements it contains) is available at: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/size</code>.</p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li>GET: Gets the number of statements in a repository.</li>
+</ul>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>context</code> (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value <code>null</code> which represents all context-less statements. If multiple <code>context</code> parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.</li>
+</ul>
+
+<h2 id="request-examples-5">Request examples</h2>
+
+<h3 id="get-the-size-of-repository-mem-rdf">Get the size of repository ‘mem-rdf’</h3>
+
+<p>Request</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/size HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/plain
+
+123456
+</code></pre>
+
+<h3 id="get-the-size-of-a-specific-context-in-repository-mem-rdf">Get the size of a specific context in repository ‘mem-rdf’</h3>
+
+<p>Request</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/size?context=%3Curn:x-local:graph1%3E HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/plain
+
+4321
+</code></pre>
+
+<h1 id="context-list">Context list</h1>
+
+<p>A list of resources that are used as context identifiers in a repository with ID <code>&lt;ID&gt;</code> is available at: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/contexts</code></p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Gets a list of resources that are used as context identifiers. The list is formatted as a tuple query result with a single variable <code>contextID</code>, which is bound to URIs and bnodes that are used as context identifiers.</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values are the MIME types of supported variable binding formats.</li>
+</ul>
+
+<h2 id="request-examples-6">Request examples</h2>
+
+<h3 id="fetch-all-context-identifiers-from-repository-mem-rdf">Fetch all context identifiers from repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/contexts HTTP/1.1
+Host: localhost
+Accept: application/sparql-results+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/sparql-results+xml
+
+&lt;?xml version='1.0' encoding='UTF-8'?&gt;
+&lt;sparql xmlns='http://www.w3.org/2005/sparql-results#'&gt;
+  &lt;head&gt;
+         &lt;variable name='contextID'/&gt;
+  &lt;/head&gt;
+  &lt;results ordered='false' distinct='false'&gt;
+         &lt;result&gt;
+                &lt;binding name='contextID'&gt;
+                  &lt;uri&gt;urn:x-local:graph1&lt;/uri&gt;
+                &lt;/binding&gt;
+         &lt;/result&gt;
+  &lt;/results&gt;
+&lt;/sparql&gt;
+</code></pre>
+
+<h1 id="namespace-declaration-lists">Namespace declaration lists</h1>
+
+<p>Namespace declaration lists for a repository with ID <code>&lt;ID&gt;</code> are available at:<code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/namespaces</code>.</p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Gets a list of namespace declarations that have been defined for the repository. The list is formatted as a tuple query result with variables “prefix” and “namespace”, which are both bound to literals.</li>
+<li><code>DELETE</code>: Removes all namespace declarations from the repository.</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values for GET requests are the MIME types of supported variable binding formats.</li>
+</ul>
+
+<h2 id="request-examples-7">Request examples</h2>
+
+<h3 id="fetch-all-namespace-declaration-info">Fetch all namespace declaration info</h3>
+
+<p>Request</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/namespaces HTTP/1.1
+Host: localhost
+Accept: application/sparql-results+xml, */*;q=0.5
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/sparql-results+xml
+
+&lt;?xml version='1.0' encoding='UTF-8'?&gt;
+&lt;sparql xmlns='http://www.w3.org/2005/sparql-results#'&gt;
+  &lt;head&gt;
+         &lt;variable name='prefix'/&gt;
+         &lt;variable name='namespace'/&gt;
+  &lt;/head&gt;
+  &lt;results ordered='false' distinct='false'&gt;
+         &lt;result&gt;
+                &lt;binding name='prefix'&gt;
+                  &lt;literal&gt;rdf&lt;/literal&gt;
+                &lt;/binding&gt;
+                &lt;binding name='namespace'&gt;
+                  &lt;literal&gt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&lt;/literal&gt;
+                &lt;/binding&gt;
+         &lt;/result&gt;
+  &lt;/results&gt;
+&lt;/sparql&gt;
+</code></pre>
+
+<h3 id="remove-all-namespace-declarations-from-the-repository">Remove all namespace declarations from the repository</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-server/repositories/mem-rdf/namespaces HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h1 id="namespace-declarations">Namespace declarations</h1>
+
+<p>Namespace declarations with prefix <code>&lt;PREFIX&gt;</code> for a repository with ID <code>&lt;ID&gt;</code> are available at: <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/namespaces/&lt;PREFIX&gt;</code>.</p>
+
+<p>Supported methods on this URL are:</p>
+
+<ul>
+<li><code>GET</code>: Gets the namespace that has been defined for a particular prefix.</li>
+<li><code>PUT</code>: Defines or updates a namespace declaration, mapping the prefix to the namespace that is supplied in plain text in the request body.</li>
+<li><code>DELETE</code>: Removes a namespace declaration.</li>
+</ul>
+
+<h2 id="request-examples-8">Request examples</h2>
+
+<h3 id="get-the-namespace-for-prefix-rdf">Get the namespace for prefix ‘rdf’</h3>
+
+<p>Request</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/namespaces/rdf HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+
+http://www.w3.org/1999/02/22-rdf-syntax-ns#
+</code></pre>
+
+<h3 id="set-the-namespace-for-a-specific-prefix">Set the namespace for a specific prefix</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/mem-rdf/namespaces/example HTTP/1.1
+Host: localhost
+Content-Type: text/plain
+
+http://www.example.com
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="remove-the-namespace-for-a-specific-prefix">Remove the namespace for a specific prefix</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-serverrepositories/mem-rdf/namespaces/example HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h1 id="graph-store-support">Graph Store support</h1>
+
+<p>The SPARQL 1.1 Graph Store HTTP Protocol is supported on a per-repository basis. The functionality is accessible at <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/rdf-graphs/service</code> (for indirectly referenced named graphs), and <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/rdf-graphs/&lt;NAME&gt;</code> (for directly referenced named graphs). A request on a directly referenced named graph entails that the request URL itself is used as the named graph identifier in the repository.</p>
+
+<p>Supported methods on these resources are:</p>
+
+<ul>
+<li><code>GET</code>: fetches statements in the named graph from the repository.</li>
+<li><code>PUT</code>: Updates data in the named graph in the repository, replacing any existing data in the named graph with the supplied data. The data supplied with this request is expected to contain an RDF document in one of the supported RDF formats.</li>
+<li><code>DELETE</code>: Delete all data in the named graph in the repository.</li>
+<li><code>POST</code>: Updates data in the named graph in the repository, adding to any existing data in the named graph with the supplied data. The data supplied with this request is expected to contain an RDF document in one of the supported RDF formats.</li>
+</ul>
+
+<p>Request headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values for GET requests are the MIME types of supported RDF formats.</li>
+<li><code>Content-Type</code>: Must specify the encoding of any request data that is sent to a server. Relevant values are the MIME types of supported RDF formats.</li>
+</ul>
+
+<p>For requests on indirectly referenced graphs, the following parameters are supported:</p>
+
+<ul>
+<li><code>graph</code> (optional): specifies the URI of the named graph to be accessed.</li>
+<li><code>default</code> (optional): specifies that the default graph is to be accessed. This parameter is expected to be present but have no value.</li>
+</ul>
+
+<p>Each request on an indirectly referenced graph needs to specify precisely one of the above parameters.</p>
+
+<h2 id="request-examples-9">Request examples</h2>
+
+<h3 id="fetch-all-statements-from-a-directly-referenced-named-graph-in-repository-mem-rdf">Fetch all statements from a directly referenced named graph in repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/rdf-graphs/graph1 HTTP/1.1
+Host: localhost
+Accept: application/rdf+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<h3 id="fetch-all-statements-from-an-indirectly-referenced-named-graph-in-repository-mem-rdf">Fetch all statements from an indirectly referenced named graph in repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/rdf-graphs/service?graph=http%3A%2F%2Fexample.org%2Fgraph1 HTTP/1.1
+Host: localhost
+Accept: application/rdf+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<h3 id="fetch-all-statements-from-the-default-graph-in-repository-mem-rdf">Fetch all statements from the default graph in repository “mem-rdf”</h3>
+
+<p>Request:</p>
+
+<pre><code>GET /rdf4j-server/repositories/mem-rdf/rdf-graphs/service?default HTTP/1.1
+Host: localhost
+Accept: application/rdf+xml
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/rdf+xml;charset=UTF-8
+
+[RDF/XML ENCODED RDF DATA]
+</code></pre>
+
+<h3 id="add-statements-to-a-directly-referenced-named-graph-in-the-mem-rdf-repository">Add statements to a directly referenced named graph in the “mem-rdf” repository</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/mem-rdf/rdf-graphs/graph1 HTTP/1.1
+Host: localhost
+Content-Type: application/x-turtle;charset=UTF-8
+
+[TURTLE ENCODED RDF DATA]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h3 id="clear-a-directly-referenced-named-graph-in-the-mem-rdf-repository">Clear a directly referenced named graph in the “mem-rdf” repository</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-server/repositories/mem-rdf/rdf-graphs/graph1 HTTP/1.1
+Host: localhost
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 204 NO CONTENT
+</code></pre>
+
+<h1 id="starting-transactions">Starting transactions</h1>
+
+<p>Rdf4j supports a RESTful implementation of a transactional protocol, by means of treating the transaction itself as a new resource that can be updated with consecutive operations.</p>
+
+<p>Transactions are available at <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/transactions</code>.  The  supported methods on this URI are:</p>
+
+<ul>
+<li><code>POST</code>: starts a new transaction. The server assigns the transaction a new unique identifier (a URI), which is returned in the response Location header.</li>
+</ul>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>isolation-level</code> (optional): specifies the transaction isolation level to be used for this transaction. Possible values are store-extensible, the default set of levels includes <code>NONE</code>, <code>READ_UNCOMMITTED</code>, <code>READ_COMMITTED</code>, <code>SNAPSHOT_READ</code>, <code>SNAPSHOT</code>,  and <code>SERIALIZABLE</code>.  Note that an rdf4j store implementation is not guaranteed to support all possible isolation levels. If no isolation level is specified, the default isolation level for the store will be used.</li>
+</ul>
+
+<h2 id="request-examples-10">Request examples</h2>
+
+<h3 id="starting-a-new-transaction">Starting a new transaction</h3>
+
+<p>Request:</p>
+
+<pre><code>POST /rdf4j-server/repositories/&lt;ID&gt;/transactions HTTP/1.1
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 201 CREATED
+
+Location: /rdf4j-server/repositories/&lt;ID&gt;/transactions/64a5937f-c112-d014-a044-f0123b93 HTTP/1.1
+</code></pre>
+
+<h1 id="transaction-operations">Transaction operations</h1>
+
+<p>Transaction operations are carried out on URIs of the form <code>&lt;RDF4J_URL&gt;/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;</code>. The full URI is the exact value of the Location header as returned by the request to start a transaction.</p>
+
+<p>Supported method are:</p>
+
+<ul>
+<li><code>PUT</code>: update the transaction with an additional operation to perform in it.</li>
+<li><code>DELETE</code>: roll back the transaction and close/remove it.</li>
+</ul>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>action</code> (required): specified on <code>PUT</code> requests only, this specifies the specific type of operation being carried out. Possible values are <code>ADD</code>, <code>DELETE</code>, <code>GET</code>, <code>SIZE</code>, <code>QUERY</code>, <code>UPDATE</code>, and <code>COMMIT</code>.</li>
+</ul>
+
+<p>Other parameters depend on the type of action being performed.</p>
+
+<h2 id="the-add-operation">The ADD operation</h2>
+
+<p>The <code>ADD</code> operation expects a parsable RDF document in the request body. It adds the contents of this document as part of the current transaction.</p>
+
+<h3 id="request-example-adding-a-turtle-document">Request example: adding a Turtle document</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;?action=ADD HTTP/1.1
+Content-Type: text/turtle
+
+[Turtle-serialized data]
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+</code></pre>
+
+<h2 id="the-delete-operation">The DELETE operation</h2>
+
+<p>The <code>DELETE</code> operation expects a parsable RDF document in the request body. It removes the contents of this document as part of the current transaction.</p>
+
+<p>Any RDF statement in the parsed document that uses the special URI reference <code>http://www.openrdf.org/schema/sesame#wildcard</code> as either a subject, predicate, or object, is treated as a wildcard statement: the special URI reference is treated as a wildcard value and all statements matching the pattern thus formed are removed.</p>
+
+<h3 id="request-example-remove-three-specific-rdf-statements">Request example: remove three specific RDF statements</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN-ID&gt;?action=DELETE HTTP/1.1
+Content-Type: text/turtle
+
+&lt;urn:george&gt; &lt;urn:lastName&gt; &quot;Harrisson&quot; .
+&lt;urn:paul&gt; &lt;urn:lastName&gt; &quot;McCartney&quot; .
+&lt;urn:ringo&gt; &lt;urn:lastName&gt; &quot;Starr&quot; .
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+</code></pre>
+
+<h3 id="request-example-remove-all-statements-with-property-urn-lastname">Request example: remove all statements with property urn:lastName</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN-ID&gt;?action=DELETE HTTP/1.1
+Content-Type: text/turtle
+
+
+@prefix rdf4j: &lt;http://www.openrdf.org/schema/sesame#&gt; .
+
+rdf4j:wildcard &lt;urn:lastName&gt; rdf4j:wildcard .
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+</code></pre>
+
+<h3 id="request-example-remove-all-statements-in-context-urn-context1">Request example: remove all statements in context urn:context1</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN-ID&gt;?action=DELETE HTTP/1.1
+Content-Type: application/x-trig
+
+@prefix rdf4j: &lt;http://www.openrdf.org/schema/sesame#&gt; .
+
+&lt;urn:context1&gt; {
+   rdf4j:wildcard rdf4j:wildcard rdf4j:wildcard .
+}
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+</code></pre>
+
+<h2 id="the-get-operation">The GET operation</h2>
+
+<p>The <code>GET</code> operation retrieves statements from the repository as part of the current transaction, and returns the result as an RDF document.</p>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>subj</code> (optional): restricts the operation to statements with the specified N-Triples encoded resource as subject.</li>
+<li><code>pred</code> (optional): restricts the operation to statements with the specified N-Triples encoded resource as predicate.</li>
+<li><code>obj</code> (optional): restricts the operation to statements with the specified N-Triples encoded resource as object.</li>
+<li><code>context</code> (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value <code>null</code> which represents all context-less statements. If multiple <code>context</code> parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.</li>
+<li><code>infer</code> (optional): Specifies whether inferred statements should be included in the result of <code>GET</code> requests. Inferred statements are included by default. Specifying any value other than <code>true</code> (ignoring case) restricts the request to explicit statements only.</li>
+</ul>
+
+<h3 id="request-example-get-all-statements-about-george">Request example: get all Statements about George</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;?action=GET&amp;subj=urn:george HTTP/1.1
+Accept: text/turtle
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/turtle
+
+&lt;urn:george&gt; &lt;urn:firstName&gt; &quot;George&quot; .
+&lt;urn:george&gt; &lt;urn:lastName&gt; &quot;Harrisson&quot; .
+</code></pre>
+
+<h2 id="the-query-operation">The QUERY operation</h2>
+
+<p>The <code>QUERY</code> operation executes a SPARQL or SeRQL query on the repository as part of the current transaction, and returns the result as an RDF document.</p>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>query</code>: The query to evaluate.</li>
+<li><code>queryLn</code> (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e. <code>serql</code> for SeRQL queries and <code>sparql</code> for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.</li>
+<li><code>infer</code> (optional): Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than <code>true</code> (ignoring case) restricts the query evluation to explicit statements only.</li>
+</ul>
+
+<p>Request Headers:</p>
+
+<ul>
+<li><code>Accept</code>: Relevant values are the MIME types of supported RDF formats for graph queries, the MIME types of supported variable binding formats for tuple queries, and the MIME types of supported boolean result formats for boolean queries.</li>
+</ul>
+
+<h2 id="the-size-operation">The SIZE operation</h2>
+
+<p>The <code>SIZE</code> operation retrieves the number of (explicit) statements present in the repository, as part of the current transaction.</p>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>context</code> (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value <code>null</code> which represents all context-less statements. If multiple <code>context</code> parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.</li>
+</ul>
+
+<h3 id="example-request-retrieve-current-size-of-repository">Example request: retrieve current size of repository</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;?action=SIZE HTTP/1.1
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/plain
+
+4000
+</code></pre>
+
+<h2 id="the-update-operation">The UPDATE operation</h2>
+
+<p>The <code>UPDATE</code> operation executes a SPARQL update query on the repository as part of the current transaction.</p>
+
+<p>Parameters:</p>
+
+<ul>
+<li><code>update</code> (required): specifies the Update operation to be executed. The value is expected to be a syntactically valid SPARQL 1.1 Update string.</li>
+<li><code>baseURI</code> (optional): specifies a base URI to be used when parsing the SPARQL update operation.</li>
+<li><code>infer</code> (optional): specifies if inferred statements should be taken into account when executing the operation. Default is <code>true</code>.</li>
+<li><code>$&lt;varname&gt;</code> (optional): specifies variable bindings. Variables appearing in the update operation can be bound to a specific value outside the actual query using this option. The value should be an N-Triples encoded RDF value.</li>
+</ul>
+
+<p>Optionally, an update operation can specify a custom dataset on which the Update operation is to be executed. Dataset parameters:</p>
+
+<ul>
+<li><code>using-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for retrieving statements</li>
+<li><code>using-named-graph-uri</code> (optional): one or more named graph URIs to be used as named graphs for retrieving statements</li>
+<li><code>remove-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for removing statements</li>
+<li><code>insert-graph-uri</code> (optional): one or more named graph URIs to be used as the default graph(s) for inserting statements</li>
+</ul>
+
+<h3 id="example-request-execute-sparql-insert-update">Example request: execute SPARQL INSERT update</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;?action=UPDATE HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+update=INSERT%20%7B%3FS%20a%20%3Curn%3ASinger%3E%20%20%7D%20WHERE%20%7B%20%3FS%20%3Curn%3Aname%3E%20%22John%22%20%7D
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 201 No Content
+</code></pre>
+
+<h2 id="the-commit-operation">The COMMIT operation</h2>
+
+<p>The <code>COMMIT</code> operation signals to finalize and commit the current transaction. After this has been successfully executed, all modifications done by this transaction will be final and the general repository state will reflect the changes.</p>
+
+<p>Executing a commit ends the transaction: after commit, further operations on the same transaction will result in an error.</p>
+
+<h3 id="example-execute-commit">Example: execute COMMIT</h3>
+
+<p>Request:</p>
+
+<pre><code>PUT /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt;?action=COMMIT HTTP/1.1
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 200 OK
+</code></pre>
+
+<h2 id="aborting-a-transaction-by-executing-a-delete">Aborting a transaction by executing a DELETE</h2>
+
+<p>An active transaction can be aborted by means of a HTTP <code>DELETE</code> request on the transaction resource. This will execute a transaction rollback on the repository and will close the transacion. After executing a <code>DELETE</code>, further operations on the same transaction will result in an error.</p>
+
+<h3 id="example-rollback-transaction-by-means-of-a-http-delete">Example: rollback transaction by means of a HTTP DELETE</h3>
+
+<p>Request:</p>
+
+<pre><code>DELETE /rdf4j-server/repositories/&lt;ID&gt;/transactions/&lt;TXN_ID&gt; HTTP/1.1
+</code></pre>
+
+<p>Response:</p>
+
+<pre><code>HTTP/1.1 201 No Content
+</code></pre>
+
+<h1 id="content-types">Content types</h1>
+
+<p>The following tables summarizes the MIME types for various document formats that are relevant to this protocol.</p>
+
+<table border=1 style="cellpadding: 4px">
+<tr><th colspan=2>MIME types for RDF format</th></tr>
+<tr><th>Format</th><th>MIME type</th></tr>
+<tr><td>RDF/XML</td><td>application/rdf+xml</td></tr>
+<tr><td>N-Triples</td><td>text/plain</td></tr>
+<tr><td>Turtle</td><td>text/turtle</td></tr>
+<tr><td>N3</td><td>text/rdf+n3</td></tr>
+<tr><td>N-Quads</td><td>text/x-nquads</td></tr>
+<tr><td>JSON-LD</td><td>application/ld+json</td></tr>
+<tr><td>RDF/JSON</td><td>application/rdf+json</td></tr>
+<tr><td>TriX</td><td>application/trix</td></tr>
+<tr><td>TriG</td><td>application/x-trig</td></tr>
+<tr><td>Rdf4j Binary RDF</td><td>application/x-binary-rdf</td></tr>
+</table>
+
+<p><p></p>
+
+<table border=1 style="cellpadding: 4px">
+<tr><th colspan=2>MIME types for variable binding formats</th></tr>
+<tr><th>Format</th><th>MIME type</th></tr>
+<tr><td>SPARQL Query Results XML Format</td><td>application/sparql-results+xml</td></tr>
+<tr><td>SPARQL Query Results JSON Format</td><td>application/sparql-results+json</td></tr>
+<tr><td>Binary RDF Results Table Format</td><td>application/x-binary-rdf-results-table</td></tr>
+</table>
+
+<p><p></p>
+
+<table border=1 style="cellpadding: 4px">
+<tr><th colspan=2>MIME types for boolean result formats</th></tr>
+<tr><th>Format</th><th>MIME type</th></tr>
+<tr><td>SPARQL Query Results XML Format</td><td>application/sparql-results+xml</td></tr>
+<tr><td>SPARQL Query Results JSON Format</td><td>application/sparql-results+json</td></tr>
+<tr><td>Plain Text Boolean Result Format</td><td>text/boolean</td></tr>
+</table>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#the-rdf4j-server-rest-api">The rdf4j server REST API</a></li>
+<li><a href="#protocol-version">Protocol version</a>
+<ul>
+<li><a href="#request-examples">Request examples</a>
+<ul>
+<li><a href="#fetch-the-protocol-version">Fetch the protocol version</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#repository-list">Repository list</a>
+<ul>
+<li><a href="#request-examples-1">Request examples</a>
+<ul>
+<li><a href="#fetch-the-repository-list">Fetch the repository list</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#repository-queries">Repository queries</a>
+<ul>
+<li><a href="#request-examples-2">Request examples</a>
+<ul>
+<li><a href="#evaluate-a-serql-select-query-on-repository-mem-ref">Evaluate a SeRQL-select query on repository “mem-ref”</a></li>
+<li><a href="#evaluate-a-sparql-construct-query-on-repository-mem-rdf-using-a-post-request">Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request</a></li>
+<li><a href="#evaluate-a-sparql-construct-query-on-repository-mem-rdf-using-a-post-request-and-form-encoding">Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request and form encoding</a></li>
+<li><a href="#evaluate-a-sparql-ask-query-on-repository-mem-ref">Evaluate a SPARQL-ask query on repository “mem-ref”</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#repository-creation-and-reconfiguration">Repository creation and reconfiguration</a></li>
+<li><a href="#repository-removal">Repository removal</a>
+<ul>
+<li><a href="#request-examples-3">Request examples</a>
+<ul>
+<li><a href="#remove-the-mem-rdf-repository">Remove the “mem-rdf” repository</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#repository-statements">Repository statements</a>
+<ul>
+<li><a href="#request-examples-4">Request examples</a>
+<ul>
+<li><a href="#fetch-all-statements-from-repository-mem-rdf">Fetch all statements from repository “mem-rdf”</a></li>
+<li><a href="#fetch-all-statements-from-a-specific-context-in-repository-mem-rdf">Fetch all statements from a specific context in repository “mem-rdf”</a></li>
+<li><a href="#remove-all-statements-from-the-mem-rdf-repository">Remove all statements from the “mem-rdf” repository</a></li>
+<li><a href="#add-data-to-the-mem-rdf-repository">Add data to the “mem-rdf” repository</a></li>
+<li><a href="#add-data-to-the-mem-rdf-repository-replacing-any-and-all-existing-data">Add data to the “mem-rdf” repository, replacing any and all existing data</a></li>
+<li><a href="#add-data-to-a-specific-context-in-the-mem-rdf-repository-replacing-any-data-that-is-currently-in-this-context">Add data to a specific context in the “mem-rdf” repository, replacing any data that is currently in this context</a></li>
+<li><a href="#add-statements-without-a-context-to-the-mem-rdf-repository-ignoring-any-context-information-that-is-encoded-in-the-supplied-data">Add statements without a context to the “mem-rdf” repository, ignoring any context information that is encoded in the supplied data</a></li>
+<li><a href="#perform-update-described-in-a-sparql-1-1-update-string">Perform update described in a SPARQL 1.1 Update string</a></li>
+<li><a href="#perform-updates-described-in-a-transaction-document-and-treat-it-as-a-single-transaction">Perform updates described in a transaction document and treat it as a single transaction</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#repository-size">Repository size</a>
+<ul>
+<li><a href="#request-examples-5">Request examples</a>
+<ul>
+<li><a href="#get-the-size-of-repository-mem-rdf">Get the size of repository ‘mem-rdf’</a></li>
+<li><a href="#get-the-size-of-a-specific-context-in-repository-mem-rdf">Get the size of a specific context in repository ‘mem-rdf’</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#context-list">Context list</a>
+<ul>
+<li><a href="#request-examples-6">Request examples</a>
+<ul>
+<li><a href="#fetch-all-context-identifiers-from-repository-mem-rdf">Fetch all context identifiers from repository “mem-rdf”</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#namespace-declaration-lists">Namespace declaration lists</a>
+<ul>
+<li><a href="#request-examples-7">Request examples</a>
+<ul>
+<li><a href="#fetch-all-namespace-declaration-info">Fetch all namespace declaration info</a></li>
+<li><a href="#remove-all-namespace-declarations-from-the-repository">Remove all namespace declarations from the repository</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#namespace-declarations">Namespace declarations</a>
+<ul>
+<li><a href="#request-examples-8">Request examples</a>
+<ul>
+<li><a href="#get-the-namespace-for-prefix-rdf">Get the namespace for prefix ‘rdf’</a></li>
+<li><a href="#set-the-namespace-for-a-specific-prefix">Set the namespace for a specific prefix</a></li>
+<li><a href="#remove-the-namespace-for-a-specific-prefix">Remove the namespace for a specific prefix</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#graph-store-support">Graph Store support</a>
+<ul>
+<li><a href="#request-examples-9">Request examples</a>
+<ul>
+<li><a href="#fetch-all-statements-from-a-directly-referenced-named-graph-in-repository-mem-rdf">Fetch all statements from a directly referenced named graph in repository “mem-rdf”</a></li>
+<li><a href="#fetch-all-statements-from-an-indirectly-referenced-named-graph-in-repository-mem-rdf">Fetch all statements from an indirectly referenced named graph in repository “mem-rdf”</a></li>
+<li><a href="#fetch-all-statements-from-the-default-graph-in-repository-mem-rdf">Fetch all statements from the default graph in repository “mem-rdf”</a></li>
+<li><a href="#add-statements-to-a-directly-referenced-named-graph-in-the-mem-rdf-repository">Add statements to a directly referenced named graph in the “mem-rdf” repository</a></li>
+<li><a href="#clear-a-directly-referenced-named-graph-in-the-mem-rdf-repository">Clear a directly referenced named graph in the “mem-rdf” repository</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#starting-transactions">Starting transactions</a>
+<ul>
+<li><a href="#request-examples-10">Request examples</a>
+<ul>
+<li><a href="#starting-a-new-transaction">Starting a new transaction</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#transaction-operations">Transaction operations</a>
+<ul>
+<li><a href="#the-add-operation">The ADD operation</a>
+<ul>
+<li><a href="#request-example-adding-a-turtle-document">Request example: adding a Turtle document</a></li>
+</ul></li>
+<li><a href="#the-delete-operation">The DELETE operation</a>
+<ul>
+<li><a href="#request-example-remove-three-specific-rdf-statements">Request example: remove three specific RDF statements</a></li>
+<li><a href="#request-example-remove-all-statements-with-property-urn-lastname">Request example: remove all statements with property urn:lastName</a></li>
+<li><a href="#request-example-remove-all-statements-in-context-urn-context1">Request example: remove all statements in context urn:context1</a></li>
+</ul></li>
+<li><a href="#the-get-operation">The GET operation</a>
+<ul>
+<li><a href="#request-example-get-all-statements-about-george">Request example: get all Statements about George</a></li>
+</ul></li>
+<li><a href="#the-query-operation">The QUERY operation</a></li>
+<li><a href="#the-size-operation">The SIZE operation</a>
+<ul>
+<li><a href="#example-request-retrieve-current-size-of-repository">Example request: retrieve current size of repository</a></li>
+</ul></li>
+<li><a href="#the-update-operation">The UPDATE operation</a>
+<ul>
+<li><a href="#example-request-execute-sparql-insert-update">Example request: execute SPARQL INSERT update</a></li>
+</ul></li>
+<li><a href="#the-commit-operation">The COMMIT operation</a>
+<ul>
+<li><a href="#example-execute-commit">Example: execute COMMIT</a></li>
+</ul></li>
+<li><a href="#aborting-a-transaction-by-executing-a-delete">Aborting a transaction by executing a DELETE</a>
+<ul>
+<li><a href="#example-rollback-transaction-by-means-of-a-http-delete">Example: rollback transaction by means of a HTTP DELETE</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#content-types">Content types</a></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

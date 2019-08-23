@@ -1,0 +1,406 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>The SAIL API | The Eclipse Foundation</title>
+<meta property="og:title" content="The SAIL API | The Eclipse Foundation" />
+<meta name="twitter:title" content="The SAIL API | The Eclipse Foundation" />
+<meta name="description" content="The SAIL API The SAIL (Storage And Inference Layer) API is a collection of interfaces designed for low-level transactional access to RDF data. It functions as a decoupling point between specific database implementations and the functional modules (parsers, query engines, end-user API access, etc) of the rdf4j framework.
+Here, we document the design of the API and explain the roles and rationale behind the various interfaces. We also explain how various abstract base classes provided as part of the API can be reused by third-party implementors, in order to make implementing a SAIL-compatible database easier.">
+<meta property="og:description" content="The SAIL API The SAIL (Storage And Inference Layer) API is a collection of interfaces designed for low-level transactional access to RDF data. It functions as a decoupling point between specific database implementations and the functional modules (parsers, query engines, end-user API access, etc) of the rdf4j framework.
+Here, we document the design of the API and explain the roles and rationale behind the various interfaces. We also explain how various abstract base classes provided as part of the API can be reused by third-party implementors, in order to make implementing a SAIL-compatible database easier.">
+<meta name="twitter:description" content="The SAIL API The SAIL (Storage And Inference Layer) API is a collection of interfaces designed for low-level transactional access to RDF data. It functions as a decoupling point between specific …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/sail/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/sail/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/sail/">The SAIL API</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="the-sail-api">The SAIL API</h1>
+
+<p>The SAIL (Storage And Inference Layer) API is a collection of interfaces designed for low-level transactional access to RDF data. It functions as a decoupling point between specific database implementations and the functional modules (parsers, query engines, end-user API access, etc) of the rdf4j framework.</p>
+
+<p>Here, we document the design of the API and explain the roles and rationale behind the various interfaces. We also explain how various abstract base classes provided as part of the API can be reused by third-party implementors, in order to make implementing a SAIL-compatible database easier.</p>
+
+<p>WARNING: this document is currently in draft, and incomplete. Feedback and suggestions for change are welcome, either on our <a href="https://github.com/eclipse/rdf4j-doc" target="_blank">GitHub repo</a>, or on the <a href="https://groups.google.com/forum/#!forum/rdf4j-users" target="_blank">rdf4j Users Group</a>.</p>
+
+
+
+<figure>
+  <img
+    src='https://g.gravizo.com/svg?%0a%20%20%40startuml%3b%0a%20%20interface%20Sail%20%7b%3b%0a%20%20%20%20%2b%20initialize%28%29%3b%0a%20%20%20%20%2b%20getConnection%28%29%3b%0a%20%20%20%20%2b%20shutDown%28%29%3b%0a%20%20%20%20%2b%20isWritable%28%29%3b%0a%20%20%20%20..%3b%0a%20%20%20%20%2b%20getSupportedIsolationLevels%28%29%3b%0a%20%20%20%20%2b%20getDefaultIsolationLevel%28%29%3b%0a%20%20%20%20..%3b%0a%20%20%20%20%2b%20getValueFactory%28%29%3b%0a%20%20%20%20%2b%20setDataDir%28%29%3b%0a%20%20%20%20%2b%20getDatadir%28%29%3b%0a%20%20%7d%3b%0a%20%20interface%20SailConnection%20%7b%3b%0a%20%20%20%20%2b%20isOpen%28%29%3b%0a%20%20%20%20%2b%20close%28%29%3b%0a%20%20%20%20..%20query%20..%3b%0a%20%20%20%20%2b%20evaluate%28%29%3b%0a%20%20%20%20%2b%20getContextIDs%28%29%3b%0a%20%20%20%20%2b%20getNamespace%28%29%3b%0a%20%20%20%20%2b%20getNamespaces%28%29%3b%0a%20%20%20%20%2b%20getStatements%28%29%3b%0a%20%20%20%20%2b%20hasStatement%28%29%3b%0a%20%20%20%20%2b%20size%28%29%3b%0a%20%20%20%20..%20txn%20management%20..%3b%0a%20%20%20%20%2b%20begin%28%29%3b%0a%20%20%20%20%2b%20flush%28%29%3b%0a%20%20%20%20%2b%20prepare%28%29%3b%0a%20%20%20%20%2b%20commit%28%29%3b%0a%20%20%20%20%2b%20rollback%28%29%3b%0a%20%20%20%20%2b%20isActive%28%29%3b%0a%20%20%20%20%2b%20startupdate%28%29%3b%0a%20%20%20%20%2b%20endUpdate%28%29%3b%0a%20%20%20%20..%20data%20modification%20..%3b%0a%20%20%20%20%2b%20addStatement%28%29%3b%0a%20%20%20%20%2b%20removeStatements%28%29%3b%0a%20%20%20%20%2b%20clear%28%29%3b%0a%20%20%20%20%2b%20setNamespace%28%29%3b%0a%20%20%20%20%2b%20removeNamespace%28%29%3b%0a%20%20%20%20%2b%20clearNamespaces%3b%0a%20%20%7d%3b%0a%20%20Sail%20%221%22%20%2a-%20%22%2a%22%20SailConnection%3b%0a%20%20%40enduml%0a'
+    alt='SAIL Main interfaces'
+    />
+    <figcaption>SAIL Main interfaces</figcaption>
+</figure>
+<p>
+
+
+<p>In the above diagram we see an overview of the two main interfaces: <code>Sail</code>, and <code>SailConnection</code>. The <code>Sail</code> interface is the main access point for RDF storage. Roughly speaking, this is &ldquo;the database&rdquo;. Each <code>Sail</code> object is composed of zero or more <code>SailConnection</code> objects. This is where all the actual database access functionality is concentrated. <code>SailConnection</code> provides methods to execute queries, retrieve and modify triples, and manage transactions.</p>
+
+<h2 id="abstractsail-and-abstractsailconnection">AbstractSail and AbstractSailConnection</h2>
+
+<p>rdf4j provides default (abstract) implementations for most of the SAIL functionality, which can be reused (and of course overridden) by any concrete implementation.</p>
+
+
+
+<figure>
+  <img
+    src='https://g.gravizo.com/svg?%0a%20%20%40startuml%3b%0a%20%20interface%20Sail%3b%0a%20%20interface%20SailConnection%3b%0a%20%20abstract%20class%20AbstractSail%20%7b%3b%0a%20%20%20%20%20%2b%20setDataDir%28%29%3b%0a%20%20%20%20%20%2b%20getDataDir%28%29%3b%0a%20%20%20%20%20%2b%20setDefaultIsolationLevel%28%29%3b%0a%20%20%20%20%20%2b%20getIterationCacheSyncThreshold%28%29%3b%0a%20%20%20%20%20%2b%20setIterationCacheSyncThreshold%28%29%3b%0a%20%20%20%20%20%23%20addSupportedIsolationLevel%28%29%3b%0a%20%20%20%20%20%23%20removeSupportedIsolationLevel%28%29%3b%0a%20%20%20%20%20%23%20setSupportedIsolationLevels%28%29%3b%0a%20%20%20%20%20%23%20isInitialized%28%29%3b%0a%20%20%20%20%20%23%20%20getConnectionInternal%28%29%3b%0a%20%20%20%20%20%23%20%20shutDownInternal%28%29%3b%0a%20%20%20%20%20%23%20%20initializeInternal%20%28%29%3b%0a%20%20%7d%3b%0a%20%20abstract%20class%20AbstractSailConnection%20%7b%3b%0a%20%20%20%20%20%20%23%20transactionActive%28%29%3b%0a%20%20%20%20%20%20%23%20endUpdateInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20closeInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20evaluateInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20getContextIDsInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20getStatementsInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20sizeInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20startTransactionInternal%28%29%3b%0a%20%20%20%20%20%20%23%20prepareInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20commitInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20rollbackInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20addStatementInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20removeStatementsInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20clearInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20getNamespacesInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20getNamespaceInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20setNamespaceInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20removeNamespaceInternal%28%29%3b%0a%20%20%20%20%20%20%23%20%20clearNamespacesInternal%28%29%3b%0a%20%20%20%20%20%20%23%20isActiveOperation%28%29%3b%0a%20%20%7d%3b%0a%20%20Sail%20%3c%7c--%20AbstractSail%3b%0a%20%20SailConnection%20%3c%7c--%20AbstractSailConnection%3b%0a%20%20AbstractSail%20%3c-%20AbstractSailConnection%3b%0a%20%20%40enduml%0a'
+    alt='Abstract base implementations'
+    />
+    <figcaption>Abstract base implementations</figcaption>
+</figure>
+<p>
+
+
+<p>The <code>AbstractSail</code> class  provides base implementations of all methods of the <code>Sail</code> interface. It provides the following benefits to concrete Sail implementations:</p>
+
+<p>. implementations of all required basic getter/setter methods
+. store shutdown management, including grace periods for active connections and eventual forced closure of active connections on store shutdown.
+. thread-safety: take care of basic concurrency issues around opening multiple connections.
+. ongoing compatibility: future rdf4j releases that introduce new functionality in <code>Sail</code> provide default implementations in <code>AbstractSail</code>.</p>
+
+<p>Similarly, the <code>AbstractSailConnection</code> provides base implementations of all methods of the <code>SailConnection</code> interface. It provides the following benefits to concrete SailConnection implementations:</p>
+
+<p>. handles all basic concurrency issues around starting / executing transactions
+. (configurable) buffering of active changes in any transaction
+. ongoing compatibility: future rdf4j releases that introduce new functionality in <code>SailConnection</code> provide default implementations in <code>AbstractSailConnection</code>.</p>
+
+<p>The abstract base classes use the naming convention <code>methodname**Internal**</code> to indicate the methods that concrete subclasses should concentrate on implementing. The rationale is that the public method implementations in the abstract class implement basic concurrency handling and other book-keeping, and their corresponding (protected) <code>...Internal</code> methods can be implemented by the concrete subclass to provide the actual business logic of the method.</p>
+
+<p>For example, the query method <code>AbstractSailConnection.getStatements()</code> provides a lot of book keeping: it ensures pending updates are flushed, acquires a read lock on the connection, verifies the connection is still open, and takes care of internally registering the resulting <code>Iteration</code> from the query for resource management and concurrency purposes. In between all of this, it calls <code>getStatementsInternal</code>. The only job of this method is to answer the query by retrieving the relevant data from the data source.</p>
+
+<h2 id="notifyingsail-and-abstractnotifyingsail">NotifyingSail and AbstractNotifyingSail</h2>
+
+<p>The <code>NotifyingSail</code> and <code>NotifyingSailConnection</code> interfaces provide basic event handling for SAIL implementations. The main goal of these interfaces is to provide a messaging mechanism for closely-linked SAIL implementations (for example, a &ldquo;Sail stack&rdquo; where a reasoner is to be kept informed of changes to the underlying database).</p>
+
+
+
+<figure>
+  <img
+    src='https://g.gravizo.com/svg?%0a%20%20%40startuml%3b%0a%20%20interface%20Sail%3b%0a%20%20interface%20SailConnection%3b%0a%20%20interface%20NotifyingSail%20%7b%3b%0a%20%20%20%20%20%20%2b%20addSailChangedListener%28SailChangedListener%29%3b%0a%20%20%20%20%20%20%2b%20removeSailChangedListener%28SailChangedListener%29%3b%0a%20%20%7d%3b%0a%20%20interface%20NotifyingSailConnection%20%7b%3b%0a%20%20%20%20%20%20%2b%20addConnectionListener%28SailConnectionListener%29%3b%0a%20%20%20%20%20%20%2b%20removeConnectionListener%28SailConnectionListener%29%3b%0a%20%20%7d%3b%0a%20%20interface%20SailChangedListener%20%7b%3b%0a%20%20%20%20%20%20%2b%20sailChanged%28SailChangedEvent%29%3b%0a%20%20%7d%3b%0a%20%20interface%20SailChangedEvent%20%7b%3b%0a%20%20%20%20%20%20%2b%20Sail%20getSail%28%29%3b%0a%20%20%20%20%20%20%2b%20boolean%20statementsAdded%28%29%3b%0a%20%20%20%20%20%20%2b%20boolean%20statementsRemoved%28%29%3b%0a%20%20%7d%3b%0a%20%20%3b%0a%20%20interface%20SailConnectionListener%20%7b%3b%0a%20%20%20%20%20%20%2b%20statementAdded%28Statement%20st%29%3b%0a%20%20%20%20%20%20%2b%20statementRemoved%28Statement%20st%29%3b%0a%20%20%7d%3b%0a%20%20abstract%20class%20AbstractNotifyingSail%3b%0a%20%20abstract%20class%20AbstractNotifyingSailConnection%3b%0a%20%20Sail%20%3c%7c--%20NotifyingSail%3b%0a%20%20SailConnection%20%3c%7c--%20NotifyingSailConnection%3b%0a%20%20NotifyingSail%20%221%22%20%2a-%20%22%2a%22%20NotifyingSailConnection%3b%0a%20%20NotifyingSail%20%220..1%22%20o--%20%22%2a%22%20SailChangedListener%3b%0a%20%20SailChangedListener%20-d-%20SailChangedEvent%3b%0a%20%20NotifyingSailConnection%20%220..1%22%20o-%20%22%2a%22%20SailConnectionListener%3b%0a%20%20AbstractNotifyingSail%20-u-%7c%3e%20NotifyingSail%3b%0a%20%20AbstractNotifyingSail%20-u-%7c%3e%20AbstractSail%3b%0a%20%20AbstractNotifyingSailConnection%20-u-%7c%3e%20NotifyingSailConnection%3b%0a%20%20AbstractNotifyingSailConnection%20-r-%7c%3e%20AbstractSailConnection%3b%0a%20%20%40enduml%0a'
+    alt='NotifyingSail interfaces'
+    />
+    <figcaption>NotifyingSail interfaces</figcaption>
+</figure>
+<p>
+
+
+<p>As can be seen in this diagram, the <code>NotifyingSail</code> interface provides the option of registering one or more <code>SailChangedListener</code> implementations. When registered, the listener will be messaged via the <code>sailChanged</code> method. The contents of the message is a <code>SailChangedEvent</code> that provides basic info on what has been changed.</p>
+
+<p>More fine-grained event data is available at the Connection level. The <code>NotifyingSailConnection</code> allows registering a <code>SailConnectionListener</code>, which receives a message for each individual statement added or removed on the connection.</p>
+
+<p>Rdf4j also provides base implementation classes for these two interfaces. These classes - <code>AbstractNotifyingSail</code> and <code>AbstractNotifyingSailConnection</code> - are extensions of the AbstractSail(Connection) classes that add
+default implementations of the methods defined in the NotifyingSail(Connection) interfaces.</p>
+
+<h2 id="stacking-sails">Stacking SAILs</h2>
+
+
+
+<figure>
+  <img
+    src='https://g.gravizo.com/svg?%0a%20%20%40startuml%0a%20%20interface%20Sail%0a%20%20interface%20StackableSail%20%7b%0a%20%20%20%20%20%20%2b%20setBaseSail%28Sail%29%0a%20%20%20%20%20%20%2b%20getBaseSail%28%29%0a%20%20%7d%0a%0a%20%20Sail%20%3c%7c--%20StackableSail%0a%20%20%40enduml%0a'
+    alt='Stackable SAIL interface'
+    />
+    <figcaption>Stackable SAIL interface</figcaption>
+</figure>
+<p>
+
+
+<p>The SAIL API provides the <code>StackableSail</code> interface to allow SAIL implementations to &ldquo;stack&rdquo; on top of each other, providing a chain of responsility: each SAIL implementation in the stack implements a specific feature (reasoning, access control, data filtering, query expansion, etc. etc.). The last SAIL implementation in the stack is expected to <em>not</em> implement <code>StackableSail</code>, and this Sail is responsible for the actual persistence of the data. rdf4j&rsquo;s <code>NativeStore</code> and <code>MemoryStore</code> are implementations of such a persistence SAIL, while the <code>SchemaCachingRDFSInferencer</code> (responsible for RDFS inferencing) and <code>LuceneSail</code> (responsible for full-text indexing) are examples of <code>StackableSail</code> implementations.</p>
+
+<h1 id="querying">Querying</h1>
+
+<p>The SAIL API has no knowledge of SPARQL queries. Instead, it operates on a query algebra, that is, an object representation of a (SPARQL) query as provided by the SPARQL query parser.</p>
+
+<p><code>SailConnection</code> has a single <code>evaluate()</code> method, which accepts a <code>org.eclipse.rdf4j.queryalgebra.model.TupleExpr</code> object. This is the object representation of the query as produced by the query parser.</p>
+
+<h1 id="transactions">Transactions</h1>
+
+<p>TODO</p>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#the-sail-api">The SAIL API</a>
+<ul>
+<li><a href="#abstractsail-and-abstractsailconnection">AbstractSail and AbstractSailConnection</a></li>
+<li><a href="#notifyingsail-and-abstractnotifyingsail">NotifyingSail and AbstractNotifyingSail</a></li>
+<li><a href="#stacking-sails">Stacking SAILs</a></li>
+</ul></li>
+<li><a href="#querying">Querying</a></li>
+<li><a href="#transactions">Transactions</a></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

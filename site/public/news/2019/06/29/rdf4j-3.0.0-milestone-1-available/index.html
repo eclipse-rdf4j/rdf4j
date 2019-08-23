@@ -1,0 +1,385 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>rdf4j 3.0.0 Milestone 1 available | The Eclipse Foundation</title>
+<meta property="og:title" content="rdf4j 3.0.0 Milestone 1 available | The Eclipse Foundation" />
+<meta name="twitter:title" content="rdf4j 3.0.0 Milestone 1 available | The Eclipse Foundation" />
+<meta name="description" content="We&rsquo;re pleased to announce the first milestone build for rdf4j 3.0.0.
+
+Rdf4j 3.0 is a major new release of the rdf4j framework. It contains several backward incompatible changes.
+
+Some highlights:
+
+">
+<meta property="og:description" content="We&rsquo;re pleased to announce the first milestone build for rdf4j 3.0.0.
+
+Rdf4j 3.0 is a major new release of the rdf4j framework. It contains several backward incompatible changes.
+
+Some highlights:
+
+">
+<meta name="twitter:description" content="We&rsquo;re pleased to announce the first milestone build for rdf4j 3.0.0.
+
+Rdf4j 3.0 is a major new release of the rdf4j framework. It contains several backward incompatible changes.
+
+Some …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/news/2019/06/29/rdf4j-3.0.0-milestone-1-available/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/news/2019/06/29/rdf4j-3.0.0-milestone-1-available/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/news/">News</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/news/2019/06/29/rdf4j-3.0.0-milestone-1-available/">rdf4j 3.0.0 Milestone 1 available</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        <h1>rdf4j 3.0.0 Milestone 1 available</h1>
+        
+        <p>We&rsquo;re pleased to announce the first milestone build for rdf4j 3.0.0.</p>
+
+<p>Rdf4j 3.0 is a major new release of the rdf4j framework. It contains several <a href="https://github.com/eclipse/rdf4j/issues?utf8=%E2%9C%93&amp;q=is%3Aissue+label%3A%22Not+backwards+compatible%22+-label%3A%22wontfix%22+milestone%3A3.0" target="_blank">backward incompatible changes</a>.</p>
+
+<p>Some highlights:</p>
+
+<p></p>
+
+<ul>
+<li>Major improvements to the SHACL Sail</li>
+<li>Cleanup of core APIs (removing deprecated and obsolete code)</li>
+<li>Preparing rdf4j for Java <sup>11</sup>&frasl;<sub>12</sub> compatibility</li>
+<li>Rdf4j Server / Workbench upgrade to Servlet API 3.1</li>
+</ul>
+
+<p>This first milestone build is not yet feature-completed:</p>
+
+<ul>
+<li><a href="https://github.com/eclipse/rdf4j/issues?utf8=%E2%9C%93&amp;q=is%3Aissue+label%3AM1+milestone%3A3.0" target="_blank">issues fixed in 3.0 milestone 1</a></li>
+<li><a href="https://github.com/eclipse/rdf4j/milestone/17" target="_blank">issues planned for 3.0 release</a></li>
+</ul>
+
+<h3 id="links">Links</h3>
+
+<ul>
+<li><a href="/download/">Download rdf4j</a></li>
+<li><a href="https://github.com/eclipse/rdf4j/releases/tag/3.0.0-M1" target="_blank">release and upgrade notes</a></li>
+</ul>  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30">
+        <h3>News</h3>
+  
+    <div class="news_item">
+      <div class="news_item_date"><strong>Wed, Aug 14, 2019</strong></div>
+      <div class="news_item_title">
+        <h4><a href="https://rdf4j.eclipse.org/news/2019/08/14/rdf4j-2.5.4-released/">rdf4j 2.5.4 released</a></h4>
+      </div>
+      <div class="news_item_description">
+        <p>Rdf4j 2.5.4 is a patch release containing several bug fixes, including:
+</p>
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="https://rdf4j.eclipse.org/news/2019/08/14/rdf4j-2.5.4-released/">[read more]</a>
+      </div>
+      <hr>
+    </div>
+  
+    <div class="news_item">
+      <div class="news_item_date"><strong>Tue, Jul 23, 2019</strong></div>
+      <div class="news_item_title">
+        <h4><a href="https://rdf4j.eclipse.org/news/2019/07/23/rdf4j-3.0.0-milestone-2-available/">rdf4j 3.0.0 Milestone 2 available</a></h4>
+      </div>
+      <div class="news_item_description">
+        <p>We&rsquo;re pleased to announce the second milestone build for rdf4j 3.0.0.</p>
+
+<p>Rdf4j 3.0 is a major new release of the rdf4j framework. It contains several <a href="https://github.com/eclipse/rdf4j/issues?utf8=%E2%9C%93&amp;q=is%3Aissue+label%3A%22Not+backwards+compatible%22+-label%3A%22wontfix%22+milestone%3A3.0" target="_blank">backward incompatible changes</a>.</p>
+
+<p>Some highlights:</p>
+
+<p></p>
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="https://rdf4j.eclipse.org/news/2019/07/23/rdf4j-3.0.0-milestone-2-available/">[read more]</a>
+      </div>
+      <hr>
+    </div>
+  
+    <div class="news_item">
+      <div class="news_item_date"><strong>Wed, Jul 3, 2019</strong></div>
+      <div class="news_item_title">
+        <h4><a href="https://rdf4j.eclipse.org/news/2019/07/03/rdf4j-2.5.3-released/">rdf4j 2.5.3 released</a></h4>
+      </div>
+      <div class="news_item_description">
+        <p>Rdf4j 2.5.3 is a patch release containing several bug fixes, including:
+</p>
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="https://rdf4j.eclipse.org/news/2019/07/03/rdf4j-2.5.3-released/">[read more]</a>
+      </div>
+      <hr>
+    </div>
+  
+<div class="news_view_all"><a href="https://rdf4j.eclipse.org//news">View all news</a></div>
+
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

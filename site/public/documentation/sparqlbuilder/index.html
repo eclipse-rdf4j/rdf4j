@@ -1,0 +1,659 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Creating SPARQL Queries with the SparqlBuilder | The Eclipse Foundation</title>
+<meta property="og:title" content="Creating SPARQL Queries with the SparqlBuilder | The Eclipse Foundation" />
+<meta name="twitter:title" content="Creating SPARQL Queries with the SparqlBuilder | The Eclipse Foundation" />
+<meta name="description" content="SparqlBuilder Introduction RDF4J SparqlBuilder is a fluent Java API used to programmatically create SPARQL query strings. It is based on the Spanqit query builder developed by Anqit Praqash, and has been slightly modified to allow tighter integration with the rest of the RDF4J framework.
+SparqlBuilder allows the following SPARQL query:
+PREFIX foaf: &lt;http://xmlns.com/foaf/0.1/&gt; SELECT ?name WHERE { ?x foaf:name ?name } ORDER BY ?name LIMIT 5 OFFSET 10  to be created as simply as:">
+<meta property="og:description" content="SparqlBuilder Introduction RDF4J SparqlBuilder is a fluent Java API used to programmatically create SPARQL query strings. It is based on the Spanqit query builder developed by Anqit Praqash, and has been slightly modified to allow tighter integration with the rest of the RDF4J framework.
+SparqlBuilder allows the following SPARQL query:
+PREFIX foaf: &lt;http://xmlns.com/foaf/0.1/&gt; SELECT ?name WHERE { ?x foaf:name ?name } ORDER BY ?name LIMIT 5 OFFSET 10  to be created as simply as:">
+<meta name="twitter:description" content="SparqlBuilder Introduction RDF4J SparqlBuilder is a fluent Java API used to programmatically create SPARQL query strings. It is based on the Spanqit query builder developed by Anqit Praqash, and has …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/sparqlbuilder/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/sparqlbuilder/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/sparqlbuilder/">Creating SPARQL Queries with the SparqlBuilder</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="sparqlbuilder">SparqlBuilder</h1>
+
+<h2 id="introduction">Introduction</h2>
+
+<p>RDF4J SparqlBuilder is a fluent Java API used to programmatically create SPARQL query strings. It is based on the Spanqit query builder developed by Anqit Praqash, and has been slightly modified to allow tighter integration with the rest of the RDF4J framework.</p>
+
+<p>SparqlBuilder allows the following SPARQL query:</p>
+
+<pre><code>PREFIX foaf: &lt;http://xmlns.com/foaf/0.1/&gt;
+SELECT ?name
+WHERE { ?x foaf:name ?name }
+ORDER BY ?name
+LIMIT 5
+OFFSET 10
+</code></pre>
+
+<p>to be created as simply as:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">query<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>foaf<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">select</span><span style="color:#000;font-weight:bold">(</span>name<span style="color:#000;font-weight:bold">)</span>
+    <span style="color:#000;font-weight:bold">.</span><span style="color:#008080">where</span><span style="color:#000;font-weight:bold">(</span>x<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>foaf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;name&#34;</span><span style="color:#000;font-weight:bold">),</span> name<span style="color:#000;font-weight:bold">))</span>
+    <span style="color:#000;font-weight:bold">.</span><span style="color:#008080">orderBy</span><span style="color:#000;font-weight:bold">(</span>name<span style="color:#000;font-weight:bold">)</span>
+    <span style="color:#000;font-weight:bold">.</span><span style="color:#008080">limit</span><span style="color:#000;font-weight:bold">(</span>5<span style="color:#000;font-weight:bold">)</span>
+    <span style="color:#000;font-weight:bold">.</span><span style="color:#008080">offset</span><span style="color:#000;font-weight:bold">(</span>10<span style="color:#000;font-weight:bold">);</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p>The RDF4J SparqlBuilder is based on the SPARQL 1.1 Query Recommendation and the
+SPARQL 1.1 Update Receommendation. Almost all features of SPARQL 1.1 are
+supported, excluding some current known limitations.</p>
+
+<p>This document assumes the reader is already familiar with the SPARQL query language. Please refer to the above specification if not.</p>
+
+<h2 id="getting-sparqlbuilder">Getting SparqlBuilder</h2>
+
+<p>Obtain SparqlBuilder by adding the following dependency to your maven pom file:</p>
+
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;org.eclipse.rdf4j&lt;/groupId&gt;
+    &lt;artifactId&gt;rdf4j-sparqlbuilder&lt;/artifactId&gt;
+    &lt;version&gt;${rdf4j.version}&lt;/version&gt;
+&lt;/dependency&gt;
+</code></pre>
+
+<h2 id="queries">Queries</h2>
+
+<p>The Queries class provides static methods to instantiate the various query objects. For example:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">SelectQuery selectQuery <span style="color:#000;font-weight:bold">=</span> Queries<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">SELECT</span><span style="color:#000;font-weight:bold">();</span>
+ConstructQuery constructQuery <span style="color:#000;font-weight:bold">=</span> Queries<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">CONSTRUCT</span><span style="color:#000;font-weight:bold">();</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p>Query objects provide methods to set or add the various elements appropriate for the type of query:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">8
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Prefix ex<span style="color:#000;font-weight:bold">;</span>
+Variable product<span style="color:#000;font-weight:bold">;</span>
+TriplePattern personWroteBook<span style="color:#000;font-weight:bold">,</span> personAuthoredBook<span style="color:#000;font-weight:bold">;</span>
+
+<span style="color:#998;font-style:italic">// ...
+</span><span style="color:#998;font-style:italic"></span>
+selectQuery<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>ex<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">select</span><span style="color:#000;font-weight:bold">(</span>product<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">where</span><span style="color:#000;font-weight:bold">(</span>product<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">isA</span><span style="color:#000;font-weight:bold">(</span>ex<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;book&#34;</span><span style="color:#000;font-weight:bold">));</span>
+constructQuery<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>ex<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">construct</span><span style="color:#000;font-weight:bold">(</span>personWroteBook<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">where</span><span style="color:#000;font-weight:bold">(</span>personAuthoredBook<span style="color:#000;font-weight:bold">);</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<h2 id="elements">Elements</h2>
+
+<p>SPARQL elements are created using various static factory classes. Most core elements of a query are created by the static SparqlBuilder class:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.model.vocabulary.FOAF</span><span style="color:#000;font-weight:bold">;</span>
+
+Variable price <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;price&#34;</span><span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>price<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span> <span style="color:#998;font-style:italic">// ==&gt; ?price
+</span><span style="color:#998;font-style:italic"></span>
+Prefix foaf <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">PREFIX</span><span style="color:#000;font-weight:bold">,</span> FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NAMESPACE</span><span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>foaf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span> <span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> PREFIX <span style="color:#900;font-weight:bold">foaf:</span> <span style="color:#000;font-weight:bold">&lt;</span><span style="color:#900;font-weight:bold">http:</span><span style="color:#000;font-weight:bold">//</span>xmlns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">com</span><span style="color:#000;font-weight:bold">/</span>foaf<span style="color:#000;font-weight:bold">/</span>0<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">1</span><span style="color:#000;font-weight:bold">/&gt;</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p>Other factory classes include the Queries class mentioned in the previous section, as well as the Expressions, GraphPatterns, and Rdf classes.
+All query elements created by SparqlBuilder implement the QueryElement interface, which provides the getQueryString() method. This can be used to get the String representing the SPARQL syntax of any element.</p>
+
+<h2 id="graph-patterns">Graph Patterns</h2>
+
+<p>SparqlBuilder uses three classes to represent the SPARQL graph patterns, all of which implement the GraphPattern interface:
+- The TriplePattern class represents triple patterns.
+- The GraphPatternNotTriple class represents collections of graph patterns.
+- The SubSelect class represents a SPARQL sub query.</p>
+
+<p>Graph patterns are created by the more aptly named GraphPatterns class.</p>
+
+<h3 id="triple-patterns">Triple Patterns</h3>
+
+<p>Use <code>GraphPatterns#tp()</code> to create a TriplePattern instance:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Prefix dc <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;dc&#34;</span><span style="color:#000;font-weight:bold">,</span> iri<span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;http://purl.org/dc/elements/1.1/&#34;</span><span style="color:#000;font-weight:bold">));</span>
+Variable book <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;book&#34;</span><span style="color:#000;font-weight:bold">);</span>
+
+TriplePattern triple <span style="color:#000;font-weight:bold">=</span> GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">tp</span><span style="color:#000;font-weight:bold">(</span>book<span style="color:#000;font-weight:bold">,</span> dc<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;author&#34;</span><span style="color:#000;font-weight:bold">),</span> Rdf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">literalOf</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;J.R.R. Tolkien&#34;</span><span style="color:#000;font-weight:bold">));</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>triple<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span> <span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">?</span>book <span style="color:#900;font-weight:bold">dc:</span>author <span style="color:#d14">&#34;J.R.R. Tolkien&#34;</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p>or, using RDF4J Model object and vocabulary constants directly:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Prefix dc <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>DC<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">PREFIX</span><span style="color:#000;font-weight:bold">,</span> DC<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NAMESPACE</span><span style="color:#000;font-weight:bold">);</span>
+Variable book <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;book&#34;</span><span style="color:#000;font-weight:bold">);</span>
+
+TriplePattern triple <span style="color:#000;font-weight:bold">=</span> GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">tp</span><span style="color:#000;font-weight:bold">(</span>book<span style="color:#000;font-weight:bold">,</span> DC<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">AUTHOR</span><span style="color:#000;font-weight:bold">,</span> Rdf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">literalOf</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;J.R.R. Tolkien&#34;</span><span style="color:#000;font-weight:bold">));</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>triple<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span> <span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">?</span>book <span style="color:#900;font-weight:bold">dc:</span>author <span style="color:#d14">&#34;J.R.R. Tolkien&#34;</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p>In almost all places, SparqlBuilder allows either RDF4J Model objects or its own interfaces to be used. You can freely mix this.</p>
+
+<p>A TriplePattern instance can also be created from the <code>has()</code> and <code>isA()</code> shortcut methods of <code>RdfSubject</code>, and be expanded to contain multiple triples with the same subject via predicate-object lists and object lists:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">8
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Prefix foaf <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">PREFIX</span><span style="color:#000;font-weight:bold">,</span> FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NAMESPACE</span><span style="color:#000;font-weight:bold">);</span>
+Variable x <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;x&#34;</span><span style="color:#000;font-weight:bold">),</span> name <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;name&#34;</span><span style="color:#000;font-weight:bold">);</span>
+
+TriplePattern triple <span style="color:#000;font-weight:bold">=</span> x<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NICK</span><span style="color:#000;font-weight:bold">,</span> Rdf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">literalOf</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;Alice&#34;</span><span style="color:#000;font-weight:bold">),</span> Rdf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">literalOf</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;Alice_&#34;</span><span style="color:#000;font-weight:bold">))</span>
+    <span style="color:#000;font-weight:bold">.</span><span style="color:#008080">andHas</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NAME</span><span style="color:#000;font-weight:bold">,</span> name<span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>triple<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#998;font-style:italic">// ===&gt; ?x foaf:nick &#34;Alice_&#34;, &#34;Alice&#34; ;
+</span><span style="color:#998;font-style:italic"></span><span style="color:#000;font-weight:bold">//</span>	   <span style="color:#900;font-weight:bold">foaf:</span>name <span style="color:#000;font-weight:bold">?</span>name <span style="color:#000;font-weight:bold">.</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<h3 id="compound-graph-patterns">Compound graph patterns</h3>
+
+<p>Three methods in GraphPatterns exist to create GraphPatternNotTriple instances. <code>GraphPatterns#and()</code> creates a group graph pattern, consisting of the GraphPattern instances passed as parameters:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Variable mbox <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;mbox&#34;</span><span style="color:#000;font-weight:bold">),</span> x <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;x&#34;</span><span style="color:#000;font-weight:bold">);</span>
+GraphPatternNotTriple groupPattern <span style="color:#000;font-weight:bold">=</span>
+GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">and</span><span style="color:#000;font-weight:bold">(</span>x<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NAME</span><span style="color:#000;font-weight:bold">),</span> name<span style="color:#000;font-weight:bold">),</span> x<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">MBOX</span><span style="color:#000;font-weight:bold">,</span> mbox<span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>groupPattern<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">{</span> <span style="color:#000;font-weight:bold">?</span>x <span style="color:#900;font-weight:bold">foaf:</span>mbox <span style="color:#000;font-weight:bold">?</span>mbox <span style="color:#000;font-weight:bold">.</span> <span style="color:#000;font-weight:bold">?</span>x <span style="color:#900;font-weight:bold">foaf:</span>name <span style="color:#000;font-weight:bold">?</span>name <span style="color:#000;font-weight:bold">}</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p><code>GraphPatterns#union()</code> creates an alternative graph pattern, taking the union of the provided GraphPattern instances:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">8
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Prefix dc10 <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;dc10&#34;</span><span style="color:#000;font-weight:bold">,</span> iri<span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;http://purl.org/dc/elements/1.0/&#34;</span><span style="color:#000;font-weight:bold">)),</span>
+	dc11 <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">prefix</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;dc11&#34;</span><span style="color:#000;font-weight:bold">,</span> iri<span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;http://purl.org/dc/elements/1.1/&#34;</span><span style="color:#000;font-weight:bold">));</span>
+Variable book <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;book&#34;</span><span style="color:#000;font-weight:bold">),</span> title <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;title&#34;</span><span style="color:#000;font-weight:bold">);</span>
+
+GraphPatternNotTriple union <span style="color:#000;font-weight:bold">=</span> GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">union</span><span style="color:#000;font-weight:bold">(</span>book<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>dc10<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;title&#34;</span><span style="color:#000;font-weight:bold">),</span> title<span style="color:#000;font-weight:bold">),</span>
+	book<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">has</span><span style="color:#000;font-weight:bold">(</span>dc11<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;title&#34;</span><span style="color:#000;font-weight:bold">),</span> title<span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>union<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">{</span> <span style="color:#000;font-weight:bold">?</span>book <span style="color:#900;font-weight:bold">dc10:</span>title <span style="color:#000;font-weight:bold">?</span>title <span style="color:#000;font-weight:bold">}</span> UNION <span style="color:#000;font-weight:bold">{</span> <span style="color:#000;font-weight:bold">?</span>book <span style="color:#900;font-weight:bold">dc11:</span>title <span style="color:#000;font-weight:bold">?</span>title <span style="color:#000;font-weight:bold">}</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p><code>GraphPatterns#optional()</code> creates an optional group graph pattern, consisting of the passed in <code>GraphPattern</code>s:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">GraphPatternNotTriple optionalPattern <span style="color:#000;font-weight:bold">=</span> GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">optional</span><span style="color:#000;font-weight:bold">(</span>GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">tp</span><span style="color:#000;font-weight:bold">(</span>x<span style="color:#000;font-weight:bold">,</span> foaf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">iri</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;mbox&#34;</span><span style="color:#000;font-weight:bold">),</span> mbox<span style="color:#000;font-weight:bold">));</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>optionalPattern<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> OPTIONAL <span style="color:#000;font-weight:bold">{</span> <span style="color:#000;font-weight:bold">?</span>x <span style="color:#900;font-weight:bold">foaf:</span>mbox <span style="color:#000;font-weight:bold">?</span>mbox <span style="color:#000;font-weight:bold">}</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<h3 id="sub-select">Sub-select</h3>
+
+<p>Finally, GraphPatterns#select() creates an instance of a SubSelect, which represents a SPARQL subquery:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">SubSelect subQuery <span style="color:#000;font-weight:bold">=</span> GraphPatterns<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">select</span><span style="color:#000;font-weight:bold">();</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<h2 id="query-constraints">Query Constraints</h2>
+
+<p>You can create SPARQL query constraints using the Expressions class which provides static methods to create Expression objects representing SPARQL’s built-in expressions:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Variable name <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;name&#34;</span><span style="color:#000;font-weight:bold">);</span>
+Expression<span style="color:#000;font-weight:bold">&lt;?&gt;</span> regexExpression <span style="color:#000;font-weight:bold">=</span> Expressions<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">regex</span><span style="color:#000;font-weight:bold">(</span>name<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;Smith&#34;</span><span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>regexExpression<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> REGEX<span style="color:#000;font-weight:bold">(</span> <span style="color:#000;font-weight:bold">?</span>name<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;Smith&#34;</span> <span style="color:#000;font-weight:bold">)</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<p><code>Expression</code>s take <code>Operand</code> instances as arguments. Operand is implemented by the types you would expect (Variable, the RDF model interface RdfValue, and Expression itself). Where possible, Expressions has included wrappers to take appropriate Java primitives as parameters as well:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Variable price <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;price&#34;</span><span style="color:#000;font-weight:bold">);</span>
+Expression<span style="color:#000;font-weight:bold">&lt;?&gt;</span> priceLimit <span style="color:#000;font-weight:bold">=</span> Expressions<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">lt</span><span style="color:#000;font-weight:bold">(</span>price<span style="color:#000;font-weight:bold">,</span> 100<span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>priceLimit<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">?</span>price <span style="color:#000;font-weight:bold">&lt;</span> 100</code></pre></td></tr></table>
+</div>
+</div>
+
+<p>For those places where a wrapper has not (yet) been created, <code>RdfLiteral</code>s can be used instead. The <code>Rdf</code> class provides factory methods to create StringLiteral, NumericLiteral, and BooleanLiteral instances:</p>
+
+<div class="highlight"><div style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Variable price <span style="color:#000;font-weight:bold">=</span> SparqlBuilder<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">var</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;price&#34;</span><span style="color:#000;font-weight:bold">);</span>
+ExpressionOperand discount <span style="color:#000;font-weight:bold">=</span> Rdf<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">literalOf</span><span style="color:#000;font-weight:bold">(</span>0<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">9</span><span style="color:#000;font-weight:bold">);</span>
+Expression<span style="color:#000;font-weight:bold">&lt;?&gt;</span> discountedPrice <span style="color:#000;font-weight:bold">=</span> Expressions<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">multiply</span><span style="color:#000;font-weight:bold">(</span>price<span style="color:#000;font-weight:bold">,</span> discount<span style="color:#000;font-weight:bold">);</span>
+System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">.</span><span style="color:#008080">println</span><span style="color:#000;font-weight:bold">(</span>discountedPrice<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getQueryString</span><span style="color:#000;font-weight:bold">());</span>
+<span style="color:#000;font-weight:bold">//</span> <span style="color:#000;font-weight:bold">==&gt;</span> <span style="color:#000;font-weight:bold">(</span> <span style="color:#000;font-weight:bold">?</span>price <span style="color:#000;font-weight:bold">*</span> 0<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">9</span> <span style="color:#000;font-weight:bold">)</span></code></pre></td></tr></table>
+</div>
+</div>
+
+<h2 id="the-rdf-model">The RDF Model</h2>
+
+<p>SparqlBuilder provides a collection of interfaces to model RDF objects in the <code>org.eclipse.rdf4j.sparqlbuilder.rdf</code> package. Instances of these interfaces can be used when needed and as expected while creating SPARQL queries. The <code>Rdf</code> class contains static factory methods to create RDF objects for use with SparqlBuilder, including IRI’s, blank nodes, and RDF literals.
+Currently SparqlBuilder’s set of interfaces for RDF model objects is different from the main RDF4J model interfaces. This will be further integrated in future releases.</p>
+
+<h2 id="examples">Examples</h2>
+
+<p>For more detailed examples of how to use SparqlBuilder, check out the JUnit tests located within the project.</p>
+
+<h2 id="known-limitations">Known Limitations</h2>
+
+<p>Currently, the following SPARQL 1.1 features have not yet been implemented in SparqlBuilder:</p>
+
+<ul>
+<li>Property Paths</li>
+<li>Values Block</li>
+<li>RDF Collection Syntax</li>
+<li>BIND</li>
+<li>DESCRIBE and ASK Queries</li>
+</ul>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#sparqlbuilder">SparqlBuilder</a>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#getting-sparqlbuilder">Getting SparqlBuilder</a></li>
+<li><a href="#queries">Queries</a></li>
+<li><a href="#elements">Elements</a></li>
+<li><a href="#graph-patterns">Graph Patterns</a>
+<ul>
+<li><a href="#triple-patterns">Triple Patterns</a></li>
+<li><a href="#compound-graph-patterns">Compound graph patterns</a></li>
+<li><a href="#sub-select">Sub-select</a></li>
+</ul></li>
+<li><a href="#query-constraints">Query Constraints</a></li>
+<li><a href="#the-rdf-model">The RDF Model</a></li>
+<li><a href="#examples">Examples</a></li>
+<li><a href="#known-limitations">Known Limitations</a></li>
+</ul></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

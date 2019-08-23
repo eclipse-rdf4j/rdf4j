@@ -1,0 +1,412 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Reasoning and Validation with SPIN | The Eclipse Foundation</title>
+<meta property="og:title" content="Reasoning and Validation with SPIN | The Eclipse Foundation" />
+<meta name="twitter:title" content="Reasoning and Validation with SPIN | The Eclipse Foundation" />
+<meta name="description" content="Reasoning and Validation with SPIN The SPARQL Inferencing Notation (SPIN) is a way to represent a wide range of business rules on top of an RDF dataset. These rules can be anything from constraint validation to inferred property value calculation. Configuration
+The SpinSail (currently in beta) is a StackedSail component that adds a forward-chaining SPIN rule engine on top of any store. In its most basic form it can be used directly on top of a Sail:">
+<meta property="og:description" content="Reasoning and Validation with SPIN The SPARQL Inferencing Notation (SPIN) is a way to represent a wide range of business rules on top of an RDF dataset. These rules can be anything from constraint validation to inferred property value calculation. Configuration
+The SpinSail (currently in beta) is a StackedSail component that adds a forward-chaining SPIN rule engine on top of any store. In its most basic form it can be used directly on top of a Sail:">
+<meta name="twitter:description" content="Reasoning and Validation with SPIN The SPARQL Inferencing Notation (SPIN) is a way to represent a wide range of business rules on top of an RDF dataset. These rules can be anything from constraint …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/programming/spin/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/programming/spin/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/programming/">Programming with rdf4j</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/programming/spin/">Reasoning and Validation with SPIN</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="reasoning-and-validation-with-spin">Reasoning and Validation with SPIN</h1>
+
+<p>The SPARQL Inferencing Notation (SPIN) is a way to represent a wide range of business rules on top of an RDF dataset. These rules can be anything from constraint validation to inferred property value calculation. Configuration</p>
+
+<p>The <code>SpinSail</code> (currently in beta) is a StackedSail component that adds a forward-chaining SPIN rule engine on top of any store. In its most basic form it can be used directly on top of a Sail:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#998;font-style:italic">// create a basic Sail Stack with a simple Memory Store and SPIN inferencing support
+</span><span style="color:#998;font-style:italic"></span>SpinSail spinSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SpinSail<span style="color:#000;font-weight:bold">();</span>
+spinSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setBaseSail</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStore<span style="color:#000;font-weight:bold">());</span>
+<span style="color:#998;font-style:italic">// create a repository with the Sail stack:
+</span><span style="color:#998;font-style:italic"></span>Repository rep <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span>spinSail<span style="color:#000;font-weight:bold">);</span>
+rep<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">initialize</span><span style="color:#000;font-weight:bold">();</span></code></pre></div>
+
+<p>Alternatively, a SpinSail can be configured via the <code>RepositoryManager</code>:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#998;font-style:italic">// create the config for the sail stack
+</span><span style="color:#998;font-style:italic"></span>SailImplConfig spinSailConfig <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SpinSailConfig<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStoreConfig<span style="color:#000;font-weight:bold">());</span>
+RepositoryImplConfig repositoryTypeSpec <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepositoryConfig<span style="color:#000;font-weight:bold">(</span>spinSailConfig<span style="color:#000;font-weight:bold">);</span>
+<span style="color:#998;font-style:italic">// create the config for the actual repository
+</span><span style="color:#998;font-style:italic"></span>String repositoryId <span style="color:#000;font-weight:bold">=</span> <span style="color:#d14">&#34;spin-test&#34;</span><span style="color:#000;font-weight:bold">;</span>
+RepositoryConfig repConfig <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> RepositoryConfig<span style="color:#000;font-weight:bold">(</span>repositoryId<span style="color:#000;font-weight:bold">,</span> repositoryTypeSpec<span style="color:#000;font-weight:bold">);</span>
+manager<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">addRepositoryConfig</span><span style="color:#000;font-weight:bold">(</span>repConfig<span style="color:#000;font-weight:bold">);</span>
+
+<span style="color:#998;font-style:italic">// get the Repository from the manager
+</span><span style="color:#998;font-style:italic"></span>Repository repository <span style="color:#000;font-weight:bold">=</span> manager<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getRepository</span><span style="color:#000;font-weight:bold">(</span>repositoryId<span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>While this configuration already allows you to do many useful things, it does not do complete SPIN reasoning: the SpinSail relies on basic RDFS inferencing to be supplied by the underlying Sail stack. This means that for use cases where you need to rely on things like transitivity of rdfs:subClassOf relations, you should configure a Sail stack that includes the SchemaCachingRDFSInferencer. In addition, a DedupingInferencer is supplied which is a small optimization for both reasoners: it takes care to filter out potential duplicate results – though at the cost of an increase in memory usage. The full configuration with both additional inferencers looks like this:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#998;font-style:italic">// create a basic Sail Stack with a simple Memory Store, full RDFS reasoning,
+</span><span style="color:#998;font-style:italic">// and SPIN inferencing support
+</span><span style="color:#998;font-style:italic"></span>SpinSail spinSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SpinSail<span style="color:#000;font-weight:bold">();</span>
+spinSail<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setBaseSail</span><span style="color:#000;font-weight:bold">(</span>
+        <span style="color:#000;font-weight:bold">new</span> SchemaCachingRDFSInferencer<span style="color:#000;font-weight:bold">(</span>
+               <span style="color:#000;font-weight:bold">new</span> DedupingInferencr<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStore<span style="color:#000;font-weight:bold">())</span>
+        <span style="color:#000;font-weight:bold">)</span>
+<span style="color:#000;font-weight:bold">);</span>
+<span style="color:#998;font-style:italic">// create a repository with the Sail stack:
+</span><span style="color:#998;font-style:italic"></span>Repository rep <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span>spinSail<span style="color:#000;font-weight:bold">);</span>
+rep<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">init</span><span style="color:#000;font-weight:bold">();</span></code></pre></div>
+
+<p>or using configuration via the RepositoryManager:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#998;font-style:italic">// create the config for the sail stack
+</span><span style="color:#998;font-style:italic"></span>SailImplConfig spinSailConfig <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SpinSailConfig<span style="color:#000;font-weight:bold">(</span>
+           <span style="color:#000;font-weight:bold">new</span> SchemaCachingRDFSInferencerConfig<span style="color:#000;font-weight:bold">(</span>
+                 <span style="color:#000;font-weight:bold">new</span> DedupingInferencerConfig<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStoreConfig<span style="color:#000;font-weight:bold">())</span>
+           <span style="color:#000;font-weight:bold">)</span>
+<span style="color:#000;font-weight:bold">);</span>
+RepositoryImplConfig repositoryTypeSpec <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepositoryConfig<span style="color:#000;font-weight:bold">(</span>spinSailConfig<span style="color:#000;font-weight:bold">);</span>
+<span style="color:#998;font-style:italic">// create the config for the actual repository
+</span><span style="color:#998;font-style:italic"></span>String repositoryId <span style="color:#000;font-weight:bold">=</span> <span style="color:#d14">&#34;spin-test&#34;</span><span style="color:#000;font-weight:bold">;</span>
+RepositoryConfig repConfig <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> RepositoryConfig<span style="color:#000;font-weight:bold">(</span>repositoryId<span style="color:#000;font-weight:bold">,</span> repositoryTypeSpec<span style="color:#000;font-weight:bold">);</span>
+manager<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">addRepositoryConfig</span><span style="color:#000;font-weight:bold">(</span>repConfig<span style="color:#000;font-weight:bold">);</span>
+
+<span style="color:#998;font-style:italic">// get the Repository from the manager
+</span><span style="color:#998;font-style:italic"></span>Repository repository <span style="color:#000;font-weight:bold">=</span> manager<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getRepository</span><span style="color:#000;font-weight:bold">(</span>repositoryId<span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<h1 id="adding-rules">Adding rules</h1>
+
+<p>Once your repository is set up with SPIN support, you can add rules by simply uploading an RDF document contain SPIN rules (which are expressed in RDF using the SPIN vocabulary). The SpinSail will automatically execute these rules on the data.</p>
+
+<p>As an example, consider the following data:</p>
+
+<pre><code>@prefix ex: &lt;http://example.org/&gt;.
+
+ex:John a ex:Father ;
+        ex:parentOf ex:Lucy .
+
+ex:Lucy a ex:Person .
+</code></pre>
+
+<p>Now assume we wish to introduce a rule that defines persons who are the object of the ex:parentOf relation to be subject of an ex:childOf relation (in other words, we want to infer the inverse relationship for the parent-child relation). In SPIN, this could be done with the following rule:</p>
+
+<pre><code>@prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt;.
+@prefix sp: &lt;http://spinrdf.org/sp#&gt;.
+@prefix spin: &lt;http://spinrdf.org/spin#&gt;.
+@prefix ex: &lt;http://example.org/&gt;.
+
+// every person who has a parent is a child of that parent.
+ex:Person a rdfs:Class ;
+        spin:rule [
+                a sp:Construct ;
+        sp:text &quot;&quot;&quot;PREFIX ex: &lt;http://example.org/&gt;
+                   CONSTRUCT { ?this ex:childOf ?parent . }
+                   WHERE { ?parent ex:parentOf ?this . }&quot;&quot;&quot;
+] .
+</code></pre>
+
+<p>To get the SpinSail to execute this rule, all you need to do is upload both above RDF datasets to the Repository. The relation will be automatically inferred at data upload time, so the query:</p>
+
+<pre><code>SELECT ?child WHERE { ?child ex:childOf ?parent }
+</code></pre>
+
+<p>will give this result:
+<table border=1>
+<tr><th style="padding: 4px">child</th></tr>
+<tr><td style="padding: 4px"><code>ex:Lucy</code></td></tr>
+</table></p>
+
+<h1 id="further-reading">Further reading</h1>
+
+<p>Here are some useful links to learn more about SPIN:</p>
+
+<ul>
+<li><a href="http://spinrdf.org/spinsquare.html" target="_blank">SPIN Primer</a></li>
+<li><a href="http://www.topquadrant.com/spin/tutorial/" target="_blank">Getting Started with SPIN (by Topquadrant)</a></li>
+</ul>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#reasoning-and-validation-with-spin">Reasoning and Validation with SPIN</a></li>
+<li><a href="#adding-rules">Adding rules</a></li>
+<li><a href="#further-reading">Further reading</a></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

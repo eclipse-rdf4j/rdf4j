@@ -1,0 +1,526 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Starting a new Maven project in Eclipse | The Eclipse Foundation</title>
+<meta property="og:title" content="Starting a new Maven project in Eclipse | The Eclipse Foundation" />
+<meta name="twitter:title" content="Starting a new Maven project in Eclipse | The Eclipse Foundation" />
+<meta name="description" content="Getting Started with rdf4j, Maven, and Eclipse The rdf4j programmer documentation is pretty extensive, but also perhaps a bit daunting, especially if you are relatively new to rdf4j, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
+NOTE: using Maven or Eclipse is not required if you want to use rdf4j.">
+<meta property="og:description" content="Getting Started with rdf4j, Maven, and Eclipse The rdf4j programmer documentation is pretty extensive, but also perhaps a bit daunting, especially if you are relatively new to rdf4j, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
+NOTE: using Maven or Eclipse is not required if you want to use rdf4j.">
+<meta name="twitter:description" content="Getting Started with rdf4j, Maven, and Eclipse The rdf4j programmer documentation is pretty extensive, but also perhaps a bit daunting, especially if you are relatively new to rdf4j, or indeed to …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/maven-eclipse-project/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/maven-eclipse-project/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/maven-eclipse-project/">Starting a new Maven project in Eclipse</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="getting-started-with-rdf4j-maven-and-eclipse">Getting Started with rdf4j, Maven, and Eclipse</h1>
+
+<p>The <a href="../programming">rdf4j programmer documentation</a> is pretty extensive, but also perhaps a bit daunting,  especially if you are relatively new to rdf4j, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.</p>
+
+<p>NOTE: using Maven or Eclipse is not required if you want to use rdf4j. These are simply very useful tools for quickly getting a Java project started. Maven is good because it allows you to just define which libraries you want to use and never worry about any further third-party libraries you might need, and Eclipse IDE is good because it has good integration with Maven, code completion features, and is just generally a great Java development environment.</p>
+
+<p>In this tutorial, I assume that you have a basic understanding of programming in Java, and have at least an inkling of what RDF is. However, I do not assume that you know how to use either rdf4j, Maven, or Eclipse, so we’ll go through it all one step at a time. If anything is already sufficiently familiar to you, you are of course free to skip ahead!</p>
+
+<h2 id="setting-up-your-environment">Setting up your environment</h2>
+
+<p>Before we kick off, you will need to install the <a href="http://eclipse.org/" target="_blank">Eclipse IDE</a>. In this tutorial, we will use Eclipse for Java EE Developers version 4.5.2 (Mars.2), but it shouldn’t matter too much which exact version you have installed. Select either the “Eclipse for Java developers” or “Eclipse for Java EE developers” installation option.</p>
+
+<p>Eclipse IDE comes with a Maven plugin (called M2Eclipse) already installed. We will use this plugin to work with Maven. You are of course free to also install the Maven command line tools, but we won’t be using those directly in this tutorial.</p>
+
+<p>When starting Eclipse for the first time, you will be asked for a workspace directory – this will be where Eclipse stores all project data as well as some configuration information. Feel free to pick/create a directory of your choice, or just accept the default.</p>
+
+<p>Once Eclipse is started (and any welcome messages have been closed), you will be presented with a screen that should look roughly like this:</p>
+
+<p><img src="images/eclipse-empty.png" alt="Image" /></p>
+
+<h3 id="tweaking-eclipse-preferences">Tweaking Eclipse preferences</h3>
+
+<p>Before we start creating our actual project in Eclipse, there are a few preferences that we should tweak. This step is not required, but it will make things a little easier in the rest of this tutorial.</p>
+
+<p>From the menu, select <code>Eclipse -&gt; Preferences</code>. The Preferences dialog pops up. On the left, select <code>Maven</code>. You will see the Maven configuration settings. The options “Download Artifact Sources” and “Download Artifact JavaDoc” are unchecked by default. Check them both, then click OK.</p>
+
+<p><img src="images/eclipse-mvn-prefs.png" alt="Image" /></p>
+
+<p>The reason we want this, by the way, is that having either the sources or the Javadoc available really helps when you use code autocompletion in Eclipse – Eclipse will automatically read the Javadoc and provide the documentation in a little tooltip. As said: not required, but very useful.</p>
+
+<h2 id="creating-a-new-project">Creating a new project</h2>
+
+<p>Now that we’re all set up, we can kick things off by creating a new project. Select the File menu, then <code>New -&gt; New Project...</code> . A dialog will appear. In this dialog, select the option <code>Maven Project</code>:</p>
+
+<p><img src="images/eclipse-create-project-mvn.png" alt="Image" /></p>
+
+<p>Once you click Next, you will be presented with a screen to create a new Maven Project. Make you sure the option ‘Create a simple project’ is checked:</p>
+
+<p><img src="images/eclipse-create-simple.png" alt="Image" /></p>
+
+<p>Click Next again. In the following screen you define further details of your Maven project, such as group and artifact ids, version number, and so on. For this tutorial,  you only have to fill in three fields:</p>
+
+<ul>
+<li><code>group id</code> – typically you use something like a Java package name for this. We will use <code>org.example</code>.</li>
+<li><code>artifact id</code> –  name of the maven artifact if you publish our project as one. We will use <code>rdf4j-getting-started</code>.</li>
+<li><code>name</code> – the project name. We will use <code>Hellordf4j</code> .</li>
+</ul>
+
+<p><img src="images/eclipse-create-rdf4j.png" alt="Image" /></p>
+
+<p>Once this has been filled in you can click Finish. We now have our first Eclipse project, huzzah!</p>
+
+<h2 id="defining-the-pom">Defining the POM</h2>
+
+<p>So we have a project. That’s great, but it’s still empty: we haven’t added any code or necessary libraries (such as the rdf4j libraries) yet.</p>
+
+<p>We will remedy the library-situation first. In Maven, requirements for libraries (we’re talking about jar files here) are specified in a special project configuration file called pom.xml, often referred to as “the POM”. Open your project and you will see that a file with that name is already present. Doubleclick it to open it:</p>
+
+<p><img src="images/eclipse-pom.png" alt="Image" /></p>
+
+<p>As you can see, the POM already contains some information – in fact the information that we added when we created our project. However, we need to add more information about our project. Specifically, we want to add which external Java libraries (jar files) we want to include in our project. In Maven, you do this by specifying dependencies. Switch to the Dependencies tab, and click on the Add button to the right of the ‘Dependencies’ box.</p>
+
+<p>The first dependency we will add is for rdf4j itself. rdf4j is not a single library, but consists of a large collection of separate modules, allowing you to pick and choose which functionality you need. For this tutorial, however, we’ll be lazy and just add the entire core framework. We do this by adding a dependency with group id org.eclipse.rdf4j and with artifact id rdf4j-runtime. The version number should of course be for the version of rdf4j you want to use – in this tutorial we’ll use version 2.0M2:</p>
+
+<p><img src="images/eclipse-rdf4j-dep.png" alt="Image" /></p>
+
+<p>Ater you have clicked OK, we repeat the exercise for a second dependency we require, namely for a logging framework. rdf4j uses the SLF4J logging API, which requires a logging implementation, so we’ll provide one, in this case logback. Add a new dependency, with group id ch.qos.logback, artifact id logback-classic, and version 1.0.13.</p>
+
+<p>Once you have clicked OK and saved your changes to the POM, your project should be automatically refreshed by Eclipse, and you should see a new section called ‘Maven dependencies’ in the Package Explorer. This section, when opened, shows a list of jar files which can now be used in your project:</p>
+
+<p><img src="images/eclipse-maven-deps.png" alt="Image" /></p>
+
+<p>If your project does not automatically refresh and you don’t see the above section, right-click on your project in the Package Explorer, and select <code>Maven -&gt; Update Project...</code>.</p>
+
+<h2 id="configuring-the-java-compiler">Configuring the Java compiler</h2>
+
+<p>Unfortunately the default Maven archetype that we used to create our new project uses a very old Java compiler (1.5) by default. Since rdf4j requires Java 8, we will need to change this.</p>
+
+<p>The simplest way to do this is to switch to the ‘pom.xml’ tab in the POM editor:</p>
+
+<p><img src="images/eclipse-pom-xml.png" alt="Image" /></p>
+
+<p>Copy-paste (or type if you prefer) the following section into the xml file, underneath the closing </dependencies> element:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-xml" data-lang="xml">        <span style="color:#000080">&lt;build&gt;</span>
+            <span style="color:#000080">&lt;plugins&gt;</span>
+                <span style="color:#000080">&lt;plugin&gt;</span>
+                    <span style="color:#000080">&lt;groupId&gt;</span>org.apache.maven.plugins<span style="color:#000080">&lt;/groupId&gt;</span>
+                    <span style="color:#000080">&lt;artifactId&gt;</span>maven-compiler-plugin<span style="color:#000080">&lt;/artifactId&gt;</span>
+                    <span style="color:#000080">&lt;version&gt;</span>3.5.1<span style="color:#000080">&lt;/version&gt;</span>
+                    <span style="color:#000080">&lt;configuration&gt;</span>
+                        <span style="color:#000080">&lt;source&gt;</span>1.8<span style="color:#000080">&lt;/source&gt;</span>
+                        <span style="color:#000080">&lt;target&gt;</span>1.8<span style="color:#000080">&lt;/target&gt;</span>
+                        <span style="color:#000080">&lt;encoding&gt;</span>utf8<span style="color:#000080">&lt;/encoding&gt;</span>
+                    <span style="color:#000080">&lt;/configuration&gt;</span>
+                <span style="color:#000080">&lt;/plugin&gt;</span>
+            <span style="color:#000080">&lt;/plugins&gt;</span>
+        <span style="color:#000080">&lt;/build&gt;</span></code></pre></div>
+
+<p>Once you have done this, and saved your POM, you will need to manually update your Maven project for Eclipse to accept the changes. You do this by right-clicking on your project (in the project explorer), and then selecting ‘Maven’ -&gt; ‘Update Project…’:</p>
+
+<p><img src="images/eclipse-mvn-update.png" alt="Image" /></p>
+
+<h2 id="configuring-the-logger">Configuring the logger</h2>
+
+<p>One last configuration step before we can get to actual programming: we need to provide our logger with a configuration file. Although this is strictly speaking not required, it is a good idea to do this, as it will make your program’s output easier to read and will allow you to more easily change your logging configuration later on.</p>
+
+<p>We will create a new logger configuration file. Select <code>src/main/resources</code> in the Project Explorer, right-click, and select <code>New -&gt; File</code>. Name the new file <code>logback.xml</code>.</p>
+
+<p><img src="images/eclipse-create-file.png" alt="Image" /></p>
+
+<p>Once you have created the (empty) file, add the following XML to it:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-xml" data-lang="xml">    <span style="color:#000080">&lt;configuration&gt;</span>
+      <span style="color:#000080">&lt;appender</span> <span style="color:#008080">name=</span><span style="color:#d14">&#34;STDOUT&#34;</span> <span style="color:#008080">class=</span><span style="color:#d14">&#34;ch.qos.logback.core.ConsoleAppender&#34;</span><span style="color:#000080">&gt;</span>
+          <span style="color:#000080">&lt;encoder&gt;</span>
+             <span style="color:#000080">&lt;pattern&gt;</span>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n <span style="color:#000080">&lt;/pattern&gt;</span> 
+          <span style="color:#000080">&lt;/encoder&gt;</span>
+      <span style="color:#000080">&lt;/appender&gt;</span>
+      <span style="color:#000080">&lt;root</span> <span style="color:#008080">level=</span><span style="color:#d14">&#34;info&#34;</span><span style="color:#000080">&gt;&lt;appender-ref</span> <span style="color:#008080">ref=</span><span style="color:#d14">&#34;STDOUT&#34;</span> <span style="color:#000080">/&gt;&lt;/root&gt;</span>
+    <span style="color:#000080">&lt;/configuration&gt;</span></code></pre></div>
+
+<p>This configures a logger that prints its messages to the console/standard output, and sets the logging level to ‘info’. The details are not that important right now, but this at least makes sure that we do not get overwhelmed with loads of debug log messages when running our program, later on.</p>
+
+<h2 id="programming-our-first-semantic-web-application">Programming our first Semantic Web application</h2>
+
+<p>We’re done preparing, we can start programming! Right-click on <code>src/main/java</code> and select <code>New -&gt; Class</code>. In the dialog shown, set the package name to <code>org.example</code>, the class name to <code>Hellordf4j</code>, and make sure the option <code>public static void main (String[] args)</code> is checked:</p>
+
+<p><img src="images/eclipse-new-class.png" alt="Image" /></p>
+
+<p>Click ‘Finish’ and Eclipse will create the new class and automatically open it in an editor.</p>
+
+<p>Since we will want to work with RDF data, we will start by creating something to keep that RDF data in. In rdf4j, RDF data is usually stored in a Repository. There many different types of Repository, both for local access as well as for accessing remote services. In this tutorial, we will create a simple local repository, namely one that uses an in-memory store, without any sort of persistent storage functionality (so the data will be lost when the program exits). Add the following code to your main method:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Repository rep <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStore<span style="color:#000;font-weight:bold">());</span></code></pre></div>
+
+<p>Once you have done this, you will notice some red lines appearing:</p>
+
+<p><img src="images/eclipse-red-lines.png" alt="Image" /></p>
+
+<p>This is Eclipse telling you that there is something wrong with your code. In this case, the problem is that several import statements are missing, so we’ll need to add those. You can add each import manually of course, but luckily Eclipse has a shortcut. Hit Ctrl-Shift-O and Eclipse should automatically resolve all missing imports for you (it will pop up a dialog if there is more than one possibility for a particular import).</p>
+
+<p>Now that we have created our repository, we need to initialize it. This is done by calling the <code>rep.initialize()</code> method. Notice how, when you start typing, Eclipse shows autocompletion candidates for the methods available and how each method is described in the box:</p>
+
+<p><img src="images/eclipse-autocomplete-1.png" alt="Image" /></p>
+
+<p>Now that we have created and initialized our repository, we are going to put some data in it, and then get that data out again and print it to the console.</p>
+
+<p>Adding data can be done in numerous ways. In this tutorial, we will be creating a few RDF statements directly in Java (rather than, say, loading them from a file). To do this, we need some ingredients: a namespace that we can use to create any new IRIs we need, and a ValueFactory, which we can use to create IRI, BNode, and Literal objects:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">String namespace <span style="color:#000;font-weight:bold">=</span> <span style="color:#d14">&#34;http://example.org/&#34;</span><span style="color:#000;font-weight:bold">;</span> 
+ValueFactory f <span style="color:#000;font-weight:bold">=</span> rep<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getValueFactory</span><span style="color:#000;font-weight:bold">();</span></code></pre></div>
+
+<p>With these ingredients, we can create a new IRI. We will create an identifier for a person called “John”, about whom we will later add some data to our repository:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">IRI john <span style="color:#000;font-weight:bold">=</span> f<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">createIRI</span><span style="color:#000;font-weight:bold">(</span>namespace<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;john&#34;</span><span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>We have now created a IRI, but have not yet added any data to our repository. To do this, we first need to open a RepositoryConnection. Such a connection allows us to add, remove, and retrieve data from our Repository. We do this as follows:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">RepositoryConnection conn <span style="color:#000;font-weight:bold">=</span> rep<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getConnection</span><span style="color:#000;font-weight:bold">();</span></code></pre></div>
+
+<p>It is important to keep track of open connections and to close them again when we are finished with them, to free up any resources the connection may keep hold of. rdf4j connections are “AutoCloseable”, which means we can let Java handle the closing of the connection when we’re done with it, rather than having to deal with this ourselves. We use a try-with-resources construction for this, like so:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">(</span>RepositoryConnection conn <span style="color:#000;font-weight:bold">=</span> rep<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getConnection</span><span style="color:#000;font-weight:bold">())</span> <span style="color:#000;font-weight:bold">{</span>
+<span style="color:#000;font-weight:bold">}</span></code></pre></div>
+
+<p>Your code should now look as follows:</p>
+
+<p><img src="images/eclipse-code-1.png" alt="Image" /></p>
+
+<p>Using the connection, we can start adding statements to our repository. We will add two triples, one to assert that John is a Person, and one to assert that John’s name is “John”:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">conn<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">add</span><span style="color:#000;font-weight:bold">(</span>john<span style="color:#000;font-weight:bold">,</span> RDF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TYPE</span><span style="color:#000;font-weight:bold">,</span> FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">PERSON</span><span style="color:#000;font-weight:bold">);</span> 
+conn<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">add</span><span style="color:#000;font-weight:bold">(</span>john<span style="color:#000;font-weight:bold">,</span> RDFS<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">LABEL</span><span style="color:#000;font-weight:bold">,</span> f<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">createLiteral</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;John&#34;</span><span style="color:#000;font-weight:bold">));</span></code></pre></div>
+
+<p>Note how for well-known RDF vocabularies, such as RDF, RDFS, and FOAF, rdf4j provides constants that you can easily reuse to create/read data with. Also, you see another use of the ValueFactory here, this time to create a Literal object.</p>
+
+<p>Once we have added our data, we can retrieve it back from the repository again. You can do this in several ways, with a SPARQL query or using the RepositoryConnection API methods directly. Here we will use the latter:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">RepositoryResult<span style="color:#000;font-weight:bold">&lt;</span>Statement<span style="color:#000;font-weight:bold">&gt;</span> statements <span style="color:#000;font-weight:bold">=</span> conn<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getStatements</span><span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">null</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000;font-weight:bold">null</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#000;font-weight:bold">null</span><span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>We use the <code>getStatements()</code> method to retrieve data from the repository. The three arguments (all null) are for the subject, predicate, and object we wish to match. Since they are all set to null, this will retrieve all statements.</p>
+
+<p>The object returned by <code>getStatements()</code> is a <code>RepositoryResult</code>, which is a type of <code>Iteration</code>: it allows you to process the result in a streaming fashion, using its <code>hasNext()</code> and <code>next()</code> methods. Almost all the methods that retrieve data from a <code>Repository</code> return a type of <code>Iteration</code>: they are very useful for processsing very large result sets, because they do not require that the entire result is kept in memory all at the same time.</p>
+
+<p>However, since our <code>Repository</code> only contains 2 statements, we can safely just transfer the entire result into a Java Collection. rdf4j has the <code>Model</code> interface for this, which is an extension of the standard Java collections that has some special tricks up its sleeve for dealing with RDF data, but which you can also use in the same manner as a Set or a List. We convert our result to a Model as follows:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Model model <span style="color:#000;font-weight:bold">=</span> QueryResults<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">asModel</span><span style="color:#000;font-weight:bold">(</span>statements<span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>This retrieves all the statements from the supplied <code>Iteration</code>, and puts them in a <code>Model</code>. It also closes the <code>Iteration</code> for you.</p>
+
+<p>Finally, we want to print out our data to the console. This too is something you can do in numerous ways, but let’s just say we would like to print out our data in Turtle format. Here’s how:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">Rio<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">write</span><span style="color:#000;font-weight:bold">(</span>model<span style="color:#000;font-weight:bold">,</span> System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>Rio (which stands for “RDF I/O”) is the rdf4j parser/writer toolkit. We can just pass it our model, specify the outputstream, and the format in which we’d like it sent, and Rio does the rest. Your code should now look like this:</p>
+
+<p><img src="images/eclipse-app2.png" alt="Image" /></p>
+
+<p>You now have created your first Semantic Web application! After saving, just right-click on <code>Hellordf4j.java</code> (in the project explorer) and select <code>Run as -&gt; Java application</code>. You will see the following output in the Console:</p>
+
+<pre><code>&lt;http://example.org/john&gt; a &lt;http://xmlns.com/foaf/0.1/Person&gt; ;
+               &lt;http://www.w3.org/2000/01/rdf-schema#label&gt; &quot;John&quot; .
+</code></pre>
+
+<p>As you can see, it contains exactly the two statements that we added earlier, in Turtle syntax.</p>
+
+<p>However, it is a bit ugly, using all those long IRIs. We can make the output a bit prettier, by adding some namespace definitions to our Model:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">model<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setNamespace</span><span style="color:#000;font-weight:bold">(</span>RDF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NS</span><span style="color:#000;font-weight:bold">);</span>
+model<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setNamespace</span><span style="color:#000;font-weight:bold">(</span>RDFS<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NS</span><span style="color:#000;font-weight:bold">);</span>
+model<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setNamespace</span><span style="color:#000;font-weight:bold">(</span>FOAF<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">NS</span><span style="color:#000;font-weight:bold">);</span> 
+model<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">setNamespace</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;ex&#34;</span><span style="color:#000;font-weight:bold">,</span> namespace<span style="color:#000;font-weight:bold">);</span></code></pre></div>
+
+<p>Add these lines to your code, directly after where you have created the model. Then run your program again. You will now see the following:</p>
+
+<p><img src="images/eclipse-app3.png" alt="Image" /></p>
+
+<p>That’s it! Obviously there is still loads to learn about how to use rdf4j effectively, but you’ve got the basics under control now: you can set up a new project using rdf4j,  and have seen some basic ways to add, write, and retrieve data. The rest is up to you. Good sources of further documentation are <a href="../programming">Programming with rdf4j</a>, and of course the <a href="/javadoc/latest">API Javadoc</a>.</p>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#getting-started-with-rdf4j-maven-and-eclipse">Getting Started with rdf4j, Maven, and Eclipse</a>
+<ul>
+<li><a href="#setting-up-your-environment">Setting up your environment</a>
+<ul>
+<li><a href="#tweaking-eclipse-preferences">Tweaking Eclipse preferences</a></li>
+</ul></li>
+<li><a href="#creating-a-new-project">Creating a new project</a></li>
+<li><a href="#defining-the-pom">Defining the POM</a></li>
+<li><a href="#configuring-the-java-compiler">Configuring the Java compiler</a></li>
+<li><a href="#configuring-the-logger">Configuring the logger</a></li>
+<li><a href="#programming-our-first-semantic-web-application">Programming our first Semantic Web application</a></li>
+</ul></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

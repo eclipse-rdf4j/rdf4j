@@ -1,0 +1,611 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Validation with SHACL | The Eclipse Foundation</title>
+<meta property="og:title" content="Validation with SHACL | The Eclipse Foundation" />
+<meta name="twitter:title" content="Validation with SHACL | The Eclipse Foundation" />
+<meta name="description" content="Validation with SHACL (new in RDF4J 2.5)
+The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.
+This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was experimental until this release.
+How does the SHACL engine work The SHACL engine works by analyzing the changes made in a transaction and creating a set of validation plans (similar to query plans) and executing these as part of the transaction commit() call.">
+<meta property="og:description" content="Validation with SHACL (new in RDF4J 2.5)
+The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.
+This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was experimental until this release.
+How does the SHACL engine work The SHACL engine works by analyzing the changes made in a transaction and creating a set of validation plans (similar to query plans) and executing these as part of the transaction commit() call.">
+<meta name="twitter:description" content="Validation with SHACL (new in RDF4J 2.5)
+The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.
+This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/programming/shacl/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/programming/shacl/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/programming/">Programming with rdf4j</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/programming/shacl/">Validation with SHACL</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="validation-with-shacl">Validation with SHACL</h1>
+
+<p>(new in RDF4J 2.5)</p>
+
+<p>The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.</p>
+
+<p>This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was experimental until this release.</p>
+
+<h1 id="how-does-the-shacl-engine-work">How does the SHACL engine work</h1>
+
+<p>The SHACL engine works by analyzing the changes made in a transaction and creating a set of validation plans (similar to query plans) and executing these as part of the transaction <code>commit()</code> call.</p>
+
+<p>In many cases the SHACL engine can validate your changes based on your changes alone. In some cases your changes may affect or be affected by data already in the database, in which case the engine will query the database for that particular data.</p>
+
+<p>Here is an example of when data in the database affects the validation plans:</p>
+
+<pre><code>ex:PersonShape
+        a sh:NodeShape  ;
+        sh:targetClass ex:Person ;
+        sh:property [
+                sh:path ex:age ;
+                sh:datatype xsd:integer ;
+        ] .
+</code></pre>
+
+<p>Initial data in the database.</p>
+
+<pre><code>ex:pete a ex:Person.
+</code></pre>
+
+<p>Data added by a transaction.</p>
+
+<pre><code>ex:pete ex:age &quot;eighteen&quot;.
+</code></pre>
+
+<p>For this example the SHACL engine will match the predicate <code>ex:age</code> with <code>ex:PersonShape</code> and realise that <code>ex:pete</code> might already be defined as a <code>ex:Person</code> in the database. The validation plan will then include checking if <code>ex:pete</code> is type <code>ex:Person</code>.</p>
+
+<h1 id="how-to-load-shacl-shapes">How to load SHACL shapes</h1>
+
+<p>The ShaclSail uses a reserved graph (<code>http://rdf4j.org/schema/rdf4j#SHACLShapeGraph</code>) for storing the SHACL shapes. Utilize a normal connection to load your shapes into this graph.</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java">  ShaclSail shaclSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> ShaclSail<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStore<span style="color:#000;font-weight:bold">());</span>
+  SailRepository sailRepository <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span>shaclSail<span style="color:#000;font-weight:bold">);</span>
+  sailRepository<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">init</span><span style="color:#000;font-weight:bold">();</span>
+
+  <span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">(</span>SailRepositoryConnection connection <span style="color:#000;font-weight:bold">=</span> sailRepository<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getConnection</span><span style="color:#000;font-weight:bold">())</span> <span style="color:#000;font-weight:bold">{</span>
+
+          connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">begin</span><span style="color:#000;font-weight:bold">();</span>
+
+          Reader shaclRules <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">....</span>
+
+          connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">add</span><span style="color:#000;font-weight:bold">(</span>shaclRules<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;&#34;</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">,</span> RDF4J<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">SHACL_SHAPE_GRAPH</span><span style="color:#000;font-weight:bold">);</span>
+
+          connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">commit</span><span style="color:#000;font-weight:bold">();</span>
+  <span style="color:#000;font-weight:bold">}</span></code></pre></div>
+
+<p>At this time there is no way of updating your shapes once they have been loaded. Further more the ShaclSail will throw an exception if you try to add data before loading any shapes, this is merely thrown to educate and warn the user and should not be relied upon for any code. To disable this check call <code>shaclSail.setIgnoreNoShapesLoadedException(true)</code>.</p>
+
+<h1 id="supported-shacl-features">Supported SHACL features</h1>
+
+<p>The SHACL W3C Recommendation defines the SHACL features that should be supported and RDF4J is working hard to support them all. At the moment a fairly large subset of these features are supported by the ShaclSail, however quite a few are not yet implemented.</p>
+
+<p>An always-up-to-date list of features can be found by calling the static method <code>ShaclSail.getSupportedShaclPredicates()</code>.</p>
+
+<p>As of writing this documentation the following features are supported.
+<code>
+-</code>sh:targetClass<code>
+-</code>sh:path<code>
+-</code>sh:property<code>
+-</code>sh:or<code>
+-</code>sh:minCount<code>
+-</code>sh:maxCount<code>
+-</code>sh:minLength<code>
+-</code>sh:maxLength<code>
+-</code>sh:pattern<code>and</code>sh:flags<code>
+-</code>sh:nodeKind<code>
+-</code>sh:languageIn<code>
+-</code>sh:datatype<code>
+-</code>sh:class`</p>
+
+<p>Implicit <code>sh:targetClass</code> is supported for nodes that are <code>rdfs:Class</code> and either of <code>sh:PropertyShape</code> or <code>sh:NodeShape</code>. Validation for all nodes, equivalent to <code>owl:Thing</code> in an environment with a reasoner, can be enabled by setting <code>setUndefinedTargetValidatesAllSubjects(true)</code>.</p>
+
+<p><code>sh:path</code> is limited to single predicate paths, eg. <code>ex:age</code>. Sequence paths, alternative paths, inverse paths and the like are not supported.</p>
+
+<p><code>sh:or</code> is limited to statement based restrictions, such as <code>sh:datatype</code>, or aggregate based restrictions, such as <code>sh:minCount</code>, but not both at the same time.</p>
+
+<h1 id="validation-results">Validation results</h1>
+
+<p>On <code>commit()</code> the ShaclSail will validate your changes and throw an exception if there are violations. The exception contains a validation report and can be retrieved like this:</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">{</span>
+        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">commit</span><span style="color:#000;font-weight:bold">();</span>
+<span style="color:#000;font-weight:bold">}</span> <span style="color:#000;font-weight:bold">catch</span> <span style="color:#000;font-weight:bold">(</span>RepositoryException exception<span style="color:#000;font-weight:bold">)</span> <span style="color:#000;font-weight:bold">{</span>
+        Throwable cause <span style="color:#000;font-weight:bold">=</span> exception<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getCause</span><span style="color:#000;font-weight:bold">();</span>
+        <span style="color:#000;font-weight:bold">if</span> <span style="color:#000;font-weight:bold">(</span>cause <span style="color:#000;font-weight:bold">instanceof</span> ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> <span style="color:#000;font-weight:bold">{</span>
+                ValidationReport validationReport <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">((</span>ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> cause<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">getValidationReport</span><span style="color:#000;font-weight:bold">();</span>
+                Model validationReportModel <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">((</span>ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> cause<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">validationReportAsModel</span><span style="color:#000;font-weight:bold">();</span>
+                <span style="color:#998;font-style:italic">// use validationReport or validationReportModel to understand validation violations
+</span><span style="color:#998;font-style:italic"></span>
+                Rio<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">write</span><span style="color:#000;font-weight:bold">(</span>validationReportModel<span style="color:#000;font-weight:bold">,</span> System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">);</span>
+        <span style="color:#000;font-weight:bold">}</span>
+        <span style="color:#000;font-weight:bold">throw</span> exception<span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">}</span></code></pre></div>
+
+<p>The <code>validationReportModel</code> follows the report format specified by the W3C SHACL recommendation. It does not provide all the information specified in the recommendation. Example report:</p>
+
+<pre><code>[]
+  a sh:ValidationReport ;
+  sh:conforms false ;
+  sh:result [
+        a sh:ValidationResult ;
+        sh:focusNode &lt;http://example.com/ns#pete&gt; ;
+        sh:resultPath &lt;http://example.com/ns#age&gt; ;
+        sh:sourceConstraintComponent sh:DatatypeConstraintComponent ;
+        sh:sourceShape &lt;http://example.com/ns#PersonShapeAgeProperty&gt; ;
+  ] .
+</code></pre>
+
+<p>The <code>ValidationReport</code> class provides the same information as the validationReportModel, but as a Java object with getters for accessing the report data.</p>
+
+<p>There is no support for <code>sh:severity</code>, all violations will trigger an exception.</p>
+
+<h1 id="logging-and-debugging">Logging and debugging</h1>
+
+<p>By default there is no logging enabled in the ShaclSail. There are three methods for enabling logging:</p>
+
+<ul>
+<li><code>shaclSail.setLogValidationPlans(true);</code></li>
+<li><code>shaclSail.setGlobalLogValidationExecution(true);</code></li>
+<li><code>shaclSail.setLogValidationViolations(true);</code></li>
+</ul>
+
+<p>All these will log as <code>INFO</code>.</p>
+
+<p>First step to debugging and understanding an unexpected violation is to enable <code>shaclSail.setLogValidationViolations(true);</code>.</p>
+
+<h2 id="log-validation-plans">Log validation plans</h2>
+
+<p>Validation plans are logged as Graphviz DOT. Validations plans are a form of query plan.</p>
+
+<p>Here is the validation plan for the example above: <a href="https://dreampuf.github.io/GraphvizOnline/#digraph%20%20%7B%0Alabelloc%3Dt%3B%0Afontsize%3D30%3B%0Alabel%3D%22DatatypePropertyShape%22%3B%0A1866229258%20%5Blabel%3D%22Base%20sail%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1555990397%20%5Blabel%3D%22Added%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1544078442%20%5Blabel%3D%22Removed%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1337866219%20%5Blabel%3D%22Previous%20state%20connection%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1291367132%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1887699190%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23integer%7D%22%5D%3B%0A1479140596%20-%3E%201887699190%0A1887699190%20-%3E%201291367132%20%5Blabel%3D%22false%20values%22%5D%0A1479140596%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1108889615%20-%3E%201479140596%0A1108889615%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1275028674%20-%3E%201108889615%0A455888635%20%5Blabel%3D%22BufferedSplitter%22%5D%3B%0A204805934%20-%3E%20455888635%0A204805934%20%5Blabel%3D%22TrimTuple%7BnewLength%3D1%7D%22%5D%3B%0A204322447%20-%3E%20204805934%0A204322447%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20BIND(rdf%3Atype%20as%20%3Fb)%20%5Cn%20BIND(%3Chttp%3A%2F%2Fexample.com%2Fns%23Person%3E%20as%20%3Fc)%20%5Cn%20%3Fa%20%3Fb%20%3Fc.%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%20204322447%0A1275028674%20%5Blabel%3D%22InnerJoin%22%5D%3B%0A455888635%20-%3E%201275028674%20%5Blabel%3D%22left%22%5D%3B%0A1019484860%20-%3E%201275028674%20%5Blabel%3D%22right%22%5D%3B%0A1019484860%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1164365897%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23integer%7D%22%5D%3B%0A1640899500%20-%3E%201164365897%0A1164365897%20-%3E%201019484860%20%5Blabel%3D%22false%20values%22%5D%0A1640899500%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%201640899500%0A1275028674%20-%3E%203565780%20%5Blabel%3D%22discardedRight%22%5D%3B%0A473666452%20-%3E%201108889615%0A473666452%20%5Blabel%3D%22ExternalTypeFilterNode%7BfilterOnType%3Dhttp%3A%2F%2Fexample.com%2Fns%23Person%7D%22%5D%3B%0A3565780%20-%3E%20473666452%0A1337866219%20-%3E%20473666452%20%5Blabel%3D%22filter%20source%22%5D%0A3565780%20%5Blabel%3D%22BufferedTupleFromFilter%22%5D%3B%0A1865219266%20-%3E%201479140596%0A1865219266%20%5Blabel%3D%22BulkedExternalInnerJoin%7Bpredicate%3Dnull%2C%20query%3D'%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20'%7D%22%5D%3B%0A455888635%20-%3E%201865219266%20%5Blabel%3D%22left%22%5D%0A1337866219%20-%3E%201865219266%20%5Blabel%3D%22right%22%5D%0A%7D%0A8" target="_blank">Link</a></p>
+
+<p>The structure of this log and its contents may change in the future, without warning.</p>
+
+<h2 id="log-validation-execution">Log validation execution</h2>
+
+<p>The execution of the validation plan shows what data was requested during the exeuction and how that data was joined together and filtered.</p>
+
+<p>Enabling this logging will enable it for all ShaclSails on all threads.</p>
+
+<p>Enabling this logging will make your validation considerably slower and take up considerably more memory.</p>
+
+<p>Following on from the example above</p>
+
+<pre><code>01. [main] INFO   Select.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+02. [main] INFO    DatatypeFilter;falseNode:  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+03. [main] INFO     DirectTupleFromFilter.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+04. [main] INFO      InnerJoin;discardedRight:  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+05. [main] INFO       BufferedTupleFromFilter.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+06. [main] INFO         ExternalTypeFilterNode.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+07. [main] INFO           UnionNode.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+08. [main] INFO             UnionNode.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+09. [main] INFO              DatatypeFilter;falseNode:  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+10. [main] INFO               DirectTupleFromFilter.next():  Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;]}
+</code></pre>
+
+<p>The log is best read in conjunction with the validation plan. By taking the bottom log line (10.) as the bottom node in the plan and for each indentation following the plan upwards. Multiple lines at a given indentation mean that that node produced multiple tuples.</p>
+
+<p>Line 6 shows a query to the underlying database. Line 1 is the query for everything matching the path (ex:age) against the added data in the transaction.</p>
+
+<p>The indentation is best-effort.</p>
+
+<p>The structure of this log and its contents may change in the future, without warning.</p>
+
+<h2 id="log-validation-violations">Log validation violations</h2>
+
+<p>As the commit() call iterates over the shapes it can log the results (tuples) from the execution of each validation plan.</p>
+
+<p>Following on from the example above:</p>
+
+<pre><code>1. [main] INFO  SHACL not valid. The following experimental debug results were produced:
+2.  NodeShape: http://example.com/ns#PersonShape
+3.      Tuple{line=[http://example.com/ns#pete, &quot;eighteen&quot;], propertyShapes= DatatypePropertyShape &lt;_:node1d285h2ktx1&gt;} -cause-&gt;  [ Tuple{line=[http://example.com/ns#pete, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://example.com/ns#Person]} ]
+</code></pre>
+
+<p>Line 2 shows the shape that triggered this violation. Line 3 shows the ultimate tuple produced and which PropertyShape produced the exception followed by a cause listing other tuples that caused the violation. In this case the existing type statement.</p>
+
+<p>The structure of this log and its contents may change in the future, without warning.</p>
+
+<h1 id="full-working-example">Full working example</h1>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-java" data-lang="java"><span style="color:#000;font-weight:bold">import</span> <span style="color:#555">ch.qos.logback.classic.Level</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">ch.qos.logback.classic.Logger</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.model.Model</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.model.vocabulary.RDF4J</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.repository.RepositoryException</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.repository.sail.SailRepository</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.repository.sail.SailRepositoryConnection</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.rio.RDFFormat</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.rio.Rio</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.sail.memory.MemoryStore</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.sail.shacl.ShaclSail</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.eclipse.rdf4j.sail.shacl.results.ValidationReport</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">org.slf4j.LoggerFactory</span><span style="color:#000;font-weight:bold">;</span>
+
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">java.io.IOException</span><span style="color:#000;font-weight:bold">;</span>
+<span style="color:#000;font-weight:bold">import</span> <span style="color:#555">java.io.StringReader</span><span style="color:#000;font-weight:bold">;</span>
+
+<span style="color:#000;font-weight:bold">public</span> <span style="color:#000;font-weight:bold">class</span> <span style="color:#458;font-weight:bold">ShaclSampleCode</span> <span style="color:#000;font-weight:bold">{</span>
+
+        <span style="color:#000;font-weight:bold">public</span> <span style="color:#000;font-weight:bold">static</span> <span style="color:#458;font-weight:bold">void</span> <span style="color:#900;font-weight:bold">main</span><span style="color:#000;font-weight:bold">(</span>String<span style="color:#000;font-weight:bold">[]</span> args<span style="color:#000;font-weight:bold">)</span> <span style="color:#000;font-weight:bold">throws</span> IOException <span style="color:#000;font-weight:bold">{</span>
+
+                ShaclSail shaclSail <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> ShaclSail<span style="color:#000;font-weight:bold">(</span><span style="color:#000;font-weight:bold">new</span> MemoryStore<span style="color:#000;font-weight:bold">());</span>
+
+                <span style="color:#998;font-style:italic">//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+</span><span style="color:#998;font-style:italic"></span>                <span style="color:#998;font-style:italic">//root.setLevel(Level.INFO);
+</span><span style="color:#998;font-style:italic"></span>
+                <span style="color:#998;font-style:italic">//shaclSail.setLogValidationPlans(true);
+</span><span style="color:#998;font-style:italic"></span>                <span style="color:#998;font-style:italic">//shaclSail.setGlobalLogValidationExecution(true);
+</span><span style="color:#998;font-style:italic"></span>                <span style="color:#998;font-style:italic">//shaclSail.setLogValidationViolations(true);
+</span><span style="color:#998;font-style:italic"></span>
+                SailRepository sailRepository <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> SailRepository<span style="color:#000;font-weight:bold">(</span>shaclSail<span style="color:#000;font-weight:bold">);</span>
+                sailRepository<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">init</span><span style="color:#000;font-weight:bold">();</span>
+
+                <span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">(</span>SailRepositoryConnection connection <span style="color:#000;font-weight:bold">=</span> sailRepository<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getConnection</span><span style="color:#000;font-weight:bold">())</span> <span style="color:#000;font-weight:bold">{</span>
+
+                        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">begin</span><span style="color:#000;font-weight:bold">();</span>
+
+                        StringReader shaclRules <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> StringReader<span style="color:#000;font-weight:bold">(</span>
+                                String<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">join</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;\n&#34;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix ex: &lt;http://example.com/ns#&gt; .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&#34;</span><span style="color:#000;font-weight:bold">,</span>
+
+                                        <span style="color:#d14">&#34;ex:PersonShape&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  a sh:NodeShape  ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:targetClass foaf:Person ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:property ex:PersonShapeProperty .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+
+                                        <span style="color:#d14">&#34;ex:PersonShapeProperty &#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:path foaf:age ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:datatype xsd:int ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:maxCount 1 ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  sh:minCount 1 .&#34;</span>
+                                <span style="color:#000;font-weight:bold">));</span>
+
+                        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">add</span><span style="color:#000;font-weight:bold">(</span>shaclRules<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;&#34;</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">,</span> RDF4J<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">SHACL_SHAPE_GRAPH</span><span style="color:#000;font-weight:bold">);</span>
+                        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">commit</span><span style="color:#000;font-weight:bold">();</span>
+
+                        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">begin</span><span style="color:#000;font-weight:bold">();</span>
+
+                        StringReader invalidSampleData <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">new</span> StringReader<span style="color:#000;font-weight:bold">(</span>
+                                String<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">join</span><span style="color:#000;font-weight:bold">(</span><span style="color:#d14">&#34;\n&#34;</span><span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix ex: &lt;http://example.com/ns#&gt; .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&#34;</span><span style="color:#000;font-weight:bold">,</span>
+
+                                        <span style="color:#d14">&#34;ex:peter a foaf:Person ;&#34;</span><span style="color:#000;font-weight:bold">,</span>
+                                        <span style="color:#d14">&#34;  foaf:age 20, \&#34;30\&#34;^^xsd:int  .&#34;</span>
+
+                                <span style="color:#000;font-weight:bold">));</span>
+
+                        connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">add</span><span style="color:#000;font-weight:bold">(</span>invalidSampleData<span style="color:#000;font-weight:bold">,</span> <span style="color:#d14">&#34;&#34;</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">);</span>
+                        <span style="color:#000;font-weight:bold">try</span> <span style="color:#000;font-weight:bold">{</span>
+                                connection<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">commit</span><span style="color:#000;font-weight:bold">();</span>
+                        <span style="color:#000;font-weight:bold">}</span> <span style="color:#000;font-weight:bold">catch</span> <span style="color:#000;font-weight:bold">(</span>RepositoryException exception<span style="color:#000;font-weight:bold">)</span> <span style="color:#000;font-weight:bold">{</span>
+                                Throwable cause <span style="color:#000;font-weight:bold">=</span> exception<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">getCause</span><span style="color:#000;font-weight:bold">();</span>
+                                <span style="color:#000;font-weight:bold">if</span> <span style="color:#000;font-weight:bold">(</span>cause <span style="color:#000;font-weight:bold">instanceof</span> ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> <span style="color:#000;font-weight:bold">{</span>
+                                        ValidationReport validationReport <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">((</span>ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> cause<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">getValidationReport</span><span style="color:#000;font-weight:bold">();</span>
+                                        Model validationReportModel <span style="color:#000;font-weight:bold">=</span> <span style="color:#000;font-weight:bold">((</span>ShaclSailValidationException<span style="color:#000;font-weight:bold">)</span> cause<span style="color:#000;font-weight:bold">).</span><span style="color:#008080">validationReportAsModel</span><span style="color:#000;font-weight:bold">();</span>
+                                        <span style="color:#998;font-style:italic">// use validationReport or validationReportModel to understand validation violations
+</span><span style="color:#998;font-style:italic"></span>
+                                        Rio<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">write</span><span style="color:#000;font-weight:bold">(</span>validationReportModel<span style="color:#000;font-weight:bold">,</span> System<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">out</span><span style="color:#000;font-weight:bold">,</span> RDFFormat<span style="color:#000;font-weight:bold">.</span><span style="color:#008080">TURTLE</span><span style="color:#000;font-weight:bold">);</span>
+                                <span style="color:#000;font-weight:bold">}</span>
+                                <span style="color:#000;font-weight:bold">throw</span> exception<span style="color:#000;font-weight:bold">;</span>
+                        <span style="color:#000;font-weight:bold">}</span>
+                <span style="color:#000;font-weight:bold">}</span>
+        <span style="color:#000;font-weight:bold">}</span>
+<span style="color:#000;font-weight:bold">}</span></code></pre></div>
+
+<h1 id="further-reading">Further reading</h1>
+
+<p>Here are some useful links to learn more about SHACL:</p>
+
+<ul>
+<li><a href="http://www.w3.org/TR/shacl/" target="_blank">W3C SHACL specification</a></li>
+<li><a href="http://book.validatingrdf.com/" target="_blank">Validating RDF Data</a> (various authors)</li>
+</ul>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#validation-with-shacl">Validation with SHACL</a></li>
+<li><a href="#how-does-the-shacl-engine-work">How does the SHACL engine work</a></li>
+<li><a href="#how-to-load-shacl-shapes">How to load SHACL shapes</a></li>
+<li><a href="#supported-shacl-features">Supported SHACL features</a></li>
+<li><a href="#validation-results">Validation results</a></li>
+<li><a href="#logging-and-debugging">Logging and debugging</a>
+<ul>
+<li><a href="#log-validation-plans">Log validation plans</a></li>
+<li><a href="#log-validation-execution">Log validation execution</a></li>
+<li><a href="#log-validation-violations">Log validation violations</a></li>
+</ul></li>
+<li><a href="#full-working-example">Full working example</a></li>
+<li><a href="#further-reading">Further reading</a></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+

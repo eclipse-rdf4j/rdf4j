@@ -1,0 +1,404 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>GeoSPARQL | The Eclipse Foundation</title>
+<meta property="og:title" content="GeoSPARQL | The Eclipse Foundation" />
+<meta name="twitter:title" content="GeoSPARQL | The Eclipse Foundation" />
+<meta name="description" content="GeoSPARQL RDF4J offers an extended algebra for partial GeoSPARQL support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository, using the well-known Spatial4J and JTS libraries for geospatial reasoning.
+To enable GeoSPARQL support, all you need to do is include the rdf4j-queryalgebra-geosparql Maven module in your project:
+&lt;dependency&gt; &lt;groupId&gt;org.eclipse.rdf4j&lt;/groupId&gt; &lt;artifactId&gt;rdf4j-queryalgebra-geosparql&lt;/artifactId&gt; &lt;/dependency&gt;  NOTE: this module is currently not included by default in the RDF4J Server, so if you plan to use GeoSPARQL in the RDF4J Server, you will need to download this jar separately and add it to the runtime classpath of the webapp.">
+<meta property="og:description" content="GeoSPARQL RDF4J offers an extended algebra for partial GeoSPARQL support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository, using the well-known Spatial4J and JTS libraries for geospatial reasoning.
+To enable GeoSPARQL support, all you need to do is include the rdf4j-queryalgebra-geosparql Maven module in your project:
+&lt;dependency&gt; &lt;groupId&gt;org.eclipse.rdf4j&lt;/groupId&gt; &lt;artifactId&gt;rdf4j-queryalgebra-geosparql&lt;/artifactId&gt; &lt;/dependency&gt;  NOTE: this module is currently not included by default in the RDF4J Server, so if you plan to use GeoSPARQL in the RDF4J Server, you will need to download this jar separately and add it to the runtime classpath of the webapp.">
+<meta name="twitter:description" content="GeoSPARQL RDF4J offers an extended algebra for partial GeoSPARQL support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository, …">
+<meta name="author" content="Christopher Guindon"/>
+<link href='https://rdf4j.eclipse.org/images/favicon.png' rel='icon' type='image/x-icon'/>
+<meta property="og:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:image" content="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@EclipseFdn" />
+<meta name="twitter:creator" content="@EclipseFdn" />
+<meta property="og:url" content="https://rdf4j.eclipse.org/documentation/programming/geosparql/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Eclipse rdf4j" />
+<meta name="keywords" content="hugo, solstice, eclipse foundatiou">
+
+
+<meta name="generator" content="Hugo 0.40.1" />
+<link rel="canonical" href="https://rdf4j.eclipse.org/documentation/programming/geosparql/" />
+<link rel="alternate" href="https://rdf4j.eclipse.org/index.xml" type="application/rss+xml" title="Eclipse rdf4j">
+
+<link rel="stylesheet" href="https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
+
+
+  
+<link href="//fonts.googleapis.com/css?family=Libre+Franklin:400,700,300,600,100" rel="stylesheet" type="text/css"/>
+
+  
+</head>
+<body>
+  
+<a class="sr-only" href="#content">Skip to main content</a>
+<header class="header-wrapper" id="header-wrapper">
+  
+
+<div class="clearfix toolbar-container-wrapper">
+  <div class="container">
+    <div class="text-right toolbar-row row hidden-print">
+      <div class="col-md-24 row-toolbar-col">
+        <ul class="list-inline">
+          <li><a href="https://accounts.eclipse.org/user/edit" class="" data-tab-destination="tab-profile"><i class="fa fa-edit fa-fw"></i> Edit my account</a></li>
+          <li><a class="toolbar-link toolbar-manage-cookies dropdown-toggle"><i class="fa fa-wrench"></i> Manage Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="row" id="header-row">
+    <div class="col-sm-5 col-md-4" id="header-left">
+      <div class="wrapper-logo-default">
+          <a title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="col-sm-19 col-md-20 reset margin-top-10" id="main-menu-wrapper">
+    
+      <div class="navbar yamm" id="main-menu">
+        <div class="navbar-collapse collapse reset float-right" id="navbar-main-menu">
+          <ul class="nav navbar-nav">
+            
+
+
+
+<li>
+  <a class="" href="/news/">
+  
+  News
+  </a>
+  
+</li>
+
+
+<li class="dropdown">
+  <a href="#" data-toggle="dropdown" class="dropdown-toggle">
+    
+    
+    <span>About</span>
+    <b class="caret"></b>
+  </a>
+  <ul class="dropdown-menu">
+    
+    <li><a href="/about/">Eclipse rdf4j</a> </li>
+    
+    <li><a href="/databases/">Rdf4j databases</a> </li>
+    
+    <li><a href="/related/">Related projects</a> </li>
+    
+  </ul>
+  
+</li>
+
+
+<li>
+  <a class="" href="/documentation/">
+  
+  Documentation
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/download/">
+  
+  Download
+  </a>
+  
+</li>
+
+
+<li>
+  <a class="" href="/support/">
+  
+  Support
+  </a>
+  
+</li>
+
+
+
+
+
+          </ul>
+        </div>
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-main-menu">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          </button>
+          <div class="wrapper-logo-mobile">
+            
+              <a class="navbar-brand visible-xs" title="Eclipse rdf4j" href="https://rdf4j.eclipse.org/">
+                <img width="140" class="logo-eclipse-default-mobile img-responsive" src="https://rdf4j.eclipse.org/images/rdf4j-logo-orange-114.png" alt="Eclipse rdf4j" />
+              </a>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+
+
+</header>
+
+  
+<section class="default-breadcrumbs hidden-print" id="breadcrumb">
+  <div class="container">
+  <h3 class="sr-only">Breadcrumbs</h3>
+  <div class="row">
+    <div class="col-sm-24">
+      <ol class="breadcrumb">
+        
+      
+      
+      
+      
+      
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/">Eclipse rdf4j</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/">Documentation</a>
+      </li>
+      
+      
+      <li>
+        <a href="https://rdf4j.eclipse.org/documentation/programming/">Programming with rdf4j</a>
+      </li>
+      
+      
+      <li class="active">
+        <a href="https://rdf4j.eclipse.org/documentation/programming/geosparql/">GeoSPARQL</a>
+      </li>
+      
+      </ol>
+      
+    </div>
+  </div>
+</section>
+
+  
+<main>
+  <div class="container">
+    
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+        
+        
+        
+
+<h1 id="geosparql">GeoSPARQL</h1>
+
+<p>RDF4J offers an extended algebra for partial GeoSPARQL support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository, using the well-known Spatial4J and JTS libraries for geospatial reasoning.</p>
+
+<p>To enable GeoSPARQL support, all you need to do is include the <code>rdf4j-queryalgebra-geosparql</code> Maven module in your project:</p>
+
+<pre><code>&lt;dependency&gt;
+  &lt;groupId&gt;org.eclipse.rdf4j&lt;/groupId&gt;
+  &lt;artifactId&gt;rdf4j-queryalgebra-geosparql&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</code></pre>
+
+<p>NOTE: this module is currently not included by default in the RDF4J Server, so if you plan to use GeoSPARQL in the RDF4J Server, you will need to download this jar separately and add it to the runtime classpath of the webapp.</p>
+
+<h1 id="adding-geospatial-data-to-the-repository">Adding geospatial data to the Repository</h1>
+
+<p>By default, RDF4J only supports GeoSPARQL functions on top of geospatial data represented as so-called Well-Known Text (WKT) strings.</p>
+
+<p>For example, to model the coordinates of landmarks like the Eiffel Tower in Paris or the Tower Bridge in London, you could do something like this:</p>
+
+<pre><code>@prefix geo: &lt;http://www.opengis.net/ont/geosparql#&gt; .
+@prefix sf: &lt;http://www.opengis.net/ont/sf&gt; .
+@prefix ex: &lt;http://example.org/&gt; .
+
+ex:eiffelTower a ex:Landmark ;
+          geo:hasGeometry ex:coordinates-et.
+ex:coordinates-et a sf:Point;
+        geo:asWKT &quot;POINT(2.2945 48.8584)&quot;^^geo:wktLiteral .
+ex:towerBridge a ex:Landmark ;
+          geo:hasGeometry ex:coordinates-tb.
+ex:coordinates-tb a sf:Point;
+        geo:asWKT &quot;POINT(-0.0754 51.5055)&quot;^^geo:wktLiteral .
+</code></pre>
+
+<p>After adding this data to a repository, we can use a GeoSPARQL query to get, for example, the distance between the two landmarks, like so:</p>
+
+<pre><code>PREFIX geo: &lt;http://www.opengis.net/ont/geosparql#&gt;
+PREFIX geof: &lt;http://www.opengis.net/def/function/geosparql/&gt;
+PREFIX uom: &lt;http://www.opengis.net/def/uom/OGC/1.0/&gt;
+PREFIX ex: &lt;http://example.org/&gt;
+SELECT *
+WHERE {
+  ?lmA a ex:Landmark ;
+       geo:hasGeometry [ geo:asWKT ?coord1 ].
+  ?lmB a ex:Landmark ;
+       geo:hasGeometry [ geo:asWKT ?coord2 ].
+  BIND((geof:distance(?coord1, ?coord2, uom:metre)/1000) as ?dist) .
+  FILTER (str(?lmA) &lt; str(?lmB))
+}
+</code></pre>
+
+<h1 id="supported-geosparql-functions">Supported GeoSPARQL functions</h1>
+
+<p>In this section we briefly enumerate the GeoSPARQL extension functions supported by RDF4J. For more information on the precise meaning and use of these functions we refer you to to the GeoSPARQL specification.</p>
+
+<h2 id="non-topological-and-common-query-functions">Non-topological and common query functions</h2>
+
+<p>RDF4J supports the following non-topological geospatial functions as defined in the GeoSPARQL specs: <code>geof:distance</code>, <code>geof:boundary</code>, <code>geof:buffer</code>, <code>geof:convexHull</code>, <code>geof:difference</code>, <code>geof:envelope</code>, <code>geof:intersection</code>, <code>geof:getSRID</code>, <code>geof:symDifference</code>, <code>geof:union</code>, and <code>geof:relate</code>.</p>
+
+<h2 id="simple-feature-functions">Simple Feature functions</h2>
+
+<p>RDF4J supports the following Simple Feature (sf) functions: <code>geof:sfEquals</code>, <code>geof:sfDisjoint</code>, <code>geof:sfIntersects</code>, <code>geof:sfTouches</code>, <code>geof:sfCrosses</code>, <code>geof:sfWithin</code>, <code>geof:sfContains</code>, and <code>geof:sfOverlaps</code>.</p>
+
+<h2 id="egenhofer-functions">Egenhofer functions</h2>
+
+<p>RDF4J supports the following Egenhofer (eh) functions: <code>geof:ehEquals</code>, <code>geof:ehDisjoint</code>, <code>geof:ehMeet</code>, <code>geof:ehOverlap</code>, <code>geof:ehCovers</code>, <code>geof:ehCoveredBy</code> , <code>geof:ehInside</code>, and <code>geof:ehContains</code>.</p>
+
+<h2 id="rcc8-functions">RCC8 functions</h2>
+
+<p>RDF4J supports the following RCC8 functions: <code>geof:rcc8eq</code>, <code>geof:rcc8dc</code>, <code>geof:rcc8ec</code>, <code>geof:rcc8po</code>, <code>geof:rcc8tppi</code>, <code>geof:rcc8tpp</code>, <code>geof:rcc8ntpp</code>, and <code>geof:rcc8ntppi</code>.</p>
+
+<h2 id="improved-performance-through-lucene">Improved performance through Lucene</h2>
+
+<p>Although RDF4J supports GeoSPARQL querying on any type of store, the Lucene SAIL and its derivates (the SolrSail and the ElasticSearchSail) have built-in optimizations that make geospatial querying on large datasets more efficient. By default, the Lucene SAIL only spatially indexes <code>http://www.opengis.net/ont/geosparql#asWKT fields</code>. This can be changed using the <code>LuceneSail.WKT_FIELDS</code> parameter.</p>
+
+<h1 id="reading-and-writing-wkt-literals">Reading and writing WKT Literals</h1>
+
+<p>RDF4J 2.4 uses Spatial4J 0.7, which has full support for converting between Shape objects and WKT strings. See the <a href="https://github.com/locationtech/spatial4j/blob/master/FORMATS.md" target="_blank">Spatial4J Format documentation</a> for more details.</p>
+
+<h1 id="further-reading">Further reading</h1>
+
+<p>Here are some useful links:</p>
+
+<ul>
+<li><a href="https://projects.eclipse.org/projects/locationtech.spatial4j" target="_blank">Spatial4J website</a></li>
+<li><a href="http://www.opengeospatial.org/standards/geosparql" target="_blank">OGC GeoSPARQL specification</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Well-known_text" target="_blank">Wikipedia article on WKT</a></li>
+</ul>
+  
+        
+      </div>
+      <div class="col-md-6  padding-bottom-30 padding-top-10">
+        <b>Table of Contents</b>
+        <nav id="TableOfContents">
+<ul>
+<li><a href="#geosparql">GeoSPARQL</a></li>
+<li><a href="#adding-geospatial-data-to-the-repository">Adding geospatial data to the Repository</a></li>
+<li><a href="#supported-geosparql-functions">Supported GeoSPARQL functions</a>
+<ul>
+<li><a href="#non-topological-and-common-query-functions">Non-topological and common query functions</a></li>
+<li><a href="#simple-feature-functions">Simple Feature functions</a></li>
+<li><a href="#egenhofer-functions">Egenhofer functions</a></li>
+<li><a href="#rcc8-functions">RCC8 functions</a></li>
+<li><a href="#improved-performance-through-lucene">Improved performance through Lucene</a></li>
+</ul></li>
+<li><a href="#reading-and-writing-wkt-literals">Reading and writing WKT Literals</a></li>
+<li><a href="#further-reading">Further reading</a></li>
+</ul>
+</nav>
+      </div>
+    </div>
+    
+  </div>
+</main>
+
+  
+  
+<p id="back-to-top">
+  <a class="visible-xs" href="#top">Back to the top</a>
+</p>
+<footer id="solstice-footer">
+  <div class="container">
+    <div class="row">
+      <section class="col-sm-6 hidden-print" id="footer-eclipse-foundation">
+        <h2 class="section-title">Eclipse Foundation</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/org/">About Us</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/contact.php">Contact Us</a></li>
+          <li><a href="https://www.eclipse.org/donate">Donate</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/">Governance</a></li>
+          <li><a href="https://www.eclipse.org/artwork/">Logo and Artwork</a></li>
+          <li><a href="https://www.eclipse.org/org/foundation/directors.php">Board of Directors</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-legal">
+        <h2 class="section-title">Legal</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/legal/privacy.php">Privacy Policy</a></li>
+          <li><a href="https://www.eclipse.org/legal/termsofuse.php">Terms of Use</a></li>
+          <li><a href="https://www.eclipse.org/legal/copyright.php">Copyright Agent</a></li>
+          <li><a href="https://www.eclipse.org/org/documents/edl-v10.php">Eclipse Distribution License</a></li>
+          <li><a href="https://www.eclipse.org/legal/">Legal Resources </a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-useful-links">
+        <h2 class="section-title">Useful Links</h2>
+        <ul class="nav">
+          <li><a href="https://github.com/eclipse/rdf4j/issues/">Report a Bug</a></li>
+          <li><a href="/documentation/">Documentation</a></li>
+          <li><a href="https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md">How to Contribute</a></li>
+        </ul>
+      </section>
+      <section class="col-sm-6 hidden-print" id="footer-other">
+        <h2 class="section-title">Other</h2>
+        <ul class="nav">
+          <li><a href="https://www.eclipse.org/ide/">IDE and Tools</a></li>
+          <li><a href="https://www.eclipse.org/projects">Community of Projects</a></li>
+          <li><a href="https://www.eclipse.org/org/workinggroups/">Working Groups</a></li>
+          <li><a href="https://www.eclipse.org/org/research/">Research@Eclipse</a></li>
+          <li><a href="https://status.eclipse.org">Service Status</a></li>
+        </ul>
+      </section>
+      <div class="col-sm-24 margin-top-20">
+        <div class="row">
+          <div id="copyright" class="col-md-16">
+            <p id="copyright-text">Copyright &copy; Eclipse Foundation, Inc. All Rights Reserved.</p>
+          </div>
+          
+        </div>
+      </div>
+      <a href="#" class="scrollup">Back to the top</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://www.eclipse.org/eclipse.org-common/themes/solstice/public/javascript/main.min.js"></script>
+
+</body>
+</html>
+
+  
+</body>
+</html>
+
