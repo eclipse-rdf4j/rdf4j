@@ -5,11 +5,7 @@
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-<<<<<<< HEAD:client/pom.xml
-		<artifactId>rdf4j-parent</artifactId>
-=======
 		<artifactId>rdf4j-tools</artifactId>
->>>>>>> tools/master:tools/runtime/pom.xml
 		<version>3.0-SNAPSHOT</version>
 	</parent>
 
@@ -217,14 +213,16 @@
 			<artifactId>rdf4j-rio-turtle</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
-<<<<<<< HEAD:client/pom.xml
-			<artifactId>rdf4j-sparqlbuilder</artifactId>
-=======
-			<artifactId>rdf4j-sail-api</artifactId>
-			<version>${project.version}</version>
-		</dependency>
+                <dependency>
+                  <groupId>org.eclipse.rdf4j</groupId>
+                  <artifactId>rdf4j-sparqlbuilder</artifactId>
+                  <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                  <groupId>org.eclipse.rdf4j</groupId>
+                  <artifactId>rdf4j-sail-api</artifactId>
+                  <version>${project.version}</version>
+                </dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-sail-base</artifactId>
@@ -233,11 +231,6 @@
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-sail-federation</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-sail-elasticsearch</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
@@ -293,7 +286,6 @@
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-spin</artifactId>
->>>>>>> tools/master:tools/runtime/pom.xml
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
@@ -303,7 +295,6 @@
 		</dependency>
 
 	</dependencies>
-<<<<<<< HEAD:client/pom.xml
 	<build>
 		<plugins>
 			<plugin>
@@ -447,6 +438,4 @@
 			</plugin>
 		</plugins>
 	</build>
-=======
->>>>>>> tools/master:tools/runtime/pom.xml
 </project>

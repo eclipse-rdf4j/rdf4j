@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j-parent</artifactId>
+	<artifactId>rdf4j</artifactId>
 	<version>3.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
@@ -46,19 +46,14 @@
 	</licenses>
 
 	<modules>
-		<module>client</module>
-		<module>util</module>
-		<module>model</module>
-		<module>rio</module>
-		<module>queryresultio</module>
-		<module>query</module>
-		<module>queryalgebra-model</module>
-		<module>queryparser</module>
-		<module>queryrender</module>
-		<module>repository</module>
-		<module>http</module>
-		<module>sparqlbuilder</module>
+		<module>core</module>
+                <module>client</module>
+                <module>storage</module>
+		<module>tools</module>
 		<module>testsuites</module>
+		<module>compliance</module>
+		<module>bom</module>
+		<module>assembly</module>
 	</modules>
 
 	<profiles>
