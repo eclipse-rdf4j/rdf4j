@@ -51,7 +51,6 @@
                 <module>storage</module>
 		<module>tools</module>
 		<module>testsuites</module>
-		<module>compliance</module>
 		<module>bom</module>
 	</modules>
 
@@ -127,6 +126,12 @@
 				</plugins>
 			</build>
 		</profile>
+                <profile>
+                  <id>compliance</id>
+                  <modules>
+                    <module>assembly</module>
+                  </modules>
+                </profile>
 		<profile>
 			<id>assembly</id>
                         <modules>

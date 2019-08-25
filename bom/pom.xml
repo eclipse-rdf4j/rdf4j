@@ -323,78 +323,13 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-util</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-
-			<!-- Compliance/integration test modules -->
-
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-model-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-queryresultio-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-rio-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-serql-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-queryparser-sparql-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-sparql-compliance</artifactId>
-				<version>${project.version}</version>
-				<type>war</type>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-geosparql-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-server-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-elasticsearch-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-solr-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sparqlbuilder</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-storage-compliance</artifactId>
+				<artifactId>rdf4j-util</artifactId>
 				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-store-compliance</artifactId>
-				<version>${project.version}</version>
-				<type>war</type>
 			</dependency>
 
 			<!-- reusable test suites -->
