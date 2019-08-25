@@ -53,7 +53,6 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>bom</module>
-		<module>assembly</module>
 	</modules>
 
 	<profiles>
@@ -130,6 +129,9 @@
 		</profile>
 		<profile>
 			<id>assembly</id>
+                        <modules>
+                          <module>assembly</module>
+                        </modules>
 			<build>
 				<plugins>
 					<plugin>
