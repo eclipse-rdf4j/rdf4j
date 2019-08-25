@@ -22,6 +22,7 @@
 		<module>query</module>
 		<module>queryalgebra</module>
 		<module>queryparser</module>
+                <module>http</module>
 		<module>queryrender</module>
 		<module>sail</module>
 		<module>repository</module>
