@@ -177,7 +177,6 @@
 			<properties>
 				<skipTests>true</skipTests>
 				<skipITs>true</skipITs>
-				<maven.test.skip>true</maven.test.skip>
 			</properties>
 		</profile>
 		<profile>

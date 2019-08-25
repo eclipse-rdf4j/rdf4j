@@ -12,7 +12,7 @@
 	<packaging>pom</packaging>
 
 	<name>RDF4J: Rio</name>
-	<description>Rio (RDF I/O) is an API for parsers and writers of various RDF	file formats.</description>
+	<description>Rio (RDF I/O) is an API for parsers and writers of various RDF file formats.</description>
 
 	<modules>
 		<module>api</module>

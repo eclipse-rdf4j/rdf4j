@@ -28,27 +28,26 @@
 			<directory>target/site/apidocs</directory>
 			<outputDirectory>docs/apidocs</outputDirectory>
 		</fileSet>
-
 	</fileSets>
 
 	<files>
 		<file>
-		    <source>../server/target/rdf4j-server.war</source>
+                  <source>../tools/server/target/rdf4j-server.war</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 		<file>
-		    <source>../workbench/target/rdf4j-workbench.war</source>
+                  <source>../tools/workbench/target/rdf4j-workbench.war</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 
 		<file>
-			<source>src/main/dist/bin/console.bat</source>
+			<source>src/main/dist/console.bat</source>
 			<outputDirectory>bin</outputDirectory>
 			<lineEnding>dos</lineEnding>
 			<filtered>true</filtered>
 		</file>
 		<file>
-			<source>src/main/dist/bin/console.sh</source>
+			<source>src/main/dist/console.sh</source>
 			<outputDirectory>bin</outputDirectory>
 			<fileMode>755</fileMode>
 			<lineEnding>unix</lineEnding>
