@@ -1,0 +1,16 @@
+@prefix shared:<urn:shared:> .		# subject namespace in all members
+@prefix one:<urn:member:one:> .		# subject namespace in only member 1
+@prefix two:<urn:member:two:> .		# subject namespace in only member 2
+@prefix three:<urn:member:three:> .	# subject namespace in only member 3
+@prefix a:<urn:schema:a:> .			# all members
+@prefix b:<urn:schema:b:> .			# each subject is described in only one member
+@prefix c:<urn:schema:c:> .			# member 2 exclusively
+@prefix d:<urn:schema:d:> .			# member 2 exclusively and declared as local
+
+one:ottawa b:name "Ottawa" .
+one:toronto b:name "Toronto" .
+one:manager b:name "Manager" .
+one:ceo b:name "CEO" .
+
+shared:bell a:spouse shared:james .
+

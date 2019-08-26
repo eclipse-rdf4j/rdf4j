@@ -1,0 +1,4 @@
+CONSTRUCT DISTINCT {<foo:subj>} <foo:predA> {A}
+FROM {<foo:subj>} <foo:predA> {A};
+                  <foo:predB> {X}
+LIMIT 10

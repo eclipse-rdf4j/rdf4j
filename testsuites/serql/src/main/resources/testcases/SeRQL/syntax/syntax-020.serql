@@ -1,0 +1,4 @@
+SELECT
+   LABEL(O), label(O), P, O
+FROM
+  {S} P {O}

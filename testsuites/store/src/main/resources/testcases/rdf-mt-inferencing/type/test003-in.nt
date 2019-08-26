@@ -1,0 +1,8 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: Each instance of rdfs:ContainerMembershipProperty is a
+# subproperty of rdfs:member.
+# Relevant inferencing rules: rdfs10
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/prop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.
+_:prop <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.

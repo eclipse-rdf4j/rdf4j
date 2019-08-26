@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<navigation id="system">
+	<group id="system">
+		<view id="overview" />	
+		<group id="logging">
+			<view id="overview" />
+		</group>
+		<group id="info">
+			<view id="overview" />
+			<view id="debug" hidden="true" />
+		</group>
+	</group>
+</navigation>

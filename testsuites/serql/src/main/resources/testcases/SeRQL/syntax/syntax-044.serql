@@ -1,0 +1,6 @@
+SELECT
+  S, P, O
+FROM
+  {S} P {O} 
+WHERE
+  SameTerm(P, rdf:type) OR SameTerm(O, "foo")

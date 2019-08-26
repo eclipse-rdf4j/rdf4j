@@ -40,7 +40,7 @@ Once the legalities are out of the way you can dig in. Here's how:
 4. Make your changes. Apply the [RDF4J code formatting guidelines](#code-formatting)
 5. Make sure you include tests.
 6. Make sure the test suite passes after your changes.
-7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check").
+7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "eclipse/rdf4j#276: added null check").
 8. **Sign off** every commit you do, using the `-s` flag (as explained in the [legal stuff](#legal-stuff)).
 9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
 10. Push your changes to your branch in your forked repository.

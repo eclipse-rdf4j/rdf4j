@@ -29,8 +29,9 @@ dependency-reduced-pom.xml
 # Mac nonsense
 .DS_Store
 
-# NetBean files
+# NetBean (generated) files
 **/nb-configuration.xml
 **/nbactions*.xml
 *.jfr
 compliance/repository/overlays
+**/webapp/META-INF/context.xml

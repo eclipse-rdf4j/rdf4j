@@ -1,0 +1,4 @@
+SELECT REDUCED
+  S
+FROM
+  {S} P {O}

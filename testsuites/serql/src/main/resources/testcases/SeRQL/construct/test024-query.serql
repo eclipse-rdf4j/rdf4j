@@ -1,0 +1,12 @@
+CONSTRUCT {c} foaf:name {name};
+              dc:date {date};
+              foaf:mbox {mbox}
+FROM
+    {c} dc:publisher {name};
+        dc:date {date}
+FROM CONTEXT c
+    {} foaf:name {name};
+       foaf:mbox {mbox}
+USING NAMESPACE
+    foaf = <http://xmlns.com/foaf/0.1/>,
+    dc = <http://purl.org/dc/elements/1.1/>

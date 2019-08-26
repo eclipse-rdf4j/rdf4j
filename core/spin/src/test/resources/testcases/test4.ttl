@@ -1,0 +1,26 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Describe ;
+	sp:text """
+PREFIX ex: <ex:>
+
+DESCRIBE ?value
+WHERE {
+	?this a ex:Person .
+	?this ex:uncle ?value
+}
+""";
+  sp:resultNodes (_:value) ;
+  sp:where ([ sp:object ex:Person ;
+              sp:predicate rdf:type ;
+              sp:subject spin:_this
+            ]
+            [ sp:object _:value ;
+              sp:predicate ex:uncle ;
+              sp:subject spin:_this
+            ])
+].
+
+_:value sp:varName "value" .

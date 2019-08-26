@@ -1,0 +1,200 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.eclipse.rdf4j</groupId>
+		<artifactId>rdf4j</artifactId>
+		<version>3.0.1-SNAPSHOT</version>
+	</parent>
+
+	<artifactId>rdf4j-assembly</artifactId>
+	<packaging>pom</packaging>
+
+	<name>RDF4J: Assembly</name>
+	<description>Distribution bundle assembly</description>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-console</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-runtime-osgi</artifactId>
+			<version>${project.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.eclipse.rdf4j</groupId>
+					<artifactId>rdf4j-http-server-spring</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-config</artifactId>
+			<version>${project.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>${project.groupId}</groupId>
+					<artifactId>rdf4j-util</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-client</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-storage</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<configuration>
+					<encoding>utf8</encoding>
+					<source>1.8</source>
+					<quiet>true</quiet>
+					<additionalparam>${javadoc.opts}</additionalparam>
+					<includeDependencySources>true</includeDependencySources>
+					<dependencySourceIncludes>
+						<dependencySourceIncludes>org.eclipse.rdf4j:*</dependencySourceIncludes>
+					</dependencySourceIncludes>
+					<excludePackageNames>*.ast:*.AST</excludePackageNames>
+				</configuration>
+				<executions>
+					<execution>
+						<id>create-aggregate-javadoc</id>
+						<inherited>false</inherited>
+						<phase>package</phase>
+						<goals>
+							<goal>aggregate</goal>
+						</goals>
+
+						<configuration>
+							<doctitle>Eclipse rdf4j ${project.version} API</doctitle>
+							<windowtitle>Eclipse rdf4j ${project.version} API</windowtitle>
+							<groups>
+								<group>
+									<title>RDF Model API</title>
+									<packages>org.eclipse.rdf4j.model*</packages>
+								</group>
+								<group>
+									<title>Repository API: database and SPARQL endpoint access</title>
+									<packages>org.eclipse.rdf4j.repository*</packages>
+								</group>
+
+								<group>
+									<title>Rio: RDF Parsers and Writers </title>
+									<packages>org.eclipse.rdf4j.rio*</packages>
+								</group>
+								
+								<group>
+									<title>Query API and query parsers</title>
+									<packages>org.eclipse.rdf4j.query:org.eclipse.rdf4j.query.impl:org.eclipse.rdf4j.query.algebra*:org.eclipse.rdf4j.query.parser*</packages>
+								</group>
+
+								<group>
+									<title>Query Result Parsers and Writers</title>
+									<packages>org.eclipse.rdf4j.query.resultio*</packages>
+								</group>
+
+								<group>
+									<title>SPARQLBuilder</title>
+									<packages>org.eclipse.rdf4j.sparqlbuilder*</packages>
+								</group>
+
+								<group>
+									<title>Storage And Inference Layer (SAIL) SPI</title>
+									<packages>org.eclipse.rdf4j.sail*</packages>
+								</group>
+								
+								<group>
+									<title>Rdf4j REST Client and Protocol</title>
+									<packages>org.eclipse.rdf4j.http*</packages>
+								</group>
+							</groups>
+
+							<links>
+								<link>http://docs.oracle.com/javase/8/docs/api/</link>
+							</links>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<configuration>
+					<finalName>eclipse-rdf4j-${project.version}</finalName>
+					<attach>false</attach>
+					<descriptors>
+						<descriptor>src/main/assembly/sdk.xml</descriptor>
+					</descriptors>
+				</configuration>
+				<executions>
+					<execution>
+						<id>create-sdk</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<configuration>
+					<artifactSet>
+						<includes>
+							<include>org.eclipse.rdf4j:*</include>
+						</includes>
+						<excludes>
+							<exclude>org.eclipse.rdf4j:rdf4j-runtime-osgi</exclude>
+						</excludes>
+					</artifactSet>
+					<outputFile>target/eclipse-rdf4j-${project.version}-onejar.jar</outputFile>
+					<createDependencyReducedPom>false</createDependencyReducedPom>
+					<shadedArtifactAttached>false</shadedArtifactAttached>
+					<transformers>
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+							<resource>edl-v1.0.txt</resource>
+							<file>../edl-v1.0.txt</file>
+						</transformer>
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+							<resource>notice.md</resource>
+							<file>../notice.md</file>
+						</transformer>
+						<transformer
+							implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+							<resource>about.md</resource>
+							<file>../about.md</file>
+						</transformer>
+					</transformers>
+				</configuration>
+				<executions>
+					<execution>
+						<id>create-onejar</id>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>

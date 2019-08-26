@@ -1,0 +1,2499 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {
+
+ex:bigCo0000 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0001 a ex:Company .
+
+ex:bigCo0002 a ex:Company .
+
+ex:bigCo0003 a ex:Company .
+
+ex:bigCo0004 a ex:Company .
+
+ex:bigCo0005 a ex:Company .
+
+ex:bigCo0006 a ex:Company .
+
+ex:bigCo0007 a ex:Company .
+
+ex:bigCo0008 a ex:Company .
+
+ex:bigCo0009 a ex:Company .
+
+ex:bigCo0010 a ex:Company .
+
+ex:bigCo0011 a ex:Company .
+
+ex:bigCo0012 a ex:Company .
+
+ex:bigCo0013 a ex:Company .
+
+ex:bigCo0014 a ex:Company .
+
+ex:bigCo0015 a ex:Company .
+
+ex:bigCo0016 a ex:Company .
+
+ex:bigCo0017 a ex:Company .
+
+ex:bigCo0018 a ex:Company .
+
+ex:bigCo0019 a ex:Company .
+
+ex:bigCo0020 a ex:Company .
+
+ex:bigCo0021 a ex:Company .
+
+ex:bigCo0022 a ex:Company .
+
+ex:bigCo0023 a ex:Company .
+
+ex:bigCo0024 a ex:Company .
+
+ex:bigCo0025 a ex:Company .
+
+ex:bigCo0026 a ex:Company .
+
+ex:bigCo0027 a ex:Company .
+
+ex:bigCo0028 a ex:Company .
+
+ex:bigCo0029 a ex:Company .
+
+ex:bigCo0030 a ex:Company .
+
+ex:bigCo0031 a ex:Company .
+
+ex:bigCo0032 a ex:Company .
+
+ex:bigCo0033 a ex:Company .
+
+ex:bigCo0034 a ex:Company .
+
+ex:bigCo0035 a ex:Company .
+
+ex:bigCo0036 a ex:Company .
+
+ex:bigCo0037 a ex:Company .
+
+ex:bigCo0038 a ex:Company .
+
+ex:bigCo0039 a ex:Company .
+
+ex:bigCo0040 a ex:Company .
+
+ex:bigCo0041 a ex:Company .
+
+ex:bigCo0042 a ex:Company .
+
+ex:bigCo0043 a ex:Company .
+
+ex:bigCo0044 a ex:Company .
+
+ex:bigCo0045 a ex:Company .
+
+ex:bigCo0046 a ex:Company .
+
+ex:bigCo0047 a ex:Company .
+
+ex:bigCo0048 a ex:Company .
+
+ex:bigCo0049 a ex:Company .
+
+ex:bigCo0050 a ex:Company .
+
+ex:bigCo0051 a ex:Company .
+
+ex:bigCo0052 a ex:Company .
+
+ex:bigCo0053 a ex:Company .
+
+ex:bigCo0054 a ex:Company .
+
+ex:bigCo0055 a ex:Company .
+
+ex:bigCo0056 a ex:Company .
+
+ex:bigCo0057 a ex:Company .
+
+ex:bigCo0058 a ex:Company .
+
+ex:bigCo0059 a ex:Company .
+
+ex:bigCo0060 a ex:Company .
+
+ex:bigCo0061 a ex:Company .
+
+ex:bigCo0062 a ex:Company .
+
+ex:bigCo0063 a ex:Company .
+
+ex:bigCo0064 a ex:Company .
+
+ex:bigCo0065 a ex:Company .
+
+ex:bigCo0066 a ex:Company .
+
+ex:bigCo0067 a ex:Company .
+
+ex:bigCo0068 a ex:Company .
+
+ex:bigCo0069 a ex:Company .
+
+ex:bigCo0070 a ex:Company .
+
+ex:bigCo0071 a ex:Company .
+
+ex:bigCo0072 a ex:Company .
+
+ex:bigCo0073 a ex:Company .
+
+ex:bigCo0074 a ex:Company .
+
+ex:bigCo0075 a ex:Company .
+
+ex:bigCo0076 a ex:Company .
+
+ex:bigCo0077 a ex:Company .
+
+ex:bigCo0078 a ex:Company .
+
+ex:bigCo0079 a ex:Company .
+
+ex:bigCo0080 a ex:Company .
+
+ex:bigCo0081 a ex:Company .
+
+ex:bigCo0082 a ex:Company .
+
+ex:bigCo0083 a ex:Company .
+
+ex:bigCo0084 a ex:Company .
+
+ex:bigCo0085 a ex:Company .
+
+ex:bigCo0086 a ex:Company .
+
+ex:bigCo0087 a ex:Company .
+
+ex:bigCo0088 a ex:Company .
+
+ex:bigCo0089 a ex:Company .
+
+ex:bigCo0090 a ex:Company .
+
+ex:bigCo0091 a ex:Company .
+
+ex:bigCo0092 a ex:Company .
+
+ex:bigCo0093 a ex:Company .
+
+ex:bigCo0094 a ex:Company .
+
+ex:bigCo0095 a ex:Company .
+
+ex:bigCo0096 a ex:Company .
+
+ex:bigCo0097 a ex:Company .
+
+ex:bigCo0098 a ex:Company .
+
+ex:bigCo0099 a ex:Company .
+
+ex:bigCo0100 a ex:Company .
+
+ex:bigCo0101 a ex:Company .
+
+ex:bigCo0102 a ex:Company .
+
+ex:bigCo0103 a ex:Company .
+
+ex:bigCo0104 a ex:Company .
+
+ex:bigCo0105 a ex:Company .
+
+ex:bigCo0106 a ex:Company .
+
+ex:bigCo0107 a ex:Company .
+
+ex:bigCo0108 a ex:Company .
+
+ex:bigCo0109 a ex:Company .
+
+ex:bigCo0110 a ex:Company .
+
+ex:bigCo0111 a ex:Company .
+
+ex:bigCo0112 a ex:Company .
+
+ex:bigCo0113 a ex:Company .
+
+ex:bigCo0114 a ex:Company .
+
+ex:bigCo0115 a ex:Company .
+
+ex:bigCo0116 a ex:Company .
+
+ex:bigCo0117 a ex:Company .
+
+ex:bigCo0118 a ex:Company .
+
+ex:bigCo0119 a ex:Company .
+
+ex:bigCo0120 a ex:Company .
+
+ex:bigCo0121 a ex:Company .
+
+ex:bigCo0122 a ex:Company .
+
+ex:bigCo0123 a ex:Company .
+
+ex:bigCo0124 a ex:Company .
+
+ex:bigCo0125 a ex:Company .
+
+ex:bigCo0126 a ex:Company .
+
+ex:bigCo0127 a ex:Company .
+
+ex:bigCo0128 a ex:Company .
+
+ex:bigCo0129 a ex:Company .
+
+ex:bigCo0130 a ex:Company .
+
+ex:bigCo0131 a ex:Company .
+
+ex:bigCo0132 a ex:Company .
+
+ex:bigCo0133 a ex:Company .
+
+ex:bigCo0134 a ex:Company .
+
+ex:bigCo0135 a ex:Company .
+
+ex:bigCo0136 a ex:Company .
+
+ex:bigCo0137 a ex:Company .
+
+ex:bigCo0138 a ex:Company .
+
+ex:bigCo0139 a ex:Company .
+
+ex:bigCo0140 a ex:Company .
+
+ex:bigCo0141 a ex:Company .
+
+ex:bigCo0142 a ex:Company .
+
+ex:bigCo0143 a ex:Company .
+
+ex:bigCo0144 a ex:Company .
+
+ex:bigCo0145 a ex:Company .
+
+ex:bigCo0146 a ex:Company .
+
+ex:bigCo0147 a ex:Company .
+
+ex:bigCo0148 a ex:Company .
+
+ex:bigCo0149 a ex:Company .
+
+ex:bigCo0150 a ex:Company .
+
+ex:bigCo0151 a ex:Company .
+
+ex:bigCo0152 a ex:Company .
+
+ex:bigCo0153 a ex:Company .
+
+ex:bigCo0154 a ex:Company .
+
+ex:bigCo0155 a ex:Company .
+
+ex:bigCo0156 a ex:Company .
+
+ex:bigCo0157 a ex:Company .
+
+ex:bigCo0158 a ex:Company .
+
+ex:bigCo0159 a ex:Company .
+
+ex:bigCo0160 a ex:Company .
+
+ex:bigCo0161 a ex:Company .
+
+ex:bigCo0162 a ex:Company .
+
+ex:bigCo0163 a ex:Company .
+
+ex:bigCo0164 a ex:Company .
+
+ex:bigCo0165 a ex:Company .
+
+ex:bigCo0166 a ex:Company .
+
+ex:bigCo0167 a ex:Company .
+
+ex:bigCo0168 a ex:Company .
+
+ex:bigCo0169 a ex:Company .
+
+ex:bigCo0170 a ex:Company .
+
+ex:bigCo0171 a ex:Company .
+
+ex:bigCo0172 a ex:Company .
+
+ex:bigCo0173 a ex:Company .
+
+ex:bigCo0174 a ex:Company .
+
+ex:bigCo0175 a ex:Company .
+
+ex:bigCo0176 a ex:Company .
+
+ex:bigCo0177 a ex:Company .
+
+ex:bigCo0178 a ex:Company .
+
+ex:bigCo0179 a ex:Company .
+
+ex:bigCo0180 a ex:Company .
+
+ex:bigCo0181 a ex:Company .
+
+ex:bigCo0182 a ex:Company .
+
+ex:bigCo0183 a ex:Company .
+
+ex:bigCo0184 a ex:Company .
+
+ex:bigCo0185 a ex:Company .
+
+ex:bigCo0186 a ex:Company .
+
+ex:bigCo0187 a ex:Company .
+
+ex:bigCo0188 a ex:Company .
+
+ex:bigCo0189 a ex:Company .
+
+ex:bigCo0190 a ex:Company .
+
+ex:bigCo0191 a ex:Company .
+
+ex:bigCo0192 a ex:Company .
+
+ex:bigCo0193 a ex:Company .
+
+ex:bigCo0194 a ex:Company .
+
+ex:bigCo0195 a ex:Company .
+
+ex:bigCo0196 a ex:Company .
+
+ex:bigCo0197 a ex:Company .
+
+ex:bigCo0198 a ex:Company .
+
+ex:bigCo0199 a ex:Company .
+
+ex:bigCo0200 a ex:Company .
+
+ex:bigCo0201 a ex:Company .
+
+ex:bigCo0202 a ex:Company .
+
+ex:bigCo0203 a ex:Company .
+
+ex:bigCo0204 a ex:Company .
+
+ex:bigCo0205 a ex:Company .
+
+ex:bigCo0206 a ex:Company .
+
+ex:bigCo0207 a ex:Company .
+
+ex:bigCo0208 a ex:Company .
+
+ex:bigCo0209 a ex:Company .
+
+ex:bigCo0210 a ex:Company .
+
+ex:bigCo0211 a ex:Company .
+
+ex:bigCo0212 a ex:Company .
+
+ex:bigCo0213 a ex:Company .
+
+ex:bigCo0214 a ex:Company .
+
+ex:bigCo0215 a ex:Company .
+
+ex:bigCo0216 a ex:Company .
+
+ex:bigCo0217 a ex:Company .
+
+ex:bigCo0218 a ex:Company .
+
+ex:bigCo0219 a ex:Company .
+
+ex:bigCo0220 a ex:Company .
+
+ex:bigCo0221 a ex:Company .
+
+ex:bigCo0222 a ex:Company .
+
+ex:bigCo0223 a ex:Company .
+
+ex:bigCo0224 a ex:Company .
+
+ex:bigCo0225 a ex:Company .
+
+ex:bigCo0226 a ex:Company .
+
+ex:bigCo0227 a ex:Company .
+
+ex:bigCo0228 a ex:Company .
+
+ex:bigCo0229 a ex:Company .
+
+ex:bigCo0230 a ex:Company .
+
+ex:bigCo0231 a ex:Company .
+
+ex:bigCo0232 a ex:Company .
+
+ex:bigCo0233 a ex:Company .
+
+ex:bigCo0234 a ex:Company .
+
+ex:bigCo0235 a ex:Company .
+
+ex:bigCo0236 a ex:Company .
+
+ex:bigCo0237 a ex:Company .
+
+ex:bigCo0238 a ex:Company .
+
+ex:bigCo0239 a ex:Company .
+
+ex:bigCo0240 a ex:Company .
+
+ex:bigCo0241 a ex:Company .
+
+ex:bigCo0242 a ex:Company .
+
+ex:bigCo0243 a ex:Company .
+
+ex:bigCo0244 a ex:Company .
+
+ex:bigCo0245 a ex:Company .
+
+ex:bigCo0246 a ex:Company .
+
+ex:bigCo0247 a ex:Company .
+
+ex:bigCo0248 a ex:Company .
+
+ex:bigCo0249 a ex:Company .
+
+ex:bigCo0250 a ex:Company .
+
+ex:bigCo0251 a ex:Company .
+
+ex:bigCo0252 a ex:Company .
+
+ex:bigCo0253 a ex:Company .
+
+ex:bigCo0254 a ex:Company .
+
+ex:bigCo0255 a ex:Company .
+
+ex:bigCo0256 a ex:Company .
+
+ex:bigCo0257 a ex:Company .
+
+ex:bigCo0258 a ex:Company .
+
+ex:bigCo0259 a ex:Company .
+
+ex:bigCo0260 a ex:Company .
+
+ex:bigCo0261 a ex:Company .
+
+ex:bigCo0262 a ex:Company .
+
+ex:bigCo0263 a ex:Company .
+
+ex:bigCo0264 a ex:Company .
+
+ex:bigCo0265 a ex:Company .
+
+ex:bigCo0266 a ex:Company .
+
+ex:bigCo0267 a ex:Company .
+
+ex:bigCo0268 a ex:Company .
+
+ex:bigCo0269 a ex:Company .
+
+ex:bigCo0270 a ex:Company .
+
+ex:bigCo0271 a ex:Company .
+
+ex:bigCo0272 a ex:Company .
+
+ex:bigCo0273 a ex:Company .
+
+ex:bigCo0274 a ex:Company .
+
+ex:bigCo0275 a ex:Company .
+
+ex:bigCo0276 a ex:Company .
+
+ex:bigCo0277 a ex:Company .
+
+ex:bigCo0278 a ex:Company .
+
+ex:bigCo0279 a ex:Company .
+
+ex:bigCo0280 a ex:Company .
+
+ex:bigCo0281 a ex:Company .
+
+ex:bigCo0282 a ex:Company .
+
+ex:bigCo0283 a ex:Company .
+
+ex:bigCo0284 a ex:Company .
+
+ex:bigCo0285 a ex:Company .
+
+ex:bigCo0286 a ex:Company .
+
+ex:bigCo0287 a ex:Company .
+
+ex:bigCo0288 a ex:Company .
+
+ex:bigCo0289 a ex:Company .
+
+ex:bigCo0290 a ex:Company .
+
+ex:bigCo0291 a ex:Company .
+
+ex:bigCo0292 a ex:Company .
+
+ex:bigCo0293 a ex:Company .
+
+ex:bigCo0294 a ex:Company .
+
+ex:bigCo0295 a ex:Company .
+
+ex:bigCo0296 a ex:Company .
+
+ex:bigCo0297 a ex:Company .
+
+ex:bigCo0298 a ex:Company .
+
+ex:bigCo0299 a ex:Company .
+
+ex:bigCo0300 a ex:Company .
+
+ex:bigCo0301 a ex:Company .
+
+ex:bigCo0302 a ex:Company .
+
+ex:bigCo0303 a ex:Company .
+
+ex:bigCo0304 a ex:Company .
+
+ex:bigCo0305 a ex:Company .
+
+ex:bigCo0306 a ex:Company .
+
+ex:bigCo0307 a ex:Company .
+
+ex:bigCo0308 a ex:Company .
+
+ex:bigCo0309 a ex:Company .
+
+ex:bigCo0310 a ex:Company .
+
+ex:bigCo0311 a ex:Company .
+
+ex:bigCo0312 a ex:Company .
+
+ex:bigCo0313 a ex:Company .
+
+ex:bigCo0314 a ex:Company .
+
+ex:bigCo0315 a ex:Company .
+
+ex:bigCo0316 a ex:Company .
+
+ex:bigCo0317 a ex:Company .
+
+ex:bigCo0318 a ex:Company .
+
+ex:bigCo0319 a ex:Company .
+
+ex:bigCo0320 a ex:Company .
+
+ex:bigCo0321 a ex:Company .
+
+ex:bigCo0322 a ex:Company .
+
+ex:bigCo0323 a ex:Company .
+
+ex:bigCo0324 a ex:Company .
+
+ex:bigCo0325 a ex:Company .
+
+ex:bigCo0326 a ex:Company .
+
+ex:bigCo0327 a ex:Company .
+
+ex:bigCo0328 a ex:Company .
+
+ex:bigCo0329 a ex:Company .
+
+ex:bigCo0330 a ex:Company .
+
+ex:bigCo0331 a ex:Company .
+
+ex:bigCo0332 a ex:Company .
+
+ex:bigCo0333 a ex:Company .
+
+ex:bigCo0334 a ex:Company .
+
+ex:bigCo0335 a ex:Company .
+
+ex:bigCo0336 a ex:Company .
+
+ex:bigCo0337 a ex:Company .
+
+ex:bigCo0338 a ex:Company .
+
+ex:bigCo0339 a ex:Company .
+
+ex:bigCo0340 a ex:Company .
+
+ex:bigCo0341 a ex:Company .
+
+ex:bigCo0342 a ex:Company .
+
+ex:bigCo0343 a ex:Company .
+
+ex:bigCo0344 a ex:Company .
+
+ex:bigCo0345 a ex:Company .
+
+ex:bigCo0346 a ex:Company .
+
+ex:bigCo0347 a ex:Company .
+
+ex:bigCo0348 a ex:Company .
+
+ex:bigCo0349 a ex:Company .
+
+ex:bigCo0350 a ex:Company .
+
+ex:bigCo0351 a ex:Company .
+
+ex:bigCo0352 a ex:Company .
+
+ex:bigCo0353 a ex:Company .
+
+ex:bigCo0354 a ex:Company .
+
+ex:bigCo0355 a ex:Company .
+
+ex:bigCo0356 a ex:Company .
+
+ex:bigCo0357 a ex:Company .
+
+ex:bigCo0358 a ex:Company .
+
+ex:bigCo0359 a ex:Company .
+
+ex:bigCo0360 a ex:Company .
+
+ex:bigCo0361 a ex:Company .
+
+ex:bigCo0362 a ex:Company .
+
+ex:bigCo0363 a ex:Company .
+
+ex:bigCo0364 a ex:Company .
+
+ex:bigCo0365 a ex:Company .
+
+ex:bigCo0366 a ex:Company .
+
+ex:bigCo0367 a ex:Company .
+
+ex:bigCo0368 a ex:Company .
+
+ex:bigCo0369 a ex:Company .
+
+ex:bigCo0370 a ex:Company .
+
+ex:bigCo0371 a ex:Company .
+
+ex:bigCo0372 a ex:Company .
+
+ex:bigCo0373 a ex:Company .
+
+ex:bigCo0374 a ex:Company .
+
+ex:bigCo0375 a ex:Company .
+
+ex:bigCo0376 a ex:Company .
+
+ex:bigCo0377 a ex:Company .
+
+ex:bigCo0378 a ex:Company .
+
+ex:bigCo0379 a ex:Company .
+
+ex:bigCo0380 a ex:Company .
+
+ex:bigCo0381 a ex:Company .
+
+ex:bigCo0382 a ex:Company .
+
+ex:bigCo0383 a ex:Company .
+
+ex:bigCo0384 a ex:Company .
+
+ex:bigCo0385 a ex:Company .
+
+ex:bigCo0386 a ex:Company .
+
+ex:bigCo0387 a ex:Company .
+
+ex:bigCo0388 a ex:Company .
+
+ex:bigCo0389 a ex:Company .
+
+ex:bigCo0390 a ex:Company .
+
+ex:bigCo0391 a ex:Company .
+
+ex:bigCo0392 a ex:Company .
+
+ex:bigCo0393 a ex:Company .
+
+ex:bigCo0394 a ex:Company .
+
+ex:bigCo0395 a ex:Company .
+
+ex:bigCo0396 a ex:Company .
+
+ex:bigCo0397 a ex:Company .
+
+ex:bigCo0398 a ex:Company .
+
+ex:bigCo0399 a ex:Company .
+
+ex:bigCo0400 a ex:Company .
+
+ex:bigCo0401 a ex:Company .
+
+ex:bigCo0402 a ex:Company .
+
+ex:bigCo0403 a ex:Company .
+
+ex:bigCo0404 a ex:Company .
+
+ex:bigCo0405 a ex:Company .
+
+ex:bigCo0406 a ex:Company .
+
+ex:bigCo0407 a ex:Company .
+
+ex:bigCo0408 a ex:Company .
+
+ex:bigCo0409 a ex:Company .
+
+ex:bigCo0410 a ex:Company .
+
+ex:bigCo0411 a ex:Company .
+
+ex:bigCo0412 a ex:Company .
+
+ex:bigCo0413 a ex:Company .
+
+ex:bigCo0414 a ex:Company .
+
+ex:bigCo0415 a ex:Company .
+
+ex:bigCo0416 a ex:Company .
+
+ex:bigCo0417 a ex:Company .
+
+ex:bigCo0418 a ex:Company .
+
+ex:bigCo0419 a ex:Company .
+
+ex:bigCo0420 a ex:Company .
+
+ex:bigCo0421 a ex:Company .
+
+ex:bigCo0422 a ex:Company .
+
+ex:bigCo0423 a ex:Company .
+
+ex:bigCo0424 a ex:Company .
+
+ex:bigCo0425 a ex:Company .
+
+ex:bigCo0426 a ex:Company .
+
+ex:bigCo0427 a ex:Company .
+
+ex:bigCo0428 a ex:Company .
+
+ex:bigCo0429 a ex:Company .
+
+ex:bigCo0430 a ex:Company .
+
+ex:bigCo0431 a ex:Company .
+
+ex:bigCo0432 a ex:Company .
+
+ex:bigCo0433 a ex:Company .
+
+ex:bigCo0434 a ex:Company .
+
+ex:bigCo0435 a ex:Company .
+
+ex:bigCo0436 a ex:Company .
+
+ex:bigCo0437 a ex:Company .
+
+ex:bigCo0438 a ex:Company .
+
+ex:bigCo0439 a ex:Company .
+
+ex:bigCo0440 a ex:Company .
+
+ex:bigCo0441 a ex:Company .
+
+ex:bigCo0442 a ex:Company .
+
+ex:bigCo0443 a ex:Company .
+
+ex:bigCo0444 a ex:Company .
+
+ex:bigCo0445 a ex:Company .
+
+ex:bigCo0446 a ex:Company .
+
+ex:bigCo0447 a ex:Company .
+
+ex:bigCo0448 a ex:Company .
+
+ex:bigCo0449 a ex:Company .
+
+ex:bigCo0450 a ex:Company .
+
+ex:bigCo0451 a ex:Company .
+
+ex:bigCo0452 a ex:Company .
+
+ex:bigCo0453 a ex:Company .
+
+ex:bigCo0454 a ex:Company .
+
+ex:bigCo0455 a ex:Company .
+
+ex:bigCo0456 a ex:Company .
+
+ex:bigCo0457 a ex:Company .
+
+ex:bigCo0458 a ex:Company .
+
+ex:bigCo0459 a ex:Company .
+
+ex:bigCo0460 a ex:Company .
+
+ex:bigCo0461 a ex:Company .
+
+ex:bigCo0462 a ex:Company .
+
+ex:bigCo0463 a ex:Company .
+
+ex:bigCo0464 a ex:Company .
+
+ex:bigCo0465 a ex:Company .
+
+ex:bigCo0466 a ex:Company .
+
+ex:bigCo0467 a ex:Company .
+
+ex:bigCo0468 a ex:Company .
+
+ex:bigCo0469 a ex:Company .
+
+ex:bigCo0470 a ex:Company .
+
+ex:bigCo0471 a ex:Company .
+
+ex:bigCo0472 a ex:Company .
+
+ex:bigCo0473 a ex:Company .
+
+ex:bigCo0474 a ex:Company .
+
+ex:bigCo0475 a ex:Company .
+
+ex:bigCo0476 a ex:Company .
+
+ex:bigCo0477 a ex:Company .
+
+ex:bigCo0478 a ex:Company .
+
+ex:bigCo0479 a ex:Company .
+
+ex:bigCo0480 a ex:Company .
+
+ex:bigCo0481 a ex:Company .
+
+ex:bigCo0482 a ex:Company .
+
+ex:bigCo0483 a ex:Company .
+
+ex:bigCo0484 a ex:Company .
+
+ex:bigCo0485 a ex:Company .
+
+ex:bigCo0486 a ex:Company .
+
+ex:bigCo0487 a ex:Company .
+
+ex:bigCo0488 a ex:Company .
+
+ex:bigCo0489 a ex:Company .
+
+ex:bigCo0490 a ex:Company .
+
+ex:bigCo0491 a ex:Company .
+
+ex:bigCo0492 a ex:Company .
+
+ex:bigCo0493 a ex:Company .
+
+ex:bigCo0494 a ex:Company .
+
+ex:bigCo0495 a ex:Company .
+
+ex:bigCo0496 a ex:Company .
+
+ex:bigCo0497 a ex:Company .
+
+ex:bigCo0498 a ex:Company .
+
+ex:bigCo0499 a ex:Company .
+
+ex:bigCo0500 a ex:Company .
+
+ex:bigCo0501 a ex:Company .
+
+ex:bigCo0502 a ex:Company .
+
+ex:bigCo0503 a ex:Company .
+
+ex:bigCo0504 a ex:Company .
+
+ex:bigCo0505 a ex:Company .
+
+ex:bigCo0506 a ex:Company .
+
+ex:bigCo0507 a ex:Company .
+
+ex:bigCo0508 a ex:Company .
+
+ex:bigCo0509 a ex:Company .
+
+ex:bigCo0510 a ex:Company .
+
+ex:bigCo0511 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0512 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0513 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0514 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0515 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0516 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0517 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0518 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0519 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0520 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0521 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0522 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0523 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0524 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0525 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0526 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0527 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0528 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0529 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0530 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0531 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0532 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0533 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0534 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0535 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0536 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0537 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0538 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0539 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0540 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0541 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0542 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0543 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0544 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0545 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0546 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0547 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0548 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0549 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0550 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0551 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0552 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0553 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0554 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0555 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0556 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0557 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0558 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0559 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0560 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0561 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0562 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0563 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0564 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0565 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0566 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0567 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0568 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0569 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0570 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0571 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0572 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0573 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0574 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0575 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0576 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0577 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0578 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0579 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0580 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0581 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0582 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0583 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0584 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0585 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0586 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0587 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0588 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0589 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0590 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0591 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0592 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0593 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0594 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0595 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0596 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0597 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0598 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0599 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0600 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0601 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0602 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0603 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0604 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0605 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0606 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0607 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0608 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0609 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0610 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0611 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0612 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0613 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0614 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0615 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0616 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0617 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0618 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0619 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0620 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0621 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0622 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0623 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0624 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0625 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0626 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0627 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0628 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0629 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0630 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0631 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0632 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0633 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0634 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0635 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0636 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0637 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0638 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0639 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0640 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0641 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0642 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0643 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0644 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0645 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0646 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0647 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0648 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0649 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0650 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0651 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0652 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0653 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0654 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0655 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0656 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0657 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0658 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0659 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0660 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0661 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0662 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0663 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0664 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0665 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0666 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0667 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0668 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0669 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0670 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0671 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0672 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0673 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0674 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0675 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0676 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0677 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0678 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0679 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0680 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0681 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0682 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0683 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0684 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0685 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0686 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0687 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0688 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0689 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0690 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0691 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0692 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0693 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0694 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0695 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0696 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0697 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0698 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0699 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0700 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0701 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0702 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0703 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0704 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0705 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0706 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0707 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0708 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0709 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0710 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0711 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0712 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0713 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0714 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0715 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0716 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0717 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0718 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0719 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0720 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0721 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0722 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0723 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0724 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0725 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0726 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0727 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0728 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0729 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0730 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0731 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0732 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0733 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0734 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0735 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0736 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0737 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0738 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0739 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0740 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0741 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0742 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0743 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0744 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0745 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0746 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0747 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0748 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0749 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0750 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0751 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0752 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0753 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0754 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0755 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0756 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0757 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0758 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0759 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0760 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0761 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0762 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0763 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0764 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0765 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0766 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0767 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0768 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0769 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0770 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0771 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0772 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0773 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0774 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0775 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0776 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0777 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0778 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0779 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0780 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0781 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0782 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0783 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0784 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0785 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0786 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0787 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0788 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0789 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0790 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0791 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0792 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0793 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0794 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0795 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0796 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0797 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0798 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0799 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0800 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0801 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0802 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0803 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0804 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0805 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0806 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0807 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0808 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0809 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0810 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0811 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0812 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0813 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0814 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0815 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0816 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0817 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0818 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0819 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0820 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0821 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0822 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0823 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0824 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0825 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0826 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0827 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0828 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0829 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0830 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0831 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0832 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0833 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0834 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0835 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0836 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0837 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0838 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0839 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0840 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0841 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0842 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0843 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0844 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0845 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0846 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0847 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0848 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0849 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0850 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0851 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0852 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0853 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0854 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0855 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0856 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0857 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0858 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0859 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0860 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0861 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0862 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0863 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0864 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0865 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0866 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0867 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0868 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0869 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0870 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0871 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0872 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0873 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0874 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0875 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0876 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0877 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0878 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0879 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0880 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0881 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0882 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0883 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0884 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0885 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0886 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0887 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0888 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0889 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0890 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0891 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0892 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0893 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0894 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0895 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0896 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0897 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0898 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0899 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0900 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0901 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0902 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0903 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0904 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0905 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0906 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0907 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0908 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0909 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0910 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0911 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0912 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0913 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0914 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0915 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0916 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0917 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0918 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0919 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0920 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0921 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0922 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0923 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0924 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0925 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0926 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0927 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0928 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0929 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0930 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0931 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0932 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0933 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0934 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0935 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0936 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0937 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0938 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0939 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0940 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0941 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0942 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0943 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0944 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0945 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0946 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0947 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0948 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0949 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0950 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0951 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0952 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0953 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0954 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0955 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0956 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0957 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0958 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0959 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0960 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0961 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0962 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0963 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0964 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0965 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0966 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0967 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0968 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0969 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0970 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0971 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0972 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0973 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0974 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0975 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0976 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0977 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0978 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0979 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0980 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0981 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0982 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0983 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0984 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0985 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0986 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0987 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0988 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0989 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0990 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0991 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0992 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0993 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0994 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0995 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0996 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0997 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0998 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no.
+
+ex:bigCo0999 a ex:Company ;
+	rdfs:label "Big Co", "Big Co"@en, "Stor bedrift"@no,  "Stor bedrift INVALID"@no.
+}

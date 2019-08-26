@@ -1,0 +1,4 @@
+SELECT
+   S
+FROM	
+   {S} ex:property {O}

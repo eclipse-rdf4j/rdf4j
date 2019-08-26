@@ -1,0 +1,11 @@
+# spif
+org.eclipse.rdf4j.spin.function.spif.ForEach
+org.eclipse.rdf4j.spin.function.spif.For
+org.eclipse.rdf4j.spin.function.spif.Split
+# apf
+org.eclipse.rdf4j.spin.function.apf.StrSplit
+org.eclipse.rdf4j.spin.function.apf.ConcatTupleFunction
+# list
+org.eclipse.rdf4j.spin.function.list.Member
+org.eclipse.rdf4j.spin.function.list.Index
+org.eclipse.rdf4j.spin.function.list.Length

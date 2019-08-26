@@ -1,0 +1,2 @@
+CONSTRUCT DISTINCT *
+FROM {X} <http://example.org/propB> {"liter\"al"}

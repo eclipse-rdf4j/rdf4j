@@ -1,0 +1,12 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix pr: <http://www.openrdf.org/config/repository/proxy#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "proxy" ;
+   rdfs:label "Test Proxy for 'memory'" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:ProxyRepository" ;
+      pr:proxiedID "memory" ;
+   ].

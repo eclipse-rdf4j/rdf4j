@@ -1,0 +1,3 @@
+# Output file for RDF Model Theory inferencer test case
+# The inferred triples should at least contain the following triple(s):
+<http://example.org/A> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://example.org/C>.

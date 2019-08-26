@@ -1,0 +1,10 @@
+# Input file for SeRQL CfwQuery test
+# description: query for datatyped literals.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix ex: <http://example.org/>.
+
+[] rdf:type ex:Person;
+   ex:name "NameA".
+
+[] rdf:type ex:Person;
+   ex:name "NameB".

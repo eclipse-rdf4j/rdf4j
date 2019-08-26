@@ -1,0 +1,11 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+ex:ExampleShape
+ a sh:NodeShape ;
+ sh:targetClass <http://example.rdf4j.org/ns/example> ;
+ sh:property ex:ExampleShapeProperty .
+
+ex:ExampleShapeProperty
+  sh:path ex:age ;
+  sh:minCount 1 .
