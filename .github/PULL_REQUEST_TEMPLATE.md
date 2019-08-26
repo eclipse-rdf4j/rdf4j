@@ -1,5 +1,5 @@
 
-This PR addresses GitHub issue: eclipse/rdf4j# .
+This PR addresses GitHub issue: # .
 
 Briefly describe the changes proposed in this PR:
 
