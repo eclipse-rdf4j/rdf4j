@@ -162,4 +162,13 @@ public class QueryPrologLexerTest {
 			fail("malformed query should not make lexer fail");
 		}
 	}
+	
+	@Test
+	public void testFinalTokenSyntaxErrorPrefix() {
+		try {
+			Token t = QueryPrologLexer.getRestOfQueryToken("PREFIX");
+		} catch (Exception e) {
+			fail("Malformed query should not make lexer throw Exception");
+		}	
+	}
 }
