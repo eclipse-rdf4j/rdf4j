@@ -29,6 +29,7 @@ public class LogLevelTest extends AbstractSettingTest {
 	private Level originalLevel;
 
 	@Before
+	@Override
 	public void setUp() {
 		originalLevel = ((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 		settings.put(LogLevel.NAME, new LogLevel());
