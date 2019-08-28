@@ -116,39 +116,39 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
 
 	/**
-	 * Get console width setting Use a new console width setting when not found.
+	 * Get console width setting.
 	 * 
-	 * @return boolean
+	 * @return width in columns
 	 */
 	private int getConsoleWidth() {
-		return ((ConsoleWidth) settings.getOrDefault(ConsoleWidth.NAME, new ConsoleWidth())).get();
+		return ((ConsoleWidth) settings.get(ConsoleWidth.NAME)).get();
 	}
 
 	/**
-	 * Get query prefix setting Use a new query prefix setting when not found.
+	 * Get query prefix setting.
 	 * 
-	 * @return boolean
+	 * @return true if prefixes are used for querying
 	 */
 	private boolean getQueryPrefix() {
-		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
+		return ((QueryPrefix) settings.get(QueryPrefix.NAME)).get();
 	}
 
 	/**
-	 * Get show prefix setting Use a new show prefix setting when not found.
+	 * Get show prefix setting.
 	 * 
-	 * @return boolean
+	 * @return true if prefixes are used for displaying.
 	 */
 	private boolean getShowPrefix() {
-		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
+		return ((ShowPrefix) settings.get(ShowPrefix.NAME)).get();
 	}
 
 	/**
-	 * Get a set of namespaces Use a list of default namespaces when not found.
+	 * Get a set of namespaces
 	 * 
-	 * @return boolean
+	 * @return set of namespace prefixes
 	 */
 	private Set<Namespace> getPrefixes() {
-		return ((Prefixes) settings.getOrDefault(Prefixes.NAME, new Prefixes())).get();
+		return ((Prefixes) settings.get(Prefixes.NAME)).get();
 	}
 
 	/**
@@ -157,7 +157,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @return path of working dir
 	 */
 	private Path getWorkDir() {
-		return ((WorkDir) settings.getOrDefault(WorkDir.NAME, new WorkDir())).get();
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
 	}
 
 	/**

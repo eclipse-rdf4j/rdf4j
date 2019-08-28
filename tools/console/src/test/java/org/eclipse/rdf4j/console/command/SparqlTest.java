@@ -11,12 +11,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -24,9 +20,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertTrue;
 
@@ -45,20 +39,14 @@ public class SparqlTest extends AbstractCommandTest {
 
 	private Sparql sparql;
 
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
-
 	@Before
 	public void setUp() throws IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
-		manager.initialize();
 
 		addRepositories("sparql", MEMORY_MEMBER);
-
-		Map<String, ConsoleSetting> settings = new HashMap<>();
-		settings.put(WorkDir.NAME, new WorkDir(LOCATION.getRoot().toPath()));
-
-		TupleAndGraphQueryEvaluator tqe = new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState, settings);
+		setDefaultSettings();
+		TupleAndGraphQueryEvaluator tqe = new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState,
+				defaultSettings);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
 
 		sparql = new Sparql(tqe);
