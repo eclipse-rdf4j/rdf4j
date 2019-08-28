@@ -21,9 +21,6 @@ import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
 
-import org.jline.reader.EndOfFileException;
-import org.jline.reader.UserInterruptException;
-
 import org.eclipse.rdf4j.console.command.Clear;
 import org.eclipse.rdf4j.console.command.Close;
 import org.eclipse.rdf4j.console.command.Connect;
@@ -51,8 +48,13 @@ import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.LogLevel;
 import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.SaveHistory;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
+
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.UserInterruptException;
 
 /**
  * The RDF4J Console is a command-line application for interacting with RDF4J. It reads commands from standard input and
@@ -194,15 +196,25 @@ public class Console {
 	public Console() throws IOException {
 		APP_CFG.init();
 
+		consoleIO = new ConsoleIO(STATE);
+
+		// propagate console setting to JLine
+		SaveHistory lineHistory = new SaveHistory() {
+			@Override
+			public void set(Boolean val) {
+				super.set(val);
+				consoleIO.getLineReader().setVariable(LineReader.DISABLE_HISTORY, !val);
+			}
+		};
+
 		// Basic console parameters
 		register(new ConsoleWidth());
 		register(new LogLevel());
 		register(new Prefixes());
 		register(new QueryPrefix());
+		register(lineHistory);
 		register(new ShowPrefix());
 		register(new WorkDir());
-
-		consoleIO = new ConsoleIO(STATE);
 
 		this.close = new Close(consoleIO, STATE);
 		this.disconnect = new Disconnect(consoleIO, STATE, close);
@@ -280,6 +292,28 @@ public class Console {
 	}
 
 	/**
+	 * Load history from file
+	 */
+	private void loadHistory() {
+		try {
+			consoleIO.getLineReader().getHistory().load();
+		} catch (IOException ioe) {
+			consoleIO.writeError("Could not load history: " + ioe.getMessage());
+		}
+	}
+
+	/**
+	 * Save JLine history to a file, unless the setting saveHistory is set to false
+	 */
+	private void saveHistory() {
+		try {
+			consoleIO.getLineReader().getHistory().save();
+		} catch (IOException ioe) {
+			consoleIO.writeError("Could not save history: " + ioe.getMessage());
+		}
+	}
+
+	/**
 	 * Start the interactive console, return error code on exit
 	 * 
 	 * @throws IOException
@@ -291,6 +325,7 @@ public class Console {
 		consoleIO.writeln("Type 'help' for help.");
 
 		loadSettings();
+		loadHistory();
 
 		int exitCode = 0;
 		try {
@@ -314,6 +349,7 @@ public class Console {
 		}
 
 		saveSettings();
+		saveHistory();
 
 		if (exitCode != 0) {
 			System.exit(exitCode);

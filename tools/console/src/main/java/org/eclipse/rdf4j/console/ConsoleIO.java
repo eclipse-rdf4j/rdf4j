@@ -10,12 +10,16 @@ package org.eclipse.rdf4j.console;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.rio.RDFParseException;
 
 import org.jline.reader.EndOfFileException;
+import org.jline.reader.History;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.impl.history.DefaultHistory;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 
@@ -45,7 +49,7 @@ public class ConsoleIO {
 	 */
 	public ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();
-		this.input = LineReaderBuilder.builder().terminal(terminal).build();
+		this.input = buildLineReader();
 		this.appInfo = info;
 	}
 
@@ -57,8 +61,32 @@ public class ConsoleIO {
 	 */
 	public ConsoleIO(ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.terminal();
-		this.input = LineReaderBuilder.builder().terminal(terminal).build();
+		this.input = buildLineReader();
 		this.appInfo = info;
+	}
+
+	/**
+	 * Build JLine line reader with default history
+	 * 
+	 * @return line reader
+	 */
+	private LineReader buildLineReader() {
+		History history = new DefaultHistory();
+		LineReader reader = LineReaderBuilder.builder().terminal(this.terminal).history(history).build();
+
+		Path file = Paths.get(appInfo.getDataDirectory().toString(), "history.txt");
+		reader.setVariable(LineReader.HISTORY_FILE, file);
+
+		return reader;
+	}
+
+	/**
+	 * Get the JLine line reader
+	 * 
+	 * @return line reader
+	 */
+	public LineReader getLineReader() {
+		return this.input;
 	}
 
 	/**
