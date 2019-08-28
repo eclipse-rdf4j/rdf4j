@@ -158,6 +158,9 @@ public class QueryPrologLexer {
 			case 'P':
 				// read PREFIX
 				String prefix = readPrefix(input, i);
+				if (prefix == null) {
+					prefix = ""; // prevent NPE on bad input
+				}
 				i = i + prefix.length() + 7; // 6 for prefix keyword, 1 for ':'
 				break;
 			case 'b':
@@ -167,6 +170,9 @@ public class QueryPrologLexer {
 			case '<':
 				// read IRI
 				String iri = readIRI(input, i);
+				if (iri == null) {
+					iri = ""; // prevent NPE on bad input
+				}
 				i += iri.length() + 2; // 2 for opening and closing brackets
 				break;
 			default:
