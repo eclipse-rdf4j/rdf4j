@@ -135,7 +135,7 @@ public class TupleAndGraphQueryEvaluator {
 			}
 		}
 		long endTime = System.nanoTime();
-		consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
+		consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1_000_000 + " ms)");
 	}
 
 	/**

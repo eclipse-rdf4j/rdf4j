@@ -17,11 +17,19 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.Prefixes;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -40,7 +48,10 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
@@ -59,6 +70,9 @@ public class AbstractCommandTest {
 	@Rule
 	public MockitoRule abstractCommandTestMockitoRule = MockitoJUnit.rule(); // .silent();
 
+	@Rule
+	public final TemporaryFolder LOCATION = new TemporaryFolder();
+
 	protected RepositoryManager manager;
 
 	@Mock
@@ -66,6 +80,16 @@ public class AbstractCommandTest {
 
 	@Mock
 	protected ConsoleState mockConsoleState;
+
+	protected Map<String, ConsoleSetting> defaultSettings = new HashMap<>();
+
+	public void setDefaultSettings() {
+		defaultSettings.put(ConsoleWidth.NAME, new ConsoleWidth());
+		defaultSettings.put(Prefixes.NAME, new Prefixes());
+		defaultSettings.put(QueryPrefix.NAME, new QueryPrefix());
+		defaultSettings.put(ShowPrefix.NAME, new ShowPrefix());
+		defaultSettings.put(WorkDir.NAME, new WorkDir(LOCATION.getRoot().toPath()));
+	}
 
 	@After
 	public void tearDown() throws Exception {

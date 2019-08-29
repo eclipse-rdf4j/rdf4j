@@ -37,7 +37,7 @@ public class Close extends ConsoleCommand {
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param appInfo
+	 * @param state
 	 */
 	public Close(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
