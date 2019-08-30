@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Test verify command
@@ -46,6 +47,8 @@ public class VerifyTest extends AbstractCommandTest {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
+		when(info.getDataDirectory()).thenReturn(LOCATION.getRoot());
+
 		io = new ConsoleIO(input, out, info);
 
 		cmd = new Verify(io);

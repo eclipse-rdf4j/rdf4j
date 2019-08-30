@@ -15,9 +15,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import static org.mockito.Mockito.when;
 
 public class ConsoleIOTest {
+	@Rule
+	public final TemporaryFolder LOCATION = new TemporaryFolder();
 
 	private ConsoleIO io;
 
@@ -26,6 +31,8 @@ public class ConsoleIOTest {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
+		when(info.getDataDirectory()).thenReturn(LOCATION.getRoot());
+
 		io = new ConsoleIO(input, out, info);
 	}
 
