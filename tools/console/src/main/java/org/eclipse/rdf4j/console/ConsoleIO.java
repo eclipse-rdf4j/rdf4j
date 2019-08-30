@@ -49,8 +49,8 @@ public class ConsoleIO {
 	 */
 	public ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();
-		this.input = buildLineReader();
 		this.appInfo = info;
+		this.input = buildLineReader();
 	}
 
 	/**
@@ -61,8 +61,8 @@ public class ConsoleIO {
 	 */
 	public ConsoleIO(ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.terminal();
-		this.input = buildLineReader();
 		this.appInfo = info;
+		this.input = buildLineReader();
 	}
 
 	/**
@@ -73,10 +73,8 @@ public class ConsoleIO {
 	private LineReader buildLineReader() {
 		History history = new DefaultHistory();
 		LineReader reader = LineReaderBuilder.builder().terminal(this.terminal).history(history).build();
-
 		Path file = Paths.get(appInfo.getDataDirectory().toString(), "history.txt");
 		reader.setVariable(LineReader.HISTORY_FILE, file);
-
 		return reader;
 	}
 
