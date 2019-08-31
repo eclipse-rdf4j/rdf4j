@@ -24,9 +24,11 @@
 		<module>queryparser</module>
                 <module>http</module>
 		<module>queryrender</module>
-		<module>sail</module>
 		<module>repository</module>
+		<module>sail</module>
 		<module>spin</module>
+		<module>client</module>
+		<module>storage</module>
 	</modules>
 
 	<name>RDF4J Core</name>
