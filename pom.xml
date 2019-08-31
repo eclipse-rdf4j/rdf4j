@@ -47,8 +47,6 @@
 
 	<modules>
 		<module>core</module>
-                <module>client</module>
-                <module>storage</module>
 		<module>tools</module>
 		<module>testsuites</module>
 		<module>bom</module>
