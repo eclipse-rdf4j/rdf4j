@@ -1,4 +1,4 @@
-# Welcome to the Eclipse rdf4j client repository
+# Welcome to the Eclipse rdf4j repository
 
 This is the main code repository for the Eclipse rdf4j project. 
 
