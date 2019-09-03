@@ -15,8 +15,6 @@ To enable GeoSPARQL support, all you need to do is include the `rdf4j-queryalgeb
       <artifactId>rdf4j-queryalgebra-geosparql</artifactId>
     </dependency>
 
-NOTE: this module is currently not included by default in the RDF4J Server, so if you plan to use GeoSPARQL in the RDF4J Server, you will need to download this jar separately and add it to the runtime classpath of the webapp.
-
 # Adding geospatial data to the Repository
 
 By default, RDF4J only supports GeoSPARQL functions on top of geospatial data represented as so-called Well-Known Text (WKT) strings.
