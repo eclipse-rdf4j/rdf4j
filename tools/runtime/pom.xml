@@ -362,6 +362,33 @@
 					<source>1.8</source>
 					<quiet>true</quiet>
 					<additionalparam>${javadoc.opts}</additionalparam>
+					<additionnalDependencies>
+						<additionnalDependency>
+							<groupId>javax.servlet</groupId>
+							<artifactId>javax.servlet-api</artifactId>
+							<version>${servlet.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.elasticsearch</groupId>
+							<artifactId>elasticsearch</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.elasticsearch</groupId>
+							<artifactId>elasticsearch-x-content</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.elasticsearch.client</groupId>
+							<artifactId>transport</artifactId>
+							<version>${elasticsearch.version}</version>
+						</additionnalDependency>
+						<additionnalDependency>
+							<groupId>org.apache.solr</groupId>
+							<artifactId>solr-core</artifactId>
+							<version>${solr.version}</version>
+						</additionnalDependency>
+					</additionnalDependencies>
 					<includeDependencySources>true</includeDependencySources>
 					<dependencySourceIncludes>
 						<dependencySourceIncludes>org.eclipse.rdf4j:*</dependencySourceIncludes>
