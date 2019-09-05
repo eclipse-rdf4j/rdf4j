@@ -11,10 +11,15 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Path;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
+import org.eclipse.rdf4j.console.Util;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -54,14 +59,20 @@ public class Load extends ConsoleCommand {
 				+ "Loads the specified data file into the current repository\n";
 	}
 
+	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
+	 * @param settings
 	 */
-	public Load(ConsoleIO consoleIO, ConsoleState state) {
-		super(consoleIO, state);
+	public Load(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
 	}
 
 	@Override
@@ -95,6 +106,15 @@ public class Load extends ConsoleCommand {
 	}
 
 	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
+	}
+
+	/**
 	 * Load data into a repository
 	 * 
 	 * @param repository repository
@@ -106,13 +126,18 @@ public class Load extends ConsoleCommand {
 		final String dataPath = tokens[1];
 		URL dataURL = null;
 		File dataFile = null;
-		try {
-			dataURL = new URL(dataPath);
-			// dataPath is a URI
-		} catch (MalformedURLException e) {
+
+		if (Util.isHttpOrFile(dataPath)) {
+			try {
+				dataURL = new URL(dataPath);
+			} catch (MalformedURLException e) {
+
+			}
+		} else {
 			// dataPath is a file
-			dataFile = new File(dataPath);
+			dataFile = Util.getNormalizedPath(getWorkDir(), dataPath).toFile();
 		}
+
 		try {
 			addData(repository, baseURI, context, dataURL, dataFile);
 		} catch (RepositoryReadOnlyException e) {

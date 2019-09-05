@@ -51,7 +51,7 @@ public class VerifyTest extends AbstractCommandTest {
 
 		io = new ConsoleIO(input, out, info);
 
-		cmd = new Verify(io);
+		cmd = new Verify(io, defaultSettings);
 	}
 
 	/**

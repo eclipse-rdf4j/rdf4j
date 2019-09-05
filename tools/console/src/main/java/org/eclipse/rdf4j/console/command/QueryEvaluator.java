@@ -14,7 +14,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 import java.util.Arrays;
@@ -28,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
+import org.eclipse.rdf4j.console.Util;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
@@ -115,6 +115,13 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
 
+	@Override
+	public String[] usesSettings() {
+		return new String[] { ConsoleWidth.NAME,
+				Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
+				WorkDir.NAME };
+	}
+
 	/**
 	 * Get console width setting.
 	 * 
@@ -199,10 +206,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(p);
-		}
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
 		if (!p.toFile().canRead()) {
 			throw new IOException("Cannot read file " + p);
 		}
@@ -228,11 +232,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			throw new IllegalArgumentException("Empty file name");
 		}
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(filename);
-		}
-
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
 		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
 			return p;
 		}

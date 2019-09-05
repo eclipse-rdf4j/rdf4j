@@ -53,7 +53,7 @@ public class ExportTest extends AbstractCommandTest {
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
 
-		export = new Export(mockConsoleIO, mockConsoleState);
+		export = new Export(mockConsoleIO, mockConsoleState, defaultSettings);
 	}
 
 	@After

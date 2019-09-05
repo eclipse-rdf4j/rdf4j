@@ -60,6 +60,13 @@ public class PrintHelp extends ConsoleCommand {
 		Help cmd = commands.get(target);
 		if (cmd != null) {
 			consoleIO.writeln(cmd.getHelpLong());
+			if (cmd instanceof ConsoleCommand) {
+				String[] uses = ((ConsoleCommand) cmd).usesSettings();
+				if (uses.length > 0) {
+					consoleIO.writeln();
+					consoleIO.writeln("Uses settings: " + String.join(", ", uses));
+				}
+			}
 		} else {
 			consoleIO.writeln("No additional info available for command " + target);
 		}

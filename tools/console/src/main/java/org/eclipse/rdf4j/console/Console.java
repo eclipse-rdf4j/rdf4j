@@ -239,11 +239,11 @@ public class Console {
 		register(new Create(consoleIO, STATE));
 		register(new Drop(consoleIO, STATE, close));
 		// handling data
-		register(new Verify(consoleIO));
-		register(new Load(consoleIO, STATE));
+		register(new Verify(consoleIO, settingMap));
+		register(new Load(consoleIO, STATE, settingMap));
 		register(new Clear(consoleIO, STATE));
-		register(new Export(consoleIO, STATE));
-		register(new Convert(consoleIO, STATE));
+		register(new Export(consoleIO, STATE, settingMap));
+		register(new Convert(consoleIO, STATE, settingMap));
 		// parameters
 		register(new SetParameters(consoleIO, STATE, settingMap));
 	}

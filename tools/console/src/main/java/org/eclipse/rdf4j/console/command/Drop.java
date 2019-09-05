@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;

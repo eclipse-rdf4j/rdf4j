@@ -41,7 +41,7 @@ public class ConvertTest extends AbstractCommandTest {
 	@Before
 	public void prepare() throws IOException, RDF4JException {
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
-		convert = new Convert(mockConsoleIO, mockConsoleState);
+		convert = new Convert(mockConsoleIO, mockConsoleState, defaultSettings);
 
 		from = LOCATION.newFile("alien.ttl");
 		copyFromResource("convert/alien.ttl", from);

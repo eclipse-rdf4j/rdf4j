@@ -22,4 +22,11 @@ public interface Command {
 	 * @throws IOException if a problem occurs reading or writing
 	 */
 	void execute(String... parameters) throws IOException;
+
+	/**
+	 * Return the names of the settings used.
+	 * 
+	 * @return string array of settings
+	 */
+	String[] usesSettings();
 }

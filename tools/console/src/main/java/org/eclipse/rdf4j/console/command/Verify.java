@@ -14,11 +14,14 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 
 import org.eclipse.rdf4j.IsolationLevels;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.VerificationListener;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -71,13 +74,19 @@ public class Verify extends ConsoleCommand {
 				+ "Verifies the validity of the specified data file\n";
 	}
 
+	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
+	 * @param settings
 	 */
-	public Verify(ConsoleIO consoleIO) {
-		super(consoleIO);
+	public Verify(ConsoleIO consoleIO, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, null, settings);
 	}
 
 	@Override
