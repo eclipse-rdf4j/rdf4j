@@ -16,8 +16,10 @@ import com.google.common.io.Files;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -45,7 +47,6 @@ public class ExportTest extends AbstractCommandTest {
 	@Before
 	public void setUp() throws IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
-		manager.initialize();
 
 		addRepositories("export", MEMORY_MEMBER);
 
@@ -65,7 +66,22 @@ public class ExportTest extends AbstractCommandTest {
 	@Test
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("all.nq");
-		export.execute("export", nq.toString());
+		export.execute("export", nq.getAbsolutePath());
+		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
+
+		assertTrue("File is empty", nq.length() > 0);
+		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
+
+		nq.delete();
+	}
+
+	@Test
+	public final void testExportWorkDir() throws RepositoryException, IOException {
+		WorkDir location = new WorkDir(Paths.get(LOCATION.toString()));
+		export.settings.put(WorkDir.NAME, location);
+
+		File nq = LOCATION.newFile("all.nq");
+		export.execute("export", "all.nq");
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
@@ -77,7 +93,7 @@ public class ExportTest extends AbstractCommandTest {
 	@Test
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("default.nq");
-		export.execute("export", nq.toString(), "null", "http://example.org/ns/context/resurrection");
+		export.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);

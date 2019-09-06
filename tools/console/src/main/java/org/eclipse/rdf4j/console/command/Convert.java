@@ -96,7 +96,7 @@ public class Convert extends ConsoleCommand {
 	 */
 	private void convert(String fileFrom, String fileTo) {
 		// check from
-		Path pathFrom = Util.getPath(fileFrom);
+		Path pathFrom = Util.getNormalizedPath(getWorkDir(), fileFrom);
 		if (pathFrom == null) {
 			consoleIO.writeError("Invalid file name (from) " + fileFrom);
 			return;
@@ -112,7 +112,7 @@ public class Convert extends ConsoleCommand {
 		}
 
 		// check to
-		Path pathTo = Util.getPath(fileTo);
+		Path pathTo = Util.getNormalizedPath(getWorkDir(), fileTo);
 		if (pathTo == null) {
 			consoleIO.writeError("Invalid file name (to) " + pathTo);
 			return;

@@ -73,6 +73,7 @@ public class Util {
 	 * @param file file name
 	 * @return path or null
 	 */
+	@Deprecated
 	public static Path getPath(String file) {
 		Path path = null;
 		try {

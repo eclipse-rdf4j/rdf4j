@@ -115,7 +115,7 @@ public class Export extends ConsoleCommand {
 	 * @throws UnsupportedRDFormatException
 	 */
 	private void export(Repository repository, String fileName, Resource... contexts) {
-		Path path = Util.getPath(fileName);
+		Path path = Util.getNormalizedPath(getWorkDir(), fileName);
 		if (path == null) {
 			consoleIO.writeError("Invalid file name");
 			return;

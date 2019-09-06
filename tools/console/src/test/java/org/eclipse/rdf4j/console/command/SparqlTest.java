@@ -44,7 +44,6 @@ public class SparqlTest extends AbstractCommandTest {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 
 		addRepositories("sparql", MEMORY_MEMBER);
-		setDefaultSettings();
 		TupleAndGraphQueryEvaluator tqe = new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState,
 				defaultSettings);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
