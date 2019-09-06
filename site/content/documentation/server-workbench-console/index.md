@@ -13,7 +13,7 @@ In this chapter, we explain how you can install Rdf4j Server (the actual databas
 Rdf4j Server and Rdf4j Workbench requires the following software:
 
 - Java 8 Runtime Environment (either [OpenJDK](https://openjdk.java.net/) or [Oracle Java](https://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html))
-- A Java Servlet Container that supports Java Servlet API 2.5 and Java Server Pages (JSP) 2.0, or newer. 
+- A Java Servlet Container that supports Java Servlet API 3.1 and Java Server Pages (JSP) 2.2, or newer. 
 
 We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) ([version 9.0](https://tomcat.apache.org/download-90.cgi) at the time of writing).
 
