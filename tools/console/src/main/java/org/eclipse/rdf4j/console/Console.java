@@ -319,13 +319,12 @@ public class Console {
 	 * @throws IOException
 	 */
 	public void start() throws IOException {
-		consoleIO.writeln(APP_CFG.getFullName());
-		consoleIO.writeln();
-		consoleIO.writeln(RDF4J.getVersion());
-		consoleIO.writeln("Type 'help' for help.");
-
 		loadSettings();
 		loadHistory();
+		
+		consoleIO.writeln(APP_CFG.getFullName());
+		consoleIO.writeln("Working dir: " + settingMap.get(WorkDir.NAME).getAsString());
+		consoleIO.writeln("Type 'help' for help.");
 
 		int exitCode = 0;
 		try {
