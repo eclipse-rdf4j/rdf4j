@@ -321,7 +321,7 @@ public class Console {
 	public void start() throws IOException {
 		loadSettings();
 		loadHistory();
-		
+
 		consoleIO.writeln(APP_CFG.getFullName());
 		consoleIO.writeln("Working dir: " + settingMap.get(WorkDir.NAME).getAsString());
 		consoleIO.writeln("Type 'help' for help.");

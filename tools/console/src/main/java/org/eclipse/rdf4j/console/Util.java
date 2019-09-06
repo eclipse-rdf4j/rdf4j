@@ -13,7 +13,6 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
-import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -111,6 +110,9 @@ public class Util {
 		if (!path.isAbsolute() && (workDir != null)) {
 			path = workDir.resolve(file);
 		}
+		System.err.println(path.toString());
+		System.err.println(path.normalize());
+
 		return path.normalize();
 	}
 

@@ -77,11 +77,11 @@ public class ExportTest extends AbstractCommandTest {
 
 	@Test
 	public final void testExportWorkDir() throws RepositoryException, IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.toString()));
+		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
 		export.settings.put(WorkDir.NAME, location);
 
 		File nq = LOCATION.newFile("all.nq");
-		export.execute("export", "all.nq");
+		export.execute("export", nq.getName());
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);

@@ -11,9 +11,7 @@ import com.github.jsonldjava.utils.JsonUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.RDF4JException;
@@ -75,11 +73,11 @@ public class ConvertTest extends AbstractCommandTest {
 
 	@Test
 	public final void testConvertWorkDir() throws IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.toString()));
+		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
 		convert.settings.put(WorkDir.NAME, location);
 
 		File json = LOCATION.newFile("alien.jsonld");
-		convert.execute("convert", from.toString(), json.toString());
+		convert.execute("convert", from.getName(), json.getName());
 
 		assertTrue("File is empty", json.length() > 0);
 
