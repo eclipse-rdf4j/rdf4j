@@ -7,55 +7,37 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sparqlbuilder.util;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 import org.junit.Test;
 
 public class SparqlBuilderUtilsTest {
 
+
 	@Test
-	public void testGetOrCreateAndModifyOptional() {
-		fail("Not yet implemented");
+	public void getBracedStringReturnsBracedWithPadding() {
+		assertThat(SparqlBuilderUtils.getBracedString("string")).isEqualTo("{ string }");
 	}
 
 	@Test
-	public void testAppendAndNewlineIfPresent() {
-		fail("Not yet implemented");
+	public void getBracketedStringReturnsBracketedWithPadding() {
+		assertThat(SparqlBuilderUtils.getBracketedString("string")).isEqualTo("[ string ]");
 	}
 
 	@Test
-	public void testAppendQueryElementIfPresent() {
-		fail("Not yet implemented");
+	public void getQuotedStringReturnsQuotedNoPadding() {
+		assertThat(SparqlBuilderUtils.getQuotedString("string")).isEqualTo("\"string\"");
+	}
+	
+	@Test
+	public void getQuotedStringOnEmptyAddsNoPadding() {
+		assertThat(SparqlBuilderUtils.getQuotedString("")).isEqualTo("\"\"");
 	}
 
 	@Test
-	public void testAppendStringIfPresent() {
-		fail("Not yet implemented");
-	}
-
-	@Test
-	public void testGetBracedString() {
-		fail("Not yet implemented");
-	}
-
-	@Test
-	public void testGetBracketedString() {
-		fail("Not yet implemented");
-	}
-
-	@Test
-	public void testGetParenthesizedString() {
-		fail("Not yet implemented");
-	}
-
-	@Test
-	public void testGetQuotedString() {
-		fail("Not yet implemented");
-	}
-
-	@Test
-	public void testGetLongQuotedString() {
-		fail("Not yet implemented");
+	public void getLongQuotedStringReturnsTripleSingleQuotes() {
+		assertThat(SparqlBuilderUtils.getLongQuotedString("string")).isEqualTo("'''string'''");
 	}
 
 }
