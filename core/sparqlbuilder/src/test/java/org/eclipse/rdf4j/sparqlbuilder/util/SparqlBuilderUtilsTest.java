@@ -8,12 +8,10 @@
 package org.eclipse.rdf4j.sparqlbuilder.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import org.junit.Test;
 
 public class SparqlBuilderUtilsTest {
-
 
 	@Test
 	public void getBracedStringReturnsBracedWithPadding() {
@@ -29,7 +27,7 @@ public class SparqlBuilderUtilsTest {
 	public void getQuotedStringReturnsQuotedNoPadding() {
 		assertThat(SparqlBuilderUtils.getQuotedString("string")).isEqualTo("\"string\"");
 	}
-	
+
 	@Test
 	public void getQuotedStringOnEmptyAddsNoPadding() {
 		assertThat(SparqlBuilderUtils.getQuotedString("")).isEqualTo("\"\"");

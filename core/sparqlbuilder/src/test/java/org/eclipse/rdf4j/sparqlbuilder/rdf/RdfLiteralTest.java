@@ -19,7 +19,7 @@ public class RdfLiteralTest {
 		StringLiteral literal = new StringLiteral("");
 		assertThat(literal.getQueryString()).isEqualTo("\"\"");
 	}
-	
+
 	@Test
 	public void simpleStringLiteralIsNotPadded() {
 		StringLiteral literal = new StringLiteral("foo");
