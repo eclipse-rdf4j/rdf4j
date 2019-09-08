@@ -60,7 +60,7 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		fedxRule.setConfig("validateRepositoryConnections", "false");
 		fedxRule.setConfig("baseDir", "target/tmp/fedxTest");
 
-		File dataConfig = new File(EndpointFactoryTest.class.getResource("dataconfig.ttl").toURI());
+		File dataConfig = new File(EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
 
 		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig);
 
