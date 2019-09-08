@@ -1,0 +1,4 @@
+SELECT ?person ?name ?publication WHERE {
+ ?person rdf:type foaf:Person .
+ ?person foaf:name ?name .
+}

@@ -1,0 +1,15 @@
+#
+# RDF4J configuration template for a FedX Repository
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix fedx: <http://www.fluidops.com/config/fedx#>.
+
+[] a rep:Repository ;
+   rep:repositoryImpl [
+      rep:repositoryType "fedx:FedXRepository" ;
+      fedx:fedxConfig "fedxConfig.prop" ;
+      fedx:dataConfig "dataConfig.ttl" ;
+   ];
+   rep:repositoryID "myFederation" ;
+   rdfs:label "FedX Federation" .

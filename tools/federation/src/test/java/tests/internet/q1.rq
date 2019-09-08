@@ -1,0 +1,5 @@
+select DISTINCT ?conference ?location where { 
+   ?conference <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://data.semanticweb.org/ns/swc/ontology#ConferenceEvent> . 
+   ?conference <http://xmlns.com/foaf/0.1/based_near> ?location .
+   ?location <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Germany> .   
+}

@@ -1,0 +1,8 @@
+# extract all triples
+
+PREFIX : <http://example.org/> 
+
+SELECT (CONCAT(?str1, ?str2) as ?str) WHERE {
+	:str1 ?p ?str1 .
+	:str2 ?p ?str2 .
+}

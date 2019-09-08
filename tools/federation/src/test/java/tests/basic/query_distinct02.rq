@@ -1,0 +1,10 @@
+# make a test for distinct keyword
+
+PREFIX : <http://example.org/> 
+
+SELECT DISTINCT ?y  
+{
+  :s :pred ?p .
+  ?x :type ?y .
+  ?y :p ?p .
+} 

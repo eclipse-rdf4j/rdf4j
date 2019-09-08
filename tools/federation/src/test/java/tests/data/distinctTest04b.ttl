@@ -1,0 +1,4 @@
+@prefix : <http://example.org/> .
+
+:Item1 :o "Hello" .
+

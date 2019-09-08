@@ -1,0 +1,247 @@
+package com.fluidops.fedx.performance;
+
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
+
+import com.fluidops.fedx.performance.RepositoryPerformance.TestVocabulary.DRUGBANK;
+import com.fluidops.fedx.util.FedXUtil;
+
+public class RepositoryPerformance {
+
+	// Convenience variables used for readability
+	private static final ValueFactory VF = FedXUtil.valueFactory();
+    
+	static class TestVocabulary {
+		
+		/**
+	     * Drugbank vocabulary
+	     */
+	    public static class DRUGBANK
+	    {
+	    	public static final String NAMESPACE = "http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/";
+	    	
+			public static final IRI DRUGS = VF.createIRI(NAMESPACE + "drugs");
+
+			public static final IRI SMILES_CANONICAL = VF.createIRI(NAMESPACE + "drugbank/smilesStringCanonical");
+	    }
+	}
+	
+	private static abstract class PerformanceBase {
+		
+		private static final int MAX_INSTANCES = Integer.MAX_VALUE;
+		private static final int N_QUERIES = 100;
+		private ExecutorService executor = Executors.newFixedThreadPool(30);
+		
+		private final IRI type;
+		
+		public PerformanceBase(IRI type)
+		{
+			this.type = type;
+		}
+
+		public void run() throws Exception {
+			
+			RepositoryConnection conn = null;
+			long testStart = System.currentTimeMillis();
+			long start=0;
+			
+			try {
+				System.out.println("Creating connection ...");
+				conn = getConnection();
+				
+				System.out.println("Retrieving instances. Max=" + MAX_INSTANCES);
+				start = System.currentTimeMillis();
+				List<IRI> instances = retrieveInstances(conn);
+				System.out.println(instances.size() + " instances retrieved in " + (System.currentTimeMillis() - start) + "ms");
+				
+				System.out.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
+				List<Future<?>> tasks = new ArrayList<Future<?>>();
+				start = System.currentTimeMillis();
+				int count=0;
+				for (final IRI instance : instances)
+				{
+					if (++count>N_QUERIES)
+						break;
+					
+					// a) synchronously
+//					runQuery(conn, instance);
+					
+					// b) multithreaded
+					final RepositoryConnection _conn = conn;
+					Future<?> task = executor.submit(new Runnable() {						
+						@Override
+						public void run() {
+							try {
+								runQuery(_conn, instance);
+							} catch (Exception e) {
+								System.err.println("Error while performing query evaluation for instance " + instance.stringValue() +": " + e.getMessage());
+							}							
+						}
+					});
+					tasks.add(task);					
+				}
+				
+				// wait for all tasks being finished
+				for (Future<?> task: tasks) {
+					task.get();
+				}
+				System.out.println("Done evaluating queries. Duration " + (System.currentTimeMillis() - start) + "ms");
+				
+				
+			} finally {
+				if (conn!=null)
+					conn.close();
+				shutdown();
+				executor.shutdown();
+			}
+			
+			System.out.println("Done. Overall duration: " + (System.currentTimeMillis() - testStart) + "ms");
+		}
+		
+		private List<IRI> retrieveInstances(RepositoryConnection conn) throws Exception {
+			
+			List<IRI> res = new ArrayList<IRI>();
+			RepositoryResult<Statement> qres = null;
+			try {
+				qres = conn.getStatements(null, RDF.TYPE, type, false);
+				while (qres.hasNext() && res.size()<MAX_INSTANCES) {
+					Statement next = qres.next();
+					res.add((IRI) next.getObject());
+				}
+			} finally {
+				try {
+					if (qres!=null)
+						qres.close();
+				} catch (Exception ignore) {}
+			}
+			return res;
+		}
+		
+		
+		private int runQuery(RepositoryConnection conn, IRI instance) throws Exception
+		{
+			
+			long start = System.currentTimeMillis();
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
+			
+			TupleQueryResult res = null;
+			try {
+				res = query.evaluate();
+				int count = 0;
+				while (res.hasNext()) {
+					res.next();
+					count++;
+				}
+				System.out.println("Instance " + instance.stringValue() + " has " + count + " results. Duration: " + (System.currentTimeMillis()-start) + "ms");
+				return count;
+			} finally {
+				if (res!=null)
+					res.close();
+			}
+		}
+		
+		abstract RepositoryConnection getConnection() throws Exception;
+		
+		abstract void shutdown() throws Exception;			
+	}
+	
+	
+	static class SparqlRepositoryPerformanceTest extends PerformanceBase {
+
+		private final String sparqlEndpoint;
+		
+		public SparqlRepositoryPerformanceTest(IRI type, String sparqlEndpoint)
+		{
+			super(type);
+			this.sparqlEndpoint = sparqlEndpoint;
+		}
+
+		Repository repo = null;
+		
+		@Override
+		RepositoryConnection getConnection() throws Exception {
+			repo = new SPARQLRepository(sparqlEndpoint);
+			repo.initialize();
+			return repo.getConnection();
+		}
+
+		@Override
+		void shutdown() throws Exception {
+			repo.shutDown();
+		}
+		
+	}
+	
+	static class RemoteRepositoryPerformanceTest extends PerformanceBase {
+
+		private final String repositoryServer;
+		private final String repositoryName;
+		
+		public RemoteRepositoryPerformanceTest(IRI type, String repositoryServer, String repositoryName)
+		{
+			super(type);
+			this.repositoryServer = repositoryServer;
+			this.repositoryName =  repositoryName;
+		}
+
+		Repository repo = null;
+		
+		@Override
+		RepositoryConnection getConnection() throws Exception {
+			repo = new HTTPRepository(repositoryServer, repositoryName);
+			repo.initialize();
+			return repo.getConnection();
+		}
+
+		@Override
+		void shutdown() throws Exception {
+			repo.shutDown();
+		}
+		
+	}
+	
+	public static void main(String[] args) {
+		
+		System.out.println("Performance Test with DrugBank drugs.");
+		
+		
+//		for (int i=0; i<1; i++) {
+//			System.out.println("#SparqlRepository");
+//			try {
+//				new SparqlRepositoryPerformanceTest(DRUGBANK.DRUGS, "http://10.212.10.29:8081/openrdf-sesame/repositories/drugbank").run();
+//			} catch (Exception e) {
+//				System.out.println("Error while performing SPARQLRepository test: " + e.getMessage());
+//			}
+			
+			System.out.println("#RemoteRepository");
+			try {
+				new RemoteRepositoryPerformanceTest(DRUGBANK.DRUGS, "http://10.212.10.29:8081/openrdf-sesame", "drugbank").run();
+			} catch (Exception e) {
+				System.out.println("Error while performing RemoteRepository test: " + e.getMessage());
+			}
+//		} 
+
+		
+		System.out.println("done");
+		
+
+	}
+
+}

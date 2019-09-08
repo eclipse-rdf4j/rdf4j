@@ -1,0 +1,22 @@
+# UNION query involving two endpoints + triple from projects endpoint
+
+PREFIX ns1: <http://namespace1.org/>
+PREFIX ns2: <http://namespace2.org/>
+PREFIX ns3: <http://namespace3.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> 
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+
+SELECT ?project ?person ?name WHERE {
+ {
+ 	?person rdf:type ns1:Person .
+ 	?person foaf:name ?name .
+ } UNION
+ {
+ 	?person rdf:type ns2:Person .
+ 	?person foaf:name ?name .
+ }.
+ ?project ns3:responsible ?person .
+ ?project rdf:type ns3:Project .
+}

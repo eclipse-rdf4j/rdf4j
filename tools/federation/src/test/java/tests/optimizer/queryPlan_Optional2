@@ -1,0 +1,17 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "o"
+         ProjectionElem "o2"
+      FedXLeftJoin
+         StatementSourcePattern
+            Var (name=s)
+            Var (name=_const_99282aab_uri, value=http://purl.org/dc/terms/source, anonymous)
+            Var (name=o)
+            StatementSource (id=endpoint1, type=REMOTE)
+            StatementSource (id=endpoint2, type=REMOTE)
+         ExclusiveStatement
+            Var (name=s)
+            Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+            Var (name=o2)
+            StatementSource (id=endpoint2, type=REMOTE)
