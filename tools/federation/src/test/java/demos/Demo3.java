@@ -10,15 +10,14 @@ package demos;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.QueryManager;
+import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
-
-import com.fluidops.fedx.Config;
-import com.fluidops.fedx.FedXFactory;
-import com.fluidops.fedx.QueryManager;
-import com.fluidops.fedx.endpoint.Endpoint;
-import com.fluidops.fedx.endpoint.EndpointFactory;
 
 public class Demo3 {
 

@@ -9,13 +9,12 @@ package demos;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
-
-import com.fluidops.fedx.Config;
-import com.fluidops.fedx.FedXFactory;
-import com.fluidops.fedx.QueryManager;
 
 public class Demo5
 {

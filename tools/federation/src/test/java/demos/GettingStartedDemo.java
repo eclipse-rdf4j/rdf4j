@@ -7,14 +7,13 @@
  *******************************************************************************/
 package demos;
 
+import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-
-import com.fluidops.fedx.Config;
-import com.fluidops.fedx.FedXFactory;
-import com.fluidops.fedx.repository.FedXRepository;
 
 public class GettingStartedDemo {
 
