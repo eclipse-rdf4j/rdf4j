@@ -25,11 +25,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 
-import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 /**
  * @author Dale Visser
@@ -42,13 +39,9 @@ public class DropTest extends AbstractCommandTest {
 
 	private Drop drop;
 
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
-
 	@Before
 	public void setUp() throws UnsupportedEncodingException, IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
-		manager.initialize();
 
 		addRepositories("drop", MEMORY_MEMBER_ID1);
 
@@ -61,12 +54,6 @@ public class DropTest extends AbstractCommandTest {
 	private void setUserDropConfirm(boolean confirm) throws IOException {
 		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"), anyBoolean()))
 				.thenReturn(confirm);
-	}
-
-	@After
-	@Override
-	public void tearDown() throws RDF4JException {
-		manager.shutDown();
 	}
 
 	@Test

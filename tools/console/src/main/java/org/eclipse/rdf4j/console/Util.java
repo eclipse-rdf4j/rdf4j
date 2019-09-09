@@ -110,9 +110,6 @@ public class Util {
 		if (!path.isAbsolute() && (workDir != null)) {
 			path = workDir.resolve(file);
 		}
-		System.err.println(path.toString());
-		System.err.println(path.normalize());
-
 		return path.normalize();
 	}
 

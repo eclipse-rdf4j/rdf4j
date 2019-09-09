@@ -75,7 +75,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final Map<String, ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
@@ -94,8 +93,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param evaluator
 	 */
 	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator) {
-		super(evaluator.getConsoleIO(), evaluator.getConsoleState());
-		this.settings = evaluator.getConsoleSettings();
+		super(evaluator.getConsoleIO(), evaluator.getConsoleState(), evaluator.getConsoleSettings());
 		this.evaluator = evaluator;
 	}
 

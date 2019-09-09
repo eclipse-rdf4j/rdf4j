@@ -12,20 +12,16 @@ import com.github.jsonldjava.utils.JsonUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertTrue;
 
-import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,16 +30,13 @@ import static org.mockito.Mockito.when;
  */
 public class ConvertTest extends AbstractCommandTest {
 
-	private Convert convert;
+	private Convert cmd;
 	private File from;
-
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
 
 	@Before
 	public void prepare() throws IOException, RDF4JException {
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
-		convert = new Convert(mockConsoleIO, mockConsoleState, defaultSettings);
+		cmd = new Convert(mockConsoleIO, mockConsoleState, defaultSettings);
 
 		from = LOCATION.newFile("alien.ttl");
 		copyFromResource("convert/alien.ttl", from);
@@ -58,7 +51,7 @@ public class ConvertTest extends AbstractCommandTest {
 	@Test
 	public final void testConvert() throws IOException {
 		File json = LOCATION.newFile("alien.jsonld");
-		convert.execute("convert", from.getAbsolutePath(), json.getAbsolutePath());
+		cmd.execute("convert", from.getAbsolutePath(), json.getAbsolutePath());
 
 		assertTrue("File is empty", json.length() > 0);
 
@@ -73,11 +66,10 @@ public class ConvertTest extends AbstractCommandTest {
 
 	@Test
 	public final void testConvertWorkDir() throws IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
-		convert.settings.put(WorkDir.NAME, location);
+		setWorkingDir(cmd);
 
 		File json = LOCATION.newFile("alien.jsonld");
-		convert.execute("convert", from.getName(), json.getName());
+		cmd.execute("convert", from.getName(), json.getName());
 
 		assertTrue("File is empty", json.length() > 0);
 
@@ -96,14 +88,14 @@ public class ConvertTest extends AbstractCommandTest {
 		Files.write(wrong.toPath(), "error".getBytes());
 		File json = LOCATION.newFile("empty.jsonld");
 
-		convert.execute("convert", wrong.toString(), json.toString());
+		cmd.execute("convert", wrong.toString(), json.toString());
 		verify(mockConsoleIO).writeError(anyString());
 	}
 
 	@Test
 	public final void testConvertInvalidFormat() throws IOException {
 		File qyx = LOCATION.newFile("alien.qyx");
-		convert.execute("convert", from.toString(), qyx.toString());
+		cmd.execute("convert", from.toString(), qyx.toString());
 		verify(mockConsoleIO).writeError("No RDF writer for " + qyx.toString());
 	}
 }

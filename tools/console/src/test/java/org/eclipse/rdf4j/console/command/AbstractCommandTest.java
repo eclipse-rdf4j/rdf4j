@@ -16,6 +16,7 @@ import java.io.StringReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -187,5 +188,15 @@ public class AbstractCommandTest {
 				.stringValue();
 
 		return repId;
+	}
+
+	/**
+	 * Set working dir setting to root of temporarily folder
+	 * 
+	 * @param cmd console command
+	 */
+	protected void setWorkingDir(ConsoleCommand cmd) {
+		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
+		cmd.settings.put(WorkDir.NAME, location);
 	}
 }

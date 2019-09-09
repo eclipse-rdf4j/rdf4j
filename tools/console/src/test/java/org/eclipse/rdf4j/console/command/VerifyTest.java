@@ -14,20 +14,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 import org.eclipse.rdf4j.RDF4JException;
 import static org.junit.Assert.assertFalse;
 
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -40,9 +36,6 @@ import static org.mockito.Mockito.when;
 public class VerifyTest extends AbstractCommandTest {
 	private Verify cmd;
 	private ConsoleIO io;
-
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
 
 	@Before
 	public void prepare() throws IOException, RDF4JException {
@@ -84,8 +77,8 @@ public class VerifyTest extends AbstractCommandTest {
 
 	@Test
 	public final void testVerifyOKWorkDir() throws IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.toString()));
-		cmd.settings.put(WorkDir.NAME, location);
+		setWorkingDir(cmd);
+
 		copyFromRes("ok.ttl");
 
 		cmd.execute("verify", "ok.ttl");
@@ -134,8 +127,8 @@ public class VerifyTest extends AbstractCommandTest {
 
 	@Test
 	public final void testShaclValidWorkDir() throws IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.toString()));
-		cmd.settings.put(WorkDir.NAME, location);
+		setWorkingDir(cmd);
+
 		copyFromRes("ok.ttl");
 		copyFromRes("shacl_valid.ttl");
 

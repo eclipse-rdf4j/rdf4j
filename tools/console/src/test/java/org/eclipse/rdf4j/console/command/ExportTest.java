@@ -16,21 +16,16 @@ import com.google.common.io.Files;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 
-import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 /**
  * @author Bart Hanssens
@@ -39,10 +34,7 @@ public class ExportTest extends AbstractCommandTest {
 
 	private static final String MEMORY_MEMBER = "alienquads";
 
-	private Export export;
-
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
+	private Export cmd;
 
 	@Before
 	public void setUp() throws IOException, RDF4JException {
@@ -54,19 +46,13 @@ public class ExportTest extends AbstractCommandTest {
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
 
-		export = new Export(mockConsoleIO, mockConsoleState, defaultSettings);
-	}
-
-	@After
-	@Override
-	public void tearDown() throws RDF4JException {
-		manager.shutDown();
+		cmd = new Export(mockConsoleIO, mockConsoleState, defaultSettings);
 	}
 
 	@Test
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("all.nq");
-		export.execute("export", nq.getAbsolutePath());
+		cmd.execute("export", nq.getAbsolutePath());
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
@@ -77,11 +63,10 @@ public class ExportTest extends AbstractCommandTest {
 
 	@Test
 	public final void testExportWorkDir() throws RepositoryException, IOException {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
-		export.settings.put(WorkDir.NAME, location);
+		setWorkingDir(cmd);
 
 		File nq = LOCATION.newFile("all.nq");
-		export.execute("export", nq.getName());
+		cmd.execute("export", nq.getName());
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
@@ -93,7 +78,7 @@ public class ExportTest extends AbstractCommandTest {
 	@Test
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = LOCATION.newFile("default.nq");
-		export.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
+		cmd.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
 		assertTrue("File is empty", nq.length() > 0);
