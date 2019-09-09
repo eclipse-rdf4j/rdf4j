@@ -231,7 +231,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		Path p = Util.getNormalizedPath(getWorkDir(), filename);
-		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
+		if (!p.toFile().exists() || consoleIO.askProceed("File exists, continue ?", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");

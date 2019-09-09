@@ -38,7 +38,7 @@ public class VerifyTest extends AbstractCommandTest {
 	private ConsoleIO io;
 
 	@Before
-	public void prepare() throws IOException, RDF4JException {
+	public void setUp() throws IOException, RDF4JException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);

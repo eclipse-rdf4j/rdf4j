@@ -34,7 +34,7 @@ public class ConvertTest extends AbstractCommandTest {
 	private File from;
 
 	@Before
-	public void prepare() throws IOException, RDF4JException {
+	public void setup() throws IOException, RDF4JException {
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 		cmd = new Convert(mockConsoleIO, mockConsoleState, defaultSettings);
 

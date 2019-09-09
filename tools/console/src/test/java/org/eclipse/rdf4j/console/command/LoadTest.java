@@ -43,8 +43,8 @@ public class LoadTest extends AbstractCommandTest {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 
 		addRepositories("load", MEMORY_MEMBER_ID1);
-
 		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
+
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
 		cmd = new Load(mockConsoleIO, state, defaultSettings);
@@ -66,7 +66,7 @@ public class LoadTest extends AbstractCommandTest {
 		File f = LOCATION.newFile("alien.ttl");
 		copyFromResource("load/alien.ttl", f);
 
-		cmd.execute("load", "ez");
+		cmd.execute("load", f.getName());
 		verify(mockConsoleIO, never()).writeError(anyString());
 	}
 }

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.console.command;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.Model;
@@ -46,6 +45,7 @@ public class SparqlTest extends AbstractCommandTest {
 		TupleAndGraphQueryEvaluator tqe = new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState,
 				defaultSettings);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
+		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 
 		cmd = new Sparql(tqe);
 	}
@@ -115,7 +115,7 @@ public class SparqlTest extends AbstractCommandTest {
 
 	@Test
 	public final void testOutputFileWrongFormat() throws IOException {
-		File f = LOCATION.newFile("outwf.ttl");
+		File f = LOCATION.newFile("out.ttl");
 
 		// SELECT should use sparql result format, not a triple file format
 		cmd.executeQuery("sparql OUTFILE=\"" + f.getAbsolutePath() + "\" select ?s ?p ?o where { ?s ?p ?o }",
@@ -142,17 +142,17 @@ public class SparqlTest extends AbstractCommandTest {
 
 	@Test
 	public final void testInputOutputFilePrefix() throws IOException {
-		File f = LOCATION.newFile("select-prefix.qr");
-		copyFromResource("sparql/select-prefix.qr", f);
+		File fin = LOCATION.newFile("select-prefix.qr");
+		copyFromResource("sparql/select-prefix.qr", fin);
 
-		cmd.executeQuery("sparql infile=\"select-prefix.qr\" outfile=\"out.srj\"", "sparql");
+		File fout = LOCATION.newFile("out.srj");
+
+		cmd.executeQuery("sparql infile=\"" + fin.getAbsolutePath() + "\"" +
+				" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
 
 		verify(mockConsoleIO, never()).writeError(anyString());
 
-		String dir = LOCATION.getRoot().toString();
-		File srj = Paths.get(dir, "out.srj").toFile();
-
-		assertTrue("File does not exist", srj.exists());
-		assertTrue("Empty file", srj.length() > 0);
+		assertTrue("File does not exist", fout.exists());
+		assertTrue("Empty file", fout.length() > 0);
 	}
 }
