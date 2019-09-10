@@ -13,12 +13,14 @@ import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 
 import org.eclipse.rdf4j.IsolationLevels;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.console.VerificationListener;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.WorkDir;
@@ -105,6 +107,15 @@ public class Verify extends ConsoleCommand {
 
 			shacl(dataPath, shaclPath, reportFile);
 		}
+	}
+
+	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
 	}
 
 	/**
@@ -239,15 +250,15 @@ public class Verify extends ConsoleCommand {
 	 * @return URL path as string
 	 */
 	private String parseDataPath(String str) {
-		StringBuilder dataPath = new StringBuilder(str);
+		String path = str;
 		try {
-			new URL(dataPath.toString());
+			new URL(str);
 			// dataPath is a URI
 		} catch (MalformedURLException e) {
 			// File path specified, convert to URL
-			dataPath.insert(0, "file:");
+			path = "file:" + Util.getNormalizedPath(getWorkDir(), str).toString();
 		}
-		return dataPath.toString();
+		return path;
 	}
 
 	/**
