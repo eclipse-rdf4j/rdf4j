@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import org.eclipse.rdf4j.RDF4JException;
 
 import org.junit.After;
+import static org.junit.Assert.assertFalse;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -90,6 +91,7 @@ public class ConvertTest extends AbstractCommandTest {
 
 		cmd.execute("convert", wrong.toString(), json.toString());
 		verify(mockConsoleIO).writeError(anyString());
+		assertFalse(mockConsoleIO.wasErrorWritten());
 	}
 
 	@Test

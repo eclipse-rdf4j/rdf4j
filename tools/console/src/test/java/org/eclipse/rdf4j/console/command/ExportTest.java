@@ -71,8 +71,6 @@ public class ExportTest extends AbstractCommandTest {
 
 		assertTrue("File is empty", nq.length() > 0);
 		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
-
-		nq.delete();
 	}
 
 	@Test
@@ -85,7 +83,5 @@ public class ExportTest extends AbstractCommandTest {
 
 		assertEquals("Number of contexts incorrect", 2, exp.contexts().size());
 		assertEquals("Number of triples incorrect", 4, exp.size());
-
-		nq.delete();
 	}
 }

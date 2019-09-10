@@ -24,8 +24,11 @@ import org.junit.Test;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
+import static org.mockito.ArgumentMatchers.anyString;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -58,8 +61,7 @@ public class VerifyTest extends AbstractCommandTest {
 	 */
 	private String copyFromRes(String str) throws IOException {
 		File f = LOCATION.newFile(str);
-		Files.copy(this.getClass().getResourceAsStream("/verify/" + str), f.toPath(),
-				StandardCopyOption.REPLACE_EXISTING);
+		copyFromResource("verify/" + str, f);
 		return f.getAbsolutePath();
 	}
 
@@ -121,6 +123,8 @@ public class VerifyTest extends AbstractCommandTest {
 	public final void testShaclValid() throws IOException {
 		File report = LOCATION.newFile();
 		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
+
+		verify(mockConsoleIO, never()).writeError(anyString());
 		assertFalse(Files.size(report.toPath()) > 0);
 		assertFalse(io.wasErrorWritten());
 	}
@@ -135,6 +139,7 @@ public class VerifyTest extends AbstractCommandTest {
 		File report = LOCATION.newFile();
 		cmd.execute("verify", "ok.ttl", "shacl_valid.ttl", report.getName());
 
+		verify(mockConsoleIO, never()).writeError(anyString());
 		assertFalse(Files.size(report.toPath()) > 0);
 		assertFalse(io.wasErrorWritten());
 	}

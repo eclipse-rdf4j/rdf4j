@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import static org.junit.Assert.assertFalse;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -135,6 +136,7 @@ public class SparqlTest extends AbstractCommandTest {
 				" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
 
 		verify(mockConsoleIO, never()).writeError(anyString());
+		assertFalse(mockConsoleIO.wasErrorWritten());
 
 		assertTrue("File does not exist", fout.exists());
 		assertTrue("Empty file", fout.length() > 0);
@@ -151,6 +153,7 @@ public class SparqlTest extends AbstractCommandTest {
 				" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
 
 		verify(mockConsoleIO, never()).writeError(anyString());
+		assertFalse(mockConsoleIO.wasErrorWritten());
 
 		assertTrue("File does not exist", fout.exists());
 		assertTrue("Empty file", fout.length() > 0);
