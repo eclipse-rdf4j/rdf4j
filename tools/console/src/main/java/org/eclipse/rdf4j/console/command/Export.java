@@ -13,10 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.Util;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -54,6 +57,22 @@ public class Export extends ConsoleCommand {
 	}
 
 	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings
+	 */
+	public Export(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
+	}
+
+	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
 
@@ -79,6 +98,15 @@ public class Export extends ConsoleCommand {
 	}
 
 	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
+	}
+
+	/**
 	 * Export to a file
 	 * 
 	 * @param repository repository to export
@@ -87,7 +115,7 @@ public class Export extends ConsoleCommand {
 	 * @throws UnsupportedRDFormatException
 	 */
 	private void export(Repository repository, String fileName, Resource... contexts) {
-		Path path = Util.getPath(fileName);
+		Path path = Util.getNormalizedPath(getWorkDir(), fileName);
 		if (path == null) {
 			consoleIO.writeError("Invalid file name");
 			return;
@@ -123,15 +151,5 @@ public class Export extends ConsoleCommand {
 		} catch (IOException | UnsupportedRDFormatException e) {
 			consoleIO.writeError("Failed to export data: " + e.getMessage());
 		}
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 */
-	public Export(ConsoleIO consoleIO, ConsoleState state) {
-		super(consoleIO, state);
 	}
 }

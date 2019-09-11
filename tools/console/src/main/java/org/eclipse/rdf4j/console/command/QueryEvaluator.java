@@ -14,7 +14,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 import java.util.Arrays;
@@ -28,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
+import org.eclipse.rdf4j.console.Util;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
@@ -75,7 +75,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final Map<String, ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
@@ -94,8 +93,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param evaluator
 	 */
 	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator) {
-		super(evaluator.getConsoleIO(), evaluator.getConsoleState());
-		this.settings = evaluator.getConsoleSettings();
+		super(evaluator.getConsoleIO(), evaluator.getConsoleState(), evaluator.getConsoleSettings());
 		this.evaluator = evaluator;
 	}
 
@@ -114,6 +112,13 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param namespaces collection of known namespaces
 	 */
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
+
+	@Override
+	public String[] usesSettings() {
+		return new String[] { ConsoleWidth.NAME,
+				Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
+				WorkDir.NAME };
+	}
 
 	/**
 	 * Get console width setting.
@@ -199,10 +204,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(p);
-		}
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
 		if (!p.toFile().canRead()) {
 			throw new IOException("Cannot read file " + p);
 		}
@@ -228,12 +230,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			throw new IllegalArgumentException("Empty file name");
 		}
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(filename);
-		}
-
-		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
+		if (!p.toFile().exists() || consoleIO.askProceed("File exists, continue ?", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");

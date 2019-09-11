@@ -8,11 +8,13 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
 /**
  * Abstract command
@@ -23,10 +25,12 @@ public abstract class ConsoleCommand implements Command, Help {
 	final ConsoleIO consoleIO;
 	final ConsoleState state;
 
+	final Map<String, ConsoleSetting> settings;
+
 	/**
 	 * Get console IO
 	 * 
-	 * @return
+	 * @return console IO
 	 */
 	public ConsoleIO getConsoleIO() {
 		return this.consoleIO;
@@ -35,10 +39,19 @@ public abstract class ConsoleCommand implements Command, Help {
 	/**
 	 * Get console state
 	 * 
-	 * @return
+	 * @return console state
 	 */
 	public ConsoleState getConsoleState() {
 		return this.state;
+	}
+
+	/**
+	 * Get console settings map
+	 * 
+	 * @return map of console settings
+	 */
+	public Map<String, ConsoleSetting> getConsoleSettings() {
+		return this.settings;
 	}
 
 	/**
@@ -62,8 +75,8 @@ public abstract class ConsoleCommand implements Command, Help {
 	}
 
 	@Override
-	public void execute(String... parameters) throws IOException {
-		throw new UnsupportedOperationException("Not supported yet.");
+	public String[] usesSettings() {
+		return new String[0];
 	}
 
 	/**
@@ -74,6 +87,7 @@ public abstract class ConsoleCommand implements Command, Help {
 	public ConsoleCommand(ConsoleIO consoleIO) {
 		this.consoleIO = consoleIO;
 		this.state = null;
+		this.settings = null;
 	}
 
 	/**
@@ -85,6 +99,24 @@ public abstract class ConsoleCommand implements Command, Help {
 	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state) {
 		this.consoleIO = consoleIO;
 		this.state = state;
+		this.settings = null;
 	}
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO console IO
+	 * @param state     console state
+	 * @param settings  console settings
+	 */
+	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
+		this.consoleIO = consoleIO;
+		this.state = state;
+		this.settings = settings;
+	}
+
+	@Override
+	public void execute(String... parameters) throws IOException {
+		throw new UnsupportedOperationException("Not supported yet.");
+	}
 }

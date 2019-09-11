@@ -20,14 +20,15 @@ import org.eclipse.rdf4j.RDF4JException;
 import static org.junit.Assert.assertFalse;
 
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
+import static org.mockito.ArgumentMatchers.anyString;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -39,11 +40,8 @@ public class VerifyTest extends AbstractCommandTest {
 	private Verify cmd;
 	private ConsoleIO io;
 
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
-
 	@Before
-	public void prepare() throws IOException, RDF4JException {
+	public void setUp() throws IOException, RDF4JException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
@@ -51,7 +49,7 @@ public class VerifyTest extends AbstractCommandTest {
 
 		io = new ConsoleIO(input, out, info);
 
-		cmd = new Verify(io);
+		cmd = new Verify(io, defaultSettings);
 	}
 
 	/**
@@ -63,8 +61,7 @@ public class VerifyTest extends AbstractCommandTest {
 	 */
 	private String copyFromRes(String str) throws IOException {
 		File f = LOCATION.newFile(str);
-		Files.copy(this.getClass().getResourceAsStream("/verify/" + str), f.toPath(),
-				StandardCopyOption.REPLACE_EXISTING);
+		copyFromResource("verify/" + str, f);
 		return f.getAbsolutePath();
 	}
 
@@ -77,6 +74,16 @@ public class VerifyTest extends AbstractCommandTest {
 	@Test
 	public final void testVerifyOK() throws IOException {
 		cmd.execute("verify", copyFromRes("ok.ttl"));
+		assertFalse(io.wasErrorWritten());
+	}
+
+	@Test
+	public final void testVerifyOKWorkDir() throws IOException {
+		setWorkingDir(cmd);
+
+		copyFromRes("ok.ttl");
+
+		cmd.execute("verify", "ok.ttl");
 		assertFalse(io.wasErrorWritten());
 	}
 
@@ -116,6 +123,23 @@ public class VerifyTest extends AbstractCommandTest {
 	public final void testShaclValid() throws IOException {
 		File report = LOCATION.newFile();
 		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
+
+		verify(mockConsoleIO, never()).writeError(anyString());
+		assertFalse(Files.size(report.toPath()) > 0);
+		assertFalse(io.wasErrorWritten());
+	}
+
+	@Test
+	public final void testShaclValidWorkDir() throws IOException {
+		setWorkingDir(cmd);
+
+		copyFromRes("ok.ttl");
+		copyFromRes("shacl_valid.ttl");
+
+		File report = LOCATION.newFile();
+		cmd.execute("verify", "ok.ttl", "shacl_valid.ttl", report.getName());
+
+		verify(mockConsoleIO, never()).writeError(anyString());
 		assertFalse(Files.size(report.toPath()) > 0);
 		assertFalse(io.wasErrorWritten());
 	}

@@ -12,11 +12,14 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.Util;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -51,6 +54,22 @@ public class Convert extends ConsoleCommand {
 	}
 
 	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings
+	 */
+	public Convert(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
+	}
+
+	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 3) {
 			consoleIO.writeln(getHelpLong());
@@ -61,6 +80,15 @@ public class Convert extends ConsoleCommand {
 	}
 
 	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
+	}
+
+	/**
 	 * Convert a file
 	 * 
 	 * @param fileFrom file name
@@ -68,7 +96,7 @@ public class Convert extends ConsoleCommand {
 	 */
 	private void convert(String fileFrom, String fileTo) {
 		// check from
-		Path pathFrom = Util.getPath(fileFrom);
+		Path pathFrom = Util.getNormalizedPath(getWorkDir(), fileFrom);
 		if (pathFrom == null) {
 			consoleIO.writeError("Invalid file name (from) " + fileFrom);
 			return;
@@ -84,7 +112,7 @@ public class Convert extends ConsoleCommand {
 		}
 
 		// check to
-		Path pathTo = Util.getPath(fileTo);
+		Path pathTo = Util.getNormalizedPath(getWorkDir(), fileTo);
 		if (pathTo == null) {
 			consoleIO.writeError("Invalid file name (to) " + pathTo);
 			return;
@@ -124,15 +152,5 @@ public class Convert extends ConsoleCommand {
 		} catch (IOException | RDFParseException | RDFHandlerException e) {
 			consoleIO.writeError("Failed to convert data: " + e.getMessage());
 		}
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 */
-	public Convert(ConsoleIO consoleIO, ConsoleState state) {
-		super(consoleIO, state);
 	}
 }

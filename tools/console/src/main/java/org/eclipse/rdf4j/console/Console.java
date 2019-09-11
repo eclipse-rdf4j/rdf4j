@@ -239,11 +239,11 @@ public class Console {
 		register(new Create(consoleIO, STATE));
 		register(new Drop(consoleIO, STATE, close));
 		// handling data
-		register(new Verify(consoleIO));
-		register(new Load(consoleIO, STATE));
+		register(new Verify(consoleIO, settingMap));
+		register(new Load(consoleIO, STATE, settingMap));
 		register(new Clear(consoleIO, STATE));
-		register(new Export(consoleIO, STATE));
-		register(new Convert(consoleIO, STATE));
+		register(new Export(consoleIO, STATE, settingMap));
+		register(new Convert(consoleIO, STATE, settingMap));
 		// parameters
 		register(new SetParameters(consoleIO, STATE, settingMap));
 	}
@@ -319,13 +319,12 @@ public class Console {
 	 * @throws IOException
 	 */
 	public void start() throws IOException {
-		consoleIO.writeln(APP_CFG.getFullName());
-		consoleIO.writeln();
-		consoleIO.writeln(RDF4J.getVersion());
-		consoleIO.writeln("Type 'help' for help.");
-
 		loadSettings();
 		loadHistory();
+
+		consoleIO.writeln(APP_CFG.getFullName());
+		consoleIO.writeln("Working dir: " + settingMap.get(WorkDir.NAME).getAsString());
+		consoleIO.writeln("Type 'help' for help.");
 
 		int exitCode = 0;
 		try {

@@ -26,7 +26,7 @@ public class WorkDir extends ConsoleSetting<Path> {
 	/**
 	 * Constructor
 	 * 
-	 * Default dir is "."
+	 * Default dir is system property user.dir (= current directory)
 	 */
 	public WorkDir() {
 		super(Paths.get(System.getProperty("user.dir")));

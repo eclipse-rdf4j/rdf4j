@@ -13,12 +13,17 @@ import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 
 import org.eclipse.rdf4j.IsolationLevels;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.console.VerificationListener;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -71,13 +76,19 @@ public class Verify extends ConsoleCommand {
 				+ "Verifies the validity of the specified data file\n";
 	}
 
+	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
+	 * @param settings
 	 */
-	public Verify(ConsoleIO consoleIO) {
-		super(consoleIO);
+	public Verify(ConsoleIO consoleIO, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, null, settings);
 	}
 
 	@Override
@@ -96,6 +107,15 @@ public class Verify extends ConsoleCommand {
 
 			shacl(dataPath, shaclPath, reportFile);
 		}
+	}
+
+	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
 	}
 
 	/**
@@ -230,15 +250,15 @@ public class Verify extends ConsoleCommand {
 	 * @return URL path as string
 	 */
 	private String parseDataPath(String str) {
-		StringBuilder dataPath = new StringBuilder(str);
+		String path = str;
 		try {
-			new URL(dataPath.toString());
+			new URL(str);
 			// dataPath is a URI
 		} catch (MalformedURLException e) {
 			// File path specified, convert to URL
-			dataPath.insert(0, "file:");
+			path = "file:" + Util.getNormalizedPath(getWorkDir(), str).toString();
 		}
-		return dataPath.toString();
+		return path;
 	}
 
 	/**
