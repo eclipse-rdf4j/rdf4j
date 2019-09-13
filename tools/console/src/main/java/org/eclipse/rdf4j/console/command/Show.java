@@ -73,10 +73,10 @@ public class Show extends ConsoleCommand {
 			} else if ("contexts".equals(target) || "c".equals(target)) {
 				showContexts();
 			} else {
-				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
+				writeError("Unknown target '" + tokens[1] + "'");
 			}
 		} else {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		}
 	}
 
@@ -88,9 +88,9 @@ public class Show extends ConsoleCommand {
 			RepositoryManager manager = state.getManager();
 			final Set<String> repIDs = manager.getRepositoryIDs();
 			if (repIDs.isEmpty()) {
-				consoleIO.writeln("--no repositories found--");
+				writeln("No repositories found");
 			} else {
-				consoleIO.writeln(OUTPUT_SEPARATOR);
+				writeln(OUTPUT_SEPARATOR);
 				for (String repID : repIDs) {
 					consoleIO.write("|" + repID);
 
@@ -102,13 +102,12 @@ public class Show extends ConsoleCommand {
 					} catch (RepositoryException e) {
 						consoleIO.write(" [ERROR: " + e.getMessage() + "]");
 					}
-					consoleIO.writeln();
+					writeln("");
 				}
 				consoleIO.writeln(OUTPUT_SEPARATOR);
 			}
 		} catch (RepositoryException e) {
-			consoleIO.writeError("Failed to get repository list: " + e.getMessage());
-			LOGGER.error("Failed to get repository list", e);
+			writeError("Failed to get repository list", e);
 		}
 	}
 
@@ -125,19 +124,18 @@ public class Show extends ConsoleCommand {
 		try (RepositoryConnection con = repository.getConnection()) {
 			try (CloseableIteration<? extends Namespace, RepositoryException> namespaces = con.getNamespaces()) {
 				if (namespaces.hasNext()) {
-					consoleIO.writeln(OUTPUT_SEPARATOR);
+					writeln(OUTPUT_SEPARATOR);
 					while (namespaces.hasNext()) {
 						final Namespace namespace = namespaces.next();
-						consoleIO.writeln("|" + namespace.getPrefix() + "  " + namespace.getName());
+						writeln("|" + namespace.getPrefix() + "  " + namespace.getName());
 					}
-					consoleIO.writeln(OUTPUT_SEPARATOR);
+					writeln(OUTPUT_SEPARATOR);
 				} else {
-					consoleIO.writeln("--no namespaces found--");
+					writeln("No namespaces found");
 				}
 			}
 		} catch (RepositoryException e) {
-			consoleIO.writeError(e.getMessage());
-			LOGGER.error("Failed to show namespaces", e);
+			writeError("Failed to show namespaces", e);
 		}
 	}
 
@@ -154,18 +152,17 @@ public class Show extends ConsoleCommand {
 		try (RepositoryConnection con = repository.getConnection()) {
 			try (CloseableIteration<? extends Resource, RepositoryException> contexts = con.getContextIDs()) {
 				if (contexts.hasNext()) {
-					consoleIO.writeln(OUTPUT_SEPARATOR);
+					writeln(OUTPUT_SEPARATOR);
 					while (contexts.hasNext()) {
-						consoleIO.writeln("|" + contexts.next().toString());
+						writeln("|" + contexts.next().toString());
 					}
-					consoleIO.writeln(OUTPUT_SEPARATOR);
+					writeln(OUTPUT_SEPARATOR);
 				} else {
-					consoleIO.writeln("--no contexts found--");
+					writeln("No contexts found");
 				}
 			}
 		} catch (RepositoryException e) {
-			consoleIO.writeError(e.getMessage());
-			LOGGER.error("Failed to show contexts", e);
+			writeError("Failed to show contexts", e);
 		}
 	}
 }

@@ -131,7 +131,7 @@ public class Create extends ConsoleCommand {
 		try {
 			return getOrderedTemplates(templatesDir.toPath());
 		} catch (IOException ioe) {
-			LOGGER.error("Failed to read templates directory repository ", ioe);
+			writeError("Failed to read templates directory repository ", ioe);
 		}
 		return "";
 	}
@@ -155,7 +155,7 @@ public class Create extends ConsoleCommand {
 				}
 			}
 		} catch (NullPointerException | URISyntaxException | IOException e) {
-			LOGGER.error("Could not get built-in config templates from JAR", e);
+			writeError("Could not get built-in config templates from JAR", e);
 		}
 		return "";
 	}
@@ -215,27 +215,25 @@ public class Create extends ConsoleCommand {
 					if (proceedInvalid && proceedOverwrite) {
 						try {
 							this.state.getManager().addRepositoryConfig(repConfig);
-							consoleIO.writeln("Repository created");
+							writeInfo("Repository created");
 						} catch (RepositoryReadOnlyException e) {
 							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
 								this.state.getManager().addRepositoryConfig(repConfig);
-								consoleIO.writeln("Repository created");
+								writeInfo("Repository created");
 							} else {
-								consoleIO.writeError("Failed to create repository");
-								LOGGER.error("Failed to create repository", e);
+								writeError("Failed to create repository", e);
 							}
 						}
 					} else {
-						consoleIO.writeln("Create aborted");
+						writeln("Create aborted");
 					}
 				}
 			}
 		} catch (EndOfFileException | UserInterruptException e) {
-			LOGGER.error("Create repository aborted", e);
+			writeError("Create repository aborted", e);
 			throw e;
 		} catch (Exception e) {
-			consoleIO.writeError(e.toString());
-			LOGGER.error("Failed to create repository", e);
+			writeError("Failed to create repository", e);
 		}
 	}
 
@@ -251,7 +249,7 @@ public class Create extends ConsoleCommand {
 	private boolean inputParameters(final Map<String, String> valueMap, final Map<String, List<String>> variableMap,
 			Map<String, String> multilineInput) throws IOException {
 		if (!variableMap.isEmpty()) {
-			consoleIO.writeln("Please specify values for the following variables:");
+			writeln("Please specify values for the following variables:");
 		}
 		boolean eof = false;
 
@@ -310,13 +308,13 @@ public class Create extends ConsoleCommand {
 			if (templateFile.canRead()) {
 				templateStream = new FileInputStream(templateFile);
 			} else {
-				consoleIO.writeError("Not allowed to read template file: " + templateFile);
+				writeError("Not allowed to read template file: " + templateFile);
 			}
 		} else {
 			// Try class path for built-ins
 			templateStream = RepositoryConfig.class.getResourceAsStream(templateFileName);
 			if (templateStream == null) {
-				consoleIO.writeError("No template called " + templateName + " found in " + templatesDir);
+				writeError("No template called " + templateName + " found in " + templatesDir);
 			}
 		}
 		return templateStream;

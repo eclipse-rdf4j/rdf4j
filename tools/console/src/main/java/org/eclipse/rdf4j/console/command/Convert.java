@@ -72,7 +72,7 @@ public class Convert extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 3) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			return;
 		}
 
@@ -98,39 +98,39 @@ public class Convert extends ConsoleCommand {
 		// check from
 		Path pathFrom = Util.getNormalizedPath(getWorkDir(), fileFrom);
 		if (pathFrom == null) {
-			consoleIO.writeError("Invalid file name (from) " + fileFrom);
+			writeError("Invalid file name (from) " + fileFrom);
 			return;
 		}
 		if (Files.notExists(pathFrom)) {
-			consoleIO.writeError("File not found (from) " + fileFrom);
+			writeError("File not found (from) " + fileFrom);
 			return;
 		}
 		Optional<RDFFormat> fmtFrom = Rio.getParserFormatForFileName(fileFrom);
 		if (!fmtFrom.isPresent()) {
-			consoleIO.writeError("No RDF parser for " + fileFrom);
+			writeError("No RDF parser for " + fileFrom);
 			return;
 		}
 
 		// check to
 		Path pathTo = Util.getNormalizedPath(getWorkDir(), fileTo);
 		if (pathTo == null) {
-			consoleIO.writeError("Invalid file name (to) " + pathTo);
+			writeError("Invalid file name (to) " + pathTo);
 			return;
 		}
 		Optional<RDFFormat> fmtTo = Rio.getWriterFormatForFileName(fileTo);
 		if (!fmtTo.isPresent()) {
-			consoleIO.writeError("No RDF writer for " + fileTo);
+			writeError("No RDF writer for " + fileTo);
 			return;
 		}
 		if (Files.exists(pathTo)) {
 			try {
 				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
 				if (!overwrite) {
-					consoleIO.writeln("Conversion aborted");
+					writeln("Conversion aborted");
 					return;
 				}
 			} catch (IOException ioe) {
-				consoleIO.writeError("I/O error " + ioe.getMessage());
+				writeError("I/O error", ioe);
 			}
 		}
 
@@ -143,14 +143,14 @@ public class Convert extends ConsoleCommand {
 			parser.setRDFHandler(writer);
 
 			long startTime = System.nanoTime();
-			consoleIO.writeln("Converting file ...");
+			writeln("Converting file ...");
 
 			parser.parse(r, baseURI);
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
-			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
+			writeln("Data has been written to file (" + diff + " ms)");
 		} catch (IOException | RDFParseException | RDFHandlerException e) {
-			consoleIO.writeError("Failed to convert data: " + e.getMessage());
+			writeError("Failed to convert data", e);
 		}
 	}
 }

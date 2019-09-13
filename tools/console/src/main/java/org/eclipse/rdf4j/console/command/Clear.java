@@ -69,7 +69,7 @@ public class Clear extends ConsoleCommand {
 			try {
 				contexts = Util.getContexts(tokens, 1, repository);
 			} catch (IllegalArgumentException ioe) {
-				consoleIO.writeError(ioe.getMessage());
+				writeError(ioe.getMessage());
 				return;
 			}
 			clear(repository, contexts);
@@ -84,9 +84,9 @@ public class Clear extends ConsoleCommand {
 	 */
 	private void clear(Repository repository, Resource[] contexts) {
 		if (contexts.length == 0) {
-			consoleIO.writeln("Clearing repository...");
+			writeInfo("Clearing repository...");
 		} else {
-			consoleIO.writeln("Removing specified contexts...");
+			writeInfo("Removing specified contexts...");
 		}
 		try {
 			try (RepositoryConnection con = repository.getConnection()) {
@@ -100,18 +100,15 @@ public class Clear extends ConsoleCommand {
 				if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 					this.clear(repository, contexts);
 				} else {
-					consoleIO.writeError("Failed to clear repository");
-					LOGGER.error("Failed to clear repository", e);
+					writeError("Failed to clear repository", e);
 				}
-			} catch (RepositoryException e1) {
-				consoleIO.writeError("Unable to restart repository: " + e1.getMessage());
-				LOGGER.error("Unable to restart repository", e1);
-			} catch (IOException e1) {
-				consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
+			} catch (RepositoryException re) {
+				writeError("Unable to restart repository", re);
+			} catch (IOException ioe) {
+				writeError("Unable to remove lock", ioe);
 			}
 		} catch (RepositoryException e) {
-			consoleIO.writeError("Failed to clear repository: " + e.getMessage());
-			LOGGER.error("Failed to clear repository", e);
+			writeError("Failed to clear repository", e);
 		}
 	}
 }

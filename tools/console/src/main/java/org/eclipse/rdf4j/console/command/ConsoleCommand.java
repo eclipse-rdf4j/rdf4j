@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Abstract command
@@ -22,6 +24,8 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
  * @author Bart Hanssens
  */
 public abstract class ConsoleCommand implements Command, Help {
+	private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleCommand.class);
+
 	final ConsoleIO consoleIO;
 	final ConsoleState state;
 
@@ -118,5 +122,24 @@ public abstract class ConsoleCommand implements Command, Help {
 	@Override
 	public void execute(String... parameters) throws IOException {
 		throw new UnsupportedOperationException("Not supported yet.");
+	}
+
+	protected void writeln(String str) {
+		consoleIO.writeln(str);
+	}
+
+	protected void writeInfo(String str) {
+		consoleIO.writeln(str);
+		LOGGER.info(str);
+	}
+
+	protected void writeError(String str) {
+		consoleIO.writeln(str);
+		LOGGER.warn(str);
+	}
+
+	protected void writeError(String str, Exception e) {
+		consoleIO.writeln(str + ": " + e.getMessage());
+		LOGGER.error(str, e);
 	}
 }

@@ -63,7 +63,7 @@ public class Open extends ConsoleCommand {
 		if (tokens.length == 2) {
 			openRepository(tokens[1]);
 		} else {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		}
 	}
 
@@ -79,28 +79,26 @@ public class Open extends ConsoleCommand {
 			final Repository newRepository = state.getManager().getRepository(repoID);
 
 			if (newRepository == null) {
-				consoleIO.writeError("Unknown repository: '" + repoID + "'");
+				writeError("Unknown repository: '" + repoID + "'");
 			} else {
 				// Close current repository, if any
 				close.closeRepository(false);
 				state.setRepository(newRepository);
 				state.setRepositoryID(repoID);
-				consoleIO.writeln("Opened repository '" + repoID + "'");
+				writeln("Opened repository '" + repoID + "'");
 			}
 		} catch (RepositoryLockedException e) {
 			try {
 				if (LockRemover.tryToRemoveLock(e, consoleIO)) {
 					openRepository(repoID);
 				} else {
-					consoleIO.writeError(OPEN_FAILURE);
-					LOGGER.error(OPEN_FAILURE, e);
+					writeError(OPEN_FAILURE, e);
 				}
-			} catch (IOException e1) {
-				consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
+			} catch (IOException ioe) {
+				writeError("Unable to remove lock", ioe);
 			}
 		} catch (RepositoryConfigException | RepositoryException e) {
-			consoleIO.writeError(e.getMessage());
-			LOGGER.error(OPEN_FAILURE, e);
+			writeError(OPEN_FAILURE, e);
 		}
 	}
 }
