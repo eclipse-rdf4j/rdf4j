@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  * @author Dale Visser
  */
 public class Disconnect extends ConsoleCommand {
-
 	private final Close close;
 
 	@Override

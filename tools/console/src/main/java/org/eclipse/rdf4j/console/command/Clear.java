@@ -20,17 +20,12 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Clear command.
  * 
  * @author Dale Visser
  */
 public class Clear extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
-
 	@Override
 	public String getName() {
 		return "clear";

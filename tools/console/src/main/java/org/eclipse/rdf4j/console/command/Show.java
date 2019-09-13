@@ -21,18 +21,12 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Show command
  *
  * @author Dale Visser
  */
 public class Show extends ConsoleCommand {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(Show.class);
-
 	private static final String OUTPUT_SEPARATOR = "+----------";
 
 	@Override

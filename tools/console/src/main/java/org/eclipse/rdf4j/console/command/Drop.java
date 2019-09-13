@@ -17,15 +17,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * @author Dale Visser
  */
 public class Drop extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Drop.class);
-
 	private final Close close;
 
 	@Override

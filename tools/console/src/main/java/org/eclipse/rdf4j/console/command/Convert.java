@@ -27,17 +27,12 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Convert RDF file from one format to another
  * 
  * @author Bart Hanssens
  */
 public class Convert extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Convert.class);
-
 	@Override
 	public String getName() {
 		return "convert";

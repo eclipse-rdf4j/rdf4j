@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +25,7 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public abstract class ConsoleCommand implements Command, Help {
-	private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleCommand.class);
+	protected final Logger LOGGER = LoggerFactory.getLogger(getClass());
 
 	final ConsoleIO consoleIO;
 	final ConsoleState state;

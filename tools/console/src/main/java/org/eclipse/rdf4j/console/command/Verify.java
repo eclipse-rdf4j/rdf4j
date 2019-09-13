@@ -46,9 +46,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Verify command
  * 
@@ -56,8 +53,6 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public class Verify extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
-
 	@Override
 	public String getName() {
 		return "verify";

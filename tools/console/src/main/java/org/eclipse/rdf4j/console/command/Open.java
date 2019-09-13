@@ -18,17 +18,12 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryLockedException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Open command
  * 
  * @author Dale Visser
  */
 public class Open extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Open.class);
-
 	private final Close close;
 
 	@Override

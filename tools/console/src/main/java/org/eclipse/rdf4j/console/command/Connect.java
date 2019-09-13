@@ -33,8 +33,6 @@ import org.slf4j.LoggerFactory;
  * @author dale
  */
 public class Connect extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
-
 	private final Disconnect disconnect;
 
 	@Override

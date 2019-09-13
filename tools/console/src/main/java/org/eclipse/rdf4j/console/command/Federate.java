@@ -22,17 +22,12 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.runtime.RepositoryManagerFederator;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Implements the 'federate' command for the RDF4J Console.
  *
  * @author Dale Visser
  */
 public class Federate extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Federate.class);
-
 	@Override
 	public String getName() {
 		return "federate";

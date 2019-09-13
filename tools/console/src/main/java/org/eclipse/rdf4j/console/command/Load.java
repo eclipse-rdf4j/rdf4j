@@ -29,17 +29,12 @@ import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Load command
  * 
  * @author Dale Visser
  */
 public class Load extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
-
 	@Override
 	public String getName() {
 		return "load";

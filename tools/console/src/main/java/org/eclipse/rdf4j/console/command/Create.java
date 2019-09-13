@@ -50,17 +50,12 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Create command
  *
  * @author Dale Visser
  */
 public class Create extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
-
 	private static final String TEMPLATES_SUBDIR = "templates";
 	private static final String FILE_EXT = ".ttl";
 	private File templatesDir;

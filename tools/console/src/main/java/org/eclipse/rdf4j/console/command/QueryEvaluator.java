@@ -60,9 +60,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Abstract query evaluator command
  * 
@@ -70,9 +67,6 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public abstract class QueryEvaluator extends ConsoleCommand {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
-
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays

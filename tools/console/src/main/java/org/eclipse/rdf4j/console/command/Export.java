@@ -28,18 +28,12 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Export triples to file
  * 
  * @author Bart Hanssens
  */
 public class Export extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
-
 	@Override
 	public String getName() {
 		return "export";
