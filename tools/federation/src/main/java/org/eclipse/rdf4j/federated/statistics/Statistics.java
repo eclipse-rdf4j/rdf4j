@@ -14,16 +14,12 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 public interface Statistics {
 
-	
 	public double selectivity(StatementPattern stmt);
-	
+
 	public double selectivity(ExclusiveGroup group);
-	
+
 	public boolean hasResults(Statement stmt, StatementSource source);
 
 	public int estimatedResults(Statement stmt, StatementSource source);
-	
-	
-	
-	
+
 }

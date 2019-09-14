@@ -22,59 +22,61 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * 
  * @author Andreas Schwarte
  */
-public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet, QueryEvaluationException>{
+public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
 	protected final BindingSet bindings;
 	protected final CloseableIteration<BindingSet, QueryEvaluationException> iter;
 	protected ArrayList<BindingSet> result = null;
 	protected int currentIdx = 0;
-	
-	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
+
+	public IndependentJoingroupBindingsIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			BindingSet bindings) {
 		this.bindings = bindings;
 		this.iter = iter;
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		
-		if (result==null) {
+
+		if (result == null) {
 			result = computeResult();
 		}
-		
-		if (currentIdx>=result.size())
+
+		if (currentIdx >= result.size())
 			return null;
-		
+
 		return result.get(currentIdx++);
 	}
 
-	
 	protected ArrayList<BindingSet> computeResult() throws QueryEvaluationException {
-		
+
 		List<Binding> a_res = new ArrayList<Binding>();
 		List<Binding> b_res = new ArrayList<Binding>();
-		
+
 		// collect results XXX later asynchronously
 		// assumes that bindingset of iteration has exactly one binding
 		while (iter.hasNext()) {
-			
-			BindingSet bIn = iter.next();
-			
-			if (bIn.size()!=1)
-				throw new RuntimeException("For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size() + ": " + bIn);
 
-			Binding b = bIn.getBinding( bIn.getBindingNames().iterator().next() );
-			int bIndex = Integer.parseInt(b.getName().substring(b.getName().lastIndexOf("_")+1));
-			
-			if (bIndex==0)
+			BindingSet bIn = iter.next();
+
+			if (bIn.size() != 1)
+				throw new RuntimeException(
+						"For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size()
+								+ ": " + bIn);
+
+			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());
+			int bIndex = Integer.parseInt(b.getName().substring(b.getName().lastIndexOf("_") + 1));
+
+			if (bIndex == 0)
 				a_res.add(b);
-			else if (bIndex==1)
+			else if (bIndex == 1)
 				b_res.add(b);
 			else
 				throw new RuntimeException("Unexpected binding value.");
 		}
-		
+
 		ArrayList<BindingSet> res = new ArrayList<BindingSet>(a_res.size() * b_res.size());
-		
+
 		for (Binding a : a_res) {
 			for (Binding b : b_res) {
 				QueryBindingSet newB = new QueryBindingSet(bindings.size() + 2);
@@ -84,7 +86,7 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 				res.add(newB);
 			}
 		}
-		
+
 		return res;
 	}
 

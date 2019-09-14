@@ -11,8 +11,10 @@ import java.io.File;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
+import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfig;
+import org.eclipse.rdf4j.federated.repository.FedXRepositoryResolverBean;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -24,13 +26,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A {@link RepositoryFactory} to use FedX in the RDF4J workbench. See
- * {@link FedXRepositoryConfig} for the configuration.
+ * A {@link RepositoryFactory} to use FedX in the RDF4J workbench. See {@link FedXRepositoryConfig} for the
+ * configuration.
  * 
  * <p>
- * Note that this initialization obtains a {@link RepositoryResolver} from
- * {@link FedXRepositoryResolverBean} (if any). This is used for the
- * initialization of all {@link ResolvableEndpoint}s via
+ * Note that this initialization obtains a {@link RepositoryResolver} from {@link FedXRepositoryResolverBean} (if any).
+ * This is used for the initialization of all {@link ResolvableEndpoint}s via
  * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}.
  * </p>
  * 
@@ -121,7 +122,6 @@ public class FedXRepositoryFactory implements RepositoryFactory {
 					dataConfigFile = new File(baseDir, Config.getConfig().getDataConfig());
 				}
 
-
 				if (dataConfigFile == null) {
 					throw new RepositoryException(
 							"No data config provided, neither explicitly nor via fedx configuration");
@@ -133,7 +133,8 @@ public class FedXRepositoryFactory implements RepositoryFactory {
 					fedxRepo = FedXFactory.newFederation()
 							.withFedXBaseDir(baseDir)
 							.withRepositoryResolver(FedXRepositoryResolverBean.getRepositoryResolver())
-							.withMembers(dataConfigFile).create();
+							.withMembers(dataConfigFile)
+							.create();
 				} catch (Exception e) {
 					throw new RepositoryException(e);
 				}
@@ -151,6 +152,5 @@ public class FedXRepositoryFactory implements RepositoryFactory {
 			}
 		};
 	}
-
 
 }

@@ -12,15 +12,15 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 
-
 /**
  * Convenience iteration to convert {@link RepositoryResult} exceptions to {@link QueryEvaluationException}.
- *  
+ * 
  * @author Andreas Schwarte
  *
  * @param <T>
  */
-public class RepositoryExceptionConvertingIteration<T> extends ExceptionConvertingIteration<T, QueryEvaluationException> {
+public class RepositoryExceptionConvertingIteration<T>
+		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
 
 	public RepositoryExceptionConvertingIteration(
 			Iteration<? extends T, ? extends Exception> iter) {

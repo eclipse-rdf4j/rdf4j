@@ -23,8 +23,7 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 		if (scheduledFuture != null) {
 			if (scheduledFuture.isDone()) {
 				_log.trace("Task is already done: " + toString());
-			}
-			else {
+			} else {
 				_log.debug("Attempting to cancel task " + toString());
 				boolean successfullyCanceled = scheduledFuture.cancel(true);
 				if (!successfullyCanceled) {

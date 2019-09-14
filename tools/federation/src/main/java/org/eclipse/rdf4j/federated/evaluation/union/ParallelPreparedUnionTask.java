@@ -16,21 +16,20 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * A task implementation representing a prepared union, i.e. the prepared query is executed
- * on the provided triple source.
+ * A task implementation representing a prepared union, i.e. the prepared query is executed on the provided triple
+ * source.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelPreparedUnionTask extends ParallelTaskBase<BindingSet> {
-	
+
 	protected final Endpoint endpoint;
 	protected final String preparedQuery;
 	protected final BindingSet bindings;
 	protected final ParallelExecutor<BindingSet> unionControl;
 	protected final FilterValueExpr filterExpr;
-	
+
 	public ParallelPreparedUnionTask(ParallelExecutor<BindingSet> unionControl, String preparedQuery, Endpoint endpoint,
 			BindingSet bindings, FilterValueExpr filterExpr) {
 		this.endpoint = endpoint;
@@ -46,12 +45,11 @@ public class ParallelPreparedUnionTask extends ParallelTaskBase<BindingSet> {
 		return tripleSource.getStatements(preparedQuery, bindings, filterExpr);
 	}
 
-
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {
 		return unionControl;
 	}
-	
+
 	@Override
 	public String toString() {
 		return this.getClass().getSimpleName() + " @" + endpoint.getId() + ": " + preparedQuery;

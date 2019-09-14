@@ -15,10 +15,9 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerSchedul
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
 /**
- * Execution of union tasks with {@link ControlledWorkerScheduler}. Tasks can be added
- * using the provided functions. Note that the union operation is to be executed
- * with the {@link #run()} method (also threaded execution is possible). Results are
- * then contained in this iteration.
+ * Execution of union tasks with {@link ControlledWorkerScheduler}. Tasks can be added using the provided functions.
+ * Note that the union operation is to be executed with the {@link #run()} method (also threaded execution is possible).
+ * Results are then contained in this iteration.
  *
  * @author Andreas Schwarte
  *
@@ -27,9 +26,9 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 
 	public static int waitingCount = 0;
 	public static int awakeCount = 0;
-	
+
 	protected final ControlledWorkerScheduler<T> scheduler;
-	
+
 	protected final Phaser phaser = new Phaser(1);
 
 	public ControlledWorkerUnion(FederationEvalStrategy strategy, ControlledWorkerScheduler<T> scheduler,
@@ -37,29 +36,26 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 		super(strategy, queryInfo);
 		this.scheduler = scheduler;
 	}
-			
-	
+
 	@Override
 	protected void union() throws Exception {
-		
+
 		// schedule all tasks and inform about finish
 		phaser.bulkRegister(tasks.size());
 		scheduler.scheduleAll(tasks, this);
-		
+
 		// wait until all tasks are executed
 		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
 	}
 
 	@Override
-	public void done()
-	{
+	public void done() {
 		super.done();
 		phaser.arriveAndDeregister();
 	}
 
 	@Override
-	public void toss(Exception e)
-	{
+	public void toss(Exception e) {
 		super.toss(e);
 		phaser.arriveAndDeregister();
 	}

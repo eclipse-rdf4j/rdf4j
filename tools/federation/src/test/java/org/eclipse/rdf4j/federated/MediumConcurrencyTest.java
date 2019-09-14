@@ -26,8 +26,7 @@ import org.junit.jupiter.api.Test;
 
 public class MediumConcurrencyTest extends SPARQLBaseTest {
 
-	static final String[] queries = new String[]
-	{
+	static final String[] queries = new String[] {
 			"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
 			"query10", "query11", "query12"
 	};
@@ -35,34 +34,30 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	private static ExecutorService executor;
 
 	@BeforeAll
-	public static void beforeClass()
-	{
+	public static void beforeClass() {
 
 		executor = Executors.newFixedThreadPool(10);
 	}
 
 	@AfterAll
-	public static void afterClass()
-	{
-		if (executor != null)
-		{
+	public static void afterClass() {
+		if (executor != null) {
 			executor.shutdownNow();
 		}
 	}
 
 	@Test
-	public void queryMix() throws Throwable
-	{
-		
+	public void queryMix() throws Throwable {
+
 		/* test select query retrieving all persons (2 endpoints) */
-		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl", "/tests/medium/data4.ttl"));
+		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
+				"/tests/medium/data4.ttl"));
 
 		final int MAX_QUERIES = 500;
 		final Random rand = new Random(12345);
 		final List<Future<String>> futures = new ArrayList<>();
 
-		for (int i = 0; i < MAX_QUERIES; i++)
-		{
+		for (int i = 0; i < MAX_QUERIES; i++) {
 			Future<String> f = submit(queries[rand.nextInt(queries.length)], i);
 			futures.add(f);
 		}
@@ -84,28 +79,21 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	public void testPhaser() throws Exception
-	{
+	public void testPhaser() throws Exception {
 
 		final Phaser p1 = new Phaser(1);
 		final Random rand = new Random();
 
-		for (int i = 0; i < 10; i++)
-		{
+		for (int i = 0; i < 10; i++) {
 			final int tid = i;
-			executor.submit(new Runnable()
-			{
+			executor.submit(new Runnable() {
 
 				@Override
-				public void run()
-				{
+				public void run() {
 					p1.register();
-					try
-					{
+					try {
 						Thread.sleep(rand.nextInt(10) * 1000);
-					}
-					catch (InterruptedException e)
-					{
+					} catch (InterruptedException e) {
 						throw new RuntimeException(e);
 					}
 					System.out.println("Task " + tid + " done");
@@ -117,15 +105,12 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		p1.awaitAdvanceInterruptibly(p1.arrive(), 15, TimeUnit.SECONDS);
 		System.out.println("Done");
 	}
-	
-	protected Future<String> submit(final String query, final int queryId)
-	{
-		return executor.submit(new Callable<String>()
-		{
+
+	protected Future<String> submit(final String query, final int queryId) {
+		return executor.submit(new Callable<String>() {
 
 			@Override
-			public String call() throws Exception
-			{
+			public String call() throws Exception {
 				log.info("Executing query " + queryId + ": " + query);
 				execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
 				return "Ok";

@@ -29,45 +29,44 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
 /**
- * FedX serves as implementation of the federation layer. It implements Sesame's
- * Sail interface and can thus be used as a normal repository in a Sesame environment. The 
- * federation layer enables transparent access to the underlying members as if they 
- * were a central repository.<p>
+ * FedX serves as implementation of the federation layer. It implements Sesame's Sail interface and can thus be used as
+ * a normal repository in a Sesame environment. The federation layer enables transparent access to the underlying
+ * members as if they were a central repository.
+ * <p>
  * 
  * For initialization of the federation and usage see {@link FederationManager}.
  * 
  * @author Andreas Schwarte
- *  
+ * 
  */
 public class FedX implements Sail {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
-	
+
 	protected final List<Endpoint> members = new ArrayList<Endpoint>();
 	protected boolean open = false;
-		
+
 	protected FedX() {
 		this(null);
 	}
-	
+
 	protected FedX(List<Endpoint> endpoints) {
 		if (endpoints != null)
 			for (Endpoint e : endpoints)
 				addMember(e);
 		open = true;
 	}
-	
+
 	/**
 	 * Add a member to the federation (internal)
+	 * 
 	 * @param endpoint
 	 */
 	protected void addMember(Endpoint endpoint) {
 		members.add(endpoint);
 	}
-	
+
 	/**
 	 * Remove a member from the federation (internal)
 	 * 
@@ -76,15 +75,13 @@ public class FedX implements Sail {
 	 */
 	public boolean removeMember(Endpoint endpoint) {
 		return members.remove(endpoint);
-	}	
-	
+	}
+
 	/**
-	 * Compute and return the {@link WriteStrategy} depending on
-	 * the current federation configuration.
+	 * Compute and return the {@link WriteStrategy} depending on the current federation configuration.
 	 * 
-	 * The default implementation uses the {@link RepositoryWriteStrategy}
-	 * with the first discovered writable {@link Endpoint}. In none is
-	 * found, the {@link ReadOnlyWriteStrategy} is used.
+	 * The default implementation uses the {@link RepositoryWriteStrategy} with the first discovered writable
+	 * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
 	 * 
 	 * @return the {@link WriteStrategy}
 	 */
@@ -96,7 +93,7 @@ public class FedX implements Sail {
 		}
 		return ReadOnlyWriteStrategy.INSTANCE;
 	}
-	
+
 	@Override
 	public SailConnection getConnection() throws SailException {
 		return new FedXConnection(this);
@@ -122,19 +119,19 @@ public class FedX implements Sail {
 				log.error("Initialization of endpoint " + member.getId() + " failed: " + e.getMessage());
 				throw new SailException(e);
 			}
-		}	
+		}
 		open = true;
 	}
 
 	@Override
 	public boolean isWritable() throws SailException {
 		// the federation is writable if there is a WriteStrategy defined
-		return ! (getWriteStrategy() instanceof ReadOnlyWriteStrategy);
+		return !(getWriteStrategy() instanceof ReadOnlyWriteStrategy);
 	}
 
 	@Override
 	public void setDataDir(File dataDir) {
-		throw new UnsupportedOperationException("Operation not supported yet.");		
+		throw new UnsupportedOperationException("Operation not supported yet.");
 	}
 
 	@Override
@@ -143,14 +140,13 @@ public class FedX implements Sail {
 			FederationManager.getInstance().shutDown();
 		} catch (FedXException e) {
 			throw new SailException(e);
-		}		
+		}
 	}
-	
+
 	/**
 	 * Try to shut down all federation members.
 	 * 
-	 * @throws FedXException
-	 * 				if not all members could be shut down
+	 * @throws FedXException if not all members could be shut down
 	 */
 	protected void shutDownInternal() throws FedXException {
 
@@ -159,21 +155,21 @@ public class FedX implements Sail {
 			try {
 				member.shutDown();
 			} catch (Exception e) {
-				log.error( ExceptionUtil.getExceptionString("Error shutting down endpoint " + member.getId(), e) );
+				log.error(ExceptionUtil.getExceptionString("Error shutting down endpoint " + member.getId(), e));
 				errors.add(e);
 			}
 		}
-		
-		if (errors.size()>0)
+
+		if (errors.size() > 0)
 			throw new SailException("Federation could not be shut down. See logs for details.");
-		
+
 		open = false;
 	}
-	
+
 	public List<Endpoint> getMembers() {
 		return new ArrayList<Endpoint>(members);
-	}	
-	
+	}
+
 	public boolean isOpen() {
 		return open;
 	}
@@ -183,8 +179,9 @@ public class FedX implements Sail {
 		return IsolationLevels.NONE;
 	}
 
-	protected static final List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>(Arrays.asList(IsolationLevels.NONE));
-	
+	protected static final List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>(
+			Arrays.asList(IsolationLevels.NONE));
+
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
 		return supportedIsolationLevels;

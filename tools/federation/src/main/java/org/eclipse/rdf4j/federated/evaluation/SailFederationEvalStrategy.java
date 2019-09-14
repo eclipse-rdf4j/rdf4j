@@ -37,117 +37,128 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
-
 /**
- * Implementation of a federation evaluation strategy which provides some
- * special optimizations for Native (local) Sesame repositories. The most
- * important optimization is to use prepared Queries that are already 
- * created in the internal representation used by Sesame. This is necessary
- * to avoid String parsing overhead.  
+ * Implementation of a federation evaluation strategy which provides some special optimizations for Native (local)
+ * Sesame repositories. The most important optimization is to use prepared Queries that are already created in the
+ * internal representation used by Sesame. This is necessary to avoid String parsing overhead.
  * 
  * Joins are executed using {@link ControlledWorkerJoin}
+ * 
  * @author Andreas Schwarte
  *
  */
 public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
-	
 	public SailFederationEvalStrategy() {
-		
+
 	}
-	
-	
+
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
 			StatementTupleExpr stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
-				
+
 		// we can omit the bound join handling
-		if (bindings.size()==1)
+		if (bindings.size() == 1)
 			return evaluate(stmt, bindings.get(0));
-				
+
 		FilterValueExpr filterExpr = null;
 		if (stmt instanceof FilterTuple)
-			filterExpr = ((FilterTuple)stmt).getFilterExpr();
-		
+			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+
 		Boolean isEvaluated = false;
-		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryBoundUnion((StatementPattern)stmt, bindings, filterExpr, isEvaluated);
-		
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
-						
+		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryBoundUnion((StatementPattern) stmt, bindings, filterExpr,
+				isEvaluated);
+
+		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+				stmt.getStatementSources(), stmt.getQueryInfo());
+
 		// apply filter and/or convert to original bindings
-		if (filterExpr!=null && !isEvaluated) {
-			result = new BoundJoinConversionIteration(result, bindings);		// apply conversion
-			result = new FilteringIteration(filterExpr, result);				// apply filter
-			if (!result.hasNext())	
+		if (filterExpr != null && !isEvaluated) {
+			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
+			result = new FilteringIteration(filterExpr, result); // apply filter
+			if (!result.hasNext())
 				return new EmptyIteration<BindingSet, QueryEvaluationException>();
 		} else {
 			result = new BoundJoinConversionIteration(result, bindings);
 		}
-			
-		return result;		
+
+		return result;
 	}
 
-	
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
 			CheckStatementPattern stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException  {
+			throws QueryEvaluationException {
 
-		if (bindings.size()==1)
+		if (bindings.size() == 1)
 			return stmt.evaluate(bindings.get(0));
-		
-		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
-				
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
-		
-		return new GroupedCheckConversionIteration(result, bindings); 	
-	}
 
+		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
+
+		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+				stmt.getStatementSources(), stmt.getQueryInfo());
+
+		return new GroupedCheckConversionIteration(result, bindings);
+	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
 			IndependentJoinGroup joinGroup, BindingSet bindings)
 			throws QueryEvaluationException {
-			
+
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryIndependentJoinGroup(joinGroup, bindings);
-		
+
 		try {
-			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources();	// TODO this is only correct for the prototype (=> different endpoints)
-			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery, statementSources, joinGroup.getQueryInfo());
-						
+			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources(); // TODO this
+																											// is only
+																											// correct
+																											// for the
+																											// prototype
+																											// (=>
+																											// different
+																											// endpoints)
+			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+					statementSources, joinGroup.getQueryInfo());
+
 			// return only those elements which evaluated positively at the endpoint
 			result = new IndependentJoingroupBindingsIteration(result, bindings);
-			
+
 			return result;
 		} catch (Exception e) {
 			throw new QueryEvaluationException(e);
 		}
 
 	}
-
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
 			IndependentJoinGroup joinGroup, List<BindingSet> bindings)
-			throws QueryEvaluationException  {
-				
+			throws QueryEvaluationException {
+
 		String preparedQuery = QueryStringUtil.selectQueryStringIndependentJoinGroup(joinGroup, bindings);
-		
+
 		try {
-			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources();	// TODO this is only correct for the prototype (=> different endpoints)
-			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery, statementSources, joinGroup.getQueryInfo());
-						
+			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources(); // TODO this
+																											// is only
+																											// correct
+																											// for the
+																											// prototype
+																											// (=>
+																											// different
+																											// endpoints)
+			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
+					statementSources, joinGroup.getQueryInfo());
+
 			// return only those elements which evaluated positively at the endpoint
 //			result = new IndependentJoingroupBindingsIteration2(result, bindings);
 			result = new IndependentJoingroupBindingsIteration3(result, bindings);
-			
+
 			return result;
 		} catch (Exception e) {
 			throw new QueryEvaluationException(e);
 		}
 	}
-
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
@@ -155,13 +166,13 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
-		
-		ControlledWorkerJoin join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings, queryInfo);
+
+		ControlledWorkerJoin join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
+				queryInfo);
 		join.setJoinVars(joinVars);
 		executor.execute(join);
 		return join;
 	}
-
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
@@ -175,11 +186,10 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQuery(group, bindings, group.getFilterExpr(), isEvaluated);
 		return tripleSource.getStatements(preparedQuery, bindings,
 				(isEvaluated.get() ? null : group.getFilterExpr()));
-	
+
 		// other option (which might be faster for sesame native stores): join over the statements
 		// TODO implement this and evaluate if it is faster ..
 
-	}	
-		
-	
+	}
+
 }

@@ -15,36 +15,36 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 public class RepositoryInformation {
 
 	protected Properties props = new Properties();
-	private EndpointType type = EndpointType.Other;	// the endpoint type, default Other
-	private EndpointConfiguration endpointConfiguration;	// optional configuration settings for the endpoint
-	
+	private EndpointType type = EndpointType.Other; // the endpoint type, default Other
+	private EndpointConfiguration endpointConfiguration; // optional configuration settings for the endpoint
+
 	public RepositoryInformation(String id, String name, String location, EndpointType type) {
 		props.setProperty("id", id);
 		props.setProperty("name", name);
 		props.setProperty("location", location);
 		this.type = type;
 	}
-	
+
 	protected RepositoryInformation(EndpointType type) {
 		this.type = type;
 	}
-	
+
 	public String getId() {
 		return props.getProperty("id");
 	}
-	
+
 	public String getName() {
 		return props.getProperty("name");
 	}
-	
+
 	public String getLocation() {
 		return props.getProperty("location");
 	}
-	
+
 	public EndpointType getType() {
 		return type;
 	}
-	
+
 	/**
 	 * @return the optional {@link EndpointConfiguration} or <code>null</code>
 	 */
@@ -55,7 +55,7 @@ public class RepositoryInformation {
 	public void setEndpointConfiguration(EndpointConfiguration endpointConfiguration) {
 		this.endpointConfiguration = endpointConfiguration;
 	}
-	
+
 	public String get(String key) {
 		return props.getProperty(key);
 	}
@@ -63,7 +63,7 @@ public class RepositoryInformation {
 	public String get(String key, String def) {
 		return props.getProperty(key, def);
 	}
-	
+
 	public void setProperty(String key, String value) {
 		props.setProperty(key, value);
 	}

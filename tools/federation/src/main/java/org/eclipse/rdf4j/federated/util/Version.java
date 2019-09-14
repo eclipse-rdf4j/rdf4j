@@ -15,7 +15,6 @@ import java.util.jar.Manifest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Version utility: read the version from the Jar's manifest file.
  * 
@@ -25,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public class Version {
 
 	protected static final Logger log = LoggerFactory.getLogger(Version.class);
-	
+
 	/* fields with default values (i.e. if not started from jar) */
 	protected String project = "FedX";
 	protected String date = "88.88.8888";
@@ -35,7 +34,6 @@ public class Version {
 	protected String contact = "info@fluidops.com";
 	protected String companyName = "fluid Operations AG";
 	protected String productName = "fluid FedX";
-	
 
 	private static final Version instance = new Version();
 
@@ -58,7 +56,7 @@ public class Version {
 	private void initializedVersionInfo(String jarPath) {
 
 		try (JarFile jar = new JarFile(jarPath)) {
-				
+
 			Manifest buildManifest = jar.getManifest();
 			if (buildManifest != null) {
 				project = buildManifest.getMainAttributes().getValue("project");
@@ -75,18 +73,18 @@ public class Version {
 			log.debug("Details:", e);
 		}
 	}
-	
+
 	protected String getJarPath() {
 
 		URL url = Version.class.getResource("/org/eclipse/rdf4j/federated/util/Version.class");
 		String urlPath = url.getPath();
-		// url is something like file:/[Pfad_der_JarFile]!/[Pfad_der_Klasse] 
-		
+		// url is something like file:/[Pfad_der_JarFile]!/[Pfad_der_Klasse]
+
 		// not a jar, e.g. when started from eclipse
 		if (!urlPath.contains("!")) {
 			return null;
 		}
-		
+
 		try {
 			URI uri = new URI(url.getPath().split("!")[0]);
 			return uri.getPath();
@@ -95,15 +93,14 @@ public class Version {
 			return null;
 		}
 	}
-	
+
 	/**
-	 * @return
-	 * 		the version string, i.e. 'FedX 1.0 alpha (build 1)'
+	 * @return the version string, i.e. 'FedX 1.0 alpha (build 1)'
 	 */
 	public String getVersionString() {
 		return project + " " + longVersion;
 	}
-	
+
 	/**
 	 * print information to Stdout
 	 */
@@ -111,8 +108,6 @@ public class Version {
 		System.out.println("Version Information: " + project + " " + longVersion);
 	}
 
-
-	
 	public String getProject() {
 		return project;
 	}
@@ -144,14 +139,14 @@ public class Version {
 	public String getProductName() {
 		return productName;
 	}
-	
-	
-    /**
-     * Prints the version info.
-     * @param args
-     */
+
+	/**
+	 * Prints the version info.
+	 * 
+	 * @param args
+	 */
 	public static void main(String[] args) {
 		getVersionInfo().printVersionInformation();
 	}
-	
+
 }

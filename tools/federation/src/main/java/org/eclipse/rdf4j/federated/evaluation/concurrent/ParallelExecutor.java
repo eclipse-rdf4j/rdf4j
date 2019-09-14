@@ -13,12 +13,10 @@ import org.eclipse.rdf4j.federated.evaluation.union.UnionExecutorBase;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * Interface for any parallel cursor, i.e. result iterations. Implementations can act 
- * as control for scheduler implementations, e.g. {@link ControlledWorkerScheduler}. 
- * The common use case is to pass results from the scheduler to the controlling
- * result iteration.
+ * Interface for any parallel cursor, i.e. result iterations. Implementations can act as control for scheduler
+ * implementations, e.g. {@link ControlledWorkerScheduler}. The common use case is to pass results from the scheduler to
+ * the controlling result iteration.
  * 
  * @author Andreas Schwarte
  * 
@@ -28,26 +26,25 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public interface ParallelExecutor<T> extends Runnable {
 
 	/**
-	 * Handle the result appropriately, e.g. add it to the result iteration. Take care
-	 * for synchronization in a multithreaded environment
+	 * Handle the result appropriately, e.g. add it to the result iteration. Take care for synchronization in a
+	 * multithreaded environment
 	 * 
 	 * @param res
 	 */
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res);
-	
+
 	/**
 	 * Toss some exception to the controlling instance
 	 * 
 	 * @param e
 	 */
 	public void toss(Exception e);
-	
+
 	/**
 	 * Inform the controlling instance that some job is done from a different thread. In most cases this is a no-op.
 	 */
 	public void done();
-	
-	
+
 	/**
 	 * Return true if this executor is finished or aborted
 	 * 
@@ -55,7 +52,6 @@ public interface ParallelExecutor<T> extends Runnable {
 	 */
 	public boolean isFinished();
 
-	
 	/**
 	 * Return the query info of the associated query
 	 * 

@@ -24,13 +24,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
 /**
- * ControlledWorkerScheduler is a task scheduler that uses a FIFO queue for managing
- * its process. Each instance has a pool with a fixed number of worker threads. Once
- * notified a worker picks the next task from the queue and executes it. The results
- * is then returned to the controlling instance retrieved from the task.
+ * ControlledWorkerScheduler is a task scheduler that uses a FIFO queue for managing its process. Each instance has a
+ * pool with a fixed number of worker threads. Once notified a worker picks the next task from the queue and executes
+ * it. The results is then returned to the controlling instance retrieved from the task.
  * 
  * 
  * @author Andreas Schwarte
@@ -43,17 +40,13 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	protected static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);
 
-	
 	protected ExecutorService executor;
 
 	protected LinkedBlockingQueue<Runnable> _taskQueue = new LinkedBlockingQueue<>();
 
-
-
 	protected int nWorkers;
 	protected String name;
-	
-		
+
 	/**
 	 * Construct a new instance with 20 workers.
 	 */
@@ -61,10 +54,8 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		this(20, "FedX Worker");
 	}
 
-	
 	/**
-	 * Construct a new instance with the specified number of workers and the
-	 * given name.
+	 * Construct a new instance with the specified number of workers and the given name.
 	 * 
 	 * @param nWorkers
 	 * @param name
@@ -74,17 +65,15 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		this.name = name;
 		initWorkerThreads();
 	}
-	
-	
+
 	/**
 	 * Schedule the specified parallel task.
-	 * 	
-	 * @param task
-	 * 			the task to schedule
+	 * 
+	 * @param task the task to schedule
 	 */
 	@Override
 	public void schedule(ParallelTask<T> task) {
-		
+
 		WorkerRunnable runnable = new WorkerRunnable(task);
 
 		Future<?> future = executor.submit(runnable);
@@ -96,89 +85,79 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		task.getQueryInfo().registerScheduledTask(task);
 
 		// TODO rejected execution exception?
-		
-	}	
-	
-	
+
+	}
+
 	/**
-	 * Schedule the given tasks and inform about finish using the same lock, i.e.
-	 * all tasks are scheduled one after the other.
+	 * Schedule the given tasks and inform about finish using the same lock, i.e. all tasks are scheduled one after the
+	 * other.
+	 * 
 	 * @param tasks
 	 * @param control
 	 */
 	public void scheduleAll(List<ParallelTask<T>> tasks, ParallelExecutor<T> control) {
-		for (ParallelTask<T> task : tasks)
-		{
+		for (ParallelTask<T> task : tasks) {
 			schedule(task);
 		}
-		
+
 	}
-	
+
 	public int getTotalNumberOfWorkers() {
 		return nWorkers;
 	}
-	
+
 	public int getNumberOfIdleWorkers() {
 		// TODO
 		return -1;
 	}
-	
+
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
 	}
-	
+
 	protected void initWorkerThreads() {
 
 		executor = new ThreadPoolExecutor(Math.min(10, nWorkers / 2), nWorkers, 30L, TimeUnit.SECONDS, _taskQueue,
 				new NamingThreadFactory(name));
 	}
-	
+
 	@Override
 	public void abort() {
 		log.info("Aborting workers of " + name + ".");
 
 		executor.shutdownNow();
-		try
-		{
+		try {
 			executor.awaitTermination(30, TimeUnit.SECONDS);
-		}
-		catch (InterruptedException e)
-		{
+		} catch (InterruptedException e) {
 			throw new FedXRuntimeException(e);
 		}
 	}
 
-	
-	
-
 	@Override
 	public void done() {
-		/* not needed here, implementations call informFinish(control) to notify done status */		
+		/* not needed here, implementations call informFinish(control) to notify done status */
 	}
-
 
 	@Override
 	public void handleResult(CloseableIteration<T, QueryEvaluationException> res) {
-		/* not needed here since the result is passed directly to the control instance */		
+		/* not needed here since the result is passed directly to the control instance */
 		throw new RuntimeException("Unsupported Operation for this scheduler.");
 	}
 
 	@Override
 	public void informFinish() {
-		throw new RuntimeException("Unsupported Operation for this scheduler!");	
+		throw new RuntimeException("Unsupported Operation for this scheduler!");
 	}
-	
+
 	/**
-	 * Inform this scheduler that the specified control instance will no longer
-	 * submit tasks.
+	 * Inform this scheduler that the specified control instance will no longer submit tasks.
 	 * 
 	 * @param control
 	 */
 	public void informFinish(ParallelExecutor<T> control) {
-		
+
 		// TODO
 	}
-	
 
 	@Override
 	public boolean isRunning() {
@@ -186,83 +165,70 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		throw new RuntimeException("Unsupported Operation for this scheduler.");
 	}
 
-	
 	/**
 	 * Determine if there are still task running or queued for the specified control.
 	 * 
 	 * @param control
 	 * 
-	 * @return
-	 * 		true, if there are unfinished tasks, false otherwise
+	 * @return true, if there are unfinished tasks, false otherwise
 	 */
 	public boolean isRunning(ParallelExecutor<T> control) {
 		return true; // TODO
 	}
-	
-	
+
 	@Override
 	public void toss(Exception e) {
-		/* not needed here: exceptions are directly tossed to the controlling instance */		
+		/* not needed here: exceptions are directly tossed to the controlling instance */
 		throw new RuntimeException("Unsupported Operation for this scheduler.");
 	}
 
-	
-	
 	protected class WorkerRunnable implements Runnable {
 
 		protected final ParallelTask<T> task;
-		
+
 		protected boolean inTask = false;
 
 		protected boolean aborted = false;
-		
-		public WorkerRunnable(ParallelTask<T> task)
-		{
+
+		public WorkerRunnable(ParallelTask<T> task) {
 			super();
 			this.task = task;
 		}
 
-
 		@Override
-		public void run()
-		{
-			if (aborted)
-			{
+		public void run() {
+			if (aborted) {
 				return;
 			}
 
 			ParallelExecutor<T> taskControl = task.getControl();
-			
+
 			try {
 				inTask = true;
-				if (log.isTraceEnabled())
-				{
+				if (log.isTraceEnabled()) {
 					log.trace("Performing task " + task.toString() + " in " + Thread.currentThread().getName());
 				}
 				CloseableIteration<T, QueryEvaluationException> res = task.performTask();
 				inTask = false;
 				taskControl.addResult(res);
 
-				taskControl.done();		// in most cases this is a no-op
+				taskControl.done(); // in most cases this is a no-op
 			} catch (Throwable t) {
-				if (aborted)
-				{
+				if (aborted) {
 					return;
 				}
-				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): " + t.getMessage());
+				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
+						+ t.getMessage());
 				taskControl.toss(ExceptionUtil.toException(t));
 			}
-			
+
 		}
-		
-		public void abort()
-		{
+
+		public void abort() {
 			this.aborted = true;
 		}
 	}
-	
-	
-	
+
 	/**
 	 * Structure to maintain the status for a given control instance.
 	 * 
@@ -271,25 +237,19 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	protected class ControlStatus {
 		public int waiting;
 		public boolean done;
+
 		public ControlStatus(int waiting, boolean done) {
 			this.waiting = waiting;
 			this.done = done;
 		}
 	}
-	
-	
-
 
 	@Override
-	public void shutdown()
-	{
+	public void shutdown() {
 		executor.shutdown();
-		try
-		{
+		try {
 			executor.awaitTermination(30, TimeUnit.SECONDS);
-		}
-		catch (InterruptedException e)
-		{
+		} catch (InterruptedException e) {
 			throw new FedXRuntimeException(e);
 		}
 

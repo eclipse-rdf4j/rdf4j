@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 public class ExceptionUtil {
 
 	protected static final Logger log = LoggerFactory.getLogger(ExceptionUtil.class);
-	
+
 	/**
 	 * Regex pattern to identify http error codes from the title of the returned document:
 	 * 
@@ -39,40 +39,36 @@ public class ExceptionUtil {
 	 * </code>
 	 */
 	protected static final Pattern httpErrorPattern = Pattern.compile(".*<title>(.*)</title>.*", Pattern.DOTALL);
-	
-	
+
 	/**
-	 * Trace the exception source within the exceptions to identify the originating endpoint. The message
-	 * of the provided exception is adapted to "@ endpoint.getId() - %orginalMessage".<p>
+	 * Trace the exception source within the exceptions to identify the originating endpoint. The message of the
+	 * provided exception is adapted to "@ endpoint.getId() - %orginalMessage".
+	 * <p>
 	 * 
-	 * Note that in addition HTTP error codes are extracted from the title, if the exception resulted from
-	 * an HTTP error, such as for instance "503 Service unavailable"
+	 * Note that in addition HTTP error codes are extracted from the title, if the exception resulted from an HTTP
+	 * error, such as for instance "503 Service unavailable"
 	 * 
-	 * @param endpoint the the endpoint
-	 * @param ex
-	 * 			the exception
-	 * @param additionalInfo
-	 * 			additional information that might be helpful, e.g. the subquery
+	 * @param endpoint       the the endpoint
+	 * @param ex             the exception
+	 * @param additionalInfo additional information that might be helpful, e.g. the subquery
 	 * 
-	 * @return
-	 * 		 	a modified exception with endpoint source
+	 * @return a modified exception with endpoint source
 	 */
 	public static QueryEvaluationException traceExceptionSource(Endpoint endpoint, Throwable ex,
 			String additionalInfo) {
-		
-		
+
 		String eID;
-		
-		if (endpoint==null) {
+
+		if (endpoint == null) {
 			log.warn("No endpoint found for connection, probably changed from different thread.");
 			eID = "unknown";
 		} else {
 			eID = endpoint.getId();
 		}
-		
+
 		// check for http error code (heuristic)
 		String message = ex.getMessage();
-		message = message==null ? "n/a" : message;
+		message = message == null ? "n/a" : message;
 		Matcher m = httpErrorPattern.matcher(message);
 		if (m.matches()) {
 			log.debug("HTTP error detected for endpoint " + eID + ":\n" + message);
@@ -84,13 +80,13 @@ public class ExceptionUtil {
 		if (!(ex instanceof QueryEvaluationException)) {
 			message += ". Original exception type: " + ex.getClass().getName();
 		}
-		
-		QueryEvaluationException res = new QueryEvaluationException("@ " + eID + " - " + message + ". " + additionalInfo, ex.getCause());
+
+		QueryEvaluationException res = new QueryEvaluationException(
+				"@ " + eID + " - " + message + ". " + additionalInfo, ex.getCause());
 		res.setStackTrace(ex.getStackTrace());
 		return res;
 	}
-	
-	
+
 	/**
 	 * Repair the connection and then trace the exception source.
 	 * 
@@ -103,28 +99,24 @@ public class ExceptionUtil {
 		return traceExceptionSource(endpoint, ex, additionalInfo);
 	}
 
-	
 	/**
 	 * Return the exception in a convenient representation, i.e. '%msg% (%CLASS%): %ex.getMessage()%'
 	 * 
 	 * @param msg
 	 * @param ex
 	 * 
-	 * @return
-	 * 		the exception in a convenient representation
+	 * @return the exception in a convenient representation
 	 */
 	public static String getExceptionString(String msg, Throwable ex) {
 		return msg + " " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
 	}
-	
-	
+
 	/**
-	 * If possible change the message text of the specified exception. This is only possible
-	 * if the provided exception has a public constructor with String and Throwable as argument.
-	 * The new message is set to 'msgPrefix. ex.getMessage()', all other exception elements 
-	 * remain the same.
+	 * If possible change the message text of the specified exception. This is only possible if the provided exception
+	 * has a public constructor with String and Throwable as argument. The new message is set to 'msgPrefix.
+	 * ex.getMessage()', all other exception elements remain the same.
 	 * 
-	 * @param <E>
+	 * @param           <E>
 	 * @param msgPrefix
 	 * @param ex
 	 * @param exClazz
@@ -132,38 +124,38 @@ public class ExceptionUtil {
 	 * @return the updated exception
 	 */
 	public static <E extends Exception> E changeExceptionMessage(String msgPrefix, E ex, Class<E> exClazz) {
-		
+
 		Constructor<E> constructor = null;
-		
+
 		try {
 			// try to find the constructor 'public Exception(String, Throwable)'
-			constructor = exClazz.getConstructor(new Class<?>[] {String.class, Throwable.class});
+			constructor = exClazz.getConstructor(new Class<?>[] { String.class, Throwable.class });
 		} catch (SecurityException e) {
-			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName() + " due to SecurityException: " + e.getMessage());
+			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName()
+					+ " due to SecurityException: " + e.getMessage());
 			return ex;
 		} catch (NoSuchMethodException e) {
-			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName() + ": Constructor <String, Throwable> not found.");
+			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName()
+					+ ": Constructor <String, Throwable> not found.");
 			return ex;
 		}
-		
-		
+
 		E newEx;
 		try {
-			newEx = constructor.newInstance(new Object[] {msgPrefix + "." + ex.getMessage(), ex.getCause()});
+			newEx = constructor.newInstance(new Object[] { msgPrefix + "." + ex.getMessage(), ex.getCause() });
 		} catch (Exception e) {
-			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName() + " due to " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName() + " due to "
+					+ e.getClass().getSimpleName() + ": " + e.getMessage());
 			return ex;
 		}
 		newEx.setStackTrace(ex.getStackTrace());
-		
+
 		return newEx;
 	}
 
 	/**
-	 * Converts the {@link Throwable} to an {@link Exception}. If it is already of
-	 * type exception, it is returned as is. Otherwise, we create a new
-	 * {@link QueryEvaluationException}, and attach the stack trace and a meaningful
-	 * message.
+	 * Converts the {@link Throwable} to an {@link Exception}. If it is already of type exception, it is returned as is.
+	 * Otherwise, we create a new {@link QueryEvaluationException}, and attach the stack trace and a meaningful message.
 	 * 
 	 * @param t
 	 * @return the {@link Exception}
@@ -185,9 +177,8 @@ public class ExceptionUtil {
 	}
 
 	/**
-	 * Converts the given Throwable to a {@link QueryEvaluationException}. If it is
-	 * already of type {@link QueryEvaluationException} no transformation is done,
-	 * otherwise the throwable is wrapped.
+	 * Converts the given Throwable to a {@link QueryEvaluationException}. If it is already of type
+	 * {@link QueryEvaluationException} no transformation is done, otherwise the throwable is wrapped.
 	 * 
 	 * @param t
 	 * @return the {@link QueryEvaluationException}

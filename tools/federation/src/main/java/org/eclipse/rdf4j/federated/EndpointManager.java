@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -21,68 +20,64 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
- * EndpointManager is the singleton instance that manages available {@link Endpoint}s. 
- * Particular endpoints can be looked up by their id and connection and all relevant 
- * information can be used.
+ * EndpointManager is the singleton instance that manages available {@link Endpoint}s. Particular endpoints can be
+ * looked up by their id and connection and all relevant information can be used.
  * 
  * @author Andreas Schwarte
  *
  */
 public class EndpointManager {
-	
+
 	protected static final Logger log = LoggerFactory.getLogger(EndpointManager.class);
-	
+
 	/*
-	 * TODO
-	 * we probably need to make this class thread safe! => synchronized access
+	 * TODO we probably need to make this class thread safe! => synchronized access
 	 */
-	
+
 	protected static EndpointManager instance = null;
-	
+
 	/**
-	 * @return
-	 * 		return the singleton instance of the EndpointManager
+	 * @return return the singleton instance of the EndpointManager
 	 */
 	public static EndpointManager getEndpointManager() {
-		if (instance==null)
-			throw new FedXRuntimeException("EndpointManager not yet initialized, initialize() must be invoked before use.");
+		if (instance == null)
+			throw new FedXRuntimeException(
+					"EndpointManager not yet initialized, initialize() must be invoked before use.");
 		return instance;
 	}
-	
+
 	/**
 	 * Initialize the singleton endpoint manager without any endpoints
 	 */
 	public static void initialize() {
 		initialize(null);
 	}
-	
+
 	/**
 	 * Initialize the singleton endpoint manager with the provided endpoints
 	 * 
 	 * @param endpoints
 	 */
 	public static synchronized void initialize(List<Endpoint> endpoints) {
-		if (instance!=null)
+		if (instance != null)
 			throw new FedXRuntimeException("Endpoint Manager already initialized.");
 		instance = new EndpointManager(endpoints);
 	}
-			
-	
+
 	// map enpoint ids and connections to the corresponding endpoint
 	protected HashMap<String, Endpoint> endpoints = new HashMap<String, Endpoint>();
-	
+
 	protected boolean inRepair = false;
 	protected Long lastRepaired = -1L;
-	
+
 	/**
 	 * Construct an EndpointManager without any endpoints
 	 */
 	private EndpointManager() {
 		this(null);
 	}
-	
+
 	/**
 	 * Construct an EndpointManager with the provided endpoints
 	 * 
@@ -90,72 +85,59 @@ public class EndpointManager {
 	 */
 	private EndpointManager(List<Endpoint> endpoints) {
 		init(endpoints);
-	}	
-	
+	}
+
 	/**
 	 * Initialize the endpoint mapping with the provided endpoints
 	 * 
-	 * @param _endpoints
-	 * 				a list of (initialized) endpoints or null
+	 * @param _endpoints a list of (initialized) endpoints or null
 	 */
 	private void init(List<Endpoint> _endpoints) {
-		if (_endpoints!=null)
+		if (_endpoints != null)
 			for (Endpoint e : _endpoints)
 				addEndpoint(e);
 	}
 
 	/**
-	 * Add the (initialized) endpoint to this endpoint manager to be used by
-	 * the {@link FederationManager}.
+	 * Add the (initialized) endpoint to this endpoint manager to be used by the {@link FederationManager}.
 	 * 
-	 * @param e
-	 * 			the endpoint
+	 * @param e the endpoint
 	 */
 	public void addEndpoint(Endpoint e) {
 		endpoints.put(e.getId(), e);
 	}
-	
 
 	/**
-	 * Remove the provided endpoint from this endpoint manager to be used by
-	 * the {@link FederationManager}. In addition, this method unregisters
-	 * the {@link FederatedService} from Sesame
-	 *  
-	 * @param e
-	 * 			the endpoint
+	 * Remove the provided endpoint from this endpoint manager to be used by the {@link FederationManager}. In addition,
+	 * this method unregisters the {@link FederatedService} from Sesame
 	 * 
-	 * @throws NoSuchElementException
-	 * 			if there is no mapping for some endpoint id
+	 * @param e the endpoint
+	 * 
+	 * @throws NoSuchElementException if there is no mapping for some endpoint id
 	 */
-	protected void removeEndpoint(Endpoint e) throws NoSuchElementException{
+	protected void removeEndpoint(Endpoint e) throws NoSuchElementException {
 		if (!endpoints.containsKey(e.getId()))
 			throw new NoSuchElementException("No endpoint avalaible for id " + e.getId());
 		endpoints.remove(e.getId());
 	}
-	
-	
-	
+
 	/**
-	 * @return
-	 * 		a collection of available endpoints in this endpoint manager
+	 * @return a collection of available endpoints in this endpoint manager
 	 */
 	public Collection<Endpoint> getAvailableEndpoints() {
 		return endpoints.values();
 	}
-	
+
 	/**
 	 * @param endpointID
-	 * @return
-	 * 		the endpoint corresponding to the provided id or null
+	 * @return the endpoint corresponding to the provided id or null
 	 */
 	public Endpoint getEndpoint(String endpointID) {
 		return endpoints.get(endpointID);
 	}
 
-	
 	/**
-	 * Return the Endpoint for the provided endpoint url, if it exists. Otherwise
-	 * return null.
+	 * Return the Endpoint for the provided endpoint url, if it exists. Otherwise return null.
 	 * 
 	 * @param endpointUrl
 	 * @return the endpoint by its URL
@@ -167,7 +149,7 @@ public class EndpointManager {
 		}
 		return null;
 	}
-	
+
 	public Endpoint getEndpointByName(String endpointName) {
 		for (Endpoint e : endpoints.values()) {
 			if (e.getName().equals(endpointName))
@@ -175,30 +157,28 @@ public class EndpointManager {
 		}
 		return null;
 	}
-	
+
 	/**
 	 * @param endpointIDs
-	 * @return
-	 * 		a list of endpoints corresponding to the provided ids
+	 * @return a list of endpoints corresponding to the provided ids
 	 * 
-	 * @throws NoSuchElementException
-	 * 			if there is no mapping for some endpoint id
+	 * @throws NoSuchElementException if there is no mapping for some endpoint id
 	 */
 	public List<Endpoint> getEndpoints(Set<String> endpointIDs) throws NoSuchElementException {
 		List<Endpoint> res = new ArrayList<Endpoint>();
 		for (String endpointID : endpointIDs) {
 			Endpoint e = endpoints.get(endpointID);
-			if (e==null)
+			if (e == null)
 				throw new NoSuchElementException("No endpoint found for " + endpointID + ".");
 			res.add(e);
 		}
 		return res;
 	}
-	
+
 	/**
 	 * Shutdown the endpoint manager, called from {@link FederationManager#shutDown()}
 	 */
 	protected synchronized void shutDown() {
-		instance=null;
+		instance = null;
 	}
 }

@@ -17,34 +17,32 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * A task implementation representing a bound join, see {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)}
- * for further details on the evaluation process.
+ * A task implementation representing a bound join, see
+ * {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)} for further details on the
+ * evaluation process.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {
 
-	
 	protected final FederationEvalStrategy strategy;
 	protected final StatementTupleExpr expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	
-	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, StatementTupleExpr expr, List<BindingSet> bindings) {
+
+	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+			StatementTupleExpr expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;
 		this.joinControl = joinControl;
 	}
 
-
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
-		return strategy.evaluateBoundJoinStatementPattern(expr, bindings);		
+		return strategy.evaluateBoundJoinStatementPattern(expr, bindings);
 	}
-
 
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {

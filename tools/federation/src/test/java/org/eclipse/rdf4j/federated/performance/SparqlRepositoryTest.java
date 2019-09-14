@@ -25,39 +25,42 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 public class SparqlRepositoryTest {
 
 	public static void main(String[] args) throws Exception {
-		
+
 		ExecutorService executor = Executors.newFixedThreadPool(20);
-		
+
 		SPARQLRepository repo = new SPARQLRepository("http://dbpedia.org/sparql");
 		repo.initialize();
 		final RepositoryConnection conn = repo.getConnection();
-		
-		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT DISTINCT ?President ?Party ?Articles ?TopicPage WHERE {  ?President <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> . }");
+
+		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
+				"SELECT DISTINCT ?President ?Party ?Articles ?TopicPage WHERE {  ?President <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> . }");
 		TupleQueryResult res = query.evaluate();
 		List<IRI> list = new ArrayList<>();
 		while (res.hasNext()) {
 			list.add((IRI) res.next().getValue("President"));
 		}
 		res.close();
-	
+
 		System.out.println("Retrieved " + list.size() + " instances");
 		List<Future<?>> tasks = new ArrayList<Future<?>>();
-		for (int i=0; i<10; i++) {
-			for (final IRI instance : list)
-			{
+		for (int i = 0; i < 10; i++) {
+			for (final IRI instance : list) {
 				tasks.add(executor.submit(new Runnable() {
 
 					@Override
 					public void run() {
 						try {
 							Thread.sleep(new Random().nextInt(300));
-							BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <" + instance.stringValue() + "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
+							BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <"
+									+ instance.stringValue()
+									+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
 							bq.evaluate();
 						} catch (Exception e) {
 							e.printStackTrace();
-						}						
-					} }));
-				
+						}
+					}
+				}));
+
 			}
 		}
 		System.out.println("All tasks submitted, awating termination.");

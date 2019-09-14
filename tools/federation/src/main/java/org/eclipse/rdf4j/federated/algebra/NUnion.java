@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
  * A tuple expression that represents an nary-Union.
  * 
@@ -21,27 +20,26 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  *
  */
 public class NUnion extends NTuple implements TupleExpr {
-	
+
 	private static final long serialVersionUID = 7891644349783459781L;
 
 	/**
-	 * Construct an nary-tuple. Note that the parentNode of all arguments is
-	 * set to this instance.
+	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
 	 * 
 	 * @param args
 	 */
 	public NUnion(List<TupleExpr> args, QueryInfo queryInfo) {
 		super(args, queryInfo);
-	}	
-	
+	}
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
-		visitor.meetOther(this);		
-	}	
-	
+		visitor.meetOther(this);
+	}
+
 	@Override
 	public NUnion clone() {
-		return (NUnion)super.clone();
-	}	
+		return (NUnion) super.clone();
+	}
 }

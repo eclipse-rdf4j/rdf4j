@@ -14,21 +14,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Utility class for named threads
  */
-public class NamingThreadFactory implements ThreadFactory
-{
+public class NamingThreadFactory implements ThreadFactory {
 	private final AtomicInteger nextThreadId = new AtomicInteger();
 
 	private final String baseName;
 
-	public NamingThreadFactory(String baseName)
-	{
+	public NamingThreadFactory(String baseName) {
 		super();
 		this.baseName = baseName;
 	}
 
 	@Override
-	public Thread newThread(Runnable r)
-	{
+	public Thread newThread(Runnable r) {
 		Thread t = Executors.defaultThreadFactory().newThread(r);
 		t.setName(baseName + "-" + nextThreadId.incrementAndGet());
 		return t;

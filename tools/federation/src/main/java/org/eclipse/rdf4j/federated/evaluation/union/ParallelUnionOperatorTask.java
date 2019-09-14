@@ -26,7 +26,7 @@ public class ParallelUnionOperatorTask extends ParallelTaskBase<BindingSet> {
 	protected final FederationEvalStrategy strategy;
 	protected final TupleExpr expr;
 	protected final BindingSet bindings;
-	
+
 	public ParallelUnionOperatorTask(ParallelExecutor<BindingSet> unionControl,
 			FederationEvalStrategy strategy, TupleExpr expr, BindingSet bindings) {
 		super();
@@ -35,7 +35,7 @@ public class ParallelUnionOperatorTask extends ParallelTaskBase<BindingSet> {
 		this.expr = expr;
 		this.bindings = bindings;
 	}
-	
+
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {
 		return unionControl;

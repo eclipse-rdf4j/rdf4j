@@ -18,25 +18,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 
-
 /**
- * Converts Statement iteration (i.e. RepositoryResult) into the corresponding binding set. Note that
- * exceptions are converted appropriately as well.
+ * Converts Statement iteration (i.e. RepositoryResult) into the corresponding binding set. Note that exceptions are
+ * converted appropriately as well.
  * 
  * @author Andreas Schwarte
  */
-public class StatementConversionIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-{
+public class StatementConversionIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final RepositoryResult<Statement> repoResult;
 	protected final BindingSet bindings;
 	protected final StatementPattern stmt;
-	
+
 	protected boolean updateSubj = false;
 	protected boolean updatePred = false;
 	protected boolean updateObj = false;
 	protected boolean updateContext = false;
-	
+
 	public StatementConversionIteration(RepositoryResult<Statement> repoResult,
 			BindingSet bindings, StatementPattern stmt) {
 		super();
@@ -45,14 +43,14 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 		this.stmt = stmt;
 		init();
 	}
-	
+
 	protected void init() {
 		updateSubj = stmt.getSubjectVar() != null && !bindings.hasBinding(stmt.getSubjectVar().getName());
 		updatePred = stmt.getPredicateVar() != null && !bindings.hasBinding(stmt.getPredicateVar().getName());
 		updateObj = stmt.getObjectVar() != null && !bindings.hasBinding(stmt.getObjectVar().getName());
 		updateContext = stmt.getContextVar() != null && !bindings.hasBinding(stmt.getContextVar().getName());
 	}
-	
+
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		try {
@@ -67,11 +65,11 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 		try {
 			return convert(repoResult.next());
-		} catch(NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			throw e;
-	    } catch(IllegalStateException e) {
-	    	throw e;
-	    } catch (RepositoryException e) {
+		} catch (IllegalStateException e) {
+			throw e;
+		} catch (RepositoryException e) {
 			throw convertException(e);
 		}
 	}
@@ -81,14 +79,14 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 		try {
 			repoResult.remove();
-		} catch(UnsupportedOperationException e) {
+		} catch (UnsupportedOperationException e) {
 			throw e;
-		} catch(IllegalStateException e) {
+		} catch (IllegalStateException e) {
 			throw e;
 		} catch (RepositoryException e) {
 			throw convertException(e);
 		}
-		
+
 	}
 
 	@Override
@@ -100,7 +98,6 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 		}
 	}
 
-	
 	protected BindingSet convert(Statement st) {
 		QueryBindingSet result = new QueryBindingSet(bindings);
 
@@ -119,9 +116,9 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 		return result;
 	}
-	
+
 	protected QueryEvaluationException convertException(Exception e) {
 		return new QueryEvaluationException(e);
 	}
-	
+
 }

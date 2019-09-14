@@ -30,5 +30,5 @@ public class EntryAlreadyExistsException extends Exception {
 
 	public EntryAlreadyExistsException(Throwable arg0) {
 		super(arg0);
-	}	
+	}
 }

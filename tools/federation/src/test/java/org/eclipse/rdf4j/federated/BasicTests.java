@@ -23,55 +23,52 @@ import org.junit.jupiter.api.Test;
 
 public class BasicTests extends SPARQLBaseTest {
 
-
 	@Test
 	public void test1() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false);			
-	}
-	
-	
-	@Test
-	public void test2() throws Exception {		
-		/* test a basic Construct query retrieving all triples */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query02.rq", "/tests/basic/query02.ttl", false);			
+		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false);
 	}
 
-	
 	@Test
-	public void testBooleanTrueSingleSource() throws Exception{		
+	public void test2() throws Exception {
+		/* test a basic Construct query retrieving all triples */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		execute("/tests/basic/query02.rq", "/tests/basic/query02.ttl", false);
+	}
+
+	@Test
+	public void testBooleanTrueSingleSource() throws Exception {
 		/* test a basic boolean query (result true) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query03.rq", "/tests/basic/query03.srx", false);					
+		execute("/tests/basic/query03.rq", "/tests/basic/query03.srx", false);
 	}
-	
+
 	@Test
-	public void testBooleanTrueMultipleSource() throws Exception{		
+	public void testBooleanTrueMultipleSource() throws Exception {
 		/* test a basic boolean query (result true) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query03a.rq", "/tests/basic/query03.srx", false);					
+		execute("/tests/basic/query03a.rq", "/tests/basic/query03.srx", false);
 	}
-	
+
 	@Test
-	public void testBooleanFalse() throws Exception {		
+	public void testBooleanFalse() throws Exception {
 		/* test a basic boolean query (result false) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query04.rq", "/tests/basic/query04.srx", false);	
+		execute("/tests/basic/query04.rq", "/tests/basic/query04.srx", false);
 	}
-	
+
 	@Test
 	public void testSingleSourceSelect() throws Exception {
 		/* test a single source select query */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_singleSource01.rq", "/tests/basic/query_singleSource01.srx", false);	
+		execute("/tests/basic/query_singleSource01.rq", "/tests/basic/query_singleSource01.srx", false);
 	}
-	
+
 	@Test
 	public void testSingleSourceConstruct() throws Exception {
 		/* test a single source construct */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_singleSource02.rq", "/tests/basic/query_singleSource02.ttl", false);	
+		execute("/tests/basic/query_singleSource02.rq", "/tests/basic/query_singleSource02.ttl", false);
 	}
 
 	@Test
@@ -100,11 +97,16 @@ public class BasicTests extends SPARQLBaseTest {
 		TupleQueryResult result = tq.evaluate();
 
 		TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("person"))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_1"))).add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_3"))).add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_5"))).add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_7"))).add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_9"))).add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
 				.build();
 
 		compareTupleQueryResults(result, expected, false);
@@ -117,8 +119,10 @@ public class BasicTests extends SPARQLBaseTest {
 		result = tq.evaluate();
 
 		expected = tupleQueryResultBuilder(Arrays.asList("person")).add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_2"))).add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_4"))).add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
 				.build();
 
 		compareTupleQueryResults(result, expected, false);
@@ -133,29 +137,29 @@ public class BasicTests extends SPARQLBaseTest {
 
 		fedxRule.enableDebug();
 
-		String queryString = 
-				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\n" +
-				"SELECT ?name WHERE {\r\n" + 
-				" ?person a foaf:Person .\r\n" + 
-				" ?person foaf:name ?name .\r\n" + 
-						"}";
+		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\n" +
+				"SELECT ?name WHERE {\r\n" +
+				" ?person a foaf:Person .\r\n" +
+				" ?person foaf:name ?name .\r\n" +
+				"}";
 		TupleQuery query = QueryManager.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
 		TupleQueryResult actual = query.evaluate();
 
 		TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("name"))
-				.add(Arrays.asList(vf.createLiteral("Person1"))).build();
+				.add(Arrays.asList(vf.createLiteral("Person1")))
+				.build();
 
 		compareTupleQueryResults(actual, expected, false);
 	}
-	
+
 	@Test
 	public void testQueryWithLimit() throws Exception {
-		
+
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
-		
+
 		String queryString = readQueryString("/tests/basic/query_limit01.rq");
 
 		evaluateQueryPlan("/tests/basic/query_limit01.rq", "/tests/basic/query_limit01.qp");

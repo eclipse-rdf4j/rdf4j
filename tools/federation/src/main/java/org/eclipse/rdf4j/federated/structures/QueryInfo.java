@@ -23,11 +23,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
 /**
- * Structure to maintain query information during evaluation, is attached to algebra nodes. 
- * Each instance is uniquely attached to the query.
+ * Structure to maintain query information during evaluation, is attached to algebra nodes. Each instance is uniquely
+ * attached to the query.
  * 
  * The queryId can be used to abort tasks belonging to a particular evaluation.
  * 
@@ -39,13 +37,13 @@ public class QueryInfo {
 	private static final Logger log = LoggerFactory.getLogger(QueryInfo.class);
 
 	protected static final AtomicInteger NEXT_QUERY_ID = new AtomicInteger(1); // static id count
-	
+
 	private final BigInteger queryID;
 	private final String query;
 	private final QueryType queryType;
 	private final long maxExecutionTimeMs;
 	private final long start;
-	
+
 	protected boolean done = false;
 
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
@@ -73,8 +71,7 @@ public class QueryInfo {
 		this.start = System.currentTimeMillis();
 	}
 
-	public QueryInfo(Resource subj, IRI pred, Value obj)
-	{
+	public QueryInfo(Resource subj, IRI pred, Value obj) {
 		this(QueryStringUtil.toString(subj, (IRI) pred, obj), QueryType.GET_STATEMENTS);
 	}
 
@@ -84,15 +81,16 @@ public class QueryInfo {
 
 	public String getQuery() {
 		return query;
-	}	
-	
+	}
+
 	public QueryType getQueryType() {
 		return queryType;
 	}
 
 	/**
 	 * 
-	 * @return the maximum remaining time in ms until the query runs into a timeout. If negative, timeout has been reached
+	 * @return the maximum remaining time in ms until the query runs into a timeout. If negative, timeout has been
+	 *         reached
 	 */
 	public long getMaxRemainingTimeMS() {
 		if (maxExecutionTimeMs <= 0) {
@@ -122,8 +120,8 @@ public class QueryInfo {
 	}
 
 	/**
-	 * Mark the query as aborted and abort all scheduled (future) tasks known at
-	 * this point in time. Also do not accept any new scheduled tasks
+	 * Mark the query as aborted and abort all scheduled (future) tasks known at this point in time. Also do not accept
+	 * any new scheduled tasks
 	 * 
 	 */
 	public synchronized void abort() {
@@ -136,8 +134,8 @@ public class QueryInfo {
 	}
 
 	/**
-	 * Close this query. If exists, all scheduled (future) tasks known at this point
-	 * in time are aborted. Also do not accept any new scheduled tasks
+	 * Close this query. If exists, all scheduled (future) tasks known at this point in time are aborted. Also do not
+	 * accept any new scheduled tasks
 	 * 
 	 */
 	public synchronized void close() {
@@ -185,7 +183,6 @@ public class QueryInfo {
 		} else if (!queryID.equals(other.queryID))
 			return false;
 		return true;
-	}	
-	
-	
+	}
+
 }

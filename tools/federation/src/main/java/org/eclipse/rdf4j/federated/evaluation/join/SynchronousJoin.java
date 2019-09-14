@@ -14,8 +14,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
-
 /**
  * Execute the nested loop join in a synchronous fashion, i.e. one binding after the other
  * 
@@ -29,17 +27,17 @@ public class SynchronousJoin extends JoinExecutorBase<BindingSet> {
 			throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 	}
-	
+
 	@Override
 	protected void handleBindings() throws Exception {
-		
-		int totalBindings=0;
-		
+
+		int totalBindings = 0;
+
 		while (!closed && leftIter.hasNext()) {
-			rightQueue.put( strategy.evaluate(rightArg, leftIter.next()) );
+			rightQueue.put(strategy.evaluate(rightArg, leftIter.next()));
 			totalBindings++;
 		}
-			
+
 		if (log.isDebugEnabled()) {
 			log.debug("JoinStats: left iter of " + getDisplayId() + " had " + totalBindings + " results.");
 		}

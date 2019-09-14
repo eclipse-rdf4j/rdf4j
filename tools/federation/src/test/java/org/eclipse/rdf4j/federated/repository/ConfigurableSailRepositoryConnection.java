@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 
 /**
- * Specialized {@link SailRepositoryConnection} that can be used with
- * {@link ConfigurableSailRepository}
+ * Specialized {@link SailRepositoryConnection} that can be used with {@link ConfigurableSailRepository}
  * 
  * @author Andreas Schwarte
  *
@@ -34,13 +33,13 @@ import org.eclipse.rdf4j.sail.SailConnection;
 public class ConfigurableSailRepositoryConnection extends SailRepositoryConnection {
 
 	private final ConfigurableSailRepository rep;
-	
+
 	protected ConfigurableSailRepositoryConnection(ConfigurableSailRepository repository,
 			SailConnection sailConnection) {
 		super(repository, sailConnection);
 		this.rep = repository;
 	}
-	
+
 	@Override
 	public void add(Statement st, Resource... contexts)
 			throws RepositoryException {
@@ -62,7 +61,7 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 		checkOperations(true);
 		super.add(subject, predicate, object, contexts);
 	}
-	
+
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {
@@ -87,8 +86,7 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
 			String queryString, String baseURI)
-			throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareBooleanQuery(ql, queryString, baseURI);
 	}
@@ -96,16 +94,14 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql,
 			String queryString, String baseURI)
-			throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareGraphQuery(ql, queryString, baseURI);
 	}
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString,
-			String baseURI) throws MalformedQueryException
-	{
+			String baseURI) throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareQuery(ql, queryString, baseURI);
 	}
@@ -113,8 +109,7 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql,
 			String queryString, String baseURI)
-			throws MalformedQueryException
-	{
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareTupleQuery(ql, queryString, baseURI);
 	}
@@ -122,12 +117,10 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update,
 			String baseURI) throws RepositoryException,
-			MalformedQueryException
-	{
+			MalformedQueryException {
 		checkOperations(true);
 		return super.prepareUpdate(ql, update, baseURI);
 	}
-
 
 	private void checkOperations(boolean isWrite) throws FailingRepositoryException {
 		checkFail(isWrite);

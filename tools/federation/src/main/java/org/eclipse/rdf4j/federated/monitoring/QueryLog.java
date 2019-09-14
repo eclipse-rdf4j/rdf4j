@@ -16,8 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Convenience class which writes the query backlog a logger with the name
- * "QueryLog". The logger is configured using the available logging framework.
+ * Convenience class which writes the query backlog a logger with the name "QueryLog". The logger is configured using
+ * the available logging framework.
  * <p>
  * Requires monitoring to be enabled:
  * </p>
@@ -30,19 +30,17 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  *
  */
-public class QueryLog
-{
+public class QueryLog {
 	private static final Logger log = LoggerFactory.getLogger(QueryLog.class);
-	
+
 	private final AtomicBoolean active = new AtomicBoolean(false);
 	private Logger queryLog;
-
 
 	public QueryLog() throws IOException {
 		log.info("Initializing logging of queries");
 		initQueryLog();
 	}
-	
+
 	private void initQueryLog() throws IOException {
 
 		queryLog = LoggerFactory.getLogger("QueryLog");
@@ -50,7 +48,7 @@ public class QueryLog
 		// activate the given logger
 		active.set(true);
 	}
-	
+
 	public void logQuery(QueryInfo query) {
 		if (active.get()) {
 			queryLog.info(query.getQuery().replace("\r\n", " ").replace("\n", " "));

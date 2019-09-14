@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * A specialized {@link CloseableIteration} that allows repetitive iterations
- * after resetting the cursor using {@link #resetCursor()}.
+ * A specialized {@link CloseableIteration} that allows repetitive iterations after resetting the cursor using
+ * {@link #resetCursor()}.
  * <p>
  * Note that the inner iteration is lazily consumed.
  * </p>

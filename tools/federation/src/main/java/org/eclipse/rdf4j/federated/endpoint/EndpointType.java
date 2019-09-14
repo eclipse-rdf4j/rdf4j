@@ -17,39 +17,38 @@ import java.util.List;
  *
  */
 public enum EndpointType {
-	NativeStore(Arrays.asList("NativeStore", "lsail/NativeStore")), 
-	SparqlEndpoint(Arrays.asList("SparqlEndpoint", "api/sparql")), 
-	RemoteRepository(Arrays.asList("RemoteRepository")), 
+	NativeStore(Arrays.asList("NativeStore", "lsail/NativeStore")),
+	SparqlEndpoint(Arrays.asList("SparqlEndpoint", "api/sparql")),
+	RemoteRepository(Arrays.asList("RemoteRepository")),
 	Other(Arrays.asList("Other"));
-	
+
 	private List<String> formatNames;
+
 	private EndpointType(List<String> formatNames) {
 		this.formatNames = formatNames;
-	}	
-	
+	}
+
 	/**
-	 * Returns true if the endpoint type supports the
-	 * given format (e.g. mime-type). Consider as an
-	 * example the SparqlEndpoint which supports
-	 * format "api/sparql".
+	 * Returns true if the endpoint type supports the given format (e.g. mime-type). Consider as an example the
+	 * SparqlEndpoint which supports format "api/sparql".
+	 * 
 	 * @param format
 	 * @return true if the endpoint supports the given format
 	 */
 	public boolean supportsFormat(String format) {
 		return formatNames.contains(format);
 	}
-	
+
 	/**
-	 * returns true if the given format is supported by
-	 * some repository type.
+	 * returns true if the given format is supported by some repository type.
 	 * 
 	 * @param format
 	 * @return wheter the given format is supported
 	 */
 	public static boolean isSupportedFormat(String format) {
-		if (format==null)
+		if (format == null)
 			return false;
-		for (EndpointType e  : values())
+		for (EndpointType e : values())
 			if (e.supportsFormat(format))
 				return true;
 		return false;

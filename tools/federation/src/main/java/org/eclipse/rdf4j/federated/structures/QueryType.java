@@ -9,5 +9,10 @@ package org.eclipse.rdf4j.federated.structures;
 
 public enum QueryType {
 
-	SELECT, CONSTRUCT, ASK, UPDATE, GET_STATEMENTS, UNKNOWN;
+	SELECT,
+	CONSTRUCT,
+	ASK,
+	UPDATE,
+	GET_STATEMENTS,
+	UNKNOWN;
 }

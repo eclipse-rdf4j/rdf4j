@@ -23,26 +23,24 @@ import org.junit.jupiter.api.Test;
 
 public class FilterUtilTest {
 
-	
 	@Test
 	public void testConjunctiveFilterExpr() throws Exception {
-		
+
 		FilterExpr left = createFilterExpr("age", 15, CompareOp.GT);
 		FilterExpr right = createFilterExpr("age", 25, CompareOp.LT);
 		ConjunctiveFilterExpr expr = new ConjunctiveFilterExpr(left, right);
-		
+
 		Assertions.assertEquals(
 				"( ( ?age > '15'^^<http://www.w3.org/2001/XMLSchema#int> ) && ( ?age < '25'^^<http://www.w3.org/2001/XMLSchema#int> ) )",
 				FilterUtils.toSparqlString(expr));
 	}
-	
-	private FilterExpr createFilterExpr( String leftVarName, int rightConstant, CompareOp operator) {
+
+	private FilterExpr createFilterExpr(String leftVarName, int rightConstant, CompareOp operator) {
 		Compare compare = new Compare(new Var(leftVarName), valueConstant(rightConstant), operator);
 		return new FilterExpr(compare, new HashSet<String>());
-	
+
 	}
-	
-	
+
 	private ValueExpr valueConstant(int constant) {
 		return new ValueConstant(FedXUtil.valueFactory().createLiteral(constant));
 	}

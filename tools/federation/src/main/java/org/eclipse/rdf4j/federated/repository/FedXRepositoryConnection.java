@@ -31,26 +31,23 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import com.google.common.collect.Sets;
 
 /**
- * A special {@link SailRepositoryConnection} which adds the original query
- * string as binding to the returned query. The binding name is defined by
- * {@link #BINDING_ORIGINAL_QUERY} and is added to all query instances returned
- * by the available prepare methods.
+ * A special {@link SailRepositoryConnection} which adds the original query string as binding to the returned query. The
+ * binding name is defined by {@link #BINDING_ORIGINAL_QUERY} and is added to all query instances returned by the
+ * available prepare methods.
  * 
  * @author Andreas Schwarte
  *
  */
-public class FedXRepositoryConnection extends SailRepositoryConnection
-{
+public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	/**
-	 * We add a binding to each parsed query mapping the original query
-	 * in order to send the original query to the endpoint if there is
-	 * only a single federation member is relevant for this query.
+	 * We add a binding to each parsed query mapping the original query in order to send the original query to the
+	 * endpoint if there is only a single federation member is relevant for this query.
 	 */
 	public static final String BINDING_ORIGINAL_QUERY = "__originalQuery";
 	public static final String BINDING_ORIGINAL_QUERY_TYPE = "__originalQueryType";
 	public static final String BINDING_ORIGINAL_MAX_EXECUTION_TIME = "__originalQueryMaxExecutionTime";
-	
+
 	/**
 	 * The number of bindings in the external binding set that are added by FedX.
 	 * 
@@ -68,14 +65,12 @@ public class FedXRepositoryConnection extends SailRepositoryConnection
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString,
-			String baseURI) throws MalformedQueryException
-	{
+			String baseURI) throws MalformedQueryException {
 		SailQuery q = super.prepareQuery(ql, queryString, baseURI);
 		if (q instanceof SailTupleQuery) {
 			insertOriginalQueryString(q, queryString, QueryType.SELECT);
 			q = new FedXTupleQuery((SailTupleQuery) q);
-		}
-		else if (q instanceof GraphQuery) {
+		} else if (q instanceof GraphQuery) {
 			insertOriginalQueryString(q, queryString, QueryType.CONSTRUCT);
 			q = new FedXGraphQuery((SailGraphQuery) q);
 		} else if (q instanceof SailBooleanQuery) {
@@ -87,8 +82,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection
 
 	@Override
 	public FedXTupleQuery prepareTupleQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException
-	{
+			String queryString, String baseURI) throws MalformedQueryException {
 		SailTupleQuery q = super.prepareTupleQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, QueryType.SELECT);
 		return new FedXTupleQuery(q);
@@ -96,8 +90,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection
 
 	@Override
 	public FedXGraphQuery prepareGraphQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException
-	{
+			String queryString, String baseURI) throws MalformedQueryException {
 		SailGraphQuery q = super.prepareGraphQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, QueryType.CONSTRUCT);
 		return new FedXGraphQuery(q);
@@ -105,17 +98,15 @@ public class FedXRepositoryConnection extends SailRepositoryConnection
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException
-	{
-		SailBooleanQuery q= super.prepareBooleanQuery(ql, queryString, baseURI);
+			String queryString, String baseURI) throws MalformedQueryException {
+		SailBooleanQuery q = super.prepareBooleanQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, QueryType.ASK);
 		return new FedXBooleanQuery(q);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-			throws RepositoryException, MalformedQueryException
-	{
+			throws RepositoryException, MalformedQueryException {
 		return super.prepareUpdate(ql, update, baseURI);
 	}
 

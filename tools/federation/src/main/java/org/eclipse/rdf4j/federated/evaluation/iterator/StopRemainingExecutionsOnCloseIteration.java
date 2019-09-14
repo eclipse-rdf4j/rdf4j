@@ -17,11 +17,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * A wrapping iteration that attempts to close all running scheduled
- * {@link Future}s for the given query evaluation.
+ * A wrapping iteration that attempts to close all running scheduled {@link Future}s for the given query evaluation.
  * <p>
- * This is required for instance if the resulting iteration is not fully
- * consumed.
+ * This is required for instance if the resulting iteration is not fully consumed.
  * </p>
  * 
  * @author Andreas Schwarte

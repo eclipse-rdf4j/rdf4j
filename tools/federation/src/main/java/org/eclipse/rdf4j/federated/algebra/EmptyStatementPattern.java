@@ -11,8 +11,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
- * EmptyStatementPattern represents a statement that cannot produce any results 
- * for the registered endpoints.
+ * EmptyStatementPattern represents a statement that cannot produce any results for the registered endpoints.
  * 
  * @author Andreas Schwarte
  *
@@ -24,7 +23,7 @@ public class EmptyStatementPattern extends StatementPattern implements EmptyResu
 	public EmptyStatementPattern(StatementPattern node) {
 		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meetOther(this);
 	}

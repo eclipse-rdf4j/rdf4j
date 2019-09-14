@@ -21,24 +21,23 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 
 public interface FedXApi {
 
-	
 	public TupleQueryResult evaluate(String query) throws QueryEvaluationException;
-	
-	public TupleQueryResult evaluate(String query, List<Endpoint> endpoints) throws FedXException, QueryEvaluationException;
-	
-	public TupleQueryResult evaluateAt(String query, List<String> endpointIds) throws FedXException, QueryEvaluationException;
-	
+
+	public TupleQueryResult evaluate(String query, List<Endpoint> endpoints)
+			throws FedXException, QueryEvaluationException;
+
+	public TupleQueryResult evaluateAt(String query, List<String> endpointIds)
+			throws FedXException, QueryEvaluationException;
+
 	public RepositoryResult<Statement> getStatements(Resource subject, IRI predicate, Value object,
 			Resource... contexts);
 
 	public void addEndpoint(Endpoint e);
 
 	public void removeEndpoint(Endpoint e);
-	
+
 	public void removeEndpoint(String endpointId);
-	
+
 	public void shutdown();
-	
-	
 
 }

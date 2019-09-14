@@ -18,34 +18,32 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * A task implementation representing a bound join, see {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)}
- * for further details on the evaluation process.
+ * A task implementation representing a bound join, see
+ * {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)} for further details on the
+ * evaluation process.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelIndependentGroupJoinTask extends ParallelTaskBase<BindingSet> {
 
-	
 	protected final FederationEvalStrategy strategy;
 	protected final IndependentJoinGroup expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	
-	public ParallelIndependentGroupJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, IndependentJoinGroup expr, List<BindingSet> bindings) {
+
+	public ParallelIndependentGroupJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+			IndependentJoinGroup expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;
 		this.joinControl = joinControl;
 	}
 
-
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
-		return strategy.evaluateIndependentJoinGroup(expr, bindings);		
+		return strategy.evaluateIndependentJoinGroup(expr, bindings);
 	}
-
 
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {

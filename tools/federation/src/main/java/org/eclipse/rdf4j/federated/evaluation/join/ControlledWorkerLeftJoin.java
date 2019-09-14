@@ -20,27 +20,25 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
- * Execute the nested loop join in an asynchronous fashion, i.e. one binding after the other (but
- * concurrently)
- *  
- * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which
- * works according to the FIFO principle.
+ * Execute the nested loop join in an asynchronous fashion, i.e. one binding after the other (but concurrently)
  * 
- * This join cursor blocks until all scheduled tasks are finished, however the result iteration
- * can be accessed from different threads to allow for pipelining.
+ * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which works according to the
+ * FIFO principle.
+ * 
+ * This join cursor blocks until all scheduled tasks are finished, however the result iteration can be accessed from
+ * different threads to allow for pipelining.
  * 
  * @author Andreas Schwarte
  */
 public class ControlledWorkerLeftJoin extends JoinExecutorBase<BindingSet> {
 
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerLeftJoin.class);
-	
+
 	protected final ControlledWorkerScheduler<BindingSet> scheduler;
 
 	protected final Phaser phaser = new Phaser(1);
-	
+
 	protected final LeftJoin join;
 
 	public ControlledWorkerLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
@@ -52,40 +50,37 @@ public class ControlledWorkerLeftJoin extends JoinExecutorBase<BindingSet> {
 		this.join = join;
 	}
 
-	
 	@Override
 	protected void handleBindings() throws Exception {
-		
-		int totalBindings = 0;		// the total number of bindings
-		
+
+		int totalBindings = 0; // the total number of bindings
+
 		while (!closed && leftIter.hasNext()) {
 			ParallelLeftJoinTask task = new ParallelLeftJoinTask(this, strategy, join, leftIter.next());
 			totalBindings++;
 			phaser.register();
 			scheduler.schedule(task);
 		}
-		
+
 		scheduler.informFinish(this);
-		
+
 		if (log.isDebugEnabled()) {
 			log.debug("JoinStats: left iter of " + getDisplayId() + " had " + totalBindings + " results.");
 		}
-		
+
 		// wait until all tasks are executed
 		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
 
 	}
 
 	@Override
-	public void done()
-	{
+	public void done() {
 		phaser.arriveAndDeregister();
 		super.done();
 	}
 
 	@Override
-	public void toss(Exception e)
-	{
+	public void toss(Exception e) {
 		phaser.arriveAndDeregister();
 		super.toss(e);
 	}

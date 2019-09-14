@@ -10,12 +10,10 @@ package org.eclipse.rdf4j.federated.evaluation;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 
-public class TripleSourceFactory
-{
+public class TripleSourceFactory {
 
 	public static TripleSource tripleSourceFor(Endpoint e, EndpointType t) {
-		switch (t)
-		{
+		switch (t) {
 		case NativeStore:
 			return new SailTripleSource(e);
 		case SparqlEndpoint:

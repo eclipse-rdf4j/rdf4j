@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.federated.repository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 
 /**
- * A resolver bean that provides static access to a {@link RepositoryResolver}.
- * Is used in the initialization process via {@link FedXRepositoryFactory}.
+ * A resolver bean that provides static access to a {@link RepositoryResolver}. Is used in the initialization process
+ * via {@link FedXRepositoryFactory}.
  * 
  * <p>
  * For use in the RDF4J workbench the following Spring bean can be registered:

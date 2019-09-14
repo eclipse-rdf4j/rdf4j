@@ -15,8 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A wrapping iteration that attempts to close the dependent
- * {@link RepositoryConnection} after consumption.
+ * A wrapping iteration that attempts to close the dependent {@link RepositoryConnection} after consumption.
  * 
  * @author Andreas Schwarte
  *

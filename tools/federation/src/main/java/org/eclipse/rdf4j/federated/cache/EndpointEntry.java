@@ -12,17 +12,14 @@ import java.io.Serializable;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 
-
 public class EndpointEntry implements Serializable {
 
-
 	private static final long serialVersionUID = -5572059274543728740L;
-	
+
 	protected final String endpointID;
 	protected boolean doesProvideStatements = false;
 	protected boolean hasLocalStatements = false;
-	
-	
+
 	public EndpointEntry(String endpointID, boolean canProvideStatements) {
 		super();
 		this.endpointID = endpointID;
@@ -37,7 +34,6 @@ public class EndpointEntry implements Serializable {
 		throw new UnsupportedOperationException("This operation is not yet supported.");
 	}
 
-
 	public boolean hasLocalStatements() {
 		return hasLocalStatements;
 	}
@@ -46,13 +42,13 @@ public class EndpointEntry implements Serializable {
 		this.doesProvideStatements = canProvideStatements;
 	}
 
-
 	public String getEndpointID() {
 		return endpointID;
 	}
-	
+
 	public String toString() {
-		return getClass().getSimpleName() + " {endpointID=" + endpointID + ", doesProvideStatements=" + doesProvideStatements + ", hasLocalStatements=" + hasLocalStatements + "}";
+		return getClass().getSimpleName() + " {endpointID=" + endpointID + ", doesProvideStatements="
+				+ doesProvideStatements + ", hasLocalStatements=" + hasLocalStatements + "}";
 	}
-	
+
 }

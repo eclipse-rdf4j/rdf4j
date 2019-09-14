@@ -13,28 +13,26 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
-
 /**
- * Filters iteration according to specified filterExpr and inserts original 
- * bindings into filtered results.
+ * Filters iteration according to specified filterExpr and inserts original bindings into filtered results.
  * 
  * @author Andreas Schwarte
  */
 public class FilteringInsertBindingsIteration extends FilteringIteration {
 
 	protected final BindingSet bindings;
-	
+
 	public FilteringInsertBindingsIteration(FilterValueExpr filterExpr, BindingSet bindings,
 			CloseableIteration<BindingSet, QueryEvaluationException> iter)
 			throws QueryEvaluationException {
 		super(filterExpr, iter);
 		this.bindings = bindings;
 	}
-	
+
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
 		BindingSet next = super.next();
-		if (next==null)
+		if (next == null)
 			return null;
 		QueryBindingSet res = new QueryBindingSet(bindings.size() + next.size());
 		res.addAll(bindings);

@@ -12,16 +12,16 @@ import java.util.List;
 public interface FederationStatusMBean {
 
 	public List<String> getFederationMembersDescription();
-	
+
 	public int getIdleJoinWorkerThreads();
-	
+
 	public int getTotalJoinWorkerThreads();
-	
+
 	public int getIdleUnionWorkerThreads();
-	
+
 	public int getTotalUnionWorkerThreads();
-	
+
 	public int getNumberOfScheduledJoinTasks();
-	
+
 	public int getNumberOfScheduledUnionTasks();
 }

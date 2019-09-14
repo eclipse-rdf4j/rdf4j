@@ -26,18 +26,17 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 
 public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 
-	
 	private final File configurationPreset;
 
 	protected Repository repository;
 
 	// settings that get applied in the actual config
 	protected Map<String, String> configSettings = new HashMap<>();
-		
+
 	public FedXRule(File configurationPreset) {
 		this.configurationPreset = configurationPreset;
 	}
-	
+
 	public FedXRule() {
 		this(null);
 	}
@@ -54,14 +53,14 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 			Config.getConfig().set(config.getKey(), config.getValue());
 		}
 		List<Endpoint> endpoints;
-		if (configurationPreset!=null)
+		if (configurationPreset != null)
 			endpoints = EndpointFactory.loadFederationMembers(configurationPreset);
 		else
 			endpoints = Collections.<Endpoint>emptyList();
 		repository = FedXFactory.initializeFederation(endpoints);
 		FederationManager.getInstance().getCache().clear();
 	}
-	
+
 	@Override
 	public void afterEach(ExtensionContext ctx) {
 		repository.shutDown();
@@ -70,11 +69,11 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 	public void addEndpoint(Endpoint e) {
 		FederationManager.getInstance().addEndpoint(e);
 	}
-	
+
 	public void enableDebug() {
 		setConfig("debugQueryPlan", "true");
 	}
-	
+
 	public void setConfig(String key, String value) {
 		Config.getConfig().set(key, value);
 	}
@@ -82,5 +81,5 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 	public Repository getRepository() {
 		return repository;
 	}
-	
+
 }

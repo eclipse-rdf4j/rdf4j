@@ -30,8 +30,8 @@ import org.slf4j.LoggerFactory;
  * @see ExclusiveStatement
  *
  */
-public abstract class FedXStatementPattern extends StatementPattern implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr
-{
+public abstract class FedXStatementPattern extends StatementPattern
+		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr {
 	private static final Logger log = LoggerFactory.getLogger(FedXStatementPattern.class);
 
 	private static final long serialVersionUID = 6588020780262348806L;
@@ -41,23 +41,24 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 	protected final QueryInfo queryInfo;
 	protected final List<String> freeVars = new ArrayList<String>(3);
 	protected FilterValueExpr filterExpr = null;
-	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as additional bindings
+	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
+													// additional bindings
 	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery
-	
+
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
 		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
 		this.id = NodeFactory.getNextId();
-		this.queryInfo=queryInfo;
+		this.queryInfo = queryInfo;
 		initFreeVars();
 	}
-	
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		super.visitChildren(visitor);
 		for (StatementSource s : sort(statementSources))
 			s.visit(visitor);
-		
+
 		if (boundFilters != null) {
 			BoundFiltersNode.visit(visitor, boundFilters);
 		}
@@ -66,22 +67,22 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 			new UpperLimitNode(upperLimit).visit(visitor);
 		}
 
-		if (filterExpr!=null)
+		if (filterExpr != null)
 			filterExpr.visit(visitor);
 	}
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
 		visitor.meetOther(this);
 	}
-	
+
 	protected void initFreeVars() {
-		if (getSubjectVar().getValue()==null)
+		if (getSubjectVar().getValue() == null)
 			freeVars.add(getSubjectVar().getName());
-		if (getPredicateVar().getValue()==null)
+		if (getPredicateVar().getValue() == null)
 			freeVars.add(getPredicateVar().getName());
-		if (getObjectVar().getValue()==null)
+		if (getObjectVar().getValue() == null)
 			freeVars.add(getObjectVar().getName());
 	}
 
@@ -89,40 +90,39 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 	public int getFreeVarCount() {
 		return freeVars.size();
 	}
-	
+
 	@Override
 	public List<String> getFreeVars() {
 		return freeVars;
-	}	
-	
+	}
+
 	@Override
 	public QueryInfo getQueryInfo() {
 		return this.queryInfo;
 	}
-	
+
 	@Override
 	public String getId() {
 		return id;
-	}	
+	}
 
 	@Override
 	public boolean hasFreeVarsFor(BindingSet bindings) {
 		for (String var : freeVars)
 			if (!bindings.hasBinding(var))
 				return true;
-		return false;		
+		return false;
 	}
-	
+
 	@Override
 	public List<StatementSource> getStatementSources() {
 		return statementSources;
 	}
-	
+
 	public int getSourceCount() {
 		return statementSources.size();
 	}
-	
-	
+
 	@Override
 	public FilterValueExpr getFilterExpr() {
 		return filterExpr;
@@ -130,26 +130,26 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 
 	@Override
 	public boolean hasFilter() {
-		return filterExpr!=null;
+		return filterExpr != null;
 	}
 
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
 
-		if (filterExpr==null)
+		if (filterExpr == null)
 			filterExpr = expr;
 		else if (filterExpr instanceof ConjunctiveFilterExpr) {
-			((ConjunctiveFilterExpr)filterExpr).addExpression(expr);
-		} else if (filterExpr instanceof FilterExpr){
-			filterExpr = new ConjunctiveFilterExpr((FilterExpr)filterExpr, expr);
+			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
+		} else if (filterExpr instanceof FilterExpr) {
+			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);
 		} else {
 			throw new RuntimeException("Unexpected type: " + filterExpr.getClass().getCanonicalName());
 		}
 	}
-	
+
 	@Override
 	public void addBoundFilter(String varName, Value value) {
-		
+
 		if (!freeVars.contains(varName)) {
 			log.debug("Invalid call to addBoundFilter: variable " + varName + " is not known as a free variable");
 			return;
@@ -167,19 +167,19 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 			getPredicateVar().setValue(value);
 		if (getObjectVar().getName().equals(varName))
 			getObjectVar().setValue(value);
-		
+
 		boundFilters.addBinding(varName, value);
 
 		freeVars.remove(varName);
-		
+
 		// XXX recheck owned source if it still can deliver results, otherwise prune it
 		// optimization: keep result locally for this query
 		// if no free vars AND hasResults => replace by TrueNode to avoid additional remote requests
 	}
-	
+
 	/**
-	 * Set the upper limit for this statement expression (i.e. applied in the
-	 * evaluation to individual subqueries of this expr)
+	 * Set the upper limit for this statement expression (i.e. applied in the evaluation to individual subqueries of
+	 * this expr)
 	 * 
 	 * @param upperLimit the upper limit, a negative number means unlimited
 	 */
@@ -197,15 +197,15 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 
 	private List<StatementSource> sort(List<StatementSource> stmtSources) {
 		List<StatementSource> res = new ArrayList<StatementSource>(stmtSources);
-		Collections.sort(res, new Comparator<StatementSource>()	{
+		Collections.sort(res, new Comparator<StatementSource>() {
 			@Override
-			public int compare(StatementSource o1, StatementSource o2) 	{
+			public int compare(StatementSource o1, StatementSource o2) {
 				return o1.id.compareTo(o2.id);
-			}			
+			}
 		});
 		return res;
 	}
-	
+
 	static class UpperLimitNode extends AbstractQueryModelNode {
 
 		private static final long serialVersionUID = -1331709574582152474L;
@@ -216,11 +216,12 @@ public abstract class FedXStatementPattern extends StatementPattern implements S
 			super();
 			this.upperLimit = upperLimit;
 		}
-		
+
 		@Override
 		public String getSignature() {
 			return "Upper Limit: " + upperLimit;
 		}
+
 		@Override
 		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 			visitor.meetOther(this);

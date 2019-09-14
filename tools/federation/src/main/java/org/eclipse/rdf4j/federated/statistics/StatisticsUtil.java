@@ -18,25 +18,22 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 public class StatisticsUtil {
 
-	
 	public static Statement toStatement(StatementPattern stmt, BindingSet bindings) {
-		
+
 		Value subj = toValue(stmt.getSubjectVar(), bindings);
 		Value pred = toValue(stmt.getPredicateVar(), bindings);
 		Value obj = toValue(stmt.getObjectVar(), bindings);
-		
+
 		return new UnboundStatement((Resource) subj, (IRI) pred, obj);
 	}
-	
-	
-	
+
 	protected static Value toValue(Var var, BindingSet bindings) {
 		if (var.hasValue())
 			return var.getValue();
-		
-		if (bindings.hasBinding(var.getName()))	
+
+		if (bindings.hasBinding(var.getName()))
 			return bindings.getValue(var.getName());
-		
-		return null;			
+
+		return null;
 	}
 }

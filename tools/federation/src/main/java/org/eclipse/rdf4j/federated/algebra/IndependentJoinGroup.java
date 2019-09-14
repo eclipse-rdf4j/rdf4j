@@ -17,19 +17,18 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-public class IndependentJoinGroup extends AbstractQueryModelNode implements TupleExpr, QueryRef, BoundJoinTupleExpr
-{
+public class IndependentJoinGroup extends AbstractQueryModelNode implements TupleExpr, QueryRef, BoundJoinTupleExpr {
 	private static final long serialVersionUID = -12440690622448600L;
 
 	protected final List<StatementTupleExpr> members;
 	protected final transient QueryInfo queryInfo;
-		
+
 	public IndependentJoinGroup(List<StatementTupleExpr> members, QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
 		this.members = members;
 	}
-	
+
 	public IndependentJoinGroup(StatementTupleExpr stmt_a, StatementTupleExpr stmt_b, QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
@@ -37,12 +36,11 @@ public class IndependentJoinGroup extends AbstractQueryModelNode implements Tupl
 		this.members.add(stmt_a);
 		this.members.add(stmt_b);
 	}
-	
 
 	public List<StatementTupleExpr> getMembers() {
 		return members;
 	}
-	
+
 	public int getMemberCount() {
 		return members.size();
 	}
@@ -59,25 +57,25 @@ public class IndependentJoinGroup extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
-		
+			throws X {
+
 		for (StatementTupleExpr s : members)
 			s.visit(visitor);
 	}
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
 		visitor.meetOther(this);
 	}
-	
+
 	@Override
 	public IndependentJoinGroup clone() {
 		throw new RuntimeException("Operation not supported on this node!");
 	}
 
 	@Override
-	public QueryInfo getQueryInfo()	{
+	public QueryInfo getQueryInfo() {
 		return queryInfo;
 	}
 }

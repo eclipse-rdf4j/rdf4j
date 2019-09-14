@@ -20,41 +20,40 @@ public class SubQuery implements Serializable {
 	 * 
 	 */
 	private static final long serialVersionUID = 8968907794785828994L;
-	
+
 	protected String subj = null;
 	protected String pred = null;
 	protected String obj = null;
-	
+
 	public SubQuery(String subj, String pred, String obj) {
 		super();
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 	}
-	
-	public SubQuery(Resource subj, IRI pred, Value obj)
-	{
+
+	public SubQuery(Resource subj, IRI pred, Value obj) {
 		super();
-		if (subj!=null)
+		if (subj != null)
 			this.subj = subj.stringValue();
-		if (pred!=null)
+		if (pred != null)
 			this.pred = pred.stringValue();
-		if (obj!=null)
-			this.obj = obj.toString();	
+		if (obj != null)
+			this.obj = obj.toString();
 		// we need to take toString() here since stringValue for literals does not contain the datatype
 	}
 
 	public SubQuery(StatementPattern stmt) {
 		super();
-		
+
 		if (stmt.getSubjectVar().hasValue())
 			subj = stmt.getSubjectVar().getValue().stringValue();
 		if (stmt.getPredicateVar().hasValue())
 			pred = stmt.getPredicateVar().getValue().stringValue();
 		if (stmt.getObjectVar().hasValue())
 			obj = stmt.getObjectVar().getValue().stringValue();
-	}	
-	
+	}
+
 	@Override
 	public int hashCode() {
 		final int prime1 = 961;
@@ -63,10 +62,10 @@ public class SubQuery implements Serializable {
 		int result = 1;
 		result += ((subj == null) ? 0 : subj.hashCode() * prime1);
 		result += ((pred == null) ? 0 : pred.hashCode() * prime2);
-		result += ((obj == null) ? 0 : obj.hashCode() * prime3);		
+		result += ((obj == null) ? 0 : obj.hashCode() * prime3);
 		return result;
 	}
-	
+
 	@Override
 	public boolean equals(Object obj) {
 		if (this == obj)
@@ -93,6 +92,5 @@ public class SubQuery implements Serializable {
 			return false;
 		return true;
 	}
-	
-	
+
 }

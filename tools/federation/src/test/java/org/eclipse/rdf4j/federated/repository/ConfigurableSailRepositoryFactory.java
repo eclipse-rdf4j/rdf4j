@@ -72,7 +72,8 @@ public class ConfigurableSailRepositoryFactory implements RepositoryFactory {
 	}
 
 	private Sail createSail(SailImplConfig config) throws RepositoryConfigException, SailConfigException {
-		SailFactory sailFactory = SailRegistry.getInstance().get(config.getType())
+		SailFactory sailFactory = SailRegistry.getInstance()
+				.get(config.getType())
 				.orElseThrow(() -> new RepositoryConfigException("Unsupported Sail type: " + config.getType()));
 		return sailFactory.getSail(config);
 	}
@@ -101,7 +102,7 @@ public class ConfigurableSailRepositoryFactory implements RepositoryFactory {
 		}
 
 	}
-	
+
 	public static class FailingRepositoryException extends RepositoryException {
 		private static final long serialVersionUID = 1L;
 
@@ -109,5 +110,5 @@ public class ConfigurableSailRepositoryFactory implements RepositoryFactory {
 			super(message);
 		}
 	}
-	
+
 }

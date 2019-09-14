@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
- * A {@link QueryModelNode} for printing the bound filter vars (e.g. in a
- * {@link FedXStatementPattern})
+ * A {@link QueryModelNode} for printing the bound filter vars (e.g. in a {@link FedXStatementPattern})
  * 
  * @author Andreas Schwarte
  *
@@ -37,18 +36,17 @@ public class BoundFiltersNode extends AbstractQueryModelNode {
 	}
 
 	@Override
-	public String getSignature()
-	{
+	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 		sb.append("BoundFilters (");
-		int i=0;
+		int i = 0;
 		for (Binding b : boundFilters) {
 			sb.append(b.getName()).append("=").append(b.getValue());
-			if (i++<boundFilters.size()-1) {
+			if (i++ < boundFilters.size() - 1) {
 				sb.append(", ");
 			}
 		}
-		sb.append(")");	
+		sb.append(")");
 		return sb.toString();
 	}
 

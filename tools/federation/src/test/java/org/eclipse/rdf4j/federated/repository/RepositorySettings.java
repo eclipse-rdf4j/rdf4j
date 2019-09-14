@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.federated.repository;
 
 /**
- * Interface for defining settings on a repository, e.g
- * {@link ConfigurableSailRepository}
+ * Interface for defining settings on a repository, e.g {@link ConfigurableSailRepository}
  * 
  * @author Andreas Schwarte
  *
@@ -31,8 +30,7 @@ public interface RepositorySettings {
 
 	/**
 	 * 
-	 * @param runnable a runnable that can be used to simulate latency, e.g. by
-	 *                 letting the thread sleep
+	 * @param runnable a runnable that can be used to simulate latency, e.g. by letting the thread sleep
 	 */
 	public void setLatencySimulator(Runnable runnable);
 }

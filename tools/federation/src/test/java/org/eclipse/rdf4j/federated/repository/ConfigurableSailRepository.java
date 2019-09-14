@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Specialized {@link SailRepository} that allows configuration of various
- * behaviors, e.g. fail after N operations.
+ * Specialized {@link SailRepository} that allows configuration of various behaviors, e.g. fail after N operations.
  * 
  * @author Andreas Schwarte
  *
@@ -25,7 +24,7 @@ import org.eclipse.rdf4j.sail.SailException;
 public class ConfigurableSailRepository extends SailRepository implements RepositorySettings {
 	int failAfter = -1; // fail after x operations, -1 means inactive
 	boolean writable = true;
-	
+
 	/**
 	 * A runnable that can be used to simulate latency
 	 */
@@ -48,7 +47,7 @@ public class ConfigurableSailRepository extends SailRepository implements Reposi
 	public void setFailAfter(int nOperations) {
 		this.failAfter = nOperations;
 	}
-	
+
 	@Override
 	public void setWritable(boolean flag) {
 		this.writable = flag;
@@ -58,9 +57,9 @@ public class ConfigurableSailRepository extends SailRepository implements Reposi
 	public void resetOperationsCounter() {
 		this.operationsCount.set(0);
 	}
-				
+
 	@Override
-	public boolean isWritable() throws RepositoryException 	{
+	public boolean isWritable() throws RepositoryException {
 		return writable && super.isWritable();
 	}
 

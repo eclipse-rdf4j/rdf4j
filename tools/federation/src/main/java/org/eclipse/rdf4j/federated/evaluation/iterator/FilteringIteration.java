@@ -24,18 +24,19 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluationException> {
-	
+
 	private static final Logger log = LoggerFactory.getLogger(FilteringIteration.class);
-	
+
 	protected FilterValueExpr filterExpr;
 	protected FederationEvalStrategy strategy;
-	
-	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet, QueryEvaluationException> iter) throws QueryEvaluationException {
+
+	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet, QueryEvaluationException> iter)
+			throws QueryEvaluationException {
 		super(iter);
 		this.filterExpr = filterExpr;
 		this.strategy = FederationManager.getInstance().getStrategy();
-	}	
-	
+	}
+
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
 		try {

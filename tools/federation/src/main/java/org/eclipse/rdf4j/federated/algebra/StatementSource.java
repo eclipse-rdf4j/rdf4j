@@ -16,23 +16,25 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class StatementSource extends AbstractQueryModelNode
-{
+public class StatementSource extends AbstractQueryModelNode {
 
 	private static final long serialVersionUID = 1415552729436432653L;
 
-	public static enum StatementSourceType { LOCAL, REMOTE, REMOTE_POSSIBLY; }
-	
+	public static enum StatementSourceType {
+		LOCAL,
+		REMOTE,
+		REMOTE_POSSIBLY;
+	}
+
 	protected String id;
 	protected StatementSourceType type;
-		
+
 	public StatementSource(String name, StatementSourceType type) {
 		super();
 		this.id = name;
 		this.type = type;
 	}
 
-	
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
@@ -40,20 +42,19 @@ public class StatementSource extends AbstractQueryModelNode
 	}
 
 	@Override
-	public String getSignature()
-	{
+	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 
 		sb.append(super.getSignature());
-		
+
 		sb.append(" (id=").append(id);
-		
+
 		sb.append(", type=").append(type);
-		
+
 		sb.append(")");
-		
+
 		return sb.toString();
-		
+
 	}
 
 	@Override
@@ -86,14 +87,13 @@ public class StatementSource extends AbstractQueryModelNode
 			return false;
 		return true;
 	}
-	
+
 	public String getEndpointID() {
 		return id;
 	}
-	
-	
+
 	public boolean isLocal() {
-		return type==StatementSourceType.LOCAL;
+		return type == StatementSourceType.LOCAL;
 	}
-	
+
 }

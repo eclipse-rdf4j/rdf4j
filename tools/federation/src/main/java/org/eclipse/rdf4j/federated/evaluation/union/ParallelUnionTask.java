@@ -24,13 +24,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  * @author Andreas Schwarte
  */
 public class ParallelUnionTask extends ParallelTaskBase<BindingSet> {
-	
+
 	protected final Endpoint endpoint;
 	protected final StatementPattern stmt;
 	protected final BindingSet bindings;
 	protected final ParallelExecutor<BindingSet> unionControl;
 	protected final FilterValueExpr filterExpr;
-	
+
 	public ParallelUnionTask(ParallelExecutor<BindingSet> unionControl, StatementPattern stmt, Endpoint endpoint,
 			BindingSet bindings, FilterValueExpr filterExpr) {
 		this.endpoint = endpoint;
@@ -50,7 +50,7 @@ public class ParallelUnionTask extends ParallelTaskBase<BindingSet> {
 	public ParallelExecutor<BindingSet> getControl() {
 		return unionControl;
 	}
-	
+
 	@Override
 	public String toString() {
 		return this.getClass().getSimpleName() + " @" + endpoint.getId() + ": " + QueryStringUtil.toString(stmt);

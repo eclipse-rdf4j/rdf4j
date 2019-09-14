@@ -17,12 +17,10 @@ import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformation;
 import org.eclipse.rdf4j.federated.monitoring.jmx.FederationStatus;
 
-
-public class MonitoringUtil
-{
+public class MonitoringUtil {
 
 	public static void printMonitoringInformation() {
-		
+
 		MonitoringService ms = getMonitoringService();
 
 		System.out.println("### Request monitoring: ");
@@ -30,29 +28,26 @@ public class MonitoringUtil
 			System.out.println("\t" + m.toString());
 		}
 	}
-	
-	
+
 	public static MonitoringService getMonitoringService() throws FedXRuntimeException {
 		Monitoring m = FederationManager.getMonitoringService();
 		if (m instanceof MonitoringService)
-			return (MonitoringService)m;
+			return (MonitoringService) m;
 		throw new FedXRuntimeException("Monitoring is currently disabled for this system.");
 	}
-	
-	
+
 	/**
 	 * Flag is set to true to once initialized
 	 */
 	private static boolean JMX_initialized = false;
-	
+
 	/**
-	 * Initialize JMX monitoring using the systems MBeanServer. JMX
-	 * is only initialized if it has not been initialized before.
+	 * Initialize JMX monitoring using the systems MBeanServer. JMX is only initialized if it has not been initialized
+	 * before.
 	 * 
 	 * @throws Exception
 	 */
-	public static void initializeJMXMonitoring() throws Exception
-	{
+	public static void initializeJMXMonitoring() throws Exception {
 		if (JMX_initialized)
 			return;
 		MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();

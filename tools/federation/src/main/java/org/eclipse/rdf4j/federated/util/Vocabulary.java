@@ -31,7 +31,6 @@ public class Vocabulary {
 
 		public static final String NAMESPACE = "http://www.fluidops.com/config/fedx#";
 
-
 		/*
 		 * Properties
 		 */
@@ -64,7 +63,7 @@ public class Vocabulary {
 		/*
 		 * Properties
 		 */
-		
+
 		public static final IRI ENDPOINT = vf.createIRI(NAMESPACE, "endpoint");
 	}
 }

@@ -36,7 +36,7 @@ public class NativeStoreServer implements Server {
 	@Override
 	public void initialize(int nRepositories) throws Exception {
 
-		for (int i=1; i<=nRepositories; i++) {
+		for (int i = 1; i <= nRepositories; i++) {
 			ConfigurableSailRepository repo = new ConfigurableSailRepository(
 					new NativeStoreExt(new File(dataDir, "endpoint" + i)), true);
 			repo.initialize();
@@ -44,7 +44,7 @@ public class NativeStoreServer implements Server {
 			repo.shutDown();
 		}
 	}
-	
+
 	@Override
 	public void shutdown() throws Exception {
 

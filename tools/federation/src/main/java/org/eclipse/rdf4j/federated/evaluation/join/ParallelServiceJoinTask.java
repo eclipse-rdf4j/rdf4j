@@ -18,20 +18,20 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * A task implementation representing the evaluation of a SERVICE which
- * is to be evaluated using block input. See {@link FederationEvalStrategy#evaluateService(FedXService, List)}
- * for details.
+ * A task implementation representing the evaluation of a SERVICE which is to be evaluated using block input. See
+ * {@link FederationEvalStrategy#evaluateService(FedXService, List)} for details.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
-	
+
 	protected final FederationEvalStrategy strategy;
 	protected final FedXService expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	
-	public ParallelServiceJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, FedXService expr, List<BindingSet> bindings) {
+
+	public ParallelServiceJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+			FedXService expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;

@@ -28,18 +28,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class ResultGenerator
-{
+public class ResultGenerator {
 
-	
 	protected SailRepository repo;
 	protected RepositoryConnection conn;
-	
-	
-	
+
 	public void run() throws Exception {
-		
-		
+
 		String basePackage = "/tests/performance/";
 
 		initStore(basePackage);
@@ -58,8 +53,7 @@ public class ResultGenerator
 		createResult(basePackage, "query12");
 
 	}
-	
-	
+
 	/**
 	 * Create the result files for queryFile (without extensions)
 	 * 
@@ -70,49 +64,47 @@ public class ResultGenerator
 	 * @param queryFile
 	 */
 	protected void createResult(String baseDir, String queryFile) throws Exception {
-		
+
 		String q = readQueryString(baseDir + queryFile + ".rq");
-		
+
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);
 		TupleQueryResult res = query.evaluate();
-		
+
 		OutputStream out = new FileOutputStream(new File("test" + baseDir, queryFile + ".srx"));
 		TupleQueryResultWriter qrWriter = new SPARQLResultsXMLWriter(out);
 		QueryResults.report(res, qrWriter);
 		out.close();
 	}
-	
+
 	protected void printResult(String baseDir, String queryFile) throws Exception {
-		
+
 		String q = readQueryString(baseDir + queryFile + ".rq");
-		
+
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);
 		TupleQueryResult res = query.evaluate();
-		
+
 		while (res.hasNext()) {
 			System.out.println(res.next());
 		}
 	}
-	
-	
+
 	protected void initStore(String basePackage) throws Exception {
-				
+
 		MemoryStore mem = new MemoryStore();
 		this.repo = new SailRepository(mem);
 		repo.initialize();
-		
+
 		conn = repo.getConnection();
-		
+
 		String baseUri = "http://namespace.org";
-		
+
 		conn.add(ResultGenerator.class.getResourceAsStream(basePackage + "data1.ttl"), baseUri, RDFFormat.TURTLE);
 		conn.add(ResultGenerator.class.getResourceAsStream(basePackage + "data2.ttl"), baseUri, RDFFormat.TURTLE);
 		conn.add(ResultGenerator.class.getResourceAsStream(basePackage + "data3.ttl"), baseUri, RDFFormat.TURTLE);
 		conn.add(ResultGenerator.class.getResourceAsStream(basePackage + "data4.ttl"), baseUri, RDFFormat.TURTLE);
-	
+
 	}
-	
-	
+
 	/**
 	 * Read the query string from the specified resource
 	 * 
@@ -129,13 +121,11 @@ public class ResultGenerator
 			stream.close();
 		}
 	}
-	
-	
+
 	/**
 	 * @param args
 	 */
-	public static void main(String[] args) throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 		new ResultGenerator().run();
 
 	}

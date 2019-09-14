@@ -27,16 +27,13 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
-
-
 /**
  * Represents a group of statements that can only produce results at a single endpoint, the owner.
  * 
  * @author Andreas Schwarte
  *
  */
-public class ExclusiveGroup extends AbstractQueryModelNode implements StatementTupleExpr, FilterTuple
-{
+public class ExclusiveGroup extends AbstractQueryModelNode implements StatementTupleExpr, FilterTuple {
 	private static final long serialVersionUID = 9215353191021766797L;
 
 	protected final List<ExclusiveStatement> owned = new ArrayList<ExclusiveStatement>();
@@ -46,61 +43,60 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 	protected final transient QueryInfo queryInfo;
 	protected FilterValueExpr filter = null;
 	protected transient Endpoint ownedEndpoint = null;
-	
-		
+
 	public ExclusiveGroup(Collection<ExclusiveStatement> ownedNodes, StatementSource owner, QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
 		this.owner = new ArrayList<StatementSource>(1);
 		this.owner.add(owner);
-		init();	// init free vars + filter expr
+		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 		ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(owner.getEndpointID());
 	}
-	
+
 	/**
 	 * Initialize free variables and filter expressions for owned children.
 	 */
 	protected void init() {
 		HashSet<FilterExpr> conjExpr = new HashSet<FilterExpr>();
-		for (ExclusiveStatement o  : owned) {
+		for (ExclusiveStatement o : owned) {
 			freeVars.addAll(o.getFreeVars());
-			
+
 			if (o.hasFilter()) {
-				
+
 				FilterValueExpr expr = o.getFilterExpr();
-				if (expr instanceof ConjunctiveFilterExpr) 
-					conjExpr.addAll( ((ConjunctiveFilterExpr)expr).getExpressions());
+				if (expr instanceof ConjunctiveFilterExpr)
+					conjExpr.addAll(((ConjunctiveFilterExpr) expr).getExpressions());
 				else if (expr instanceof FilterExpr)
-					conjExpr.add((FilterExpr)expr);
-				else 
-					throw new RuntimeException("Internal Error: Unexpected filter type: " + expr.getClass().getSimpleName());
+					conjExpr.add((FilterExpr) expr);
+				else
+					throw new RuntimeException(
+							"Internal Error: Unexpected filter type: " + expr.getClass().getSimpleName());
 			}
 		}
-		
-		if (conjExpr.size()==1)
+
+		if (conjExpr.size() == 1)
 			filter = conjExpr.iterator().next();
-		else if (conjExpr.size()>1){
+		else if (conjExpr.size() > 1) {
 			filter = new ConjunctiveFilterExpr(conjExpr);
 		}
 	}
 
-	
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
-		
+			throws X {
+
 		for (ExclusiveStatement s : owned) {
 			s.visit(visitor);
 		}
 	}
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
 		visitor.meetOther(this);
 	}
-	
+
 	@Override
 	public Set<String> getAssuredBindingNames() {
 		return Collections.emptySet();
@@ -110,16 +106,16 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 	public Set<String> getBindingNames() {
 		return Collections.emptySet();
 	}
-		
+
 	@Override
 	public ExclusiveGroup clone() {
 		throw new RuntimeException("Operation not supported on this node!");
 	}
-	
+
 	public StatementSource getOwner() {
 		return owner.get(0);
 	}
-	
+
 	public Endpoint getOwnedEndpoint() {
 		return ownedEndpoint;
 	}
@@ -128,21 +124,21 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		// XXX make a copy? (or copyOnWrite list?)
 		return owned;
 	}
-	
+
 	@Override
 	public int getFreeVarCount() {
 		return freeVars.size();
 	}
-	
+
 	public Set<String> getFreeVarsSet() {
 		return freeVars;
 	}
-	
+
 	@Override
 	public List<String> getFreeVars() {
 		return new ArrayList<String>(freeVars);
 	}
-	
+
 	@Override
 	public String getId() {
 		return id;
@@ -158,12 +154,13 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		for (String var : freeVars)
 			if (!bindings.hasBinding(var))
 				return true;
-		return false;		
+		return false;
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) throws QueryEvaluationException {
-		
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+			throws QueryEvaluationException {
+
 		try {
 			// use the particular evaluation strategy for evaluation
 			return FederationManager.getInstance().getStrategy().evaluateExclusiveGroup(this, bindings);
@@ -172,17 +169,18 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
-		
+
 	}
 
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
-		/* 
-		 * Note: the operation is obsolete for this class: all filters are added already
-		 * in the owned children during optimization (c.f. FilterOptimizer)
+		/*
+		 * Note: the operation is obsolete for this class: all filters are added already in the owned children during
+		 * optimization (c.f. FilterOptimizer)
 		 */
-		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName() + ", filters already to children during optimization.");
-			
+		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName()
+				+ ", filters already to children during optimization.");
+
 	}
 
 	@Override
@@ -192,16 +190,17 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 	@Override
 	public boolean hasFilter() {
-		return filter!=null;
+		return filter != null;
 	}
-	
+
 	@Override
 	public void addBoundFilter(final String varName, final Value value) {
-		/* 
-		 * Note: the operation is obsolete for this class: all bindings are set already
-		 * in the owned children during optimization (c.f. FilterOptimizer)
+		/*
+		 * Note: the operation is obsolete for this class: all bindings are set already in the owned children during
+		 * optimization (c.f. FilterOptimizer)
 		 */
-		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName() + ", bindings inserted during optimization.");
+		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName()
+				+ ", bindings inserted during optimization.");
 	}
 
 	@Override

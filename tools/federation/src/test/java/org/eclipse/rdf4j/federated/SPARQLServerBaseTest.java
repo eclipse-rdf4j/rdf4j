@@ -33,11 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
 /**
- * Base class for any federation test, this class is self-contained with regard to testing
- * if run in a distinct JVM.
+ * Base class for any federation test, this class is self-contained with regard to testing if run in a distinct JVM.
  * 
  * @author as
  *
@@ -47,50 +44,52 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	/**
 	 * The repository type used for testing
 	 */
-	public enum REPOSITORY_TYPE { SPARQLREPOSITORY, REMOTEREPOSITORY, NATIVE; }
-	
+	public enum REPOSITORY_TYPE {
+		SPARQLREPOSITORY,
+		REMOTEREPOSITORY,
+		NATIVE;
+	}
+
 	protected static final int MAX_ENDPOINTS = 4;
-	
+
 	public static Logger log;
-	
 
 	/**
 	 * the server, e.g. SparqlEmbeddedServer or NativeStoreServer
 	 */
 	protected static Server server;
-	
-	
+
 	@TempDir
 	static Path tempDir;
 
 	private static REPOSITORY_TYPE repositoryType = REPOSITORY_TYPE.SPARQLREPOSITORY;
 
-
 	@BeforeAll
-	public static void initTest() throws Exception
-	{
+	public static void initTest() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 
 		log = LoggerFactory.getLogger(SPARQLServerBaseTest.class);
-		
-		if (System.getProperty("repositoryType")!=null)
+
+		if (System.getProperty("repositoryType") != null)
 			repositoryType = REPOSITORY_TYPE.valueOf(System.getProperty("repositoryType"));
-		
+
 		switch (repositoryType) {
-		case NATIVE:			initializeLocalNativeStores(); break;
+		case NATIVE:
+			initializeLocalNativeStores();
+			break;
 		case REMOTEREPOSITORY:
 		case SPARQLREPOSITORY:
-		default: 				initializeServer();
+		default:
+			initializeServer();
 		}
 	}
-	
-	
+
 	@AfterAll
 	public static void afterTest() throws Exception {
-		if (server!=null)
+		if (server != null)
 			server.shutdown();
 	}
-	
+
 	@BeforeEach
 	public void beforeEachTest() throws Exception {
 		// reset operations counter and fail after
@@ -106,18 +105,17 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	}
 
 	/**
-	 * Initialization of the embedded web server hosting an
-	 * openrdf workbench. Used for remote and sparql repository
+	 * Initialization of the embedded web server hosting an openrdf workbench. Used for remote and sparql repository
 	 * setting
 	 * 
 	 * @throws Exception
 	 */
-	private static void initializeServer() throws Exception{
-			
+	private static void initializeServer() throws Exception {
+
 		// set up the server: the maximal number of endpoints must be known
 		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
-		for (int i=1; i<=MAX_ENDPOINTS; i++)
-			repositoryIds.add("endpoint"+i);
+		for (int i = 1; i <= MAX_ENDPOINTS; i++)
+			repositoryIds.add("endpoint" + i);
 		File dataDir = new File(tempDir.toFile(), "datadir");
 		server = new SPARQLEmbeddedServer(dataDir, repositoryIds, repositoryType == REPOSITORY_TYPE.REMOTEREPOSITORY);
 
@@ -125,62 +123,55 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	}
 
 	/**
-	 * Initialization of the embedded web server hosting an
-	 * openrdf workbench. Used for remote and sparql repository
+	 * Initialization of the embedded web server hosting an openrdf workbench. Used for remote and sparql repository
 	 * setting
 	 * 
 	 * @throws Exception
 	 */
 	private static void initializeLocalNativeStores() throws Exception {
-		
+
 		File dataDir = new File(tempDir.toFile(), "datadir");
 		server = new NativeStoreServer(dataDir);
 		server.initialize(MAX_ENDPOINTS);
 	}
 
-	
 	/**
 	 * Get the repository, initialized repositories are called
 	 * 
-	 * endpoint1
-	 * endpoint2
-	 * ..
-	 * endpoint%MAX_ENDPOINTS%
+	 * endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
 	 * 
-	 * @param i	the index of the repository, starting with 1
+	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
 	protected static Repository getRepository(int i) {
 		return server.getRepository(i);
 	}
-	
-	
-	
+
 	protected List<Endpoint> prepareTest(List<String> sparqlEndpointData) throws Exception {
-		
+
 		// clear federation and cache
 		super.prepareTest();
 		FederationManager.getInstance().removeAll();
-		
+
 		// prepare the test endpoints (i.e. load data)
-		if (sparqlEndpointData.size()>MAX_ENDPOINTS)
-			throw new RuntimeException("MAX_ENDPOINTs to low, " + sparqlEndpointData.size() + " repositories needed. Adjust configuration");
-	
-		int i=1;	// endpoint id, start with 1
+		if (sparqlEndpointData.size() > MAX_ENDPOINTS)
+			throw new RuntimeException("MAX_ENDPOINTs to low, " + sparqlEndpointData.size()
+					+ " repositories needed. Adjust configuration");
+
+		int i = 1; // endpoint id, start with 1
 		for (String s : sparqlEndpointData) {
 			loadDataSet(server.getRepository(i++), s);
 		}
-		
+
 		// configure federation
 		List<Endpoint> endpoints = new ArrayList<>();
-		for (i=1; i<=sparqlEndpointData.size(); i++) {
+		for (i = 1; i <= sparqlEndpointData.size(); i++) {
 			Endpoint e = server.loadEndpoint(i);
 			endpoints.add(e);
 			FederationManager.getInstance().addEndpoint(e, true);
 		}
 		return endpoints;
 	}
-	
 
 	/**
 	 * Load a dataset. Note: the repositories are cleared before loading data
@@ -192,8 +183,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 * @throws IOException
 	 */
 	protected void loadDataSet(Repository rep, String datasetFile)
-		throws RDFParseException, RepositoryException, IOException
-	{
+			throws RDFParseException, RepositoryException, IOException {
 		log.debug("loading dataset...");
 		InputStream dataset = SPARQLServerBaseTest.class.getResourceAsStream(datasetFile);
 
@@ -206,8 +196,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		try {
 			con.clear();
 			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).get());
-		}
-		finally {
+		} finally {
 			dataset.close();
 			con.close();
 			if (needToShutdown) {
@@ -217,14 +206,14 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		log.debug("dataset loaded.");
 	}
 
-
 	protected void ignoreForNativeStore() {
 		// ignore these tests for native store
 		Assumptions.assumeTrue(isSPARQLServer(), "Test is ignored for native store federation");
 	}
-	
+
 	protected void assumeNativeStore() {
-		Assumptions.assumeTrue(server instanceof NativeStoreServer, "Test can be executed with native store federation only.");
+		Assumptions.assumeTrue(server instanceof NativeStoreServer,
+				"Test can be executed with native store federation only.");
 	}
 
 	protected void assumeSparqlEndpoint() {

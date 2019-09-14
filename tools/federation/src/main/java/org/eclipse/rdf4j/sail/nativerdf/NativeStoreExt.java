@@ -14,11 +14,10 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
-
 /**
- * Native Store extension which introduces a hook with a specialized connection (cf 
- * {@link NativeStoreConnectionExt}), which allows for efficient evaluation of
- * prepared queries without prior optimization.<p>
+ * Native Store extension which introduces a hook with a specialized connection (cf {@link NativeStoreConnectionExt}),
+ * which allows for efficient evaluation of prepared queries without prior optimization.
+ * <p>
  * 
  * Whenever a native store is to be used as a repository within FedX, use this extension.
  * 
@@ -39,8 +38,7 @@ public class NativeStoreExt extends NativeStore {
 	public NativeStoreExt(File dataDir) {
 		super(dataDir);
 	}
-	
-	
+
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		try {

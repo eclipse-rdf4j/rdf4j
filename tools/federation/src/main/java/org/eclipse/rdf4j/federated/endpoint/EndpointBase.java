@@ -20,35 +20,31 @@ import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Base implementation for an {@link Endpoint}.
  * 
  * <p>
- * Provides implementation for the common behavior as well as connection
- * management. Typically a fresh {@link RepositoryConnection} is returned when
- * invoking {@link #getConnection()}, however, it is configurable that a managed
- * (singleton) connection can be used.
+ * Provides implementation for the common behavior as well as connection management. Typically a fresh
+ * {@link RepositoryConnection} is returned when invoking {@link #getConnection()}, however, it is configurable that a
+ * managed (singleton) connection can be used.
  * </p>
  * 
  * @author Andreas Schwarte
  * @see EndpointManager
  */
 public abstract class EndpointBase implements Endpoint {
-	
+
 	protected static final Logger log = LoggerFactory.getLogger(EndpointBase.class);
-	
+
 	protected final RepositoryInformation repoInfo; // the repository information
 	protected final String endpoint; // the endpoint, e.g. for SPARQL the URL
-	protected EndpointClassification endpointClassification;		// the endpoint classification
+	protected EndpointClassification endpointClassification; // the endpoint classification
 	protected boolean writable = false; // can this endpoint be used for write operation
-		
 
 	private ManagedRepositoryConnection dependentConn = null; // if configured, contains the managed connection
-	protected boolean initialized = false;			// true, iff the contained repository is initialized
-	protected TripleSource tripleSource;			// the triple source, initialized when repository is set
-	protected EndpointConfiguration endpointConfiguration;	// additional endpoint type specific configuration
-
+	protected boolean initialized = false; // true, iff the contained repository is initialized
+	protected TripleSource tripleSource; // the triple source, initialized when repository is set
+	protected EndpointConfiguration endpointConfiguration; // additional endpoint type specific configuration
 
 	public EndpointBase(RepositoryInformation repoInfo, String endpoint,
 			EndpointClassification endpointClassification) {
@@ -57,7 +53,7 @@ public abstract class EndpointBase implements Endpoint {
 		this.endpoint = endpoint;
 		this.endpointClassification = endpointClassification;
 	}
-	
+
 	@Override
 	public String getName() {
 		return repoInfo.getName();
@@ -67,7 +63,7 @@ public abstract class EndpointBase implements Endpoint {
 	public TripleSource getTripleSource() {
 		return tripleSource;
 	}
-	
+
 	@Override
 	public EndpointClassification getEndpointClassification() {
 		return endpointClassification;
@@ -78,9 +74,9 @@ public abstract class EndpointBase implements Endpoint {
 	}
 
 	public boolean isLocal() {
-		return endpointClassification==EndpointClassification.Local;
+		return endpointClassification == EndpointClassification.Local;
 	}
-	
+
 	@Override
 	public boolean isWritable() {
 		return writable;
@@ -136,19 +132,18 @@ public abstract class EndpointBase implements Endpoint {
 	public EndpointType getType() {
 		return repoInfo.getType();
 	}
-	
 
 	public boolean isInitialized() {
 		return initialized;
 	}
-	
+
 	@Override
 	public long size() throws RepositoryException {
 		try (RepositoryConnection conn = getConnection()) {
 			return conn.size();
 		}
 	}
-	
+
 	@Override
 	public void initialize() throws RepositoryException {
 		if (isInitialized())
@@ -162,12 +157,10 @@ public abstract class EndpointBase implements Endpoint {
 	}
 
 	/**
-	 * Whether to reuse the same {@link RepositoryConnection} throughout the
-	 * lifetime of this Endpoint.
+	 * Whether to reuse the same {@link RepositoryConnection} throughout the lifetime of this Endpoint.
 	 * 
 	 * <p>
-	 * Note that the {@link RepositoryConnection} is wrapped as
-	 * {@link ManagedRepositoryConnection}
+	 * Note that the {@link RepositoryConnection} is wrapped as {@link ManagedRepositoryConnection}
 	 * </p>
 	 * 
 	 * @return indicator whether a single connection should be used
@@ -187,7 +180,7 @@ public abstract class EndpointBase implements Endpoint {
 		}
 		initialized = false;
 	}
-	
+
 	@Override
 	public int hashCode() {
 		final int prime = 31;
@@ -222,13 +215,11 @@ public abstract class EndpointBase implements Endpoint {
 	@Override
 	public String toString() {
 		return "Endpoint [id=" + getId() + ", name=" + getName() + ", type=" + getType() + "]";
-	}		
-	
-	
+	}
+
 	/**
-	 * A wrapper for managed {@link RepositoryConnection}s which makes sure that
-	 * {@link #close()} is a no-op, i.e. the actual closing of the managed
-	 * connection is controlled by the {@link Endpoint}.
+	 * A wrapper for managed {@link RepositoryConnection}s which makes sure that {@link #close()} is a no-op, i.e. the
+	 * actual closing of the managed connection is controlled by the {@link Endpoint}.
 	 * 
 	 * @author Andreas Schwarte
 	 *
@@ -243,7 +234,7 @@ public abstract class EndpointBase implements Endpoint {
 		public void close() throws RepositoryException {
 			// Do nothing: this repository connection is managed by FedX
 		}
-		
+
 		public void closeManagedConnection() throws RepositoryException {
 			this.getDelegate().close();
 		}

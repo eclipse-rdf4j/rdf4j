@@ -25,24 +25,20 @@ import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 
-
 /**
- * An embedded http server for SPARQL query testing. Initializes a memory store
- * repository for each specified reposiotoryId.
+ * An embedded http server for SPARQL query testing. Initializes a memory store repository for each specified
+ * reposiotoryId.
  * 
  * @author Andreas Schwarte
  */
 public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
-		
 	protected final List<String> repositoryIds;
 	// flag to indicate whether a remote repository or SPARQL repository endpoint shall be used
 	private final boolean useRemoteRepositoryEndpoint;
-	
 
 	/**
-	 * The {@link RepositoryResolver} supplied at runtime by
-	 * {@link FedXRepositoryResolverBean}
+	 * The {@link RepositoryResolver} supplied at runtime by {@link FedXRepositoryResolverBean}
 	 */
 	private RepositoryResolver repositoryResolver;
 	/**
@@ -59,7 +55,6 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 		this.repositoryIds = repositoryIds;
 		this.useRemoteRepositoryEndpoint = useRemoteRepositoryEndpoint;
 	}
-	
 
 	/**
 	 * @return the url to the repository with given id
@@ -67,19 +62,17 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	public String getRepositoryUrl(String repoId) {
 		return Protocol.getRepositoryLocation(getServerUrl(), repoId);
 	}
-		
+
 	/**
 	 * @return the server url
 	 */
 	public String getServerUrl() {
 		return "http://" + HOST + ":" + PORT + CONTEXT_PATH;
 	}
-	
-	
+
 	@Override
 	public void start()
-		throws Exception
-	{
+			throws Exception {
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		super.start();
@@ -88,12 +81,10 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 		createTestRepositories();
 	}
-	
 
 	@Override
 	public void stop()
-		throws Exception
-	{
+			throws Exception {
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
 			repoManager.initialize();
@@ -106,14 +97,12 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 		super.stop();
 	}
-	
 
 	/**
 	 * @throws RepositoryException
 	 */
 	private void createTestRepositories()
-		throws RepositoryException, RepositoryConfigException
-	{
+			throws RepositoryException, RepositoryConfigException {
 
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
@@ -122,7 +111,8 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 			// create a memory store for each provided repository id
 			for (String repId : repositoryIds) {
 				MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
-				SailRepositoryConfig sailRepConfig = new ConfigurableSailRepositoryFactory.ConfigurableSailRepositoryConfig(memStoreConfig);
+				SailRepositoryConfig sailRepConfig = new ConfigurableSailRepositoryFactory.ConfigurableSailRepositoryConfig(
+						memStoreConfig);
 				RepositoryConfig repConfig = new RepositoryConfig(repId, sailRepConfig);
 
 				repoManager.addRepositoryConfig(repConfig);
@@ -133,7 +123,6 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 	}
 
-
 	@Override
 	public void initialize(int nRepositories) throws Exception {
 		try {
@@ -142,26 +131,23 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 			stop();
 			throw e;
 		}
-		
-		for (int i=1; i<=nRepositories; i++) {
-			HTTPRepository r = new HTTPRepository(getRepositoryUrl("endpoint"+i));
+
+		for (int i = 1; i <= nRepositories; i++) {
+			HTTPRepository r = new HTTPRepository(getRepositoryUrl("endpoint" + i));
 			r.initialize();
 			r.shutDown();
 		}
 	}
 
-
 	@Override
 	public void shutdown() throws Exception {
-		stop();		
+		stop();
 	}
-
 
 	@Override
 	public Endpoint loadEndpoint(int i) throws Exception {
-		return useRemoteRepositoryEndpoint ?
-				EndpointFactory.loadRemoteRepository(getServerUrl(), "endpoint"+i) :
-				EndpointFactory.loadSPARQLEndpoint("http://endpoint" + i, getRepositoryUrl("endpoint"+i) );
+		return useRemoteRepositoryEndpoint ? EndpointFactory.loadRemoteRepository(getServerUrl(), "endpoint" + i)
+				: EndpointFactory.loadSPARQLEndpoint("http://endpoint" + i, getRepositoryUrl("endpoint" + i));
 	}
 
 	/**

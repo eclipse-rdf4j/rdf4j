@@ -27,13 +27,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * FedX initialization factory methods for convenience: methods initialize the
- * {@link FederationManager} and all required FedX structures. See
- * {@link FederationManager} for some a code snippet.
+ * FedX initialization factory methods for convenience: methods initialize the {@link FederationManager} and all
+ * required FedX structures. See {@link FederationManager} for some a code snippet.
  * 
  * <p>
- * Use the {@link FedXFactory#newFederation()} builder to create an advanced and
- * customized federation
+ * Use the {@link FedXFactory#newFederation()} builder to create an advanced and customized federation
  * </p>
  * 
  * @author Andreas Schwarte
@@ -42,18 +40,15 @@ import org.slf4j.LoggerFactory;
 public class FedXFactory {
 
 	protected static final Logger log = LoggerFactory.getLogger(FedXFactory.class);
-	
-	
-	
+
 	/**
-	 * Initialize the federation with the provided sparql endpoints. 
+	 * Initialize the federation with the provided sparql endpoints.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param sparqlEndpoints the list of SPARQL endpoints
 	 * 
-	 * @return
-	 * 			the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
@@ -62,21 +57,17 @@ public class FedXFactory {
 
 		return newFederation().withSparqlEndpoints(sparqlEndpoints).create();
 	}
-	
 
-	
 	/**
-	 * Initialize the federation with a specified data source configuration file
-	 * (*.ttl). Federation members are constructed from the data source
-	 * configuration. Sample data source configuration files can be found in the
+	 * Initialize the federation with a specified data source configuration file (*.ttl). Federation members are
+	 * constructed from the data source configuration. Sample data source configuration files can be found in the
 	 * documentation.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
-	 * @param dataConfig         the location of the data source configuration
+	 * @param dataConfig the location of the data source configuration
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a
-	 *         {@link FedXRepository}
+	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
@@ -84,33 +75,29 @@ public class FedXFactory {
 			throws Exception {
 		return newFederation().withMembers(dataConfig).create();
 	}
-	
-	
+
 	/**
-	 * Initialize the federation by providing the endpoints to add. The fedx
-	 * configuration can provide information about the dataConfig to be used which
-	 * may contain the default federation members.
+	 * Initialize the federation by providing the endpoints to add. The fedx configuration can provide information about
+	 * the dataConfig to be used which may contain the default federation members.
 	 * <p>
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
-	 * @param endpoints          additional endpoints to be added, may be null or
-	 *                           empty
+	 * @param endpoints additional endpoints to be added, may be null or empty
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a
-	 *         {@link FedXRepository}
+	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
 	public static FedXRepository initializeFederation(
 			List<Endpoint> endpoints) throws FedXException {
-		
+
 		return newFederation().withMembers(endpoints).create();
 	}
 
 	/**
-	 * Create a new customizable FedX federation. Once all configuration is
-	 * supplied, the Federation can be created using {@link #create()}
+	 * Create a new customizable FedX federation. Once all configuration is supplied, the Federation can be created
+	 * using {@link #create()}
 	 * 
 	 * @return the {@link FedXFactory} builder
 	 */
@@ -124,9 +111,9 @@ public class FedXFactory {
 	protected File fedxBaseDir;
 
 	private FedXFactory() {
-		
+
 	}
-	
+
 	public FedXFactory withRepositoryResolver(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
 		return this;
@@ -142,7 +129,7 @@ public class FedXFactory {
 		members.addAll(EndpointFactory.loadFederationMembers(dataConfig));
 		return this;
 	}
-	
+
 	public FedXFactory withSparqlEndpoint(String sparqlEndpoint) {
 		members.add(EndpointFactory.loadSPARQLEndpoint(sparqlEndpoint));
 		return this;
@@ -169,9 +156,8 @@ public class FedXFactory {
 	}
 
 	/**
-	 * Configure the FedX base directory (i.e. {@link Config#getBaseDir()}) at
-	 * federation construction time. Note that any explicitly configured value in
-	 * {@link Config#getBaseDir()} has precedence (i.e. if a value is configured,
+	 * Configure the FedX base directory (i.e. {@link Config#getBaseDir()}) at federation construction time. Note that
+	 * any explicitly configured value in {@link Config#getBaseDir()} has precedence (i.e. if a value is configured,
 	 * this setting is ignored).
 	 * 
 	 * @param fedxBaseDir the existing fedx base directory
@@ -214,7 +200,7 @@ public class FedXFactory {
 		// initialize defaults
 		Cache cache = initializeCache();
 		Statistics statistics = new StatisticsImpl();
-		
+
 		initializeMembersFromConfig();
 
 		initializeResolvableEndpoints();

@@ -41,28 +41,26 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStoreConnectionExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * A triple source to be used on any repository.
  * 
  * @author Andreas Schwarte
  *
  */
-public class SailTripleSource extends TripleSourceBase implements TripleSource{
+public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	private static final Logger log = LoggerFactory.getLogger(SailTripleSource.class);
-	
 
 	SailTripleSource(Endpoint endpoint) {
 		super(FederationManager.getMonitoringService(), endpoint);
 	}
-	
+
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
 			String preparedQuery, final BindingSet bindings, final FilterValueExpr filterExpr)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
-		
+
 		return withConnection((conn, resultHolder) -> {
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
@@ -97,12 +95,12 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource{
 			StatementPattern stmt,
 			final BindingSet bindings, FilterValueExpr filterExpr)
 			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException  {
-	
+			QueryEvaluationException {
+
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
 		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);
 		Value objValue = QueryAlgebraUtil.getVarValue(stmt.getObjectVar(), bindings);
-		
+
 		return withConnection((conn, resultHolder) -> {
 
 			RepositoryResult<Statement> repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
@@ -133,16 +131,16 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource{
 			Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
-		
+
 		// TODO add handling for contexts
 		return withConnection((conn, resultHolder) -> {
 
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj, true);
-			
+
 			// XXX implementation remark and TODO taken from Sesame
 			// The same variable might have been used multiple times in this
 			// StatementPattern, verify value equality in those cases.
-			
+
 			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
 				@Override
 				protected QueryEvaluationException convert(Exception arg0) {
@@ -151,8 +149,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource{
 			});
 		});
 	}
-	
-	
+
 	@Override
 	public boolean hasStatements(StatementPattern stmt,
 			BindingSet bindings)
@@ -162,7 +159,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource{
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
 		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);
 		Value objValue = QueryAlgebraUtil.getVarValue(stmt.getObjectVar(), bindings);
-		
+
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			return conn.hasStatement((Resource) subjValue, (IRI) predValue, objValue, true, new Resource[0]);
 		}
@@ -180,38 +177,39 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource{
 			BindingSet bindings, FilterValueExpr filterExpr)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
-		
+
 		/*
 		 * Implementation note:
 		 * 
-		 *  a hook is introduced for NativeStore instances such that an extended
-		 *  connection is used. The extended connection provides a method to
-		 *  evaluate prepared queries without prior (obsolete) optimization.  
+		 * a hook is introduced for NativeStore instances such that an extended connection is used. The extended
+		 * connection provides a method to evaluate prepared queries without prior (obsolete) optimization.
 		 */
 		return withConnection((conn, resultHolder) -> {
 
 			CloseableIteration<BindingSet, QueryEvaluationException> res;
-			SailConnection sailConn = ((SailRepositoryConnection)conn).getSailConnection();
-			
+			SailConnection sailConn = ((SailRepositoryConnection) conn).getSailConnection();
+
 			if (sailConn instanceof NativeStoreConnectionExt) {
-				NativeStoreConnectionExt _conn = (NativeStoreConnectionExt)sailConn;
-				res = (CloseableIteration<BindingSet, QueryEvaluationException>) _conn.evaluatePrecompiled(preparedQuery);
+				NativeStoreConnectionExt _conn = (NativeStoreConnectionExt) sailConn;
+				res = (CloseableIteration<BindingSet, QueryEvaluationException>) _conn
+						.evaluatePrecompiled(preparedQuery);
 			} else {
 				try {
-					log.warn("Precompiled query optimization for native store could not be applied: use extended NativeStore initialization using NativeStoreConnectionExt");
-					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery, null, EmptyBindingSet.getInstance(), true);
+					log.warn(
+							"Precompiled query optimization for native store could not be applied: use extended NativeStore initialization using NativeStoreConnectionExt");
+					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
+							null, EmptyBindingSet.getInstance(), true);
 				} catch (SailException e) {
 					throw new QueryEvaluationException(e);
 				}
 			}
-			
-			if (bindings.size()>0) {
+
+			if (bindings.size() > 0) {
 				res = new InsertBindingsIteration(res, bindings);
 			}
-			
+
 			resultHolder.set(res);
 		});
 	}
 
-	
 }

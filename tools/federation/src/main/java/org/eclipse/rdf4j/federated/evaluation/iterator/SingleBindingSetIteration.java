@@ -17,19 +17,16 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  *
  */
-public class SingleBindingSetIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-{
+public class SingleBindingSetIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final BindingSet res;
 	protected boolean hasNext = true;
-	
-	
+
 	public SingleBindingSetIteration(BindingSet res) {
 		super();
 		this.res = res;
 	}
 
-	
 	@Override
 	public boolean hasNext() {
 		return hasNext;
@@ -43,11 +40,11 @@ public class SingleBindingSetIteration extends AbstractCloseableIteration<Bindin
 
 	@Override
 	public void remove() {
-		// no-op		
+		// no-op
 	}
-	
+
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		hasNext=false;
+		hasNext = false;
 	}
 }

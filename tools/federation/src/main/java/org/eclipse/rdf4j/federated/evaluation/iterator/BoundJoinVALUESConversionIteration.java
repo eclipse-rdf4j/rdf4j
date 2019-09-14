@@ -20,26 +20,28 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
- * Inserts original bindings into the result. This implementation is used for
- * bound joins with VALUES clauses, see {@link SparqlFederationEvalStrategyWithValues}.
+ * Inserts original bindings into the result. This implementation is used for bound joins with VALUES clauses, see
+ * {@link SparqlFederationEvalStrategyWithValues}.
  * 
- * It is assumed the the query results contain a binding for "?__index" which corresponds
- * to the index in the input mappings. See {@link QueryStringUtil} for details
+ * It is assumed the the query results contain a binding for "?__index" which corresponds to the index in the input
+ * mappings. See {@link QueryStringUtil} for details
  * 
  * @author Andreas Schwarte
  * @see SparqlFederationEvalStrategyWithValues
  * @since 3.0
  */
-public class BoundJoinVALUESConversionIteration extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>{
+public class BoundJoinVALUESConversionIteration
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	/**
 	 * The binding name for the index
 	 */
 	public static final String INDEX_BINDING_NAME = "__index";
-	
+
 	protected final List<BindingSet> bindings;
-	
-	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, List<BindingSet> bindings) {
+
+	public BoundJoinVALUESConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}

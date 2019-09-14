@@ -30,5 +30,5 @@ public class FilterConversionException extends Exception {
 
 	public FilterConversionException(Throwable arg0) {
 		super(arg0);
-	}	
+	}
 }

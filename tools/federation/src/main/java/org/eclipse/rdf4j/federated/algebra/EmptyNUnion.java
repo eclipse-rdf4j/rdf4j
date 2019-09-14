@@ -12,7 +12,6 @@ import java.util.List;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
  * Algebra construct representing an empty union.
  * 

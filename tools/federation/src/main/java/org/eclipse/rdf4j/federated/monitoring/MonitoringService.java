@@ -12,12 +12,10 @@ import java.util.List;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformation;
 
+public interface MonitoringService extends Monitoring {
 
-public interface MonitoringService extends Monitoring
-{
-	
 	public MonitoringInformation getMonitoringInformation(Endpoint e);
-	
+
 	public List<MonitoringInformation> getAllMonitoringInformation();
 
 }

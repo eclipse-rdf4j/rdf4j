@@ -22,11 +22,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * 
  * @author Andreas Schwarte
  */
-public class BoundJoinConversionIteration extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>{
+public class BoundJoinConversionIteration
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
-	
-	public BoundJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, List<BindingSet> bindings) {
+
+	public BoundJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
@@ -39,10 +41,10 @@ public class BoundJoinConversionIteration extends ConvertingIteration<BindingSet
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
 			String name = b.getName();
-			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_")+1));
+			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_") + 1));
 			res.addBinding(name.substring(0, name.lastIndexOf("_")), b.getValue());
 		}
-		res.addAll( bindings.get(bIndex));
+		res.addAll(bindings.get(bIndex));
 		return res;
 	}
 }

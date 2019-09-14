@@ -50,36 +50,32 @@ import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
- * An implementation of RepositoryConnection that uses {@link FederationEvalStrategy} to evaluate 
- * provided queries. Prior to evaluation various optimizations are performed, see {@link Optimizer}
- * for further details.<p>
+ * An implementation of RepositoryConnection that uses {@link FederationEvalStrategy} to evaluate provided queries.
+ * Prior to evaluation various optimizations are performed, see {@link Optimizer} for further details.
+ * <p>
  * 
- * Since 4.0 FedX supports write operations using the supplied {@link WriteStrategy}, e.g. by writing
- * to a designated federation member. Note: the {@link WriteStrategy} is initialized lazily upon
- * first access to a write operation, see {@link #getWriteStrategyInternal()}.
+ * Since 4.0 FedX supports write operations using the supplied {@link WriteStrategy}, e.g. by writing to a designated
+ * federation member. Note: the {@link WriteStrategy} is initialized lazily upon first access to a write operation, see
+ * {@link #getWriteStrategyInternal()}.
  * 
- * Implementation notes:
- *  - not all methods are implemented as of now
+ * Implementation notes: - not all methods are implemented as of now
  * 
  * @author Andreas Schwarte
  * @see FederationEvalStrategy
  * @see WriteStrategy
  * @see Optimizer
  */
-public class FedXConnection extends AbstractSailConnection
-{
-	
+public class FedXConnection extends AbstractSailConnection {
+
 	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);
 	protected FedX federation;
-	
+
 	/**
-	 * If set, contains the initialized write strategy. Always
-	 * access via {@link #getWriteStrategyInternal()}
+	 * If set, contains the initialized write strategy. Always access via {@link #getWriteStrategyInternal()}
 	 */
 	private WriteStrategy writeStrategy;
-	
+
 	public FedXConnection(FedX federation)
 			throws SailException {
 		super(new SailBaseDefaultImpl());
@@ -90,18 +86,18 @@ public class FedXConnection extends AbstractSailConnection
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr query, Dataset dataset, BindingSet bindings,
 			boolean includeInferred) throws SailException {
-		
+
 		FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
 
-		long start=0;
+		long start = 0;
 		QueryInfo queryInfo = null;
 		if (true) {
 			String queryString = getOriginalQueryString(bindings);
-			if (queryString==null)
-				logger.warn("Query string is null. Please check your FedX setup.");
+			if (queryString == null)
+				log.warn("Query string is null. Please check your FedX setup.");
 			queryInfo = new QueryInfo(queryString, getOriginalQueryType(bindings),
 					getOriginalMaxExecutionTime(bindings));
-			
+
 			if (log.isDebugEnabled()) {
 				log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
 				start = System.currentTimeMillis();
@@ -109,7 +105,7 @@ public class FedXConnection extends AbstractSailConnection
 			try {
 				FederationManager.getMonitoringService().monitorQuery(queryInfo);
 				query = Optimizer.optimize(query, dataset, bindings, strategy, queryInfo);
-			}  catch (Exception e) {
+			} catch (Exception e) {
 				log.warn("Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): "
 						+ e.getMessage());
 				log.debug("Details: ", e);
@@ -122,7 +118,7 @@ public class FedXConnection extends AbstractSailConnection
 
 		// log the optimized query plan, if Config#isLogQueryPlan(), otherwise void operation
 		FederationManager.getMonitoringService().logQueryPlan(query);
-		
+
 		if (Config.getConfig().isDebugQueryPlan()) {
 			System.out.println("Optimized query execution plan: \n" + query);
 		}
@@ -130,7 +126,7 @@ public class FedXConnection extends AbstractSailConnection
 		if (log.isDebugEnabled()) {
 			log.debug("Optimized query execution plan (Query: " + queryInfo.getQueryID() + ");" + query);
 		}
-		
+
 		try {
 			// make sure to apply any external bindings
 			BindingSet queryBindings = EmptyBindingSet.getInstance();
@@ -149,27 +145,27 @@ public class FedXConnection extends AbstractSailConnection
 			return res;
 		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
-		} 		
+		}
 	}
 
-	
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
-		throw new UnsupportedOperationException("Operation is not yet supported.");		
+		throw new UnsupportedOperationException("Operation is not yet supported.");
 	}
 
 	@Override
 	protected void clearNamespacesInternal() throws SailException {
-		throw new UnsupportedOperationException("Operation is not yet supported.");		
+		throw new UnsupportedOperationException("Operation is not yet supported.");
 	}
 
 	@Override
 	protected void closeInternal() throws SailException {
-				
-		/* think about it: the federation connection should remain open until the federation is shutdown. we
-		 * use a singleton connection!!
+
+		/*
+		 * think about it: the federation connection should remain open until the federation is shutdown. we use a
+		 * singleton connection!!
 		 */
-		
+
 		// the write strategy needs to be closed
 		try {
 			// Note: access the field directly to not initialize write connection
@@ -180,7 +176,7 @@ public class FedXConnection extends AbstractSailConnection
 			throw new SailException(e);
 		}
 	}
-	
+
 	@Override
 	protected void commitInternal() throws SailException {
 		try {
@@ -190,22 +186,22 @@ public class FedXConnection extends AbstractSailConnection
 		}
 	}
 
-
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-		
+
 		FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
 		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<Resource>(strategy,
 				new QueryInfo("getContextIDsInternal", QueryType.UNKNOWN, 0));
-		
+
 		for (final Endpoint e : federation.getMembers()) {
-			union.addTask( new ParallelTask<Resource>() {
+			union.addTask(new ParallelTask<Resource>() {
 				@Override
-				public CloseableIteration<Resource, QueryEvaluationException> performTask()	throws Exception {
+				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
 					try (RepositoryConnection conn = e.getConnection()) {
 						return new RepositoryExceptionConvertingIteration<Resource>(conn.getContextIDs());
 					}
 				}
+
 				@Override
 				public ParallelExecutor<Resource> getControl() {
 					return union;
@@ -216,16 +212,17 @@ public class FedXConnection extends AbstractSailConnection
 				}
 			});
 		}
-		
+
 		// execute the union in a separate thread
 		FederationManager.getInstance().getExecutor().execute(union);
-		
-		return new DistinctIteration<Resource, SailException>( new ExceptionConvertingIteration<Resource, SailException>(union) {
-			@Override
-			protected SailException convert(Exception e) {
-				return new SailException(e);
-			}			
-		});
+
+		return new DistinctIteration<Resource, SailException>(
+				new ExceptionConvertingIteration<Resource, SailException>(union) {
+					@Override
+					protected SailException convert(Exception e) {
+						return new SailException(e);
+					}
+				});
 	}
 
 	@Override
@@ -247,18 +244,19 @@ public class FedXConnection extends AbstractSailConnection
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(
 			Resource subj, IRI pred, Value obj, final boolean includeInferred,
 			final Resource... contexts) throws SailException {
-			
+
 		try {
 			FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj);
 			FederationManager.getMonitoringService().monitorQuery(queryInfo);
-			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);
+			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,
+					obj, contexts);
 			return new ExceptionConvertingIteration<Statement, SailException>(res) {
 				@Override
 				protected SailException convert(Exception e) {
 					return new SailException(e);
 				}
-			};			
+			};
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
@@ -275,10 +273,10 @@ public class FedXConnection extends AbstractSailConnection
 			throw new SailException(e);
 		}
 	}
-	
+
 	@Override
 	protected void removeNamespaceInternal(String prefix) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");	
+		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
 	}
 
 	@Override
@@ -297,30 +295,30 @@ public class FedXConnection extends AbstractSailConnection
 			getWriteStrategyInternal().rollback();
 		} catch (RepositoryException e) {
 			throw new SailException(e);
-		}	
+		}
 	}
 
 	@Override
 	protected void setNamespaceInternal(String prefix, String name) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");	
+		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
 	}
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		if (contexts!=null && contexts.length>0)
+		if (contexts != null && contexts.length > 0)
 			throw new UnsupportedOperationException("Context handling for size() not supported");
 		long size = 0;
 		List<String> errorEndpoints = new ArrayList<String>();
 		for (Endpoint e : federation.getMembers()) {
-			try	{
+			try {
 				size += e.size();
-			} catch (RepositoryException e1){
+			} catch (RepositoryException e1) {
 				errorEndpoints.add(e.getId());
 			}
 		}
-		if (errorEndpoints.size()>0)
-			throw new SailException("Could not determine size for members " + errorEndpoints.toString() + 
-					"(Supported for NativeStore and RemoteRepository only). Computed size: " +size);
+		if (errorEndpoints.size() > 0)
+			throw new SailException("Could not determine size for members " + errorEndpoints.toString() +
+					"(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
 		return size;
 	}
 
@@ -334,17 +332,15 @@ public class FedXConnection extends AbstractSailConnection
 	}
 
 	/**
-	 * Return the initialized {@link #writeStrategy}. If this
-	 * has not been done yet, {@link WriteStrategy#initialize()}
-	 * is returned. This method guarantees lazy initialization
-	 * upon the first write operation on this {@link FedXConnection}
-	 * instance.
+	 * Return the initialized {@link #writeStrategy}. If this has not been done yet, {@link WriteStrategy#initialize()}
+	 * is returned. This method guarantees lazy initialization upon the first write operation on this
+	 * {@link FedXConnection} instance.
 	 * 
 	 * @return the {@link WriteStrategy}
 	 */
 	protected synchronized WriteStrategy getWriteStrategyInternal() throws SailException {
-		
-		if (writeStrategy==null) {
+
+		if (writeStrategy == null) {
 			writeStrategy = federation.getWriteStrategy();
 			try {
 				writeStrategy.initialize();
@@ -352,31 +348,31 @@ public class FedXConnection extends AbstractSailConnection
 				throw new SailException(e);
 			}
 		}
-		
+
 		return writeStrategy;
 	}
-	
+
 	private static String getOriginalQueryString(BindingSet b) {
-		if (b==null)
+		if (b == null)
 			return null;
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY);
-		if (q!=null)
+		if (q != null)
 			return q.stringValue();
 		return null;
 	}
-	
+
 	private static QueryType getOriginalQueryType(BindingSet b) {
-		if (b==null)
+		if (b == null)
 			return null;
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY_TYPE);
-		if (q!=null)
+		if (q != null)
 			return QueryType.valueOf(q.stringValue());
 		return null;
 	}
 
 	/**
-	 * Return the original explicit {@link Operation#getMaxExecutionTime()} in
-	 * seconds, 0 if {@link Config#getEnforceMaxQueryTime()} should be applied.
+	 * Return the original explicit {@link Operation#getMaxExecutionTime()} in seconds, 0 if
+	 * {@link Config#getEnforceMaxQueryTime()} should be applied.
 	 * 
 	 * @param b
 	 * @return
@@ -390,10 +386,9 @@ public class FedXConnection extends AbstractSailConnection
 		return 0;
 	}
 
-	
 	/**
-	 * A default implementation for {@link AbstractSail}. This implementation has no 
-	 * further use, however it is needed for the constructor call.
+	 * A default implementation for {@link AbstractSail}. This implementation has no further use, however it is needed
+	 * for the constructor call.
 	 * 
 	 * @author as
 	 *
@@ -417,19 +412,17 @@ public class FedXConnection extends AbstractSailConnection
 		@Override
 		public boolean isWritable() throws SailException {
 			return false;
-		}	
-		
+		}
+
 		@Override
 		protected void connectionClosed(SailConnection connection) {
 			// we do not need this in FedX
 		}
 	}
 
-
 	@Override
 	public boolean pendingRemovals() {
 		return false;
 	}
-
 
 }

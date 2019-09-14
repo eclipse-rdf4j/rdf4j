@@ -15,15 +15,13 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
-
 /**
  * FilterExpr maintains information for a particular FILTER expression.
  * 
  * @author Andreas Schwarte
  *
  */
-public class FilterExpr extends AbstractQueryModelNode implements FilterValueExpr
-{
+public class FilterExpr extends AbstractQueryModelNode implements FilterValueExpr {
 
 	private static final long serialVersionUID = -6594037345260846807L;
 
@@ -36,16 +34,15 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 		this.vars = vars;
 	}
 
-
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
 		visitor.meetOther(this);
 	}
-	
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		super.visitChildren(visitor);
 		expr.visit(visitor);
 	}
@@ -57,13 +54,13 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 	public HashSet<String> getVars() {
 		return vars;
 	}
-	
+
 	@Override
 	public FilterExpr clone() {
-		return (FilterExpr)super.clone();
+		return (FilterExpr) super.clone();
 	}
-	
+
 	public boolean isCompareEq() {
-		return expr instanceof Compare && ((Compare)expr).getOperator()==CompareOp.EQ;
+		return expr instanceof Compare && ((Compare) expr).getOperator() == CompareOp.EQ;
 	}
 }

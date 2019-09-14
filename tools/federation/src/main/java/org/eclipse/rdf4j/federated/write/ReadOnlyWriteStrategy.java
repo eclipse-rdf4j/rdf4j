@@ -13,9 +13,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Default {@link WriteStrategy} implementation for read only federations.
- * In case a user attempts to perform a write operation a {@link UnsupportedOperationException}
- * is thrown.
+ * Default {@link WriteStrategy} implementation for read only federations. In case a user attempts to perform a write
+ * operation a {@link UnsupportedOperationException} is thrown.
  * 
  * @author Andreas Schwarte
  *
@@ -23,35 +22,35 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public class ReadOnlyWriteStrategy implements WriteStrategy {
 
 	public static final ReadOnlyWriteStrategy INSTANCE = new ReadOnlyWriteStrategy();
-	
-	private ReadOnlyWriteStrategy() { }
-	
+
+	private ReadOnlyWriteStrategy() {
+	}
+
 	@Override
 	public void begin() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");		
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 	@Override
 	public void commit() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");		
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 	@Override
 	public void rollback() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");		
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");		
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
-	
 
 	@Override
 	public void removeStatement(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");			
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 	@Override

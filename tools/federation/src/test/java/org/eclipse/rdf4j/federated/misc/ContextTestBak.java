@@ -9,10 +9,6 @@ package org.eclipse.rdf4j.federated.misc;
 
 import org.eclipse.rdf4j.federated.FedXBaseTest;
 
-
 public class ContextTestBak extends FedXBaseTest {
-
-	
-	
 
 }

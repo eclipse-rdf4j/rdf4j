@@ -16,19 +16,19 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * A task implementation representing a join, i.e. the provided expression is evaluated 
- * with the given bindings.
+ * A task implementation representing a join, i.e. the provided expression is evaluated with the given bindings.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelJoinTask extends ParallelTaskBase<BindingSet> {
-	
+
 	protected final FederationEvalStrategy strategy;
 	protected final TupleExpr expr;
 	protected final BindingSet bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	
-	public ParallelJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, TupleExpr expr, BindingSet bindings) {
+
+	public ParallelJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, TupleExpr expr,
+			BindingSet bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;
@@ -37,7 +37,7 @@ public class ParallelJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
-		return strategy.evaluate(expr, bindings);		
+		return strategy.evaluate(expr, bindings);
 	}
 
 	@Override

@@ -15,14 +15,13 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.query.BindingSet;
 
-
 public class FederationStatus implements FederationStatusMBean {
 
 	@Override
 	public List<String> getFederationMembersDescription() {
 		List<Endpoint> members = FederationManager.getInstance().getFederation().getMembers();
-		List<String> res = new ArrayList<String>();		
-		for (Endpoint e : members) 
+		List<String> res = new ArrayList<String>();
+		for (Endpoint e : members)
 			res.add(e.toString());
 		return res;
 	}

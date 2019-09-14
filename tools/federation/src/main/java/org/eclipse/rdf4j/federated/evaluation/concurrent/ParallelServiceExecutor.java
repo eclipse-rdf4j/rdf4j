@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Parallel executor for {@link FedXService} nodes, which wrap SERVICE expressions.
  * 
@@ -30,26 +29,26 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Andreas Schwarte
  */
-public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, QueryEvaluationException> implements ParallelExecutor<BindingSet> {
-	
+public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, QueryEvaluationException>
+		implements ParallelExecutor<BindingSet> {
+
 	/*
 	 * IMPLEMENTATION NOTE
 	 * 
-	 * This class explicitly does not extend ParallelServiceExecutor: here the
-	 * execution of the #run() is non blocking, i.g. blocking is done a consumption
-	 * time of the iterator
+	 * This class explicitly does not extend ParallelServiceExecutor: here the execution of the #run() is non blocking,
+	 * i.g. blocking is done a consumption time of the iterator
 	 */
 
 	protected static final Logger log = LoggerFactory.getLogger(ParallelServiceExecutor.class);
-	
+
 	protected final FedXService service;
 	protected final FederationEvalStrategy strategy;
 	protected final BindingSet bindings;
-	
+
 	protected CloseableIteration<BindingSet, QueryEvaluationException> rightIter = null;
 	protected boolean finished = false;
 	protected Exception error = null;
-	
+
 	private CountDownLatch latch = null;
 
 	/**
@@ -65,7 +64,6 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 		this.bindings = bindings;
 	}
 
-	
 	@Override
 	public void run() {
 
@@ -89,12 +87,12 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	public void done()	{
-		;	// no-op		
+	public void done() {
+		; // no-op
 	}
 
 	@Override
-	public boolean isFinished()	{
+	public boolean isFinished() {
 		synchronized (this) {
 			return finished;
 		}
@@ -107,15 +105,15 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		
+
 		// error resulting from TOSS
-		if (error!=null) {
+		if (error != null) {
 			if (error instanceof QueryEvaluationException)
-				throw (QueryEvaluationException)error;
+				throw (QueryEvaluationException) error;
 			throw new QueryEvaluationException(error);
 		}
 
-		if (rightIter==null) {	
+		if (rightIter == null) {
 			// block if not evaluated
 			try {
 				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
@@ -127,7 +125,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 				error = e;
 			}
 		}
-		
+
 		// check again for error
 		if (error != null) {
 			if (error instanceof QueryEvaluationException)
@@ -137,19 +135,16 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 		if (rightIter.hasNext())
 			return rightIter.next();
-		
+
 		return null;
 	}
 
-
-	
 	/**
 	 * Task for evaluating service requests
 	 * 
 	 * @author Andreas Schwarte
 	 */
 	private class ParallelServiceTask extends ParallelTaskBase<BindingSet> {
-	
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> performTask()
@@ -161,6 +156,6 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 		public ParallelExecutor<BindingSet> getControl() {
 			return ParallelServiceExecutor.this;
 		}
-		
+
 	}
 }

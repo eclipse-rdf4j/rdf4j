@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * Interface for any scheduler. 
+ * Interface for any scheduler.
  * 
  * @author Andreas Schwarte
  *
@@ -25,45 +25,45 @@ public interface Scheduler<T> {
 	 * @param task
 	 */
 	public void schedule(ParallelTask<T> task);
-	
+
 	/**
 	 * Callback to handle the result.
 	 * 
 	 * @param res
 	 */
 	public void handleResult(CloseableIteration<T, QueryEvaluationException> res);
-	
+
 	/**
 	 * Inform the scheduler that a certain task is done.
 	 * 
 	 */
 	public void done();
-	
+
 	/**
 	 * Toss an exception to the scheduler.
 	 * 
 	 * @param e
 	 */
 	public void toss(Exception e);
-	
+
 	/**
 	 * Abort the execution of running and queued tasks.
 	 * 
 	 */
 	public void abort();
-	
+
 	public void shutdown();
 
 	/**
 	 * Inform the scheduler that no more tasks will be scheduled.
 	 */
 	public void informFinish();
-	
+
 	/**
 	 * Determine if the scheduler has unfinished tasks.
 	 * 
 	 * @return whether the scheduler is running
 	 */
 	public boolean isRunning();
-	
+
 }

@@ -24,8 +24,7 @@ import org.eclipse.rdf4j.repository.sail.SailQuery;
  * @author Andreas Schwarte
  * @since 5.0
  */
-public class FedXUtil
-{
+public class FedXUtil {
 
 	private static final AtomicLong count = new AtomicLong(0L);
 
@@ -33,8 +32,7 @@ public class FedXUtil
 	 * @param iri
 	 * @return the IRI for the full URI string
 	 */
-	public static IRI iri(String iri)
-	{
+	public static IRI iri(String iri) {
 		return valueFactory().createIRI(iri);
 	}
 
@@ -43,8 +41,7 @@ public class FedXUtil
 	 * @param literal
 	 * @return the string literal
 	 */
-	public static Literal literal(String literal)
-	{
+	public static Literal literal(String literal) {
 		return valueFactory().createLiteral(literal);
 	}
 
@@ -52,14 +49,13 @@ public class FedXUtil
 	 * 
 	 * @return a {@link SimpleValueFactory} instance
 	 */
-	public static ValueFactory valueFactory()
-	{
+	public static ValueFactory valueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
 
 	/**
-	 * Apply query bindings to transfer information from the query into the
-	 * evaluation routine, e.g. the query execution time.
+	 * Apply query bindings to transfer information from the query into the evaluation routine, e.g. the query execution
+	 * time.
 	 * 
 	 * @param query
 	 */
@@ -79,11 +75,10 @@ public class FedXUtil
 	}
 
 	/**
-	 * Set a maximum execution time corresponding to
-	 * {@link Config#getEnforceMaxQueryTime()} to this operation.
+	 * Set a maximum execution time corresponding to {@link Config#getEnforceMaxQueryTime()} to this operation.
 	 * 
-	 * Note that this is an upper bound only as FedX applies other means for
-	 * evaluation the maximum query execution time.
+	 * Note that this is an upper bound only as FedX applies other means for evaluation the maximum query execution
+	 * time.
 	 * 
 	 * @param operation the {@link Operation}
 	 */

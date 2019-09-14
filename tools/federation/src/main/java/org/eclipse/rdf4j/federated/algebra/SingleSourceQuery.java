@@ -15,63 +15,56 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
- * A query which has a single relevant source. These queries can be sent entirely 
- * to the endpoint as-is.
+ * A query which has a single relevant source. These queries can be sent entirely to the endpoint as-is.
  * 
  * @author Andreas Schwarte
  */
-public class SingleSourceQuery extends AbstractQueryModelNode implements TupleExpr, QueryRef
-{
+public class SingleSourceQuery extends AbstractQueryModelNode implements TupleExpr, QueryRef {
 	private static final long serialVersionUID = 5745172129911897271L;
 
 	private final TupleExpr parsedQuery;
 	private final transient Endpoint source;
 	private final transient QueryInfo queryInfo;
-		
+
 	/**
 	 * @param parsedQuery
 	 * @param source
 	 * @param queryInfo
 	 */
 	public SingleSourceQuery(TupleExpr parsedQuery, Endpoint source,
-			QueryInfo queryInfo)
-	{
+			QueryInfo queryInfo) {
 		super();
 		this.parsedQuery = parsedQuery;
 		this.source = source;
 		this.queryInfo = queryInfo;
 	}
 
-	public Endpoint getSource()	{
+	public Endpoint getSource() {
 		return source;
 	}
 
-	public String getQueryString()	{
+	public String getQueryString() {
 		return queryInfo.getQuery();
-	}	
+	}
 
 	@Override
-	public QueryInfo getQueryInfo()
-	{
+	public QueryInfo getQueryInfo() {
 		return queryInfo;
 	}
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X
-	{
+			throws X {
 		visitor.meetOther(this);
-	}	
-	
+	}
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		parsedQuery.visit(visitor);
 		super.visitChildren(visitor);
 	}
-	
 
 	@Override
 	public String getSignature() {
@@ -79,20 +72,18 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	}
 
 	@Override
-	public Set<String> getBindingNames()
-	{
+	public Set<String> getBindingNames() {
 		return parsedQuery.getBindingNames();
 	}
 
 	@Override
-	public Set<String> getAssuredBindingNames()
-	{
+	public Set<String> getAssuredBindingNames() {
 		return parsedQuery.getAssuredBindingNames();
 	}
 
 	@Override
 	public SingleSourceQuery clone() {
-		return (SingleSourceQuery)super.clone();
+		return (SingleSourceQuery) super.clone();
 	}
 
 }

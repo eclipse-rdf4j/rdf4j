@@ -29,5 +29,5 @@ public class EntryUpdateException extends Exception {
 
 	public EntryUpdateException(Throwable arg0) {
 		super(arg0);
-	}	
+	}
 }

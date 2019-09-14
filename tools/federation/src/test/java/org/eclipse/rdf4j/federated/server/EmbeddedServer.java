@@ -13,9 +13,6 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.webapp.WebAppContext;
 
-
-
-
 public class EmbeddedServer {
 
 	public static final String HOST = "localhost";
@@ -45,11 +42,11 @@ public class EmbeddedServer {
 		jetty.setHandler(webapp);
 	}
 
-	public void start()	throws Exception {
+	public void start() throws Exception {
 		jetty.start();
 	}
 
-	public void stop() throws Exception	{
+	public void stop() throws Exception {
 		jetty.stop();
 	}
 
@@ -58,8 +55,7 @@ public class EmbeddedServer {
 	 * @throws Exception
 	 */
 	public static void main(String[] args)
-		throws Exception
-	{
+			throws Exception {
 		EmbeddedServer server = new EmbeddedServer();
 		server.start();
 	}

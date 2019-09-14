@@ -24,15 +24,13 @@ import com.google.common.collect.Maps;
 /**
  * Simple manual performance test for FedX.
  * <p>
- * Can be applied against a scenario created with {@link DataGenerator} and
- * {@link ResultGenerator}. An example scenario is on the classpath in
- * "build/test/fedxPerformanceScenario.jar"
+ * Can be applied against a scenario created with {@link DataGenerator} and {@link ResultGenerator}. An example scenario
+ * is on the classpath in "build/test/fedxPerformanceScenario.jar"
  * </p>
  * 
  * <p>
- * Note that the performance scenario does include the correctness check, i.e.
- * it does not only evaluate the pure query duration, but also checks the query
- * results against a prepared result.
+ * Note that the performance scenario does include the correctness check, i.e. it does not only evaluate the pure query
+ * duration, but also checks the query results against a prepared result.
  * </p>
  * 
  * <p>
@@ -59,20 +57,19 @@ import com.google.common.collect.Maps;
  */
 public class FedXPerformanceTest extends SPARQLBaseTest {
 
-	static final String[] queries = new String[]
-	{
+	static final String[] queries = new String[] {
 			"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
-			"query10", "query11" /*, "query12" */
+			"query10", "query11" /* , "query12" */
 	};
 
 	@Test
 	@Disabled
 	public void testPerformance() throws Throwable
-	
+
 	{
 		fedxRule.setConfig("sparqlEvaluationStrategy", SparqlFederationEvalStrategyWithValues.class.getName());
 		String basePackage = "/tests/performance/";
-		
+
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",
 				basePackage + "data4.ttl"));
@@ -118,10 +115,10 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 			System.out.println(query + ": avg=" + avg + ", min=" + minDuration + ", max=" + maxDuration);
 
 		}
-		
+
 		log.info("Done");
 	}
-	
+
 	@Test
 	@Disabled // FIXME currently stack overflow error in result comparison due to implementation issue in RDF4J
 	public void testRun() throws Exception {
@@ -134,7 +131,6 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 		String query = "query12";
 		execute(basePackage + query + ".rq", basePackage + query + ".srx", false);
 	}
-
 
 	static class Run {
 

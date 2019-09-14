@@ -12,4 +12,7 @@ package org.eclipse.rdf4j.federated.endpoint;
  * 
  * @author Andreas Schwarte
  */
-public enum EndpointClassification { Local, Remote; }
+public enum EndpointClassification {
+	Local,
+	Remote;
+}

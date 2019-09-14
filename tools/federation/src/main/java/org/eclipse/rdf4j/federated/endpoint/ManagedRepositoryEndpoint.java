@@ -12,15 +12,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * A specialized {@link RepositoryEndpoint} where the lifecycle of the
- * {@link Repository} is managed by this endpoint, i.e. this instance takes care
- * for initialize and shutdown of the repository.
+ * A specialized {@link RepositoryEndpoint} where the lifecycle of the {@link Repository} is managed by this endpoint,
+ * i.e. this instance takes care for initialize and shutdown of the repository.
  * 
  * @author Andreas Schwarte
  * @see RepositoryEndpoint
  */
 public class ManagedRepositoryEndpoint extends RepositoryEndpoint {
-
 
 	public ManagedRepositoryEndpoint(RepositoryInformation repoInfo, String endpoint,
 			EndpointClassification endpointClassification, Repository repo) {

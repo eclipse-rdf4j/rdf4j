@@ -29,88 +29,86 @@ public class RemoteRepositoryTest {
 
 	private static final int MAX_INSTANCES = 4000;
 	private static final int N_QUERIES = 4000;
-	
-	
+
 	/**
 	 * @param args
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	public static void main(String[] args) throws Exception {
-		
+
 		ExecutorService executor = Executors.newFixedThreadPool(30);
-		
+
 		Repository repo = new HTTPRepository("http://10.212.10.29:8081/openrdf-sesame", "drugbank");
-		
+
 		repo.initialize();
 
 		RepositoryConnection conn = repo.getConnection();
-		
+
 		System.out.println("Retrieving instances...");
 		List<IRI> instances = retrieveInstances(conn,
 				FedXUtil.iri("http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/drugs"));
 		System.out.println("Retrieved " + instances.size() + " instances");
-		
+
 		System.out.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
 		List<Future<?>> tasks = new ArrayList<Future<?>>();
 		long start = System.currentTimeMillis();
-		int count=0;
-		for (final IRI instance : instances)
-		{
-			if (++count>N_QUERIES)
+		int count = 0;
+		for (final IRI instance : instances) {
+			if (++count > N_QUERIES)
 				break;
-			
+
 			// b) multithreaded
 			final RepositoryConnection _conn = conn;
-			Future<?> task = executor.submit(new Runnable() {						
+			Future<?> task = executor.submit(new Runnable() {
 				@Override
 				public void run() {
 					try {
 						runQuery(_conn, instance);
 					} catch (Exception e) {
-						System.err.println("Error while performing query evaluation for instance " + instance.stringValue() +": " + e.getMessage());
-					}							
+						System.err.println("Error while performing query evaluation for instance "
+								+ instance.stringValue() + ": " + e.getMessage());
+					}
 				}
 			});
-			tasks.add(task);					
+			tasks.add(task);
 		}
-		
+
 		// wait for all tasks being finished
-		for (Future<?> task: tasks) {
+		for (Future<?> task : tasks) {
 			task.get();
 		}
 		System.out.println("Done evaluating queries. Duration " + (System.currentTimeMillis() - start) + "ms");
-		
+
 		repo.shutDown();
 		executor.shutdown();
 		System.out.println("Done.");
 	}
 
-	
-	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) throws Exception
-	{
-		
+	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) throws Exception {
+
 		List<IRI> res = new ArrayList<IRI>();
 		RepositoryResult<Statement> qres = null;
 		try {
 			qres = conn.getStatements(null, RDF.TYPE, type, false);
-			while (qres.hasNext() && res.size()<MAX_INSTANCES) {
+			while (qres.hasNext() && res.size() < MAX_INSTANCES) {
 				Statement next = qres.next();
 				res.add((IRI) next.getObject());
 			}
 		} finally {
 			try {
-				if (qres!=null)
+				if (qres != null)
 					qres.close();
-			} catch (Exception ignore) {}
+			} catch (Exception ignore) {
+			}
 		}
 		return res;
 	}
-	
-	private static int runQuery(RepositoryConnection conn, IRI instance) throws Exception
-	{
-		
-		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
-		
+
+	private static int runQuery(RepositoryConnection conn, IRI instance) throws Exception {
+
+		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
+
 		TupleQueryResult res = null;
 		try {
 			res = query.evaluate();
@@ -121,7 +119,7 @@ public class RemoteRepositoryTest {
 			}
 			return count;
 		} finally {
-			if (res!=null)
+			if (res != null)
 				res.close();
 		}
 	}

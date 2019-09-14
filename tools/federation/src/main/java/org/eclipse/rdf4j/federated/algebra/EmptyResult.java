@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
-
 /**
  * A generic interface to mark some TupleExpr as empty.
  * 

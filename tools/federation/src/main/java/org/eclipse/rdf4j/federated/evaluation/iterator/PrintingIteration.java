@@ -14,27 +14,24 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * Print the bindings of the inner iteration to stdout, however maintain a copy, which
- * is accessible through this iteration.
+ * Print the bindings of the inner iteration to stdout, however maintain a copy, which is accessible through this
+ * iteration.
  * 
  * @author Andreas Schwarte
  *
  */
-public class PrintingIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-{
+public class PrintingIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
 	protected LinkedList<BindingSet> copyQueue = new LinkedList<BindingSet>();
 	protected boolean done = false;
-	
+
 	public PrintingIteration(
 			CloseableIteration<BindingSet, QueryEvaluationException> inner) {
 		super();
 		this.inner = inner;
 	}
-
 
 	public void print() throws QueryEvaluationException {
 		int count = 0;
@@ -49,13 +46,10 @@ public class PrintingIteration extends AbstractCloseableIteration<BindingSet, Qu
 		done = true;
 		System.out.println("Done with inner queue. Processed " + count + " items.");
 	}
-	
-	
-	
-	
-	@Override	
+
+	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		return !done || copyQueue.size()>0;
+		return !done || copyQueue.size() > 0;
 	}
 
 	@Override
@@ -68,15 +62,14 @@ public class PrintingIteration extends AbstractCloseableIteration<BindingSet, Qu
 	@Override
 	public void remove() throws QueryEvaluationException {
 		// TODO Auto-generated method stub
-		
+
 	}
 
-	
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		inner.close();
-		done=true;
-		synchronized (copyQueue){
+		done = true;
+		synchronized (copyQueue) {
 			copyQueue.clear();
 		}
 	}

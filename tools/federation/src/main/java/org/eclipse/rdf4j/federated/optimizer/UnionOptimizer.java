@@ -19,18 +19,16 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-
 /**
  * Optimizer to flatten the UNION operations.
  * 
  * @author Andreas Schwarte
  *
  */
-public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer
-{
+public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	protected final QueryInfo queryInfo;
-		
+
 	public UnionOptimizer(QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
@@ -40,15 +38,14 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 	public void optimize(TupleExpr tupleExpr) {
 		tupleExpr.visit(this);
 	}
-	
-	
+
 	@Override
 	public void meet(Union union) {
-		
+
 		// retrieve the union arguments, also those of nested unions
 		List<TupleExpr> args = new ArrayList<TupleExpr>();
 		handleUnionArgs(union, args);
-		
+
 		// remove any tuple expressions that do not produce any result
 		List<TupleExpr> filtered = new ArrayList<TupleExpr>(args.size());
 		for (TupleExpr arg : args) {
@@ -56,39 +53,38 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 				continue;
 			filtered.add(arg);
 		}
-		
+
 		// create a NUnion having the arguments in one layer
 		// however, check if we only have zero or one argument first
-		if (filtered.size()==0) {
+		if (filtered.size() == 0) {
 			union.replaceWith(new EmptyNUnion(args, queryInfo));
 		}
-		
-		else if (filtered.size()==1) {
+
+		else if (filtered.size() == 1) {
 			union.replaceWith(filtered.get(0));
 		}
-		
+
 		else {
-			union.replaceWith( new NUnion(filtered, queryInfo) );			
+			union.replaceWith(new NUnion(filtered, queryInfo));
 		}
 	}
-	
+
 	/**
-	 * Add the union arguments to the args list, includes a recursion 
-	 * step for nested unions.
+	 * Add the union arguments to the args list, includes a recursion step for nested unions.
 	 * 
 	 * @param union
 	 * @param args
 	 */
 	protected void handleUnionArgs(Union union, List<TupleExpr> args) {
-		
+
 		if (union.getLeftArg() instanceof Union) {
-			handleUnionArgs((Union)union.getLeftArg(), args);
+			handleUnionArgs((Union) union.getLeftArg(), args);
 		} else {
 			args.add(union.getLeftArg());
 		}
-		
+
 		if (union.getRightArg() instanceof Union) {
-			handleUnionArgs((Union)union.getRightArg(), args);
+			handleUnionArgs((Union) union.getRightArg(), args);
 		} else {
 			args.add(union.getRightArg());
 		}

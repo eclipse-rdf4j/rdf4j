@@ -91,7 +91,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 			}
 		});
 	}
-	
+
 	@Test
 	@Disabled // local test only
 	public void testLocalTimeout3() throws Exception {
@@ -103,14 +103,14 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 
 		fedxRule.enableDebug();
 
-		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + 
-				"PREFIX ns1: <http://namespace1.org/>\n" + 
-				"PREFIX ns2: <http://namespace2.org/>\n" + 
-				"\n" + 
-				"SELECT ?person ?name  WHERE {\n" + 
+		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX ns1: <http://namespace1.org/>\n" +
+				"PREFIX ns2: <http://namespace2.org/>\n" +
+				"\n" +
+				"SELECT ?person ?name  WHERE {\n" +
 				" { ?person a ns1:Person . } \n" +
 				" UNION" +
-				" { ?person a ns2:Person . ?person foaf:name ?name . }\n" + 
+				" { ?person a ns2:Person . ?person foaf:name ?name . }\n" +
 				"}";
 		// make sure that latency does not affect source selection
 		QueryManager.getQueryPlan(queryString);
@@ -119,7 +119,6 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		repoSettings(2).setLatencySimulator(latencySimulator(5000));
 
 		Query query = QueryManager.prepareQuery(queryString);
-
 
 		try (TupleQueryResult tq = ((TupleQuery) query).evaluate()) {
 
@@ -137,7 +136,6 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		System.out.println("Done");
 
 	}
-
 
 	protected Runnable latencySimulator(long latencyMs) {
 		return () -> {

@@ -13,16 +13,13 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A special {@link SailRepository} which performs the actions as
- * defined in {@link FedXRepositoryConnection}.
+ * A special {@link SailRepository} which performs the actions as defined in {@link FedXRepositoryConnection}.
  * 
  * @author as
  */
-public class FedXRepository extends SailRepository
-{
+public class FedXRepository extends SailRepository {
 
-	public FedXRepository(Sail sail)
-	{
+	public FedXRepository(Sail sail) {
 		super(sail);
 	}
 
@@ -30,10 +27,9 @@ public class FedXRepository extends SailRepository
 	public FedXRepositoryConnection getConnection() throws RepositoryException {
 		try {
 			return new FedXRepositoryConnection(this, this.getSail().getConnection());
-		}
-		catch (SailException e) {
+		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
-	}	
+	}
 
 }

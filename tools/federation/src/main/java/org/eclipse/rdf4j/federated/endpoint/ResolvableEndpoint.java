@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 
 /**
- * A specialized {@link Endpoint} that allows to resolve the repository using a
- * {@link RepositoryResolver}.
+ * A specialized {@link Endpoint} that allows to resolve the repository using a {@link RepositoryResolver}.
  * <p>
  * The Repository lifecycle is assumed to be managed externally.
  * </p>

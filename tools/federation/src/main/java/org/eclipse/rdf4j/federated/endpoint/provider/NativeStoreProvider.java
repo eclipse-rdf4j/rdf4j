@@ -22,17 +22,14 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStoreExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
- * Provider for an Endpoint that uses a RDF4J {@link NativeStore} as underlying
- * repository. For optimization purposes the NativeStore is wrapped within a
- * {@link NativeStoreExt} to allow for evaluation of prepared queries without
- * prior optimization. Note that NativeStores are always classified as 'Local'.
+ * Provider for an Endpoint that uses a RDF4J {@link NativeStore} as underlying repository. For optimization purposes
+ * the NativeStore is wrapped within a {@link NativeStoreExt} to allow for evaluation of prepared queries without prior
+ * optimization. Note that NativeStores are always classified as 'Local'.
  * 
  * <p>
- * If the repository location denotes an absolute path, the native store
- * directory must already exist. If a relative path is used, the repository is
- * created on the fly (if necessary).
+ * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
+ * path is used, the repository is created on the fly (if necessary).
  * </p>
  * 
  * @author Andreas Schwarte
@@ -43,7 +40,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 	@Override
 	public Endpoint loadEndpoint(NativeRepositoryInformation repoInfo) throws FedXException {
-		
+
 		File store = new File(repoInfo.getLocation());
 		if (store.isAbsolute()) {
 			// if the referenced location is absolute, we make sure that the store needs to
@@ -64,13 +61,11 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 				FileUtil.mkdirs(store);
 			}
 		}
-		
-		
 
 		try {
 			NativeStore ns = new NativeStoreExt(store);
 			SailRepository repo = new SailRepository(ns);
-			
+
 			try {
 				repo.initialize();
 
@@ -84,12 +79,12 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, repoInfo.getLocation(),
 					EndpointClassification.Local, repo);
 			res.setEndpointConfiguration(repoInfo.getEndpointConfiguration());
-			
+
 			return res;
 		} catch (RepositoryException e) {
-			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(), e);
+			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
+					e);
 		}
 	}
-
 
 }

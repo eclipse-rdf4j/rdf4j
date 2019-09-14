@@ -16,11 +16,9 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 
-public class Demo4
-{
+public class Demo4 {
 
-	public static void main(String[] args) throws Exception
-	{
+	public static void main(String[] args) throws Exception {
 
 		Config.initialize();
 		Repository repo = FedXFactory.initializeSparqlFederation(Arrays.asList(

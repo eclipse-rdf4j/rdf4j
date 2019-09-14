@@ -22,13 +22,11 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
-
 /**
  * Various utility functions to handle filter expressions.
  * 
- * NOTE: currently only implemented for {@link Compare}, other filter expressions
- * need to be added. If an unexpected filter expression occurs, the filter 
- * evaluation is done locally.
+ * NOTE: currently only implemented for {@link Compare}, other filter expressions need to be added. If an unexpected
+ * filter expression occurs, the filter evaluation is done locally.
  * 
  * @author Andreas Schwarte
  */
@@ -44,24 +42,23 @@ public class FilterUtils {
 	 * @throws FilterConversionException
 	 */
 	public static String toSparqlString(FilterValueExpr filterExpr) throws FilterConversionException {
-		
+
 		if (filterExpr instanceof FilterExpr)
-			return toSparqlString((FilterExpr)filterExpr);
+			return toSparqlString((FilterExpr) filterExpr);
 		if (filterExpr instanceof ConjunctiveFilterExpr)
-			return toSparqlString((ConjunctiveFilterExpr)filterExpr);
-		
+			return toSparqlString((ConjunctiveFilterExpr) filterExpr);
+
 		throw new RuntimeException("Unsupported type: " + filterExpr.getClass().getCanonicalName());
 	}
-	
-	
+
 	public static String toSparqlString(FilterExpr filterExpr) throws FilterConversionException {
 		StringBuilder sb = new StringBuilder();
 		append(filterExpr.getExpression(), sb);
 		return sb.toString();
 	}
-	
+
 	public static String toSparqlString(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
-		
+
 		StringBuilder sb = new StringBuilder();
 		int count = 0;
 		sb.append("( ");
@@ -71,62 +68,62 @@ public class FilterUtils {
 				sb.append(" && ");
 		}
 		sb.append(" )");
-		
+
 		return sb.toString();
 	}
-	
-	
+
 	public static ValueExpr toFilter(FilterValueExpr filterExpr) throws FilterConversionException {
-		
+
 		if (filterExpr instanceof FilterExpr)
-			return toFilter((FilterExpr)filterExpr);
+			return toFilter((FilterExpr) filterExpr);
 		if (filterExpr instanceof ConjunctiveFilterExpr)
-			return toFilter((ConjunctiveFilterExpr)filterExpr);
-		
+			return toFilter((ConjunctiveFilterExpr) filterExpr);
+
 		throw new RuntimeException("Unsupported type: " + filterExpr.getClass().getCanonicalName());
 	}
-	
+
 	public static ValueExpr toFilter(FilterExpr filterExpr) throws FilterConversionException {
 		return filterExpr.getExpression();
 	}
-	
+
 	public static ValueExpr toFilter(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
 		List<FilterExpr> expressions = filterExpr.getExpressions();
-		
-		if (expressions.size()==2) {
+
+		if (expressions.size() == 2) {
 			return new And(expressions.get(0).getExpression(), expressions.get(0).getExpression());
 		}
-		
+
 		And and = new And();
-		and.setLeftArg( expressions.get(0).getExpression() );
+		and.setLeftArg(expressions.get(0).getExpression());
 		And tmp = and;
 		int idx;
-		for (idx=1; idx<expressions.size()-1; idx++) {
+		for (idx = 1; idx < expressions.size() - 1; idx++) {
 			And _a = new And();
-			_a.setLeftArg( expressions.get(idx).getExpression() );
+			_a.setLeftArg(expressions.get(idx).getExpression());
 			tmp.setRightArg(_a);
 			tmp = _a;
 		}
-		tmp.setRightArg( expressions.get(idx).getExpression());
-		
+		tmp.setRightArg(expressions.get(idx).getExpression());
+
 		return and;
 	}
-	
+
 	protected static void append(ValueExpr expr, StringBuilder sb) throws FilterConversionException {
-		
+
 		if (expr instanceof Compare) {
-			append((Compare)expr, sb);
+			append((Compare) expr, sb);
 		} else if (expr instanceof Var) {
-			append((Var)expr, sb);
+			append((Var) expr, sb);
 		} else if (expr instanceof ValueConstant) {
-			append((ValueConstant)expr, sb);
+			append((ValueConstant) expr, sb);
 		} else {
 			// TODO add more!
-			throw new FilterConversionException("Expression type not supported, fallback to sesame evaluation: " + expr.getClass().getCanonicalName());
+			throw new FilterConversionException("Expression type not supported, fallback to sesame evaluation: "
+					+ expr.getClass().getCanonicalName());
 		}
-		
+
 	}
-	
+
 	protected static void append(Compare cmp, StringBuilder sb) throws FilterConversionException {
 
 		sb.append("( ");
@@ -135,8 +132,7 @@ public class FilterUtils {
 		append(cmp.getRightArg(), sb);
 		sb.append(" )");
 	}
-	
-	
+
 	protected static void append(Var var, StringBuilder sb) {
 		if (var.hasValue()) {
 			appendValue(sb, var.getValue());
@@ -144,25 +140,23 @@ public class FilterUtils {
 			sb.append("?").append(var.getName());
 		}
 	}
-	
+
 	protected static void append(ValueConstant vc, StringBuilder sb) {
 		appendValue(sb, vc.getValue());
 	}
-	
+
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
 
 		if (value instanceof IRI)
 			return appendURI(sb, (IRI) value);
 		if (value instanceof Literal)
-			return appendLiteral(sb, (Literal)value);
+			return appendLiteral(sb, (Literal) value);
 
 		// XXX check for other types ? BNode ?
 		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
 	}
-	
-	
-	protected static StringBuilder appendURI(StringBuilder sb, IRI uri)
-	{
+
+	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
 		sb.append("<").append(uri.stringValue()).append(">");
 		return sb;
 	}
@@ -172,8 +166,7 @@ public class FilterUtils {
 		sb.append(lit.getLabel().replace("\"", "\\\""));
 		sb.append('\'');
 
-		if (lit.getLanguage().isPresent())
-		{
+		if (lit.getLanguage().isPresent()) {
 			sb.append('@');
 			sb.append(lit.getLanguage());
 		}

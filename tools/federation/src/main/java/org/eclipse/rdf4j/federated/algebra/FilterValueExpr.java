@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.federated.algebra;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
 /**
- * Interface to indicate filter expressions. Does not provide methods
- * since implementing classes have different purposes, this interface
- * is just a marker. 
+ * Interface to indicate filter expressions. Does not provide methods since implementing classes have different
+ * purposes, this interface is just a marker.
  * 
  * @author Andreas Schwarte
  * 
@@ -21,6 +20,5 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  */
 public interface FilterValueExpr extends ValueExpr {
 
-	
 	// TODO add methods for both use cases
 }

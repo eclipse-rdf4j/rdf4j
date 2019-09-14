@@ -23,8 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Base class for common parallel executors such as {@link JoinExecutorBase} and
- * {@link UnionExecutorBase}.
+ * Base class for common parallel executors such as {@link JoinExecutorBase} and {@link UnionExecutorBase}.
  * 
  * @author Andreas Schwarte
  *
@@ -35,13 +34,12 @@ import org.slf4j.LoggerFactory;
 public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, QueryEvaluationException>
 		implements ParallelExecutor<T> {
 
-	
 	protected static final Logger log = LoggerFactory.getLogger(ParallelExecutorBase.class);
 
 	protected static final AtomicLong NEXT_EXECUTOR_ID = new AtomicLong(0L);
-	
+
 	/* Constants */
-	protected final FederationEvalStrategy strategy;		// the evaluation strategy
+	protected final FederationEvalStrategy strategy; // the evaluation strategy
 	protected final long executorId; // the executor id
 	protected final QueryInfo queryInfo;
 
@@ -138,8 +136,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	}
 
 	/**
-	 * Checks whether the query execution has run into a timeout. If so, a
-	 * {@link QueryInterruptedException} is thrown.
+	 * Checks whether the query execution has run into a timeout. If so, a {@link QueryInterruptedException} is thrown.
 	 * 
 	 * @throws QueryInterruptedException
 	 */

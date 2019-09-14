@@ -11,22 +11,25 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-public class NoopMonitoringImpl implements Monitoring
-{
+public class NoopMonitoringImpl implements Monitoring {
 
-	public NoopMonitoringImpl()	{
+	public NoopMonitoringImpl() {
 	};
-	
-	@Override
-	public void monitorRemoteRequest(Endpoint e) {	}
 
 	@Override
-	public void resetMonitoringInformation() {	}
+	public void monitorRemoteRequest(Endpoint e) {
+	}
 
 	@Override
-	public void monitorQuery(QueryInfo query) { }
+	public void resetMonitoringInformation() {
+	}
 
 	@Override
-	public void logQueryPlan(TupleExpr tupleExpr) {	}
+	public void monitorQuery(QueryInfo query) {
+	}
+
+	@Override
+	public void logQueryPlan(TupleExpr tupleExpr) {
+	}
 
 }

@@ -19,15 +19,13 @@ import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
-
 /**
- * Provider for an Endpoint that uses a RDF4j {@link SPARQLRepository} as
- * underlying repository. All SPARQL endpoints are considered Remote.
+ * Provider for an Endpoint that uses a RDF4j {@link SPARQLRepository} as underlying repository. All SPARQL endpoints
+ * are considered Remote.
  * <p>
  * 
- * This {@link SPARQLProvider} implements special hard-coded endpoint
- * configuration for the DBpedia endpoint: the support for ASK queries is always
- * set to false.
+ * This {@link SPARQLProvider} implements special hard-coded endpoint configuration for the DBpedia endpoint: the
+ * support for ASK queries is always set to false.
  * 
  * @author Andreas Schwarte
  */
@@ -39,7 +37,9 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 
 		try {
 			SPARQLRepository repo = new SPARQLRepository(repoInfo.getLocation());
-			HttpClientBuilder httpClientBuilder = HttpClients.custom().useSystemProperties().setMaxConnTotal(20)
+			HttpClientBuilder httpClientBuilder = HttpClients.custom()
+					.useSystemProperties()
+					.setMaxConnTotal(20)
 					.setMaxConnPerRoute(20);
 			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
 					.setHttpClientBuilder(httpClientBuilder);
@@ -52,37 +52,37 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 
 			String location = repoInfo.getLocation();
 			EndpointClassification epc = EndpointClassification.Remote;
-			
+
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, location, epc, repo);
 			EndpointConfiguration ep = manipulateEndpointConfiguration(location, repoInfo.getEndpointConfiguration());
 			res.setEndpointConfiguration(ep);
 
 			return res;
 		} catch (RepositoryException e) {
-			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(), e);
+			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
+					e);
 		}
 	}
 
 	/**
-	 * Manipulate the endpoint configuration for certain common endpoints, e.g.
-	 * DBpedia => does not support ASK queries
+	 * Manipulate the endpoint configuration for certain common endpoints, e.g. DBpedia => does not support ASK queries
 	 * 
 	 * @param location
 	 * @param ep
 	 * @return
 	 */
 	private EndpointConfiguration manipulateEndpointConfiguration(String location, EndpointConfiguration ep) {
-		
+
 		// special hard-coded handling for DBpedia: does not support ASK
 		if (location.equals("http://dbpedia.org/sparql")) {
-			if (ep==null) {
+			if (ep == null) {
 				ep = new SparqlEndpointConfiguration();
 			}
 			if (ep instanceof SparqlEndpointConfiguration) {
-				((SparqlEndpointConfiguration)ep).setSupportsASKQueries(false);
+				((SparqlEndpointConfiguration) ep).setSupportsASKQueries(false);
 			}
 		}
-		
+
 		return ep;
 	}
 }

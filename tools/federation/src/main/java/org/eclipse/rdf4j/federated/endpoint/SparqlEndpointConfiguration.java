@@ -18,18 +18,17 @@ import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 public class SparqlEndpointConfiguration implements EndpointConfiguration {
 
 	private boolean supportsASKQueries = true;
-	
+
 	/**
-	 * Flag indicating whether ASK queries are supported. Specific
-	 * {@link TripleSource} implementations may use this information
-	 * to decide whether to use ASK or SELECT for source selection.
+	 * Flag indicating whether ASK queries are supported. Specific {@link TripleSource} implementations may use this
+	 * information to decide whether to use ASK or SELECT for source selection.
 	 * 
 	 * @return boolean indicating whether ASK queries are supported
 	 */
 	public boolean supportsASKQueries() {
 		return supportsASKQueries;
 	}
-	
+
 	/**
 	 * Define whether this endpoint supports ASK queries.
 	 * 

@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 
 public class EndpointFactoryTest extends SPARQLBaseTest {
 
-	
 	@Test
 	public void testValidSparqlEndpoint() throws Exception {
 
@@ -34,24 +33,24 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 
 		String endpointUrl = ((SPARQLEmbeddedServer) server).getRepositoryUrl("endpoint1");
 		EndpointBase e = (EndpointBase) EndpointFactory.loadSPARQLEndpoint(endpointUrl);
-		
+
 		Assertions.assertEquals("http://localhost_18080", e.getName());
 		Assertions.assertEquals("sparql_localhost:18080_repositories_endpoint1", e.getId());
 		Assertions.assertEquals("http://localhost:18080/repositories/endpoint1", e.getEndpoint());
 		Assertions.assertEquals(EndpointType.SparqlEndpoint, e.getType());
 	}
-	
+
 	@Test
 	@Disabled // needs to be fixed, connection timeout needs to be set
 	public void testNotReachableEndpoint() throws Exception {
-		
+
 		try {
 			EndpointFactory.loadSPARQLEndpoint("http://invalid.org/not_sparql");
 			Assertions.fail("Expected exception that endpoint is invalid");
 		} catch (Exception expected) {
-			
+
 		}
-		
+
 	}
 
 	@Test
@@ -60,7 +59,8 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		fedxRule.setConfig("validateRepositoryConnections", "false");
 		fedxRule.setConfig("baseDir", "target/tmp/fedxTest");
 
-		File dataConfig = new File(EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
+		File dataConfig = new File(
+				EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
 
 		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig);
 
@@ -86,6 +86,5 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 				((ManagedRepositoryEndpoint) nativeStore).repository.getDataDir());
 
 	}
-
 
 }

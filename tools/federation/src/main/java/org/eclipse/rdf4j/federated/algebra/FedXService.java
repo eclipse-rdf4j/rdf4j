@@ -21,99 +21,87 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-
-public class FedXService extends AbstractQueryModelNode implements TupleExpr, BoundJoinTupleExpr
-{
+public class FedXService extends AbstractQueryModelNode implements TupleExpr, BoundJoinTupleExpr {
 
 	private static final long serialVersionUID = 7179501550561942879L;
 
 	protected Service expr;
 	protected transient QueryInfo queryInfo;
-	protected boolean simple = true;		// consists of BGPs only
+	protected boolean simple = true; // consists of BGPs only
 	protected int nTriples = 0;
 
-	
 	public FedXService(Service expr, QueryInfo queryInfo) {
 		this.expr = expr;
 		this.queryInfo = queryInfo;
 		expr.visit(new ServiceAnalyzer());
 	}
 
-	
 	public Service getService() {
 		return this.expr;
 	}
-	
+
 	public QueryInfo getQueryInfo() {
 		return queryInfo;
 	}
-	
+
 	public int getNumberOfTriplePatterns() {
 		return nTriples;
 	}
-	
+
 	public boolean isSimple() {
 		return simple;
 	}
-	
+
 	public Collection<String> getFreeVars() {
 		return expr.getServiceVars();
 	}
-	
+
 	public int getFreeVarCount() {
 		return expr.getServiceVars().size();
 	}
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
-		visitor.meetOther(this);		
+		visitor.meetOther(this);
 	}
-	
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		expr.visit(visitor);
 	}
-	
-	
+
 	@Override
 	public FedXService clone() {
-		return (FedXService)super.clone();
+		return (FedXService) super.clone();
 	}
 
-
 	@Override
-	public Set<String> getAssuredBindingNames()
-	{
+	public Set<String> getAssuredBindingNames() {
 		return expr.getAssuredBindingNames();
 	}
 
-
 	@Override
-	public Set<String> getBindingNames()
-	{
+	public Set<String> getBindingNames() {
 		return expr.getBindingNames();
-	}	
-	
-	
-	private class ServiceAnalyzer extends AbstractQueryModelVisitor<RuntimeException>
-	{
+	}
+
+	private class ServiceAnalyzer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
-		protected void meetNode(QueryModelNode node)
-		{
+		protected void meetNode(QueryModelNode node) {
 			if (node instanceof StatementTupleExpr) {
 				nTriples++;
 			} else if (node instanceof StatementPattern) {
 				nTriples++;
 			} else if (node instanceof Filter) {
-				simple=false;
-			} else if (node instanceof Union){
-				simple=false;
+				simple = false;
+			} else if (node instanceof Union) {
+				simple = false;
 			}
-				
+
 			super.meetNode(node);
-		}		
-		
+		}
+
 	}
 }

@@ -23,32 +23,29 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  *
  */
 public class NJoin extends NTuple implements TupleExpr {
-	
+
 	private static final long serialVersionUID = -8646701006458860154L;
 
 	/**
-	 * Construct an nary-tuple. Note that the parentNode of all arguments is
-	 * set to this instance.
+	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
 	 * 
 	 * @param args
 	 */
 	public NJoin(List<TupleExpr> args, QueryInfo queryInfo) {
 		super(args, queryInfo);
 	}
-	
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
-		visitor.meetOther(this);		
+		visitor.meetOther(this);
 	}
-	
-	
+
 	@Override
 	public NJoin clone() {
-		return (NJoin)super.clone();
+		return (NJoin) super.clone();
 	}
-	
+
 	/**
 	 * Returns the commons variables of the join with the given index.
 	 * 

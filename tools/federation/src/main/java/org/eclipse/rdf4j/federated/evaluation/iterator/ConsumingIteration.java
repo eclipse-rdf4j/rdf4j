@@ -17,53 +17,48 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 import com.google.common.collect.Lists;
 
-
 /**
- * A specialized {@link CloseableIteration} that consumes part (or the entire input
- * iteration if it fits into the buffer) and keeps data for further processing
- * in memory. If the buffer is full, the remaining items will be read from the
- * iteration lazily.
+ * A specialized {@link CloseableIteration} that consumes part (or the entire input iteration if it fits into the
+ * buffer) and keeps data for further processing in memory. If the buffer is full, the remaining items will be read from
+ * the iteration lazily.
  * 
- * This implementation can be used to avoid blocking behavior in HTTP connection
- * streams, i.e. to process results in memory and close the underlying HTTP stream.
+ * This implementation can be used to avoid blocking behavior in HTTP connection streams, i.e. to process results in
+ * memory and close the underlying HTTP stream.
  * 
  * @author Andreas Schwarte
  *
  */
 public class ConsumingIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
-	
 	/**
-	 * Maximum number of bindings that are consumed at construction time.
-	 * Remaining items, if any are consumed from the iterator itself
+	 * Maximum number of bindings that are consumed at construction time. Remaining items, if any are consumed from the
+	 * iterator itself
 	 */
-	private static final int max = 1000;	// TODO make configurable
-	
-	
+	private static final int max = 1000; // TODO make configurable
+
 	private final List<BindingSet> consumed = Lists.newArrayList();
-	
+
 	private final CloseableIteration<BindingSet, QueryEvaluationException> innerIter;
 
-	
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
 	 */
 	private int currentIndex = 0;
-	
-	
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) throws QueryEvaluationException {
-		
+
+	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter)
+			throws QueryEvaluationException {
+
 		innerIter = iter;
-				
+
 		while (consumed.size() < max && iter.hasNext()) {
 			consumed.add(iter.next());
 		}
-		
+
 		if (!iter.hasNext()) {
 			iter.close();
 		}
 	}
-	
+
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		return currentIndex < consumed.size() || innerIter.hasNext();
@@ -87,7 +82,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	@Override
 	public void remove() throws QueryEvaluationException {
 		throw new UnsupportedOperationException("not supported");
-		
+
 	}
 
 	@Override

@@ -40,8 +40,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class TripleSourceBase implements TripleSource
-{
+public abstract class TripleSourceBase implements TripleSource {
 	private static final Logger log = LoggerFactory.getLogger(TripleSourceBase.class);
 
 	protected final Monitoring monitoringService;
@@ -52,14 +51,12 @@ public abstract class TripleSourceBase implements TripleSource
 		this.endpoint = endpoint;
 	}
 
-
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
 			String preparedQuery, QueryType queryType)
 			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException
-	{
-		
+			QueryEvaluationException {
+
 		return withConnection((conn, resultHolder) -> {
 			switch (queryType) {
 			case SELECT:
@@ -92,23 +89,20 @@ public abstract class TripleSourceBase implements TripleSource
 			}
 		});
 	}
-	
 
 	@Override
 	public boolean hasStatements(Resource subj,
-			IRI pred, Value obj, Resource... contexts) throws RepositoryException
-	{
+			IRI pred, Value obj, Resource... contexts) throws RepositoryException {
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			return conn.hasStatement(subj, pred, obj, false, contexts);
 		}
 	}
-	
-	
+
 	@Override
 	public boolean hasStatements(ExclusiveGroup group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException 	{
-		
+			QueryEvaluationException {
+
 		monitorRemoteRequest();
 		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings);
 		try (RepositoryConnection conn = endpoint.getConnection()) {
@@ -122,13 +116,13 @@ public abstract class TripleSourceBase implements TripleSource
 	protected void monitorRemoteRequest() {
 		monitoringService.monitorRemoteRequest(endpoint);
 	}
-	
+
 	private CloseableIteration<BindingSet, QueryEvaluationException> booleanToBindingSetIteration(boolean hasResult) {
 		if (hasResult)
 			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());
 		return new EmptyIteration<BindingSet, QueryEvaluationException>();
 	}
-	
+
 	/**
 	 * Set includeInference to disabled explicitly.
 	 * 
@@ -143,10 +137,9 @@ public abstract class TripleSourceBase implements TripleSource
 			log.trace("Details:", e);
 		}
 	}
-	
+
 	/**
-	 * Apply an upper bound of the maximum execution time using
-	 * {@link FedXUtil#applyMaxQueryExecutionTime(Operation)}.
+	 * Apply an upper bound of the maximum execution time using {@link FedXUtil#applyMaxQueryExecutionTime(Operation)}.
 	 * 
 	 * @param operation the operation
 	 */
@@ -160,9 +153,8 @@ public abstract class TripleSourceBase implements TripleSource
 	}
 
 	/**
-	 * Convenience method to perform an operation on a {@link RepositoryConnection}.
-	 * This method takes care for closing resources as well error handling. The
-	 * resulting iteration has to be supplied to the {@link ResultHolder}.
+	 * Convenience method to perform an operation on a {@link RepositoryConnection}. This method takes care for closing
+	 * resources as well error handling. The resulting iteration has to be supplied to the {@link ResultHolder}.
 	 * 
 	 * @param operation the {@link ConnectionOperation}
 	 * @return the resulting iteration
@@ -218,10 +210,8 @@ public abstract class TripleSourceBase implements TripleSource
 	}
 
 	/**
-	 * Holder for a result iteration to be used with
-	 * {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note that the
-	 * result holder should also be set with temporary results to properly allow
-	 * error handling.
+	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
+	 * that the result holder should also be set with temporary results to properly allow error handling.
 	 * 
 	 * @author Andreas Schwarte
 	 *

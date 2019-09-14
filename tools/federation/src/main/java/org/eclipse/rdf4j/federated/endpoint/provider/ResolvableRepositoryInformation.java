@@ -15,10 +15,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 
-
 /**
- * Graph information for a {@link ResolvableEndpoint} where the
- * {@link Repository} is looked up using the configured
+ * Graph information for a {@link ResolvableEndpoint} where the {@link Repository} is looked up using the configured
  * {@link RepositoryResolver}.
  * <p>
  * 
@@ -40,7 +38,6 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
  */
 public class ResolvableRepositoryInformation extends RepositoryInformation {
 
-
 	public ResolvableRepositoryInformation(Model graph, Resource repNode) {
 		super(EndpointType.Other);
 		initialize(graph, repNode);
@@ -51,22 +48,21 @@ public class ResolvableRepositoryInformation extends RepositoryInformation {
 	}
 
 	protected void initialize(Model graph, Resource repNode) {
-		
+
 		// name: the node's value
 		setProperty("name", repNode.stringValue());
-				
-		// location		
+
+		// location
 		Model repositoryId = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_NAME, null);
 		String repoId = repositoryId.iterator().next().getObject().stringValue();
 
-
 		setProperty("location", location(repoId));
-		
+
 		// id: the name of the location
 		String id = repoId;
 		setProperty("id", id);
 	}
-	
+
 	static String location(String repoId) {
 		return "resolvable:" + repoId;
 	}

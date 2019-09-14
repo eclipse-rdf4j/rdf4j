@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+‚ * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -15,11 +15,9 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
  * 
  * @author as
  */
-public class SailDatasetTripleSourceExt extends SailDatasetTripleSource
-{
+public class SailDatasetTripleSourceExt extends SailDatasetTripleSource {
 
-	public SailDatasetTripleSourceExt(ValueFactory vf, SailDataset dataset)
-	{
+	public SailDatasetTripleSourceExt(ValueFactory vf, SailDataset dataset) {
 		super(vf, dataset);
 	}
 

@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 
 /**
- * A {@link RepositoryImplConfig} to configure FedX for the use in the RDF4J
- * workbench.
+ * A {@link RepositoryImplConfig} to configure FedX for the use in the RDF4J workbench.
  * 
  * Example configuration file:
  * 
@@ -42,8 +41,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
  * </pre>
  * 
  * <p>
- * Note that the location of the fedx config and the data config is relative to
- * the repository's data dir (as managed by the RDF4J repository manager)
+ * Note that the location of the fedx config and the data config is relative to the repository's data dir (as managed by
+ * the RDF4J repository manager)
  * </p>
  * 
  * @author Andreas Schwarte
@@ -108,7 +107,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model m) {
 
 		Resource implNode = super.export(m);
-		
+
 		m.setNamespace("fedx", NAMESPACE);
 		if (getFedxConfig() != null) {
 			m.add(implNode, FEDX_CONFIG, vf.createLiteral(getFedxConfig()));
@@ -127,7 +126,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		if (getDataConfig() == null && getFedxConfig() == null) {
 			throw new RepositoryConfigException(
 					"At least one of fedxConfig or dataConfig needs to be "
-					+ "provided to initialize the federation");
+							+ "provided to initialize the federation");
 		}
 	}
 

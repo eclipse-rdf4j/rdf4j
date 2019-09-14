@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * A simple implementation of a Main memory cache which is persisted to the provided cache location.
  * 
@@ -42,55 +41,54 @@ import org.slf4j.LoggerFactory;
 public class MemoryCache implements Cache {
 
 	private static final Logger log = LoggerFactory.getLogger(MemoryCache.class);
-	
+
 	protected HashMap<SubQuery, CacheEntry> cache = new HashMap<SubQuery, CacheEntry>();
 	protected File cacheLocation;
-	
+
 	public MemoryCache(File cacheLocation) {
-		if (cacheLocation==null)
+		if (cacheLocation == null)
 			throw new FedXRuntimeException("The provided cacheLocation must not be null.");
 		this.cacheLocation = cacheLocation;
 	}
-	
+
 	@Override
 	public void addEntry(SubQuery subQuery, CacheEntry cacheEntry) throws EntryAlreadyExistsException {
 
 		synchronized (cache) {
-			
+
 			if (cache.containsKey(subQuery))
-				throw new EntryAlreadyExistsException("Entry for statement " + subQuery + " already exists in cache. Use update functionality instead.");
-		
+				throw new EntryAlreadyExistsException("Entry for statement " + subQuery
+						+ " already exists in cache. Use update functionality instead.");
+
 			cache.put(subQuery, cacheEntry);
 		}
-		
+
 	}
-	
-	
+
 	@Override
 	public void updateEntry(SubQuery subQuery, CacheEntry merge) throws EntryUpdateException {
-		
+
 		synchronized (cache) {
-			
+
 			CacheEntry entry = cache.get(subQuery);
-			
-			if (entry==null)
+
+			if (entry == null)
 				cache.put(subQuery, merge);
 			else
 				entry.merge(merge);
 		}
-		
-	}
 
+	}
 
 	@Override
 	public void removeEntry(SubQuery subQuery) throws EntryUpdateException {
-		
+
 		synchronized (cache) {
 			cache.remove(subQuery);
 		}
-		
+
 	}
-	
+
 	@Override
 	public StatementSourceAssurance canProvideStatements(SubQuery subQuery, Endpoint endpoint) {
 		CacheEntry entry = cache.get(subQuery);
@@ -101,7 +99,6 @@ public class MemoryCache implements Cache {
 		return entry.canProvideStatements(endpoint);
 	}
 
-	
 	@Override
 	public CacheEntry getCacheEntry(SubQuery subQuery) {
 		CacheEntry entry = cache.get(subQuery);
@@ -138,12 +135,12 @@ public class MemoryCache implements Cache {
 	@SuppressWarnings("unchecked")
 	@Override
 	public void initialize() throws FedXException {
-		
+
 		if (!cacheLocation.exists())
 			return;
 		try (ObjectInputStream in = new ObjectInputStream(
 				new BufferedInputStream(new FileInputStream(cacheLocation)))) {
-			cache = (HashMap<SubQuery, CacheEntry>)in.readObject();
+			cache = (HashMap<SubQuery, CacheEntry>) in.readObject();
 		} catch (Exception e) {
 			throw new FedXException("Error initializing cache.", e);
 		}
@@ -156,9 +153,9 @@ public class MemoryCache implements Cache {
 
 	@Override
 	public void persist() throws FedXException {
-		
+
 		// XXX write to a temporary file first, to prevent a corrupt file
-		
+
 		try (ObjectOutputStream out = new ObjectOutputStream(
 				new BufferedOutputStream(new FileOutputStream(cacheLocation)))) {
 			out.writeObject(this.cache);
@@ -171,6 +168,6 @@ public class MemoryCache implements Cache {
 	public void clear() {
 		log.debug("Clearing the cache.");
 		cache = new HashMap<SubQuery, CacheEntry>();
-		
+
 	}
 }

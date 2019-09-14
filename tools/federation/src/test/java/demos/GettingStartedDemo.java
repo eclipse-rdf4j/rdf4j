@@ -18,20 +18,19 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public class GettingStartedDemo {
 
 	public static void main(String[] args) {
-		
+
 		Config.initialize();
 
 		Config.getConfig().set("debugQueryPlan", "true");
-		
+
 		FedXRepository repository = FedXFactory.newFederation()
-					.withSparqlEndpoint("http://dbpedia.org/sparql")
-					.withSparqlEndpoint("https://query.wikidata.org/sparql")
-					.create();
-		
+				.withSparqlEndpoint("http://dbpedia.org/sparql")
+				.withSparqlEndpoint("https://query.wikidata.org/sparql")
+				.create();
+
 		try (RepositoryConnection conn = repository.getConnection()) {
 
-			String query = 
-					  "PREFIX wd: <http://www.wikidata.org/entity/> "
+			String query = "PREFIX wd: <http://www.wikidata.org/entity/> "
 					+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
 					+ "SELECT * WHERE { "
 					+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
@@ -52,7 +51,7 @@ public class GettingStartedDemo {
 				System.out.println("Results: " + count);
 			}
 		}
-		
+
 		repository.shutDown();
 
 	}

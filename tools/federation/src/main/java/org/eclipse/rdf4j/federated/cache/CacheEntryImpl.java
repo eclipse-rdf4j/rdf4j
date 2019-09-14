@@ -18,27 +18,25 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.EntryUpdateException;
 import org.eclipse.rdf4j.model.Statement;
 
-
 /**
  * Implementation for Cache Entry
  * 
  * @author Andreas Schwarte
  *
  */
-public class CacheEntryImpl implements CacheEntry{
+public class CacheEntryImpl implements CacheEntry {
 
 	private static final long serialVersionUID = -2078321733800349639L;
-	
-	
+
 	/* map endpoint.id to the corresponding entry */
 	protected Map<String, EndpointEntry> entries = new HashMap<String, EndpointEntry>();
-	
-	
+
 	@Override
 	public StatementSourceAssurance canProvideStatements(Endpoint endpoint) {
 		EndpointEntry entry = entries.get(endpoint.getId());
-		return entry == null ? StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS : 
-					( entry.doesProvideStatements() ? StatementSourceAssurance.HAS_REMOTE_STATEMENTS : StatementSourceAssurance.NONE );
+		return entry == null ? StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
+				: (entry.doesProvideStatements() ? StatementSourceAssurance.HAS_REMOTE_STATEMENTS
+						: StatementSourceAssurance.NONE);
 	}
 
 	@Override
@@ -76,30 +74,30 @@ public class CacheEntryImpl implements CacheEntry{
 	@Override
 	public void merge(CacheEntry other) throws EntryUpdateException {
 		// XXX make a check if we can safely cast?
-		
-		CacheEntryImpl o = (CacheEntryImpl)other;
-		
+
+		CacheEntryImpl o = (CacheEntryImpl) other;
+
 		for (String k : o.entries.keySet()) {
 			if (!entries.containsKey(k))
 				entries.put(k, o.entries.get(k));
 			else {
-				
+
 				EndpointEntry _merge = o.entries.get(k);
 				EndpointEntry _old = entries.get(k);
-				
-				_old.setCanProvideStatements( _merge.doesProvideStatements());
+
+				_old.setCanProvideStatements(_merge.doesProvideStatements());
 			}
-				
+
 		}
 	}
 
 	@Override
 	public void update() throws EntryUpdateException {
-		throw new UnsupportedOperationException("This operation is not yet supported.");		
+		throw new UnsupportedOperationException("This operation is not yet supported.");
 	}
 
 	@Override
 	public void add(EndpointEntry endpointEntry) {
-		entries.put(endpointEntry.getEndpointID(), endpointEntry);		
+		entries.put(endpointEntry.getEndpointID(), endpointEntry);
 	}
 }

@@ -16,14 +16,11 @@ public class UnboundStatement implements Statement {
 
 	private static final long serialVersionUID = 2612189412333330052L;
 
-	
 	protected final Resource subj;
 	protected final IRI pred;
 	protected final Value obj;
-	
-		
-	public UnboundStatement(Resource subj, IRI pred, Value obj)
-	{
+
+	public UnboundStatement(Resource subj, IRI pred, Value obj) {
 		super();
 		this.subj = subj;
 		this.pred = pred;
@@ -41,8 +38,7 @@ public class UnboundStatement implements Statement {
 	}
 
 	@Override
-	public IRI getPredicate()
-	{
+	public IRI getPredicate() {
 		return pred;
 	}
 

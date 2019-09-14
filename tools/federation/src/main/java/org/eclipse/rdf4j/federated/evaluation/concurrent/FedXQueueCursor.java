@@ -17,8 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Specialized variants of {@link QueueCursor} which avoids converting any
- * exception if it is already of type{@link QueryEvaluationException}.
+ * Specialized variants of {@link QueueCursor} which avoids converting any exception if it is already of
+ * type{@link QueryEvaluationException}.
  * 
  * 
  * @author Andreas Schwarte
@@ -36,9 +36,8 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	}
 
 	/**
-	 * Reference to the queue such that we can access it in {@link #handleClose()}.
-	 * This is required to make sure that we can close the non-consumed iterations
-	 * from the queue. Note that the private queue of the super class is not
+	 * Reference to the queue such that we can access it in {@link #handleClose()}. This is required to make sure that
+	 * we can close the non-consumed iterations from the queue. Note that the private queue of the super class is not
 	 * accessible.
 	 */
 	private final BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queueRef;

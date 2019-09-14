@@ -32,35 +32,30 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer
-{
+public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	protected final QueryInfo queryInfo;
-		
+
 	/**
 	 * @param queryInfo
 	 */
-	public ServiceOptimizer(QueryInfo queryInfo)
-	{
+	public ServiceOptimizer(QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
 	}
 
-
 	@Override
-	public void optimize(TupleExpr tupleExpr)
-	{
-		try { 
+	public void optimize(TupleExpr tupleExpr) {
+		try {
 			tupleExpr.visit(this);
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new FedXRuntimeException(e);
-		}	
-		
+		}
+
 	}
-	
-	
+
 	@Override
 	public void meet(Service service) {
 		// create an optimized service, which may wrap the original service
@@ -68,43 +63,40 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 		TupleExpr newExpr = optimizeService(service);
 		service.replaceWith(newExpr);
 	}
-	
-	
-	
-	
+
 	protected TupleExpr optimizeService(Service service) {
-		
+
 		// check if there is a service uri given
 		if (service.getServiceRef().hasValue()) {
-			
+
 			String serviceUri = service.getServiceRef().getValue().stringValue();
-			
+
 			GenericInfoOptimizer serviceInfo = new GenericInfoOptimizer(queryInfo);
 			serviceInfo.optimize(service.getServiceExpr());
-			
+
 			Endpoint e = getFedXEndpoint(serviceUri);
-			
+
 			// endpoint is not in federation
 			if (e == null) {
 				// leave service as is, evaluate with Sesame code
 				return new FedXService(service, queryInfo);
-			} 
-			
+			}
+
 			StatementSource source = new StatementSource(e.getId(), StatementSourceType.REMOTE);
 			List<ExclusiveStatement> stmts = new ArrayList<ExclusiveStatement>();
 			// convert all statements to exclusive statements
-			for (StatementPattern st : serviceInfo.getStatements()) {				
+			for (StatementPattern st : serviceInfo.getStatements()) {
 				ExclusiveStatement est = new ExclusiveStatement(st, source, queryInfo);
 				st.replaceWith(est);
 				stmts.add(est);
 			}
-			
+
 			// check if we have a simple subquery now (i.e. only a simple BGP)
 			if (service.getArg() instanceof ExclusiveStatement) {
 				return service.getArg();
 			}
 			if (service.getArg() instanceof NJoin) {
-				NJoin j = (NJoin)service.getArg();
+				NJoin j = (NJoin) service.getArg();
 				boolean simple = true;
 				for (TupleExpr t : j.getArgs()) {
 					if (!(t instanceof ExclusiveStatement)) {
@@ -112,25 +104,23 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 						break;
 					}
 				}
-				
+
 				if (simple) {
 					return new ExclusiveGroup(stmts, source, queryInfo);
 				}
 			}
-			
+
 		}
-		
+
 		return new FedXService(service, queryInfo);
 	}
-	
-	
+
 	/**
-	 * Return the FedX endpoint corresponding to the given service URI. If 
-	 * there is no such endpoint in FedX, this method returns null.
+	 * Return the FedX endpoint corresponding to the given service URI. If there is no such endpoint in FedX, this
+	 * method returns null.
 	 * 
-	 * Note that this method compares the endpoint URL first, however, that
-	 * the name of the endpoint can be used as identifier as well. Note that
-	 * the name must be a valid URI, i.e. start with http://
+	 * Note that this method compares the endpoint URL first, however, that the name of the endpoint can be used as
+	 * identifier as well. Note that the name must be a valid URI, i.e. start with http://
 	 * 
 	 * @param serviceUri
 	 * @return
@@ -138,13 +128,10 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 	private Endpoint getFedXEndpoint(String serviceUri) {
 		EndpointManager em = EndpointManager.getEndpointManager();
 		Endpoint e = em.getEndpointByUrl(serviceUri);
-		if (e!=null)
+		if (e != null)
 			return e;
 		e = em.getEndpointByName(serviceUri);
 		return e;
 	}
-	
-	
+
 }
-
-

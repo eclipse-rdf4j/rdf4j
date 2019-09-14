@@ -9,14 +9,13 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
-
 /**
  * Algebra construct representing an empty join.
  * 
  * @author Andreas Schwarte
  *
  */
-public class EmptyNJoin extends NTuple implements EmptyResult{
+public class EmptyNJoin extends NTuple implements EmptyResult {
 
 	private static final long serialVersionUID = -3895999439111284174L;
 

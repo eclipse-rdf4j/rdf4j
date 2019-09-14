@@ -11,10 +11,9 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
-
 /**
- * Synchronous execution of union tasks, i.e. one after the other. The union result is contained in 
- * this iteration. Note that the union operation is to be executed with the {@link #run()} method
+ * Synchronous execution of union tasks, i.e. one after the other. The union result is contained in this iteration. Note
+ * that the union operation is to be executed with the {@link #run()} method
  * 
  * @author Andreas Schwarte
  */
@@ -22,8 +21,8 @@ public class SynchronousWorkerUnion<T> extends WorkerUnionBase<T> {
 
 	public SynchronousWorkerUnion(FederationEvalStrategy strategy, QueryInfo queryInfo) {
 		super(strategy, queryInfo);
-	}	
-	
+	}
+
 	@Override
 	protected void union() throws Exception {
 		for (ParallelTask<T> task : tasks)

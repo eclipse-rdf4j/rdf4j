@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
  * Interface for any expression that can be evaluated
  * 
@@ -27,47 +26,42 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public interface StatementTupleExpr extends TupleExpr, QueryRef {
 
 	/**
-	 * @return
-	 * 		the id of this expr
+	 * @return the id of this expr
 	 */
 	public String getId();
-	
+
 	/**
-	 * @return
-	 * 		a list of free (i.e. unbound) variables in this expression
+	 * @return a list of free (i.e. unbound) variables in this expression
 	 */
 	public List<String> getFreeVars();
-	
+
 	/**
-	 * @return
-	 * 		the number of free (i.e. unbound) variables in this expression
+	 * @return the number of free (i.e. unbound) variables in this expression
 	 */
 	public int getFreeVarCount();
-	
+
 	/**
-	 * @return
-	 * 		a list of sources that are relevant for evaluation of this expression
+	 * @return a list of sources that are relevant for evaluation of this expression
 	 */
 	public List<StatementSource> getStatementSources();
-	
+
 	/**
-	 * returns true iff this statement has free variables in the presence
-	 * of the specified binding set
+	 * returns true iff this statement has free variables in the presence of the specified binding set
 	 * 
 	 * @param binding
 	 * @return whether the statement has free vars
 	 */
 	public boolean hasFreeVarsFor(BindingSet binding);
-	
+
 	/**
 	 * Evaluate this expression using the provided bindings
 	 * 
 	 * @param bindings
-	 * @return
-	 * 			the result iteration
+	 * @return the result iteration
 	 * 
 	 * @throws QueryEvaluationException
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) throws QueryEvaluationException; 
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+			throws QueryEvaluationException;
 
 }

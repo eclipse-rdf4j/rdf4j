@@ -17,21 +17,20 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
- * A task implementation representing a prepared union, i.e. the prepared query is executed
- * on the provided triple source.
+ * A task implementation representing a prepared union, i.e. the prepared query is executed on the provided triple
+ * source.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelPreparedAlgebraUnionTask extends ParallelTaskBase<BindingSet> {
-	
+
 	protected final Endpoint endpoint;
 	protected final TupleExpr preparedQuery;
 	protected final BindingSet bindings;
 	protected final ParallelExecutor<BindingSet> unionControl;
 	protected final FilterValueExpr filterExpr;
-	
+
 	public ParallelPreparedAlgebraUnionTask(ParallelExecutor<BindingSet> unionControl, TupleExpr preparedQuery,
 			Endpoint endpoint, BindingSet bindings, FilterValueExpr filterExpr) {
 		this.endpoint = endpoint;
@@ -46,7 +45,6 @@ public class ParallelPreparedAlgebraUnionTask extends ParallelTaskBase<BindingSe
 		TripleSource tripleSource = endpoint.getTripleSource();
 		return tripleSource.getStatements(preparedQuery, bindings, filterExpr);
 	}
-
 
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {

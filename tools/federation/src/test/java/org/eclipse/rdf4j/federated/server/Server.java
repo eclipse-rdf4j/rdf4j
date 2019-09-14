@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.server;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 
-
 /**
  * Interface for the server:
  * 
@@ -22,14 +21,13 @@ import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 public interface Server {
 
 	public void initialize(int nRepositories) throws Exception;
-	
+
 	public void shutdown() throws Exception;
-	
+
 	public Endpoint loadEndpoint(int i) throws Exception;
 
 	/**
-	 * Returns the actual {@link ConfigurableSailRepository} instance for the
-	 * endpoint
+	 * Returns the actual {@link ConfigurableSailRepository} instance for the endpoint
 	 * 
 	 * @param i the endpoint index starting with 1
 	 * @return

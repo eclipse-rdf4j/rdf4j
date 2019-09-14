@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
  */
 public class HashJoin extends JoinExecutorBase<BindingSet> {
 
-
 	public HashJoin(FederationEvalStrategy strategy,
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
@@ -51,13 +50,12 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 		int totalBindingsRight = 0;
 		Collection<String> rightFreeVars = JoinOrderOptimizer.getFreeVars(rightArg);
 		Set<String> joinVars = getJoinVars();
-		
 
 		// evaluate the right join argument
 		// Note: wrapped in lazy mutable iteration for repetitive reading
 		try (LazyMutableClosableIteration rightArgIter = new LazyMutableClosableIteration(
 				strategy.evaluate(rightArg, bindings))) {
-			
+
 			while (!closed && leftIter.hasNext()) {
 
 				int blockSizeL = 10;
@@ -96,8 +94,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	/**
 	 * Perform the join and add the result to this cursor.
 	 * <p>
-	 * See {@link #join(Collection, Collection, Set, Collection)} and
-	 * {@link #addResult(CloseableIteration)}.
+	 * See {@link #join(Collection, Collection, Set, Collection)} and {@link #addResult(CloseableIteration)}.
 	 * </p>
 	 * 
 	 * @param leftBlock
@@ -111,11 +108,10 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	}
 
 	/**
-	 * Perform a hash join of bindings from the left block with those of the right
-	 * block.
+	 * Perform a hash join of bindings from the left block with those of the right block.
 	 * <p>
-	 * This method keeps the merged bindings in the results, if the join variables
-	 * match and if all previously resolved bindings hold.
+	 * This method keeps the merged bindings in the results, if the join variables match and if all previously resolved
+	 * bindings hold.
 	 * </p>
 	 * 
 	 * @param leftBlock

@@ -25,45 +25,43 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
-
-
 /**
  * Represents a StatementPattern that can only produce results at a single endpoint, the owner.
  * 
  * @author Andreas Schwarte
  */
 public class ExclusiveStatement extends FedXStatementPattern {
-	
+
 	private static final long serialVersionUID = -6963394279179263763L;
 
 	public ExclusiveStatement(StatementPattern node, StatementSource owner, QueryInfo queryInfo) {
 		super(node, queryInfo);
 		statementSources.add(owner);
-	}	
+	}
 
 	public StatementSource getOwner() {
 		return getStatementSources().get(0);
-	}	
+	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
 			BindingSet bindings) throws QueryEvaluationException {
-		
+
 		try {
-			
+
 			Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(getOwner().getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			
+
 			/*
-			 * Implementation note: for some endpoint types it is much more efficient to use prepared queries
-			 * as there might be some overhead (obsolete optimization) in the native implementation. This
-			 * is for instance the case for SPARQL connections. In contrast for NativeRepositories it is
-			 * much more efficient to use getStatements(subj, pred, obj) instead of evaluating a prepared query.
-			 */			
-		
+			 * Implementation note: for some endpoint types it is much more efficient to use prepared queries as there
+			 * might be some overhead (obsolete optimization) in the native implementation. This is for instance the
+			 * case for SPARQL connections. In contrast for NativeRepositories it is much more efficient to use
+			 * getStatements(subj, pred, obj) instead of evaluating a prepared query.
+			 */
+
 			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
 			if (t.usePreparedQuery()) {
-				
+
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated
 				String preparedQuery;
 				try {
@@ -82,9 +80,9 @@ public class ExclusiveStatement extends FedXStatementPattern {
 					}
 					return new EmptyIteration<BindingSet, QueryEvaluationException>();
 				}
-								
+
 				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr));
-				
+
 			} else {
 				res = t.getStatements(this, bindings, filterExpr);
 			}
@@ -96,7 +94,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 			}
 
 			return res;
-				
+
 		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		} catch (MalformedQueryException e) {

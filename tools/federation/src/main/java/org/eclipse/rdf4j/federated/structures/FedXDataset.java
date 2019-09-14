@@ -16,13 +16,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
 
 /**
- * Abstraction of a {@link Dataset} to provide additional information for the
- * evaluation of a query.
+ * Abstraction of a {@link Dataset} to provide additional information for the evaluation of a query.
  * <p>
- * Can be used to define the endpoints against which a given query shall be
- * executed.</p>
+ * Can be used to define the endpoints against which a given query shall be executed.
+ * </p>
  * <p>
- * Example</p>
+ * Example
+ * </p>
  * 
  * <pre>
  * TupleQuery tq = ...; 
@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * @author Andreas Schwarte
  *
  */
-public class FedXDataset implements Dataset{
+public class FedXDataset implements Dataset {
 
 	protected final Dataset delegate;
 

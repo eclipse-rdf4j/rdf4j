@@ -33,9 +33,8 @@ public class ProviderUtil {
 	 * 
 	 * SELECT * WHERE { ?s ?p ?o } LIMIT 1
 	 * 
-	 * Throws an exception if the query cannot be evaluated
-	 * successfully for some reason (indicating that the 
-	 * endpoint is not ok)
+	 * Throws an exception if the query cannot be evaluated successfully for some reason (indicating that the endpoint
+	 * is not ok)
 	 * 
 	 * @param repo
 	 * @throws RepositoryException
@@ -43,11 +42,11 @@ public class ProviderUtil {
 	 * @throws MalformedQueryException
 	 */
 	public static void checkConnectionIfConfigured(Repository repo) throws RepositoryException {
-		
+
 		if (!Config.getConfig().isValidateRepositoryConnections())
 			return;
-		
-		RepositoryConnection conn = null;		
+
+		RepositoryConnection conn = null;
 		try {
 			conn = repo.getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o } LIMIT 1");
@@ -60,16 +59,16 @@ public class ProviderUtil {
 				// Consume data to avoid pending connections
 				Iterations.asList(qRes);
 			} finally {
-				if (qRes!=null)
+				if (qRes != null)
 					Iterations.closeCloseable(qRes);
-			}			
-			
-		} catch (MalformedQueryException ignore) { 
-				;	// can never occur
+			}
+
+		} catch (MalformedQueryException ignore) {
+			; // can never occur
 		} catch (QueryEvaluationException e) {
 			throw new RepositoryException(e);
-		} finally {			
-			if (conn!=null)
+		} finally {
+			if (conn != null)
 				conn.close();
 		}
 	}

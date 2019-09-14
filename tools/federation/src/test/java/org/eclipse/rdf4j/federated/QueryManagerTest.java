@@ -19,21 +19,20 @@ import org.junit.jupiter.api.Test;
  * @author as
  *
  */
-public class QueryManagerTest 
-{
+public class QueryManagerTest {
 
 	@Test
 	public void testPrefix() {
 		String queryString = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>";
 		Assertions.assertTrue(QueryManager.prefixCheck.matcher(queryString).matches());
 	}
-	
+
 	@Test
 	public void testPrefix2() {
 		String queryString = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \r\nPREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\nSELECT ?person ?name ?publication WHERE {\r\n ?person rdf:type foaf:Person .\r\n ?person foaf:name ?name .\r\n}";
 		Assertions.assertTrue(QueryManager.prefixCheck.matcher(queryString).matches());
 	}
-	
+
 	@Test
 	public void testPrefix3() {
 		/* find query prefixes */
@@ -42,7 +41,7 @@ public class QueryManagerTest
 		Assertions.assertTrue(prefixes.size() == 1);
 		Assertions.assertTrue(prefixes.contains("rdf"));
 	}
-	
+
 	@Test
 	public void testPrefix4() {
 		/* find query prefixes */
@@ -52,7 +51,7 @@ public class QueryManagerTest
 		Assertions.assertTrue(prefixes.contains("rdf"));
 		Assertions.assertTrue(prefixes.contains("foaf"));
 	}
-	
+
 	@Test
 	public void testPrefix5() {
 		/* find query prefixes */

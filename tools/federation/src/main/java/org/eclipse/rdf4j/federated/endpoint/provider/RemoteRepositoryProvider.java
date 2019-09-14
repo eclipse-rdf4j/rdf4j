@@ -16,10 +16,9 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
-
 /**
- * Provider for an Endpoint that uses a RDF4J {@link HTTPRepository} as
- * underlying repository. All SPARQL endpoints are considered Remote.
+ * Provider for an Endpoint that uses a RDF4J {@link HTTPRepository} as underlying repository. All SPARQL endpoints are
+ * considered Remote.
  * 
  * @author Andreas Schwarte
  */
@@ -31,13 +30,16 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 
 		String repositoryServer = repoInfo.get("repositoryServer");
 		String repositoryName = repoInfo.get("repositoryName");
-		
-		if (repositoryServer==null || repositoryName==null)
-			throw new FedXException("Invalid configuration, repositoryServer and repositoryName are required for " + repoInfo.getName());
-		
+
+		if (repositoryServer == null || repositoryName == null)
+			throw new FedXException("Invalid configuration, repositoryServer and repositoryName are required for "
+					+ repoInfo.getName());
+
 		try {
 			HTTPRepository repo = new HTTPRepository(repositoryServer, repositoryName);
-			HttpClientBuilder httpClientBuilder = HttpClients.custom().useSystemProperties().setMaxConnTotal(20)
+			HttpClientBuilder httpClientBuilder = HttpClients.custom()
+					.useSystemProperties()
+					.setMaxConnTotal(20)
 					.setMaxConnPerRoute(20);
 			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
 					.setHttpClientBuilder(httpClientBuilder);
@@ -51,13 +53,14 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 
 			String location = repositoryServer + "/" + repositoryName;
 			EndpointClassification epc = EndpointClassification.Remote;
-			
+
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, location, epc, repo);
 			res.setEndpointConfiguration(repoInfo.getEndpointConfiguration());
 
 			return res;
 		} catch (Exception e) {
-			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(), e);
+			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
+					e);
 		}
 	}
 

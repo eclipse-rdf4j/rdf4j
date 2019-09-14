@@ -16,25 +16,21 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
-
 /**
  * Converts graph results into a binding set iteration
  * 
  * @author Andreas Schwarte
  */
 public class GraphToBindingSetConversionIteration
-		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-{
+		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final GraphQueryResult graph;
 
-	
 	public GraphToBindingSetConversionIteration(GraphQueryResult graph) {
 		super();
 		this.graph = graph;
 	}
-	
-	
+
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		return graph.hasNext();
@@ -45,11 +41,11 @@ public class GraphToBindingSetConversionIteration
 
 		try {
 			return convert(graph.next());
-		} catch(NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			throw e;
-	    } catch(IllegalStateException e) {
-	    	throw e;
-	    } 
+		} catch (IllegalStateException e) {
+			throw e;
+		}
 	}
 
 	@Override
@@ -57,14 +53,13 @@ public class GraphToBindingSetConversionIteration
 
 		try {
 			graph.remove();
-		} catch(UnsupportedOperationException e) {
+		} catch (UnsupportedOperationException e) {
 			throw e;
-		} catch(IllegalStateException e) {
+		} catch (IllegalStateException e) {
 			throw e;
-		} 		
+		}
 	}
 
-	
 	protected BindingSet convert(Statement st) {
 		QueryBindingSet result = new QueryBindingSet();
 		result.addBinding("subject", st.getSubject());
@@ -76,6 +71,5 @@ public class GraphToBindingSetConversionIteration
 
 		return result;
 	}
-	
-	
+
 }

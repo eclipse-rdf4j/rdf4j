@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 
 public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
-
 	@Test
 	public void testFederation() throws Exception {
 

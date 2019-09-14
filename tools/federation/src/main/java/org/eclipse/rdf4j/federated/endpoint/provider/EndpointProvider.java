@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.endpoint.provider;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 
-
 /**
  * Generic interface to create {@link Endpoint}s from a repository information.
  * 
@@ -18,7 +17,7 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
  *
  */
 public interface EndpointProvider<T extends RepositoryInformation> {
-	
+
 	public Endpoint loadEndpoint(T repoInfo) throws FedXException;
-	
+
 }

@@ -28,29 +28,25 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Optimizer with the following tasks:
  * 
- * 1. Group {@link ExclusiveStatement} into {@link ExclusiveGroup}
- * 2. Adjust the join order using {@link JoinOrderOptimizer}
+ * 1. Group {@link ExclusiveStatement} into {@link ExclusiveGroup} 2. Adjust the join order using
+ * {@link JoinOrderOptimizer}
  * 
  * 
  * @author as
  */
-public class StatementGroupOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer
-{
+public class StatementGroupOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	private static final Logger log = LoggerFactory.getLogger(StatementGroupOptimizer.class);
-	
+
 	protected final QueryInfo queryInfo;
-		
+
 	public StatementGroupOptimizer(QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
 	}
-
-
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {
@@ -61,56 +57,52 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 	public void meet(Service tupleExpr) {
 		// stop traversal
 	}
-	
-	
+
 	@Override
 	public void meetOther(QueryModelNode node) {
 		if (node instanceof NJoin) {
-			super.meetOther(node);		// depth first
+			super.meetOther(node); // depth first
 			meetNJoin((NJoin) node);
 		} else {
 			super.meetOther(node);
 		}
 	}
 
-	
 	protected void meetNJoin(NJoin node) {
-		
+
 		LinkedList<TupleExpr> newArgs = new LinkedList<TupleExpr>();
-		
+
 		LinkedList<TupleExpr> argsCopy = new LinkedList<TupleExpr>(node.getArgs());
 		while (!argsCopy.isEmpty()) {
-			
+
 			TupleExpr t = argsCopy.removeFirst();
-			
+
 			/*
-			 * If one of the join arguments cannot produce results,
-			 * the whole join expression does not produce results.
+			 * If one of the join arguments cannot produce results, the whole join expression does not produce results.
 			 * => replace with empty join and return
 			 */
-			if (t instanceof EmptyResult) {				
-				node.replaceWith( new EmptyNJoin(node, queryInfo));
+			if (t instanceof EmptyResult) {
+				node.replaceWith(new EmptyNJoin(node, queryInfo));
 				return;
 			}
-			
+
 			/*
-			 * for exclusive statements find those belonging to the 
-			 * same source (if any) and form exclusive group
+			 * for exclusive statements find those belonging to the same source (if any) and form exclusive group
 			 */
 			else if (t instanceof ExclusiveStatement) {
-				ExclusiveStatement current = (ExclusiveStatement)t;
-				
+				ExclusiveStatement current = (ExclusiveStatement) t;
+
 				List<ExclusiveStatement> l = null;
 				List<ExclusiveGroup> toRemoveFromArgs = null; // contains exclusive groups have to be removed
-				for (TupleExpr te : argsCopy) {		
-					/* in the remaining join args find exclusive statements
-					 * having the same source, and add to a list which is
-					 * later used to form an exclusive group
+				for (TupleExpr te : argsCopy) {
+					/*
+					 * in the remaining join args find exclusive statements having the same source, and add to a list
+					 * which is later used to form an exclusive group
 					 */
 					if (te instanceof ExclusiveStatement) {
-						ExclusiveStatement check = (ExclusiveStatement)te;
+						ExclusiveStatement check = (ExclusiveStatement) te;
 						if (check.getOwner().equals(current.getOwner())) {
-							if (l==null) {
+							if (l == null) {
 								l = new ArrayList<ExclusiveStatement>();
 								l.add(current);
 							}
@@ -135,38 +127,37 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 						}
 					}
 				}
-				
-				
+
 				// check if we can construct a group, otherwise add directly
-				if (l!=null) {
+				if (l != null) {
 					argsCopy.removeAll(l);
 					if (toRemoveFromArgs != null) {
 						argsCopy.removeAll(toRemoveFromArgs);
 					}
-					newArgs.add( new ExclusiveGroup(l, current.getOwner(), queryInfo ));
+					newArgs.add(new ExclusiveGroup(l, current.getOwner(), queryInfo));
 				} else {
-					newArgs.add( current );
+					newArgs.add(current);
 				}
 			}
-			
+
 			/*
-			 * for (existing) exclusive groups (e.g. created by SERVICE clauses)
-			 * add potential ExclusiveStatements with the same source to the group
+			 * for (existing) exclusive groups (e.g. created by SERVICE clauses) add potential ExclusiveStatements with
+			 * the same source to the group
 			 */
 			else if (t instanceof ExclusiveGroup) {
-				
+
 				ExclusiveGroup current = (ExclusiveGroup) t;
-				
+
 				List<ExclusiveStatement> l = null;
 				for (TupleExpr te : argsCopy) {
-					/* in the remaining join args find exclusive statements
-					 * having the same source, and add to a list which is
-					 * later used to form an exclusive group
+					/*
+					 * in the remaining join args find exclusive statements having the same source, and add to a list
+					 * which is later used to form an exclusive group
 					 */
 					if (te instanceof ExclusiveStatement) {
-						ExclusiveStatement check = (ExclusiveStatement)te;
+						ExclusiveStatement check = (ExclusiveStatement) te;
 						if (check.getOwner().equals(current.getOwner())) {
-							if (l==null) {
+							if (l == null) {
 								l = new ArrayList<>();
 								l.addAll(current.getStatements());
 							}
@@ -185,43 +176,44 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 				}
 
 			}
-			
+
 			/*
 			 * statement yields true in any case, not needed for join
 			 */
 			else if (t instanceof TrueStatementPattern) {
 				if (log.isDebugEnabled())
-					log.debug("Statement " + QueryStringUtil.toString((StatementPattern)t) + " yields results for at least one provided source, prune it.");
+					log.debug("Statement " + QueryStringUtil.toString((StatementPattern) t)
+							+ " yields results for at least one provided source, prune it.");
 			}
-			
+
 			else
 				newArgs.add(t);
 		}
-		
+
 		// if the join args could be reduced to just one, e.g. OwnedGroup
 		// we can safely replace the join node
-		if (newArgs.size()==1) {
+		if (newArgs.size() == 1) {
 			log.debug("Join arguments could be reduced to a single argument, replacing join node.");
-			node.replaceWith( newArgs.get(0) );
+			node.replaceWith(newArgs.get(0));
 			return;
 		}
-		
-		// in rare cases the join args can be reduced to 0, e.g. if all statements are 
+
+		// in rare cases the join args can be reduced to 0, e.g. if all statements are
 		// TrueStatementPatterns. We can safely replace the join node in such case
-		if (newArgs.size()==0) {
+		if (newArgs.size() == 0) {
 			log.debug("Join could be pruned as all join statements evaluate to true, replacing join with true node.");
-			node.replaceWith( new TrueStatementPattern( new StatementPattern()));
+			node.replaceWith(new TrueStatementPattern(new StatementPattern()));
 			return;
 		}
-		
+
 		List<TupleExpr> optimized = newArgs;
-		
+
 		// optimize the join order
 		optimized = JoinOrderOptimizer.optimizeJoinOrder(optimized);
 
 		// exchange the node
 		NJoin newNode = new NJoin(optimized, queryInfo);
 		node.replaceWith(newNode);
-	}	
-	
+	}
+
 }

@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
  * Comparator:
  * 
@@ -22,9 +21,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * @author Andreas
  *
  */
-public class NaryJoinArgumentsComparator implements Comparator<TupleExpr>{
+public class NaryJoinArgumentsComparator implements Comparator<TupleExpr> {
 
-	
 	@Override
 	public int compare(TupleExpr a, TupleExpr b) {
 
@@ -34,24 +32,24 @@ public class NaryJoinArgumentsComparator implements Comparator<TupleExpr>{
 			else
 				return -1;
 		}
-		
+
 		else if (b instanceof ExclusiveGroup) {
 			return 1;
 		}
-		
+
 		else if (a instanceof ExclusiveStatement) {
 			if (b instanceof ExclusiveStatement)
-				return 0;		// 0
+				return 0; // 0
 			else
-				return -1;		// -1
+				return -1; // -1
 		}
-		
+
 		else if (b instanceof ExclusiveStatement) {
-			return 1;			// 1
+			return 1; // 1
 		}
-			
+
 		// XXX compare number of free variables
-		
+
 		return 0;
 	}
 

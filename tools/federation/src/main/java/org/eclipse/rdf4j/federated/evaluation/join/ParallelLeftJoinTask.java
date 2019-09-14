@@ -24,20 +24,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A task implementation representing a join, i.e. the provided expression is evaluated 
- * with the given bindings.
+ * A task implementation representing a join, i.e. the provided expression is evaluated with the given bindings.
  * 
  * @author Andreas Schwarte
  */
 public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
-	
+
 	static final Logger log = LoggerFactory.getLogger(ParallelLeftJoinTask.class);
 
 	protected final FederationEvalStrategy strategy;
 	protected final LeftJoin join;
 	protected final BindingSet leftBindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	
+
 	public ParallelLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
 			LeftJoin join, BindingSet leftBindings) {
 		this.strategy = strategy;
@@ -67,12 +66,10 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		private final LeftJoin join;
 
 		/**
-		 * The set of binding names that are "in scope" for the filter. The filter must
-		 * not include bindings that are (only) included because of the depth-first
-		 * evaluation strategy in the evaluation of the constraint.
+		 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are
+		 * (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
 		 */
 		private final Set<String> scopeBindingNames;
-
 
 		private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 

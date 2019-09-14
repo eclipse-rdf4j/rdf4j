@@ -9,17 +9,15 @@ package org.eclipse.rdf4j.federated.monitoring;
 
 import org.eclipse.rdf4j.federated.Config;
 
-public class MonitoringFactory
-{
+public class MonitoringFactory {
 
 	/**
-	 * Create a new monitoring instance depending on 
-	 * {@link Config#isEnableMonitoring()}
+	 * Create a new monitoring instance depending on {@link Config#isEnableMonitoring()}
 	 * 
 	 * @return the {@link Monitoring} instance
 	 */
 	public static Monitoring createMonitoring() {
-		
+
 		if (Config.getConfig().isEnableMonitoring())
 			return new MonitoringImpl();
 		return new NoopMonitoringImpl();

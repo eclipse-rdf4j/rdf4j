@@ -30,5 +30,5 @@ public class IllegalQueryException extends Exception {
 
 	public IllegalQueryException(Throwable arg0) {
 		super(arg0);
-	}	
+	}
 }

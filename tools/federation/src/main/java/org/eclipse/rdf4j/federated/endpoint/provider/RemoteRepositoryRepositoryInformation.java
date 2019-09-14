@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
-
 /**
  * Class holding information for RDF4J {@link HTTPRepository} initialization.
  * 
@@ -34,8 +33,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
  * </pre>
  * 
  * <p>
- * Note: the id is constructed from the name: http://dbpedia.org/ =>
- * remote_dbpedia.org
+ * Note: the id is constructed from the name: http://dbpedia.org/ => remote_dbpedia.org
  * </p>
  * 
  * 
@@ -50,13 +48,14 @@ public class RemoteRepositoryRepositoryInformation extends RepositoryInformation
 	}
 
 	public RemoteRepositoryRepositoryInformation(String repositoryServer, String repositoryName) {
-		super("remote_" + repositoryName, "http://"+repositoryName, repositoryServer + "/" + repositoryName, EndpointType.RemoteRepository);
+		super("remote_" + repositoryName, "http://" + repositoryName, repositoryServer + "/" + repositoryName,
+				EndpointType.RemoteRepository);
 		setProperty("repositoryServer", repositoryServer);
-		setProperty("repositoryName", repositoryName);		
+		setProperty("repositoryName", repositoryName);
 	}
-	
+
 	protected void initialize(Model graph, Resource repNode) {
-		
+
 		// name: the node's value
 		setProperty("name", repNode.stringValue());
 
@@ -66,12 +65,12 @@ public class RemoteRepositoryRepositoryInformation extends RepositoryInformation
 		String repoLocation = repositoryServer.iterator().next().getObject().stringValue();
 		setProperty("location", repoLocation);
 		setProperty("repositoryServer", repoLocation);
-		
+
 		// repositoryName
 		Model repositoryName = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_NAME, null);
 		String repoName = repositoryName.iterator().next().getObject().stringValue();
 		setProperty("repositoryName", repoName);
-		
+
 		// id: the name of the location
 		String id = repNode.stringValue().replace("http://", "");
 		id = "remote_" + id.replace("/", "_");

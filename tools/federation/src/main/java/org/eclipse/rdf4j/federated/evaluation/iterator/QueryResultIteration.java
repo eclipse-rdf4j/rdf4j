@@ -15,39 +15,35 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
- * An iteration which wraps the final result and in case of exceptions aborts query evaluation
- * for the corresponding query in fedx (potentially subqueries are still running, and jobs are
- * scheduled). 
+ * An iteration which wraps the final result and in case of exceptions aborts query evaluation for the corresponding
+ * query in fedx (potentially subqueries are still running, and jobs are scheduled).
  * 
- * If some external component calls close() on this iteration AND if the corresponding query
- * is still running, the query is aborted within FedX. An example case would be Sesame's 
- * QueryInteruptIterations, which is used to enforce maxQueryTime.
+ * If some external component calls close() on this iteration AND if the corresponding query is still running, the query
+ * is aborted within FedX. An example case would be Sesame's QueryInteruptIterations, which is used to enforce
+ * maxQueryTime.
  * 
- * If the query is finished, the FederationManager is notified that the query is done, and the
- * query is removed from the set of running queries.
+ * If the query is finished, the FederationManager is notified that the query is done, and the query is removed from the
+ * set of running queries.
  * 
  * @author Andreas Schwarte
  *
  */
-public class QueryResultIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-{
+public class QueryResultIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	// TODO apply this class and provide test case
-	
+
 	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
 	protected final QueryInfo queryInfo;
-	
+
 	public QueryResultIteration(
 			CloseableIteration<BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;
 	}
-	
-	
-	@Override	
+
+	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		if (inner.hasNext())
 			return true;
@@ -62,10 +58,10 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	public BindingSet next() throws QueryEvaluationException {
 		try {
 			BindingSet next = inner.next();
-			if (next==null)
+			if (next == null)
 				FederationManager.getInstance().getQueryManager().finishQuery(queryInfo);
 			return next;
-		} catch (QueryEvaluationException e){
+		} catch (QueryEvaluationException e) {
 			abortQuery();
 			throw e;
 		}
@@ -73,16 +69,14 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 
 	@Override
 	public void remove() throws QueryEvaluationException {
-		inner.remove();		
+		inner.remove();
 	}
 
-	
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		inner.close();
 		abortQuery();
 	}
-	
 
 	/**
 	 * Abort the query in the schedulers if it is still running.

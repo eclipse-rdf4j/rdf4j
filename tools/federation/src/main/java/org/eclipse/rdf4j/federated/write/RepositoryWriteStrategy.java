@@ -15,19 +15,17 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * A {@link WriteStrategy} to write to a designated {@link Repository}.
- * This write strategy opens a fresh {@link RepositoryConnection} and
- * keeps this until a call of {@link #close()}.
+ * A {@link WriteStrategy} to write to a designated {@link Repository}. This write strategy opens a fresh
+ * {@link RepositoryConnection} and keeps this until a call of {@link #close()}.
  * 
  * @author Andreas Schwarte
  * @see WriteStrategy
  */
 public class RepositoryWriteStrategy implements WriteStrategy {
 
-	
 	private final Repository writeRepository;
 	private RepositoryConnection connection = null;
-	
+
 	public RepositoryWriteStrategy(Repository writeRepository) {
 		super();
 		this.writeRepository = writeRepository;
@@ -40,39 +38,39 @@ public class RepositoryWriteStrategy implements WriteStrategy {
 
 	@Override
 	public boolean isInitialized() {
-		return connection!=null;
+		return connection != null;
 	}
 
 	@Override
 	public void close() throws RepositoryException {
-		connection.close();		
+		connection.close();
 	}
 
 	@Override
 	public void begin() throws RepositoryException {
-		connection.begin();		
+		connection.begin();
 	}
 
 	@Override
 	public void commit() throws RepositoryException {
-		connection.commit();		
+		connection.commit();
 	}
 
 	@Override
 	public void rollback() throws RepositoryException {
-		connection.rollback();		
+		connection.rollback();
 	}
 
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws RepositoryException {
 		connection.add(subj, pred, obj, contexts);
-		
+
 	}
 
 	@Override
 	public void removeStatement(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws RepositoryException {
-		connection.remove(subj, pred, obj, contexts);	
+		connection.remove(subj, pred, obj, contexts);
 	}
 }

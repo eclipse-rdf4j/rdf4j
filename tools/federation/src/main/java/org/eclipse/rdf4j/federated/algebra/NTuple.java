@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
  * Base class for any nary-tuple expression
  * 
@@ -26,17 +25,15 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * @see NJoin
  * @see NUnion
  */
-public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr, QueryRef
-{
+public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr, QueryRef {
 
 	private static final long serialVersionUID = -4899531533519154174L;
 
 	protected final List<TupleExpr> args;
 	protected final QueryInfo queryInfo;
-	
+
 	/**
-	 * Construct an nary-tuple. Note that the parentNode of all arguments is
-	 * set to this instance.
+	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
 	 * 
 	 * @param args
 	 */
@@ -47,30 +44,30 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 		for (TupleExpr expr : args)
 			expr.setParentNode(this);
 	}
-	
+
 	public TupleExpr getArg(int i) {
 		return args.get(i);
 	}
-	
+
 	public List<TupleExpr> getArgs() {
 		return args;
 	}
-	
+
 	public int getNumberOfArguments() {
 		return args.size();
 	}
-	
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (TupleExpr expr : args)
 			expr.visit(visitor);
 	}
-	
+
 	@Override
 	public NTuple clone() {
-		return (NTuple)super.clone();
+		return (NTuple) super.clone();
 	}
-	
+
 	@Override
 	public Set<String> getAssuredBindingNames() {
 		Set<String> res = new LinkedHashSet<String>(16);
@@ -93,15 +90,15 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		int index = args.indexOf(current);
 
-		if (index >= 0) 
-			args.set(index, (TupleExpr)replacement);
-		else 
-			super.replaceChildNode(current, replacement);	
+		if (index >= 0)
+			args.set(index, (TupleExpr) replacement);
+		else
+			super.replaceChildNode(current, replacement);
 	}
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
-		visitor.meetOther(this);		
+		visitor.meetOther(this);
 	}
 
 	@Override

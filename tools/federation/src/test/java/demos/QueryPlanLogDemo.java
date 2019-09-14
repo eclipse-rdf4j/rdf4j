@@ -19,23 +19,22 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 public class QueryPlanLogDemo {
 
-	
 	public static void main(String[] args) throws Exception {
-		
+
 		Config.initialize();
 		Config.getConfig().set("enableMonitoring", "true");
 		Config.getConfig().set("monitoring.logQueryPlan", "true");
 		SailRepository repo = FedXFactory.initializeFederation(new File("local/dataSourceConfig.ttl"));
-		
+
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
-			+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
-			+ "SELECT ?President ?Party WHERE {\n"
-			+ "?President rdf:type dbpedia-owl:President .\n"
-			+ "?President dbpedia-owl:party ?Party . }";
-		
+				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
+				+ "SELECT ?President ?Party WHERE {\n"
+				+ "?President rdf:type dbpedia-owl:President .\n"
+				+ "?President dbpedia-owl:party ?Party . }";
+
 		TupleQuery query = repo.getConnection().prepareTupleQuery(QueryLanguage.SPARQL, q);
 		try (TupleQueryResult res = query.evaluate()) {
-		
+
 			int count = 0;
 			while (res.hasNext()) {
 				res.next();
@@ -44,13 +43,13 @@ public class QueryPlanLogDemo {
 
 			System.out.println("# Done, " + count + " results");
 		}
-		
+
 		System.out.println("# Optimized Query Plan:");
 		System.out.println(QueryPlanLog.getQueryPlan());
-		
+
 		repo.shutDown();
 		System.out.println("Done.");
 		System.exit(0);
-		
+
 	}
 }

@@ -11,7 +11,6 @@ import java.io.File;
 
 import org.eclipse.rdf4j.federated.Config;
 
-
 /**
  * Utility function for files
  * 
@@ -24,24 +23,24 @@ public class FileUtil {
 	 * Returns the File representing the location.
 	 * 
 	 * <p>
-	 * If the specified path is absolute, it is returned as is, otherwise a location
-	 * relative to {@link Config#getBaseDir()} is returned
+	 * If the specified path is absolute, it is returned as is, otherwise a location relative to
+	 * {@link Config#getBaseDir()} is returned
 	 * </p>
 	 * 
 	 * @param path
 	 * @return the file corresponding to the abstract path
 	 */
 	public static File getFileLocation(String path) {
-		
+
 		// check if path is an absolute path that already exists
 		File f = new File(path);
-		
+
 		if (f.isAbsolute())
 			return f;
-		
+
 		return fileInBaseDir(path);
 	}
-	
+
 	/**
 	 * Returns a File relative to the configured {@link Config#getBaseDir()}.
 	 * 

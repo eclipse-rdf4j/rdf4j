@@ -10,14 +10,13 @@ package org.eclipse.rdf4j.federated.algebra;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 
 /**
- * A factory that produces globally unique IDS which are used as node identifiers,
- * e.g. in {@link StatementSourcePattern}.
+ * A factory that produces globally unique IDS which are used as node identifiers, e.g. in
+ * {@link StatementSourcePattern}.
  * 
  * @author Andreas Schwarte
  */
 public class NodeFactory {
 
-	
 	public static String getNextId() {
 		return "n" + FedXUtil.getIncrementalUUID();
 	}

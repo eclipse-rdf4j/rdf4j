@@ -11,14 +11,13 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-public interface Monitoring
-{
+public interface Monitoring {
 
-	public void monitorRemoteRequest(Endpoint e);	
-	
+	public void monitorRemoteRequest(Endpoint e);
+
 	public void resetMonitoringInformation();
 
 	public void monitorQuery(QueryInfo query);
-	
+
 	public void logQueryPlan(TupleExpr tupleExpr);
 }

@@ -10,10 +10,11 @@ package org.eclipse.rdf4j.federated.structures;
 public class PreparedQuery<T> {
 
 	protected T query;
+
 	public PreparedQuery(T query) {
 		this.query = query;
 	}
-	
+
 	public T getQuery() {
 		return query;
 	}

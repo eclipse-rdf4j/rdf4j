@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-
 /**
  * Interface for any parallel task that can be performed in Scheduler implementations.
  * 
@@ -21,10 +20,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public interface ParallelTask<T> {
 
 	public CloseableIteration<T, QueryEvaluationException> performTask() throws Exception;
-	
+
 	/**
-	 * return the controlling instance, e.g. in most cases the instance of a thread. Shared variables
-	 * are used to inform the thread about new events.
+	 * return the controlling instance, e.g. in most cases the instance of a thread. Shared variables are used to inform
+	 * the thread about new events.
 	 * 
 	 * @return the control executor
 	 */

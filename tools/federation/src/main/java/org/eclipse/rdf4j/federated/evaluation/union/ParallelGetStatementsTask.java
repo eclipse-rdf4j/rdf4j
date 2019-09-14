@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
- * A task implementation to retrieve statements for a given {@link StatementPattern}
- * using the provided triple source.
+ * A task implementation to retrieve statements for a given {@link StatementPattern} using the provided triple source.
  * 
  * @author Andreas Schwarte
  */
@@ -34,11 +33,10 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	protected final IRI pred;
 	protected final Value obj;
 	protected Resource[] contexts;
-		
+
 	public ParallelGetStatementsTask(ParallelExecutor<Statement> unionControl,
 			Endpoint endpoint,
-			Resource subj, IRI pred, Value obj, Resource... contexts)
-	{
+			Resource subj, IRI pred, Value obj, Resource... contexts) {
 		super();
 		this.unionControl = unionControl;
 		this.endpoint = endpoint;
@@ -46,9 +44,9 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 		this.pred = pred;
 		this.obj = obj;
 		this.contexts = contexts;
-		
+
 	}
-	
+
 	@Override
 	public ParallelExecutor<Statement> getControl() {
 		return unionControl;

@@ -21,11 +21,13 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * 
  * @author Andreas Schwarte
  */
-public class GroupedCheckConversionIteration extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>{
+public class GroupedCheckConversionIteration
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
-	
-	public GroupedCheckConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, List<BindingSet> bindings) {
+
+	public GroupedCheckConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
@@ -37,7 +39,7 @@ public class GroupedCheckConversionIteration extends ConvertingIteration<Binding
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
 			String name = b.getName();
-			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_")+1));
+			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_") + 1));
 		}
 		return bindings.get(bIndex);
 	}

@@ -26,11 +26,10 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
-
 /**
- * A statement pattern with no free variables when provided with some particular BindingSet
- * in evaluate. For evaluation a boolean ASK query is performed.
- *  
+ * A statement pattern with no free variables when provided with some particular BindingSet in evaluate. For evaluation
+ * a boolean ASK query is performed.
+ * 
  * Wraps a StatementTupleExpr
  * 
  * @author Andreas Schwarte
@@ -41,7 +40,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	protected final StatementTupleExpr stmt;
 	protected final String id;
-	
+
 	public CheckStatementPattern(StatementTupleExpr stmt) {
 		super();
 		this.stmt = stmt;
@@ -49,9 +48,9 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	public StatementPattern getStatementPattern() {
-		return (StatementPattern)stmt;
+		return (StatementPattern) stmt;
 	}
-	
+
 	@Override
 	public int getFreeVarCount() {
 		return 0;
@@ -105,24 +104,24 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public void replaceWith(QueryModelNode replacement) {
-		stmt.replaceWith(replacement);		
+		stmt.replaceWith(replacement);
 	}
 
 	@Override
 	public void setParentNode(QueryModelNode parent) {
-		stmt.setParentNode(parent);		
+		stmt.setParentNode(parent);
 	}
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
-		stmt.visit(visitor);		
+		stmt.visit(visitor);
 	}
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
-		stmt.visitChildren(visitor);		
+		stmt.visitChildren(visitor);
 	}
 
 	@Override
@@ -131,10 +130,11 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) throws QueryEvaluationException {
-		
-		StatementPattern st = (StatementPattern)stmt;
-	
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+			throws QueryEvaluationException {
+
+		StatementPattern st = (StatementPattern) stmt;
+
 		try {
 			// return true if at least one endpoint has a result for this binding set
 			for (StatementSource source : stmt.getStatementSources()) {
@@ -148,7 +148,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 		} catch (MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
-	
+
 		// XXX return NULL instead and add an additional check?
 		return new EmptyIteration<BindingSet, QueryEvaluationException>();
 	}

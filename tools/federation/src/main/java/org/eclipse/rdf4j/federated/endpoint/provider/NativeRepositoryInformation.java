@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
-
 /**
  * Graph information for RDF4J {@link NativeStore} initialization.
  * 
@@ -43,8 +42,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
  * </pre>
  * 
  * <p>
- * Note: the id is constructed from the location:
- * repositories\\native-storage.dbpedia => native-storage.dbpedia
+ * Note: the id is constructed from the location: repositories\\native-storage.dbpedia => native-storage.dbpedia
  * </p>
  * 
  * 
@@ -63,15 +61,15 @@ public class NativeRepositoryInformation extends RepositoryInformation {
 	}
 
 	protected void initialize(Model graph, Resource repNode) {
-		
+
 		// name: the node's value
 		setProperty("name", repNode.stringValue());
-				
+
 		// location
 		Model location = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_LOCATION, null);
 		String repoLocation = location.iterator().next().getObject().stringValue();
 		setProperty("location", repoLocation);
-		
+
 		// id: the name of the location
 		setProperty("id", new File(repoLocation).getName());
 	}

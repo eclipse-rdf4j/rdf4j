@@ -29,7 +29,6 @@ import org.junit.jupiter.api.Test;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
-
 public class HashJoinTest {
 
 	@Test
@@ -39,7 +38,7 @@ public class HashJoinTest {
 		leftBlock.add(bindingSet(binding("x", irid("p1"))));
 		leftBlock.add(bindingSet(binding("x", irid("p2"))));
 		leftBlock.add(bindingSet(binding("x", irid("p3"))));
-		
+
 		List<BindingSet> rightBlock = new ArrayList<>();
 		rightBlock.add(bindingSet(binding("x", irid("p2"))));
 		rightBlock.add(bindingSet(binding("x", irid("p1"))));
@@ -51,9 +50,9 @@ public class HashJoinTest {
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
 
 		Assertions.assertEquals(Lists.newArrayList(
-								bindingSet(binding("x", irid("p1"))), 
-								bindingSet(binding("x", irid("p2")))),
-							joinResult);
+				bindingSet(binding("x", irid("p1"))),
+				bindingSet(binding("x", irid("p2")))),
+				joinResult);
 	}
 
 	@Test
@@ -62,7 +61,7 @@ public class HashJoinTest {
 		List<BindingSet> leftBlock = new ArrayList<>();
 		leftBlock.add(bindingSet(binding("x", irid("p1")), binding("y", l("P1"))));
 		leftBlock.add(bindingSet(binding("x", irid("p2")), binding("y", l("P2"))));
-		
+
 		List<BindingSet> rightBlock = new ArrayList<>();
 		rightBlock.add(bindingSet(binding("x", irid("p2")), binding("z", l("something"))));
 

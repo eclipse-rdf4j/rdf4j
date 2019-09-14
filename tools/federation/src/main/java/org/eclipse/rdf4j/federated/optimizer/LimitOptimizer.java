@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 /**
  * An optimizer that attempts to push upper limits into BGPs of the query.
  * 
- * Currently upper limits are only pushed for simple queries consisting of a
- * single BGP.
+ * Currently upper limits are only pushed for simple queries consisting of a single BGP.
  * 
  * 
  * @author Andreas Schwarte
@@ -28,8 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public class LimitOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	/**
-	 * Helper variable that contains an applicable limit for the current scope. Set
-	 * to -1 if no limit is applicable.
+	 * Helper variable that contains an applicable limit for the current scope. Set to -1 if no limit is applicable.
 	 */
 	private long applicableLimitInScope = -1;
 

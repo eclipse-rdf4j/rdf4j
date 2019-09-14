@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
-
 /**
  * Class holding information for RDF4J {@link SPARQLRepository} initialization.
  * <p>
@@ -35,8 +34,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  *  	sd:endpoint "http://dbpedia.org/sparql".
  * </pre>
  * 
- * Note: the id is constructed from the name: http://dbpedia.org/ =>
- * sparql_dbpedia.org
+ * Note: the id is constructed from the name: http://dbpedia.org/ => sparql_dbpedia.org
  * <p>
  * 
  * 
@@ -53,7 +51,6 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  */
 public class SPARQLRepositoryInformation extends RepositoryInformation {
 
-
 	public SPARQLRepositoryInformation(String name, String endpoint) {
 		super(endpointToID(endpoint), name, endpoint, EndpointType.SparqlEndpoint);
 	}
@@ -64,33 +61,34 @@ public class SPARQLRepositoryInformation extends RepositoryInformation {
 	}
 
 	protected void initialize(Model graph, Resource repNode) {
-		
+
 		// name: the node's value
 		setProperty("name", repNode.stringValue());
-				
-		// location		
+
+		// location
 		Model location = graph.filter(repNode, Vocabulary.SD.ENDPOINT, null);
-		String repoLocation = location.iterator().next().getObject().stringValue();;
+		String repoLocation = location.iterator().next().getObject().stringValue();
+		;
 		setProperty("location", repoLocation);
-		
+
 		// id: the name of the location
 		String id = repNode.stringValue().replace("http://", "");
 		id = "sparql_" + id.replace("/", "_");
 		setProperty("id", id);
-		
+
 		// endpoint configuration (if specified)
 		if (hasAdditionalSettings(graph, repNode)) {
 			SparqlEndpointConfiguration c = new SparqlEndpointConfiguration();
-			
+
 			if (graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES, FedXUtil.literal("false"))
 					|| graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES,
 							FedXUtil.valueFactory().createLiteral(false)))
 				c.setSupportsASKQueries(false);
-			
+
 			setEndpointConfiguration(c);
 		}
 	}
-	
+
 	protected boolean hasAdditionalSettings(Model graph, Resource repNode) {
 		return graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES, null);
 	}

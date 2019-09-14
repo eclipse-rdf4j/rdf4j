@@ -15,10 +15,8 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-public class OptimizerUtil
-{
+public class OptimizerUtil {
 
-	
 	/**
 	 * Flatten the join to one layer, i.e. collect all join arguments
 	 * 
@@ -31,8 +29,7 @@ public class OptimizerUtil
 		collectJoinArgs(join, joinArgs);
 		return new NJoin(joinArgs, queryInfo);
 	}
-	
-	
+
 	/**
 	 * Collect join arguments by descending the query tree (recursively).
 	 * 
@@ -40,10 +37,10 @@ public class OptimizerUtil
 	 * @param joinArgs
 	 */
 	protected static void collectJoinArgs(TupleExpr node, List<TupleExpr> joinArgs) {
-		
+
 		if (node instanceof Join) {
-			collectJoinArgs(((Join)node).getLeftArg(), joinArgs);
-			collectJoinArgs(((Join)node).getRightArg(), joinArgs);
+			collectJoinArgs(((Join) node).getLeftArg(), joinArgs);
+			collectJoinArgs(((Join) node).getRightArg(), joinArgs);
 		} else
 			joinArgs.add(node);
 	}

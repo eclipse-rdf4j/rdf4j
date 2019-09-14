@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 
 /**
  * Abstraction of a {@link SailTupleQuery} which takes care for tracking the
- * {@link FedXRepositoryConnection#BINDING_ORIGINAL_MAX_EXECUTION_TIME}
- * during evaluation.
+ * {@link FedXRepositoryConnection#BINDING_ORIGINAL_MAX_EXECUTION_TIME} during evaluation.
  * 
  * All methods are delegated to the actual {@link SailTupleQuery}.
  * 

@@ -25,21 +25,19 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 
 	protected List<ParallelTask<T>> tasks = new ArrayList<ParallelTask<T>>();
-	
+
 	public WorkerUnionBase(FederationEvalStrategy strategy, QueryInfo queryInfo) {
 		super(strategy, queryInfo);
 	}
-	
 
 	/**
-	 * Add a generic parallel task. Note that it is required that the task has 
-	 * this instance as its control.
+	 * Add a generic parallel task. Note that it is required that the task has this instance as its control.
 	 * 
 	 * @param task
 	 */
 	public void addTask(ParallelTask<T> task) {
 		if (task.getControl() != this)
 			throw new RuntimeException("Controlling instance of task must be the same as this ControlledWorkerUnion.");
-		tasks.add( task);
+		tasks.add(task);
 	}
 }
