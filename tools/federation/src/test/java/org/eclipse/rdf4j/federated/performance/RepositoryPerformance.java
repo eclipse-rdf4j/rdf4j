@@ -181,7 +181,7 @@ public class RepositoryPerformance {
 		@Override
 		RepositoryConnection getConnection() throws Exception {
 			repo = new SPARQLRepository(sparqlEndpoint);
-			repo.initialize();
+			repo.init();
 			return repo.getConnection();
 		}
 
@@ -208,7 +208,7 @@ public class RepositoryPerformance {
 		@Override
 		RepositoryConnection getConnection() throws Exception {
 			repo = new HTTPRepository(repositoryServer, repositoryName);
-			repo.initialize();
+			repo.init();
 			return repo.getConnection();
 		}
 

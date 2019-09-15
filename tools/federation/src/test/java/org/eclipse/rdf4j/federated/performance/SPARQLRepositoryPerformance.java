@@ -21,7 +21,7 @@ public class SPARQLRepositoryPerformance {
 	public static void main(String[] args) throws Exception {
 
 		SPARQLRepository repo = new SPARQLRepository("http://10.212.10.29:8081/openrdf-sesame/repositories/drugbank");
-		repo.initialize();
+		repo.init();
 
 		RepositoryConnection conn = null;
 		TupleQueryResult qRes = null;

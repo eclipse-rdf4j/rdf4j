@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated;
 import java.io.File;
 
 import org.apache.commons.io.FileUtils;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -44,7 +43,7 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
 		String fedXSparqlUrl = rdf4jServer.getRepositoryUrl(repositoryId);
 		SPARQLRepository repo = new SPARQLRepository(fedXSparqlUrl);
-		repo.initialize();
+		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			// simple check: make sure that expected data is present

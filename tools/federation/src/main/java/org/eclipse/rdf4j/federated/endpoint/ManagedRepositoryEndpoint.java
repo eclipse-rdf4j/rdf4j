@@ -30,7 +30,7 @@ public class ManagedRepositoryEndpoint extends RepositoryEndpoint {
 		if (isInitialized()) {
 			return;
 		}
-		repository.initialize();
+		repository.init();
 		super.initialize();
 	}
 

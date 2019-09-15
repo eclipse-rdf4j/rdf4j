@@ -29,7 +29,7 @@ public class SparqlRepositoryTest {
 		ExecutorService executor = Executors.newFixedThreadPool(20);
 
 		SPARQLRepository repo = new SPARQLRepository("http://dbpedia.org/sparql");
-		repo.initialize();
+		repo.init();
 		final RepositoryConnection conn = repo.getConnection();
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,

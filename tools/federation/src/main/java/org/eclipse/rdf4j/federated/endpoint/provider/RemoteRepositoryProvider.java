@@ -44,7 +44,7 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
 					.setHttpClientBuilder(httpClientBuilder);
 			try {
-				repo.initialize();
+				repo.init();
 
 				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {

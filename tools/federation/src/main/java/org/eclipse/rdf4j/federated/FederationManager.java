@@ -122,7 +122,7 @@ public class FederationManager {
 		instance.reset();
 
 		try {
-			repo.initialize();
+			repo.init();
 		} catch (RepositoryException e) {
 			// should never occur
 			throw new FedXRuntimeException(e);

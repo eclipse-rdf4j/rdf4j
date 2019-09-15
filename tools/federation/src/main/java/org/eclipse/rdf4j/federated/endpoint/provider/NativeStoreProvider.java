@@ -67,7 +67,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			SailRepository repo = new SailRepository(ns);
 
 			try {
-				repo.initialize();
+				repo.init();
 
 				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {

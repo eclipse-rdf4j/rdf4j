@@ -92,7 +92,7 @@ public class ResultGenerator {
 
 		MemoryStore mem = new MemoryStore();
 		this.repo = new SailRepository(mem);
-		repo.initialize();
+		repo.init();
 
 		conn = repo.getConnection();
 

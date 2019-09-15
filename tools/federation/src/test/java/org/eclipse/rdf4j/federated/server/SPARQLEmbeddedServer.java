@@ -87,7 +87,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 			throws Exception {
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
-			repoManager.initialize();
+			repoManager.init();
 			for (String repId : repositoryIds) {
 				repoManager.removeRepository(repId);
 			}
@@ -106,7 +106,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
-			repoManager.initialize();
+			repoManager.init();
 
 			// create a memory store for each provided repository id
 			for (String repId : repositoryIds) {
@@ -134,7 +134,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 		for (int i = 1; i <= nRepositories; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl("endpoint" + i));
-			r.initialize();
+			r.init();
 			r.shutDown();
 		}
 	}

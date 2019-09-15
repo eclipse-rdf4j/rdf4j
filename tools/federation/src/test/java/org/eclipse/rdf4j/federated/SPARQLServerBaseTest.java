@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.repository.RepositorySettings;
 import org.eclipse.rdf4j.federated.server.NativeStoreServer;
@@ -189,7 +188,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 		boolean needToShutdown = false;
 		if (!rep.isInitialized()) {
-			rep.initialize();
+			rep.init();
 			needToShutdown = true;
 		}
 		RepositoryConnection con = rep.getConnection();

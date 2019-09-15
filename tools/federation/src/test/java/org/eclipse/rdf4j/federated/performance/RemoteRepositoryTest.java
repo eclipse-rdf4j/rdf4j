@@ -40,7 +40,7 @@ public class RemoteRepositoryTest {
 
 		Repository repo = new HTTPRepository("http://10.212.10.29:8081/openrdf-sesame", "drugbank");
 
-		repo.initialize();
+		repo.init();
 
 		RepositoryConnection conn = repo.getConnection();
 

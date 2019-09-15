@@ -46,7 +46,7 @@ public class RepositoryEndpointProvider implements EndpointProvider<RepositoryIn
 			boolean didInitialize = false;
 			try {
 				if (!repository.isInitialized()) {
-					repository.initialize();
+					repository.init();
 					didInitialize = true;
 				}
 
