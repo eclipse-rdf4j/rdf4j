@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.model.Statement;
@@ -135,8 +134,6 @@ public class BasicTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
-		fedxRule.enableDebug();
-
 		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\n" +
 				"SELECT ?name WHERE {\r\n" +
 				" ?person a foaf:Person .\r\n" +
@@ -168,8 +165,8 @@ public class BasicTests extends SPARQLBaseTest {
 
 		try (TupleQueryResult actual = query.evaluate()) {
 			if (actual.hasNext()) {
+				@SuppressWarnings("unused")
 				BindingSet firstResult = actual.next();
-				System.out.println(firstResult);
 			}
 			if (actual.hasNext()) {
 				throw new Exception("Expected single result due to LIMIT 1");
