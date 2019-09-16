@@ -46,9 +46,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Verify command
  * 
@@ -56,8 +53,6 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public class Verify extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
-
 	@Override
 	public String getName() {
 		return "verify";
@@ -94,7 +89,7 @@ public class Verify extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length != 2 && tokens.length != 4) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			return;
 		}
 
@@ -129,7 +124,7 @@ public class Verify extends ConsoleCommand {
 			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(Rio.unsupportedFormat(dataPath));
 			RDFParser parser = Rio.createParser(format);
 
-			consoleIO.writeln("RDF Format is " + parser.getRDFFormat().getName());
+			writeln("RDF Format is " + parser.getRDFFormat().getName());
 
 			VerificationListener listener = new VerificationListener(consoleIO);
 
@@ -144,7 +139,7 @@ public class Verify extends ConsoleCommand {
 
 			parser.setParseErrorListener(listener);
 			parser.setRDFHandler(listener);
-			consoleIO.writeln("Verifying data...");
+			writeln("Verifying data...");
 
 			try (InputStream dataStream = dataURL.openStream()) {
 				parser.parse(dataStream, "urn://openrdf.org/RioVerifier/");
@@ -154,24 +149,23 @@ public class Verify extends ConsoleCommand {
 			int errors = listener.getErrors();
 
 			if (warnings + errors > 0) {
-				consoleIO.writeError("Found " + warnings + " warnings and " + errors + " errors");
+				writeError("Found " + warnings + " warnings and " + errors + " errors");
 			} else {
-				consoleIO.writeln("Data verified, no errors were found");
+				writeln("Data verified, no errors were found");
 			}
 			if (errors == 0) {
-				consoleIO.writeln("File contains " + listener.getStatements() + " statements");
+				writeln("File contains " + listener.getStatements() + " statements");
 			}
 		} catch (MalformedURLException e) {
-			consoleIO.writeError("Malformed URL: " + dataPath);
+			writeError("Malformed URL: " + dataPath);
 		} catch (IOException e) {
-			consoleIO.writeError("Failed to load data: " + e.getMessage());
+			writeError("Failed to load data", e);
 		} catch (UnsupportedRDFormatException e) {
-			consoleIO.writeError("No parser available for this RDF format");
+			writeError("No parser available for this RDF format", e);
 		} catch (RDFParseException e) {
-			consoleIO.writeError("Unexpected RDFParseException" + e.getMessage());
+			writeError("Unexpected RDFParseException", e);
 		} catch (RDFHandlerException e) {
-			consoleIO.writeError("Unable to verify : " + e.getMessage());
-			LOGGER.error("Unable to verify data file", e);
+			writeError("Unable to verify", e);
 		}
 	}
 
@@ -192,7 +186,7 @@ public class Verify extends ConsoleCommand {
 		// load shapes first from a file or URL, defaults to turtle, so one can use .shacl as file extension
 		boolean loaded = false;
 		try {
-			consoleIO.writeln("Loading shapes from " + shaclPath);
+			writeln("Loading shapes from " + shaclPath);
 
 			URL shaclURL = new URL(shaclPath);
 			RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
@@ -204,13 +198,13 @@ public class Verify extends ConsoleCommand {
 			}
 			loaded = true;
 		} catch (MalformedURLException e) {
-			consoleIO.writeError("Malformed URL: " + shaclPath);
+			writeError("Malformed URL: " + shaclPath, e);
 		} catch (IOException e) {
-			consoleIO.writeError("Failed to load shacl shapes: " + e.getMessage());
+			writeError("Failed to load shacl shapes", e);
 		}
 
 		if (!loaded) {
-			consoleIO.writeError("No shapes found");
+			writeError("No shapes found");
 			repo.shutDown();
 			return;
 		}
@@ -227,15 +221,15 @@ public class Verify extends ConsoleCommand {
 				conn.commit();
 			}
 
-			consoleIO.writeln("SHACL validation OK");
+			writeln("SHACL validation OK");
 		} catch (MalformedURLException e) {
-			consoleIO.writeError("Malformed URL: " + dataPath);
+			writeError("Malformed URL: " + dataPath);
 		} catch (IOException e) {
-			consoleIO.writeError("Failed to load data: " + e.getMessage());
+			writeError("Failed to load data", e);
 		} catch (RepositoryException e) {
 			Throwable cause = e.getCause();
 			if (cause instanceof ShaclSailValidationException) {
-				consoleIO.writeError("SHACL validation failed, writing report to " + reportFile);
+				writeError("SHACL validation failed, writing report to " + reportFile);
 				ShaclSailValidationException sv = (ShaclSailValidationException) cause;
 				writeReport(sv.validationReportAsModel(), reportFile);
 			}
@@ -278,7 +272,7 @@ public class Verify extends ConsoleCommand {
 		try (Writer w = Files.newBufferedWriter(Paths.get(reportFile))) {
 			Rio.write(model, w, format, cfg);
 		} catch (IOException ex) {
-			consoleIO.writeError("Could not write report to " + reportFile);
+			writeError("Could not write report to " + reportFile, ex);
 		}
 	}
 }

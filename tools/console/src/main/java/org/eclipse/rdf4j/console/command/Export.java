@@ -29,17 +29,12 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Export triples to file
  * 
  * @author Bart Hanssens
  */
 public class Export extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
-
 	@Override
 	public String getName() {
 		return "export";
@@ -77,11 +72,11 @@ public class Export extends ConsoleCommand {
 		Repository repository = state.getRepository();
 
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 		if (tokens.length < 2) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			return;
 		}
 
@@ -91,7 +86,7 @@ public class Export extends ConsoleCommand {
 		try {
 			contexts = Util.getContexts(tokens, 2, repository);
 		} catch (IllegalArgumentException ioe) {
-			consoleIO.writeError(ioe.getMessage());
+			writeError(ioe.getMessage());
 			return;
 		}
 		export(repository, fileName, contexts);
@@ -117,19 +112,15 @@ public class Export extends ConsoleCommand {
 	private void export(Repository repository, String fileName, Resource... contexts) {
 		Path path = Util.getNormalizedPath(getWorkDir(), fileName);
 		if (path == null) {
-			consoleIO.writeError("Invalid file name");
+			writeError("Invalid file name " + fileName);
 			return;
 		}
 
 		if (path.toFile().exists()) {
-			try {
-				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
-				if (!overwrite) {
-					consoleIO.writeln("Export aborted");
-					return;
-				}
-			} catch (IOException ioe) {
-				consoleIO.writeError("I/O error " + ioe.getMessage());
+			boolean overwrite = askProceed("File exists, continue ?", false);
+			if (!overwrite) {
+				writeln("Export aborted");
+				return;
 			}
 		}
 
@@ -142,14 +133,14 @@ public class Export extends ConsoleCommand {
 			RDFWriter writer = Rio.createWriter(fmt, w);
 
 			long startTime = System.nanoTime();
-			consoleIO.writeln("Exporting data...");
+			writeln("Exporting data...");
 
 			conn.export(writer, contexts);
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
-			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
+			writeln("Data has been written to file (" + diff + " ms)");
 		} catch (IOException | UnsupportedRDFormatException e) {
-			consoleIO.writeError("Failed to export data: " + e.getMessage());
+			writeError("Failed to export data", e);
 		}
 	}
 }

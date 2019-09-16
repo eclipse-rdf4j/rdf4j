@@ -22,17 +22,12 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.runtime.RepositoryManagerFederator;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Implements the 'federate' command for the RDF4J Console.
  *
  * @author Dale Visser
  */
 public class Federate extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Federate.class);
-
 	@Override
 	public String getName() {
 		return "federate";
@@ -77,7 +72,7 @@ public class Federate extends ConsoleCommand {
 	@Override
 	public void execute(String... parameters) throws IOException {
 		if (parameters.length < 4) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		} else {
 			LinkedList<String> plist = new LinkedList<>(Arrays.asList(parameters));
 			plist.remove(); // "federate"
@@ -88,7 +83,7 @@ public class Federate extends ConsoleCommand {
 				String fedID = plist.pop();
 				federate(distinct, readonly, fedID, plist);
 			} else {
-				consoleIO.writeError("Duplicate repository id's specified.");
+				writeError("Duplicate repository id's specified.");
 			}
 		}
 	}
@@ -118,17 +113,17 @@ public class Federate extends ConsoleCommand {
 		RepositoryManager manager = state.getManager();
 		try {
 			if (manager.hasRepositoryConfig(fedID)) {
-				consoleIO.writeError(fedID + " already exists.");
+				writeError(fedID + " already exists.");
 			} else if (validateMembers(manager, readonly, memberIDs)) {
 				String description = consoleIO.readln("Federation Description (optional): ");
 				RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
 				rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-				consoleIO.writeln("Federation created.");
+				writeln("Federation created.");
 			}
 		} catch (RepositoryConfigException | RepositoryException | MalformedURLException rce) {
-			consoleIO.writeError(rce.getMessage());
+			writeError("Federation failed", rce);
 		} catch (RDF4JException | IOException rce) {
-			consoleIO.writeError(rce.getMessage());
+			writeError("I/O exception on federation", rce);
 		}
 	}
 
@@ -148,16 +143,16 @@ public class Federate extends ConsoleCommand {
 					if (!readonly) {
 						if (!manager.getRepository(memberID).isWritable()) {
 							result = false;
-							consoleIO.writeError(memberID + " is read-only.");
+							writeError(memberID + " is read-only.");
 						}
 					}
 				} else {
 					result = false;
-					consoleIO.writeError(memberID + " does not exist.");
+					writeError(memberID + " does not exist.");
 				}
 			}
 		} catch (RepositoryException | RepositoryConfigException re) {
-			consoleIO.writeError(re.getMessage());
+			writeError(re.getMessage());
 		}
 		return result;
 	}

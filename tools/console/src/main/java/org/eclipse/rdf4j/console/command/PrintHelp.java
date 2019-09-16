@@ -59,16 +59,16 @@ public class PrintHelp extends ConsoleCommand {
 		final String target = parameters[1].toLowerCase(Locale.ENGLISH);
 		Help cmd = commands.get(target);
 		if (cmd != null) {
-			consoleIO.writeln(cmd.getHelpLong());
+			writeln(cmd.getHelpLong());
 			if (cmd instanceof ConsoleCommand) {
 				String[] uses = ((ConsoleCommand) cmd).usesSettings();
 				if (uses.length > 0) {
-					consoleIO.writeln();
-					consoleIO.writeln("Uses settings: " + String.join(", ", uses));
+					writeln("");
+					writeln("Uses settings: " + String.join(", ", uses));
 				}
 			}
 		} else {
-			consoleIO.writeln("No additional info available for command " + target);
+			writeln("No additional info available for command " + target);
 		}
 	}
 
@@ -76,13 +76,13 @@ public class PrintHelp extends ConsoleCommand {
 	 * Print list of commands
 	 */
 	private void printCommandOverview() {
-		consoleIO.writeln("For more information on a specific command, try 'help <command>'.");
-		consoleIO.writeln("List of all commands:");
+		writeln("For more information on a specific command, try 'help <command>'.");
+		writeln("List of all commands:");
 
 		commands.forEach((k, v) -> {
-			consoleIO.writeln(String.format("%-11s %s", k, v.getHelpShort()));
+			writeln(String.format("%-11s %s", k, v.getHelpShort()));
 		});
 
-		consoleIO.writeln("exit, quit  Exit the console");
+		writeln("exit, quit  Exit the console");
 	}
 }

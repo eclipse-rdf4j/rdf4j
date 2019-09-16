@@ -33,8 +33,6 @@ import org.slf4j.LoggerFactory;
  * @author dale
  */
 public class Connect extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
-
 	private final Disconnect disconnect;
 
 	@Override
@@ -71,7 +69,7 @@ public class Connect extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 2) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			return;
 		}
 
@@ -132,23 +130,20 @@ public class Connect extends ConsoleCommand {
 			result = installNewManager(manager, url);
 		} catch (UnauthorizedException e) {
 			if (user != null && pass.length() > 0) {
-				consoleIO.writeError("Authentication for user '" + user + "' failed");
-				LOGGER.warn("Authentication for user '" + user + "' failed", e);
+				writeError("Authentication for user '" + user + "' failed");
 			} else {
 				// Ask user for credentials
 				try {
-					consoleIO.writeln("Authentication required");
+					writeln("Authentication required");
 					final String username = consoleIO.readln("Username: ");
 					final String password = consoleIO.readPassword("Password: ");
 					connectRemote(url, username, password);
 				} catch (IOException ioe) {
-					consoleIO.writeError("Failed to read user credentials");
-					LOGGER.warn("Failed to read user credentials", ioe);
+					writeError("Failed to read user credentials", ioe);
 				}
 			}
 		} catch (IOException | RepositoryException e) {
-			consoleIO.writeError("Failed to access the server: " + e.getMessage());
-			LOGGER.warn("Failed to access the server", e);
+			writeError("Failed to access the server", e);
 		}
 
 		return result;
@@ -166,7 +161,7 @@ public class Connect extends ConsoleCommand {
 		if (dir.exists() && dir.isDirectory()) {
 			result = installNewManager(new LocalRepositoryManager(dir), dir.toString());
 		} else {
-			consoleIO.writeError("Specified path is not an (existing) directory: " + path);
+			writeError("Specified path is not an (existing) directory: " + path);
 		}
 		return result;
 	}
@@ -183,7 +178,7 @@ public class Connect extends ConsoleCommand {
 		final String managerID = this.state.getManagerID();
 
 		if (newManagerID.equals(managerID)) {
-			consoleIO.writeln("Already connected to " + managerID);
+			writeln("Already connected to " + managerID);
 			installed = true;
 		} else {
 			try {
@@ -192,12 +187,11 @@ public class Connect extends ConsoleCommand {
 
 				this.state.setManager(newManager);
 				this.state.setManagerID(newManagerID);
-				consoleIO.writeln("Connected to " + newManagerID);
+				writeln("Connected to " + newManagerID);
 
 				installed = true;
 			} catch (RepositoryException e) {
-				consoleIO.writeError(e.getMessage());
-				LOGGER.error("Failed to install new manager", e);
+				writeError("Failed to install new manager", e);
 			}
 		}
 		return installed;

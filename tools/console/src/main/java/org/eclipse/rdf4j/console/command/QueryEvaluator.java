@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -29,7 +28,6 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 import org.eclipse.rdf4j.console.Util;
 
-import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
@@ -62,9 +60,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Abstract query evaluator command
  * 
@@ -72,9 +67,6 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public abstract class QueryEvaluator extends ConsoleCommand {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
-
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
@@ -174,7 +166,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	public void executeQuery(final String command, final String operation) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 
@@ -185,7 +177,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		} else if ("sparql".equals(operation)) {
 			parseAndEvaluateQuery(QueryLanguage.SPARQL, command.substring("sparql".length()));
 		} else {
-			consoleIO.writeError("Unknown command");
+			writeError("Unknown command");
 		}
 	}
 
@@ -231,7 +223,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		Path p = Util.getNormalizedPath(getWorkDir(), filename);
-		if (!p.toFile().exists() || consoleIO.askProceed("File exists, continue ?", false)) {
+		if (!p.toFile().exists() || askProceed("File exists, continue ?", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");
@@ -251,12 +243,11 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			return str;
 		}
 		try {
-			consoleIO.writeln("Enter multi-line " + queryLn.getName() + " query "
+			writeln("Enter multi-line " + queryLn.getName() + " query "
 					+ "(terminate with line containing single '.')");
 			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {
-			consoleIO.writeError("I/O error: " + e.getMessage());
-			LOGGER.error("Failed to read query", e);
+			writeError("Failed to read query", e);
 		}
 		return null;
 	}
@@ -271,7 +262,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private void parseAndEvaluateQuery(QueryLanguage queryLn, String queryText) {
 		String str = readMultiline(queryLn, queryText);
 		if (str == null || str.isEmpty()) {
-			consoleIO.writeError("Empty query string");
+			writeError("Empty query string");
 			return;
 		}
 
@@ -292,7 +283,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 					str = readFile(infile, m.group("enc")); // ignore remainder of command line query
 				}
 			} catch (IOException | IllegalArgumentException ex) {
-				consoleIO.writeError(ex.getMessage());
+				writeError(ex.getMessage());
 				return;
 			}
 		}
@@ -304,21 +295,17 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
 			evaluateQuery(queryLn, query, path);
 		} catch (UnsupportedQueryLanguageException e) {
-			consoleIO.writeError("Unsupported query language: " + queryLn.getName());
+			writeError("Unsupported query language: " + queryLn.getName());
 		} catch (MalformedQueryException e) {
-			consoleIO.writeError("Malformed query: " + e.getMessage());
+			writeError("Malformed query", e);
 		} catch (QueryInterruptedException e) {
-			consoleIO.writeError("Query interrupted: " + e.getMessage());
-			LOGGER.error("Query interrupted", e);
+			writeError("Query interrupted", e);
 		} catch (QueryEvaluationException e) {
-			consoleIO.writeError("Query evaluation error: " + e.getMessage());
-			LOGGER.error("Query evaluation error", e);
+			writeError("Query evaluation error", e);
 		} catch (RepositoryException e) {
-			consoleIO.writeError("Failed to evaluate query: " + e.getMessage());
-			LOGGER.error("Failed to evaluate query", e);
+			writeError("Failed to evaluate query", e);
 		} catch (UpdateExecutionException e) {
-			consoleIO.writeError("Failed to execute update: " + e.getMessage());
-			LOGGER.error("Failed to execute update", e);
+			writeError("Failed to execute update", e);
 		}
 	}
 
@@ -421,10 +408,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				}
 				evaluator.executeUpdate(queryLn, queryString);
 			} else {
-				consoleIO.writeError("Unexpected query type");
+				writeError("Unexpected query type");
 			}
 		} catch (IllegalArgumentException | IOException ioe) {
-			consoleIO.writeError(ioe.getMessage());
+			writeError(ioe.getMessage());
 		}
 	}
 

@@ -29,17 +29,12 @@ import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Load command
  * 
  * @author Dale Visser
  */
 public class Load extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
-
 	@Override
 	public String getName() {
 		return "load";
@@ -79,10 +74,10 @@ public class Load extends ConsoleCommand {
 	public void execute(final String... tokens) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 		} else {
 			if (tokens.length < 2) {
-				consoleIO.writeln(getHelpLong());
+				writeln(getHelpLong());
 			} else {
 				String baseURI = null;
 				String context = null;
@@ -97,7 +92,7 @@ public class Load extends ConsoleCommand {
 					index += 2;
 				}
 				if (index < tokens.length) {
-					consoleIO.writeln(getHelpLong());
+					writeln(getHelpLong());
 				} else {
 					load(repository, baseURI, context, tokens);
 				}
@@ -143,19 +138,18 @@ public class Load extends ConsoleCommand {
 		} catch (RepositoryReadOnlyException e) {
 			handleReadOnlyException(repository, e, tokens);
 		} catch (MalformedURLException e) {
-			consoleIO.writeError("Malformed URL: " + dataPath);
+			writeError("Malformed URL: " + dataPath);
 		} catch (IllegalArgumentException e) {
 			// Thrown when context URI is invalid
-			consoleIO.writeError(e.getMessage());
+			writeError(e.getMessage());
 		} catch (IOException e) {
-			consoleIO.writeError("Failed to load data: " + e.getMessage());
+			writeError("Failed to load data", e);
 		} catch (UnsupportedRDFormatException e) {
-			consoleIO.writeError("No parser available for this RDF format");
+			writeError("No parser available for this RDF format");
 		} catch (RDFParseException e) {
-			consoleIO.writeError("Malformed document: " + e.getMessage());
+			writeError("Malformed document", e);
 		} catch (RepositoryException e) {
-			consoleIO.writeError("Unable to add data to repository: " + e.getMessage());
-			LOGGER.error("Failed to add data to repository", e);
+			writeError("Unable to add data to repository", e);
 		}
 	}
 
@@ -173,14 +167,12 @@ public class Load extends ConsoleCommand {
 			if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 				execute(tokens);
 			} else {
-				consoleIO.writeError("Failed to load data");
-				LOGGER.error("Failed to load data", caught);
+				writeError("Failed to load data", caught);
 			}
-		} catch (RepositoryException e1) {
-			consoleIO.writeError("Unable to restart repository: " + e1.getMessage());
-			LOGGER.error("Unable to restart repository", e1);
-		} catch (IOException e1) {
-			consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
+		} catch (RepositoryException e) {
+			writeError("Unable to restart repository", e);
+		} catch (IOException e) {
+			writeError("Unable to remove lock", e);
 		}
 	}
 
@@ -199,7 +191,7 @@ public class Load extends ConsoleCommand {
 	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
 			throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
-		consoleIO.writeln("Loading data...");
+		writeln("Loading data...");
 
 		final long startTime = System.nanoTime();
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -210,7 +202,7 @@ public class Load extends ConsoleCommand {
 			}
 		}
 		final long endTime = System.nanoTime();
-		consoleIO.writeln("Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
+		writeln("Data has been added to the repository (" + (endTime - startTime) / 1_000_000 + " ms)");
 	}
 
 	/**

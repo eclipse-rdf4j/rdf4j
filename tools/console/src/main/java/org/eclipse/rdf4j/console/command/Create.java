@@ -50,17 +50,12 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Create command
  *
  * @author Dale Visser
  */
 public class Create extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
-
 	private static final String TEMPLATES_SUBDIR = "templates";
 	private static final String FILE_EXT = ".ttl";
 	private File templatesDir;
@@ -96,7 +91,7 @@ public class Create extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		} else {
 			createRepository(tokens[1]);
 		}
@@ -131,7 +126,7 @@ public class Create extends ConsoleCommand {
 		try {
 			return getOrderedTemplates(templatesDir.toPath());
 		} catch (IOException ioe) {
-			LOGGER.error("Failed to read templates directory repository ", ioe);
+			writeError("Failed to read templates directory repository ", ioe);
 		}
 		return "";
 	}
@@ -155,7 +150,7 @@ public class Create extends ConsoleCommand {
 				}
 			}
 		} catch (NullPointerException | URISyntaxException | IOException e) {
-			LOGGER.error("Could not get built-in config templates from JAR", e);
+			writeError("Could not get built-in config templates from JAR", e);
 		}
 		return "";
 	}
@@ -203,39 +198,37 @@ public class Create extends ConsoleCommand {
 
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
 					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(repConfig.getID())
-							? consoleIO.askProceed(overwrite, false)
+							? askProceed(overwrite, false)
 							: true;
 
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
 					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())
-							? consoleIO.askProceed(invalid, false)
+							? askProceed(invalid, false)
 							: true;
 
 					if (proceedInvalid && proceedOverwrite) {
 						try {
 							this.state.getManager().addRepositoryConfig(repConfig);
-							consoleIO.writeln("Repository created");
+							writeInfo("Repository created");
 						} catch (RepositoryReadOnlyException e) {
 							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
 								this.state.getManager().addRepositoryConfig(repConfig);
-								consoleIO.writeln("Repository created");
+								writeInfo("Repository created");
 							} else {
-								consoleIO.writeError("Failed to create repository");
-								LOGGER.error("Failed to create repository", e);
+								writeError("Failed to create repository", e);
 							}
 						}
 					} else {
-						consoleIO.writeln("Create aborted");
+						writeln("Create aborted");
 					}
 				}
 			}
 		} catch (EndOfFileException | UserInterruptException e) {
-			LOGGER.error("Create repository aborted", e);
+			writeError("Create repository aborted", e);
 			throw e;
 		} catch (Exception e) {
-			consoleIO.writeError(e.toString());
-			LOGGER.error("Failed to create repository", e);
+			writeError("Failed to create repository", e);
 		}
 	}
 
@@ -251,7 +244,7 @@ public class Create extends ConsoleCommand {
 	private boolean inputParameters(final Map<String, String> valueMap, final Map<String, List<String>> variableMap,
 			Map<String, String> multilineInput) throws IOException {
 		if (!variableMap.isEmpty()) {
-			consoleIO.writeln("Please specify values for the following variables:");
+			writeln("Please specify values for the following variables:");
 		}
 		boolean eof = false;
 
@@ -310,13 +303,13 @@ public class Create extends ConsoleCommand {
 			if (templateFile.canRead()) {
 				templateStream = new FileInputStream(templateFile);
 			} else {
-				consoleIO.writeError("Not allowed to read template file: " + templateFile);
+				writeError("Not allowed to read template file: " + templateFile);
 			}
 		} else {
 			// Try class path for built-ins
 			templateStream = RepositoryConfig.class.getResourceAsStream(templateFileName);
 			if (templateStream == null) {
-				consoleIO.writeError("No template called " + templateName + " found in " + templatesDir);
+				writeError("No template called " + templateName + " found in " + templatesDir);
 			}
 		}
 		return templateStream;
