@@ -27,12 +27,11 @@ import org.springframework.web.servlet.ModelAndView;
 
 public class ConfigControllerTest {
 
+	final String repositoryId = "test-config";
+	final ConfigController controller = new ConfigController();
+
 	@Test
-	public void retrievesConfiguration() throws Exception {
-		ConfigController controller = new ConfigController();
-
-		String repositoryId = "test-config";
-
+	public void getRequestRetrievesConfiguration() throws Exception {
 		final MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod(HttpMethod.GET.name());
 		request.addHeader("Accept", RDFFormat.NTRIPLES.getDefaultMIMEType());
@@ -55,4 +54,10 @@ public class ConfigControllerTest {
 		assertThat(resultConfig).isNotNull();
 	}
 
+	@Test
+	public void postRequestModifiesConfiguration() throws Exception {
+		final MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod(HttpMethod.POST.name());
+		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
+	}
 }
