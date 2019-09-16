@@ -58,7 +58,7 @@ public class Clear extends ConsoleCommand {
 		Repository repository = state.getRepository();
 
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 		} else {
 			Resource[] contexts;
 			try {

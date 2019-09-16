@@ -91,7 +91,7 @@ public class Create extends ConsoleCommand {
 	@Override
 	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		} else {
 			createRepository(tokens[1]);
 		}
@@ -198,13 +198,13 @@ public class Create extends ConsoleCommand {
 
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
 					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(repConfig.getID())
-							? consoleIO.askProceed(overwrite, false)
+							? askProceed(overwrite, false)
 							: true;
 
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
 					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())
-							? consoleIO.askProceed(invalid, false)
+							? askProceed(invalid, false)
 							: true;
 
 					if (proceedInvalid && proceedOverwrite) {

@@ -59,7 +59,7 @@ public class PrintHelp extends ConsoleCommand {
 		final String target = parameters[1].toLowerCase(Locale.ENGLISH);
 		Help cmd = commands.get(target);
 		if (cmd != null) {
-			consoleIO.writeln(cmd.getHelpLong());
+			writeln(cmd.getHelpLong());
 			if (cmd instanceof ConsoleCommand) {
 				String[] uses = ((ConsoleCommand) cmd).usesSettings();
 				if (uses.length > 0) {

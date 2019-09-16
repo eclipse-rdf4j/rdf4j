@@ -86,19 +86,19 @@ public class Show extends ConsoleCommand {
 			} else {
 				writeln(OUTPUT_SEPARATOR);
 				for (String repID : repIDs) {
-					consoleIO.write("|" + repID);
+					write("|" + repID);
 
 					try {
 						final RepositoryInfo repInfo = manager.getRepositoryInfo(repID);
 						if (repInfo.getDescription() != null) {
-							consoleIO.write(" (\"" + repInfo.getDescription() + "\")");
+							write(" (\"" + repInfo.getDescription() + "\")");
 						}
 					} catch (RepositoryException e) {
-						consoleIO.write(" [ERROR: " + e.getMessage() + "]");
+						write(" [ERROR: " + e.getMessage() + "]");
 					}
 					writeln("");
 				}
-				consoleIO.writeln(OUTPUT_SEPARATOR);
+				writeln(OUTPUT_SEPARATOR);
 			}
 		} catch (RepositoryException e) {
 			writeError("Failed to get repository list", e);
@@ -111,7 +111,7 @@ public class Show extends ConsoleCommand {
 	private void showNamespaces() {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 
@@ -139,7 +139,7 @@ public class Show extends ConsoleCommand {
 	private void showContexts() {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 

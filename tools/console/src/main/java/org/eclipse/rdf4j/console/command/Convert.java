@@ -118,14 +118,10 @@ public class Convert extends ConsoleCommand {
 			return;
 		}
 		if (Files.exists(pathTo)) {
-			try {
-				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
-				if (!overwrite) {
-					writeln("Conversion aborted");
-					return;
-				}
-			} catch (IOException ioe) {
-				writeError("I/O error", ioe);
+			boolean overwrite = askProceed("File exists, continue ?", false);
+			if (!overwrite) {
+				writeln("Conversion aborted");
+				return;
 			}
 		}
 

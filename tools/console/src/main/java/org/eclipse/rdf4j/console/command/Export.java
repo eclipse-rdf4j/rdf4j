@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+
 /**
  * Export triples to file
  * 
@@ -71,7 +72,7 @@ public class Export extends ConsoleCommand {
 		Repository repository = state.getRepository();
 
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 		if (tokens.length < 2) {
@@ -116,14 +117,10 @@ public class Export extends ConsoleCommand {
 		}
 
 		if (path.toFile().exists()) {
-			try {
-				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
-				if (!overwrite) {
-					writeln("Export aborted");
-					return;
-				}
-			} catch (IOException ioe) {
-				writeError("I/O error", ioe);
+			boolean overwrite = askProceed("File exists, continue ?", false);
+			if (!overwrite) {
+				writeln("Export aborted");
+				return;
 			}
 		}
 

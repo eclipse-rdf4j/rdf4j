@@ -74,7 +74,7 @@ public class Load extends ConsoleCommand {
 	public void execute(final String... tokens) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 		} else {
 			if (tokens.length < 2) {
 				writeln(getHelpLong());

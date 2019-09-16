@@ -166,7 +166,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	public void executeQuery(final String command, final String operation) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 
@@ -223,7 +223,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 
 		Path p = Util.getNormalizedPath(getWorkDir(), filename);
-		if (!p.toFile().exists() || consoleIO.askProceed("File exists, continue ?", false)) {
+		if (!p.toFile().exists() || askProceed("File exists, continue ?", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");
@@ -408,10 +408,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				}
 				evaluator.executeUpdate(queryLn, queryString);
 			} else {
-				consoleIO.writeError("Unexpected query type");
+				writeError("Unexpected query type");
 			}
 		} catch (IllegalArgumentException | IOException ioe) {
-			consoleIO.writeError(ioe.getMessage());
+			writeError(ioe.getMessage());
 		}
 	}
 
