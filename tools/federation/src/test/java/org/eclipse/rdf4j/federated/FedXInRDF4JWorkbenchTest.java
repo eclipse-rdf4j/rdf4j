@@ -40,7 +40,7 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
 		// preparation: add configuration files to the repository
 		File fedXDataDir = new File(repositoriesDir, repositoryId);
-		boolean success = fedXDataDir.mkdirs();
+		fedXDataDir.mkdirs();
 
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/config.ttl"), new File(fedXDataDir, "config.ttl"));
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/dataConfig.ttl"), new File(fedXDataDir, "dataConfig.ttl"));
