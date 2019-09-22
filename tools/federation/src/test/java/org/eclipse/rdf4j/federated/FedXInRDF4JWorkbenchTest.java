@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated;
 import java.io.File;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.common.platform.PlatformFactory;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -31,11 +32,15 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 		final String repositoryId = "myFederation";
 		final SPARQLEmbeddedServer rdf4jServer = (SPARQLEmbeddedServer) server;
 		final File dataDir = rdf4jServer.getDataDir();
-		final File repositoriesDir = new File(dataDir, "Server/repositories/");
+		String repoPath = "server/repositories";
+		if (PlatformFactory.getPlatform().dataDirPreserveCase()) {
+			repoPath = "Server/repositories";
+		}
+		final File repositoriesDir = new File(dataDir, repoPath);
 
 		// preparation: add configuration files to the repository
 		File fedXDataDir = new File(repositoriesDir, repositoryId);
-		fedXDataDir.mkdirs();
+		boolean success = fedXDataDir.mkdirs();
 
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/config.ttl"), new File(fedXDataDir, "config.ttl"));
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/dataConfig.ttl"), new File(fedXDataDir, "dataConfig.ttl"));
