@@ -7,13 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.exception;
 
+import org.eclipse.rdf4j.RDF4JException;
+
 /**
  * Base class for any FedX Exception.
  * 
  * @author Andreas Schwarte
  *
  */
-public class FedXException extends RuntimeException {
+public class FedXException extends RDF4JException {
 
 	private static final long serialVersionUID = -3973697449786957158L;
 

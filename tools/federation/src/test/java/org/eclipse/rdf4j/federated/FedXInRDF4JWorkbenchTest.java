@@ -29,7 +29,7 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 		loadDataSet(server.getRepository(1), "/tests/medium/data1.ttl");
 		loadDataSet(server.getRepository(2), "/tests/medium/data2.ttl");
 
-		final String repositoryId = "myFederation";
+		final String repositoryId = "my-federation";
 		final SPARQLEmbeddedServer rdf4jServer = (SPARQLEmbeddedServer) server;
 		final File dataDir = rdf4jServer.getDataDir();
 		String repoPath = "server/repositories";

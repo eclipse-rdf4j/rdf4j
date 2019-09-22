@@ -11,5 +11,5 @@
       fedx:fedxConfig "fedxConfig.prop" ;
       fedx:dataConfig "dataConfig.ttl" ;
    ];
-   rep:repositoryID "myFederation" ;
+   rep:repositoryID "my-federation" ;
    rdfs:label "FedX Federation" .
