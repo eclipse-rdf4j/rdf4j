@@ -12,14 +12,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import org.apache.commons.codec.Charsets;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -41,9 +44,6 @@ public class ConfigControllerTest {
 		when(manager.getRepositoryConfig(repositoryId)).thenReturn(config);
 		controller.setRepositoryManager(manager);
 
-		// repository interceptor uses this attribute
-		request.setAttribute("repositoryID", repositoryId);
-
 		ModelAndView result = controller.handleRequest(request, new MockHttpServletResponse());
 
 		verify(manager).getRepositoryConfig(repositoryId);
@@ -59,5 +59,18 @@ public class ConfigControllerTest {
 		final MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod(HttpMethod.POST.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
+		request.setAttribute("repositoryID", repositoryId);
+		request.setContent(
+				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
+						.getBytes(Charsets.UTF_8));
+
+		RepositoryManager manager = mock(RepositoryManager.class);
+		controller.setRepositoryManager(manager);
+		ArgumentCaptor<RepositoryConfig> config = ArgumentCaptor.forClass(RepositoryConfig.class);
+
+		controller.handleRequest(request, new MockHttpServletResponse());
+
+		verify(manager).addRepositoryConfig(config.capture());
+		assertThat(config.getValue().getID()).isEqualTo(repositoryId);
 	}
 }
