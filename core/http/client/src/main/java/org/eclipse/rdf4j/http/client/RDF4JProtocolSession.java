@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -330,6 +331,42 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new RepositoryException(e);
 		} finally {
 			method.reset();
+		}
+	}
+
+	/**
+	 * Retrieve configuration of the current repository and send it to the supplied {@link StatementCollector}
+	 *
+	 * @param statementCollector receiver of the repository config information
+	 * @throws IOException
+	 * @throws RepositoryException
+	 * @throws RDFHandlerException
+	 * @throws QueryInterruptedException
+	 * @throws UnauthorizedException
+	 * 
+	 * @since 3.1.0
+	 */
+	public void getRepositoryConfig(StatementCollector statementCollector) throws UnauthorizedException,
+			QueryInterruptedException, RDFHandlerException, RepositoryException, IOException {
+		checkRepositoryURL();
+
+		try {
+			String baseLocation = Protocol.getRepositoryConfigLocation(getRepositoryURL());
+			URIBuilder url = new URIBuilder(baseLocation);
+
+			HttpRequestBase method = new HttpGet(url.build());
+			method = applyAdditionalHeaders(method);
+
+			try {
+				getRDF(method, statementCollector, true);
+			} catch (MalformedQueryException e) {
+				logger.warn("Server reported unexpected malformed query error", e);
+				throw new RepositoryException(e.getMessage(), e);
+			} finally {
+				method.reset();
+			}
+		} catch (URISyntaxException e) {
+			throw new AssertionError(e);
 		}
 	}
 
