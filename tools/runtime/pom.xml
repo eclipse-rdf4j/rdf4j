@@ -391,7 +391,7 @@
 					</additionnalDependencies>
 					<includeDependencySources>true</includeDependencySources>
 					<dependencySourceIncludes>
-						<dependencySourceIncludes>org.eclipse.rdf4j:*</dependencySourceIncludes>
+						<dependencySourceInclude>org.eclipse.rdf4j:*</dependencySourceInclude>
 					</dependencySourceIncludes>
 				</configuration>
 				<executions>
