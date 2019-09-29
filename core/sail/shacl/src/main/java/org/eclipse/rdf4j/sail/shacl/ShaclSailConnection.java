@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
@@ -43,8 +42,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -349,76 +348,87 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			Stream<PlanNode> planNodeStream = nodeShapes
+			Stream<Callable<List<Tuple>>> callableStream = nodeShapes
 					.stream()
 					.flatMap(nodeShape -> nodeShape
 							.generatePlans(connectionsGroup, nodeShape, sail.isLogValidationPlans(),
-									validateEntireBaseSail));
-			if (sail.isParallelValidation()) {
-				planNodeStream = planNodeStream.parallel();
-			}
+									validateEntireBaseSail))
+					.filter(Objects::nonNull)
+					.map(planNode -> () -> {
+						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
+						planNode.receiveLogger(validationExecutionLogger);
 
-			Stream<Tuple> tupleStream = planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
+						try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
+										+ propertyShape.getId());
+							}
 
-				ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
-				planNode.receiveLogger(validationExecutionLogger);
+							long before = 0;
+							if (sail.isPerformanceLogging()) {
+								before = System.currentTimeMillis();
+							}
 
-				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
-					if (GlobalValidationExecutionLogging.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
-								+ propertyShape.getId());
-					}
+							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							validationExecutionLogger.flush();
 
-					long before = 0;
-					if (sail.isPerformanceLogging()) {
-						before = System.currentTimeMillis();
-					}
+							if (sail.isPerformanceLogging()) {
+								long after = System.currentTimeMillis();
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Execution of plan took {} ms for {} : {}", (after - before),
+										propertyShape.getNodeShape().toString(), propertyShape.toString());
+							}
 
-					List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
-					validationExecutionLogger.flush();
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Finished execution of plan {} : {}",
+										propertyShape.getNodeShape().toString(),
+										propertyShape.getId());
+							}
 
-					if (sail.isPerformanceLogging()) {
-						long after = System.currentTimeMillis();
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Execution of plan took {} ms for {} : {}", (after - before),
-								propertyShape.getNodeShape().toString(), propertyShape.toString());
-					}
+							boolean valid = collect.size() == 0;
 
-					if (GlobalValidationExecutionLogging.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(),
-								propertyShape.getId());
-					}
+							if (!valid && sail.isLogValidationViolations()) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 
-					boolean valid = collect.size() == 0;
+								logger.info(
+										"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+										propertyShape.getNodeShape().getId(), propertyShape.getId(),
+										collect.stream()
+												.map(a -> a.toString() + " -cause-> " + a.getCause())
+												.collect(Collectors.joining("\n\t\t")));
+							}
 
-					if (!valid && sail.isLogValidationViolations()) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-
-						logger.info(
-								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-								propertyShape.getNodeShape().getId(), propertyShape.getId(),
-								collect.stream()
-										.map(a -> a.toString() + " -cause-> " + a.getCause())
-										.collect(Collectors.joining("\n\t\t")));
-					}
-
-					return collect.stream();
-				}
-			});
+							return collect;
+						}
+					});
 
 			if (sail.isParallelValidation()) {
-				ForkJoinPool forkJoinPool = new ForkJoinPool(8);
-				List<Tuple> tuples = forkJoinPool.submit(() ->
-				// parallel task here, for example
-				tupleStream.collect(Collectors.toList())).get();
-				forkJoinPool.shutdown();
-				return tuples;
+
+				return callableStream
+						.map(sail::submitRunnableToExecutorService)
+						.collect(Collectors.toList())
+						.stream()
+						.flatMap(f -> {
+							try {
+								return f.get().stream();
+							} catch (InterruptedException | ExecutionException e) {
+								throw new RuntimeException(e);
+							}
+						})
+						.collect(Collectors.toList());
+
+			} else {
+				return callableStream.flatMap(c -> {
+					try {
+						return c.call().stream();
+					} catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+				}).collect(Collectors.toList());
 			}
-			return tupleStream.collect(Collectors.toList());
-		} catch (InterruptedException | ExecutionException e) {
-			throw new RuntimeException(e);
+
 		} finally {
 			if (sail.isPerformanceLogging()) {
 				logger.info("Actual validation and generating plans took {} ms",
@@ -650,7 +660,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					connectionsGroup.getPreviousStateConnection().begin(IsolationLevels.SNAPSHOT);
 					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false); // actually
-																											// force a
+					// force a
 					// transaction
 					// to start
 

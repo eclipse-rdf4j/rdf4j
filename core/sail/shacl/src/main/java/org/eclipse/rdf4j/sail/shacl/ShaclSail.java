@@ -41,6 +41,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -180,6 +184,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
+	private ExecutorService executorService;
+
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
 
@@ -257,6 +263,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
+		if (executorService != null) {
+			executorService.shutdown();
+			executorService = null;
+		}
+
+		executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+
 		if (super.getBaseSail().getDataDir() != null) {
 			String path = super.getBaseSail().getDataDir().getPath();
 			if (path.endsWith("/")) {
@@ -310,9 +323,15 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
+		executorService.shutdown();
+
 		initialized.set(false);
 		nodeShapes = Collections.emptyList();
 		super.shutDown();
+	}
+
+	public <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+		return executorService.submit(runnable);
 	}
 
 	@Override
