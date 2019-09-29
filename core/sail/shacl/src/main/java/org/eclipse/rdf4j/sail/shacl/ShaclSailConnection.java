@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,12 +36,15 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -78,7 +82,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private SailRepositoryConnection shapesRepoConnection;
 
 	// write lock
-	private long writeLockStamp;
+	private Lock writeLockStamp;
 
 	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
 	private boolean connectionListenerActive = false;
@@ -166,9 +170,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			sail.setNodeShapes(nodeShapes);
 		}
 
-		if (sail.holdsWriteLock(writeLockStamp)) {
+		if (writeLockStamp != null && writeLockStamp.isActive()) {
 			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
 		}
+
+		assert writeLockStamp == null;
 
 		if (sail.isPerformanceLogging()) {
 			logger.info("commit() excluding validation and cleanup took {} ms", System.currentTimeMillis() - before);
@@ -244,9 +250,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				sail.setNodeShapes(nodeShapes);
 			}
 		}
-		if (sail.holdsWriteLock(writeLockStamp)) {
+		if ((writeLockStamp != null && writeLockStamp.isActive())) {
 			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
 		}
+		assert writeLockStamp == null;
 		cleanup();
 	}
 
@@ -277,7 +284,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		isShapeRefreshNeeded = false;
 		shapesModifiedInCurrentTransaction = false;
 
-		assert writeLockStamp == 0;
+		assert writeLockStamp == null;
 		currentIsolationLevel = null;
 		if (sail.isPerformanceLogging()) {
 			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
@@ -351,7 +358,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				planNodeStream = planNodeStream.parallel();
 			}
 
-			return planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
+			Stream<Tuple> tupleStream = planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
+
 				ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 				planNode.receiveLogger(validationExecutionLogger);
 
@@ -367,7 +375,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						before = System.currentTimeMillis();
 					}
 
-					List<Tuple> collect = stream.collect(Collectors.toList());
+					List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
 					validationExecutionLogger.flush();
 
 					if (sail.isPerformanceLogging()) {
@@ -398,7 +406,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					return collect.stream();
 				}
-			}).collect(Collectors.toList());
+			});
+
+			if (sail.isParallelValidation()) {
+				ForkJoinPool forkJoinPool = new ForkJoinPool(8);
+				List<Tuple> tuples = forkJoinPool.submit(() ->
+				// parallel task here, for example
+				tupleStream.collect(Collectors.toList())).get();
+				forkJoinPool.shutdown();
+				return tuples;
+			}
+			return tupleStream.collect(Collectors.toList());
+		} catch (InterruptedException | ExecutionException e) {
+			throw new RuntimeException(e);
 		} finally {
 			if (sail.isPerformanceLogging()) {
 				logger.info("Actual validation and generating plans took {} ms",
@@ -511,13 +531,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} finally {
 			sail.closeConnection(this);
 		}
+
+		assert writeLockStamp == null;
+
 	}
 
 	@Override
 	public void prepare() throws SailException {
 		flush();
 
-		long readStamp = 0;
+		Lock readStamp = null;
 
 		try {
 			long before = 0;
@@ -529,11 +552,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
 
 			if (useSerializableValidation) {
-				if (!sail.holdsWriteLock(writeLockStamp)) {
+				if (!(writeLockStamp != null && writeLockStamp.isActive())) {
 					writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
 				}
 			} else {
-				if (!sail.holdsWriteLock(writeLockStamp)) {
+				if (!(writeLockStamp != null && writeLockStamp.isActive())) {
 					readStamp = sail.acquireReadlock();
 				}
 			}
@@ -579,10 +602,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (invalidTuples == null) {
-				if (writeLockStamp != 0) {
-					readStamp = sail.convertToReadLock(writeLockStamp);
-					writeLockStamp = 0;
-				}
+//				if (writeLockStamp != null && writeLockStamp.isActive()) {
+//					assert readStamp == null;
+//					readStamp = sail.convertToReadLock(writeLockStamp);
+//					writeLockStamp = null;
+//				}
 				invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			}
 
@@ -597,11 +621,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new ShaclSailValidationException(invalidTuples);
 			}
 		} finally {
-			preparedHasRun = true;
 
-			if (readStamp != 0 && !sail.holdsWriteLock(writeLockStamp)) {
+			if (readStamp != null) {
 				readStamp = sail.releaseReadlock(readStamp);
 			}
+			assert readStamp == null;
+
+			preparedHasRun = true;
+
 			previousStateConnection.prepare();
 			super.prepare();
 		}

@@ -46,9 +46,10 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testDataAndShapes() {
 
-		for (int r = 0; r < 100; r++) {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+		Properties.setLockTrackingEnabled(true);
 
-			Properties.setLockTrackingEnabled(true);
+		for (int r = 0; r < 100; r++) {
 
 			List<List<Transaction>> list = new ArrayList<>();
 
