@@ -613,6 +613,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if (invalidTuples == null) {
 //				if (writeLockStamp != null && writeLockStamp.isActive()) {
+// also check if write lock was acquired in prepare() because if it was acquire in one of the other places then we shouldn't downgrade now.
+				// also - are there actually any cases that would execute this code while using multiple threads?
 //					assert readStamp == null;
 //					readStamp = sail.convertToReadLock(writeLockStamp);
 //					writeLockStamp = null;
