@@ -37,9 +37,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -155,7 +153,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	private SailRepository shapesRepo;
 
-	final ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager();
+	// lockManager used for read/write locks used to synchronize changes to the shapes (and caching of shapes) and used
+	// to synchronize validation so that SNAPSHOT isolation is sufficient to achieve SERIALIZABLE isolation wrt.
+	// validation
+	final private ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager();
 
 	transient private Thread threadHoldingWriteLock;
 
@@ -323,7 +324,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
-		executorService.shutdown();
+		if (executorService != null) {
+			executorService.shutdown();
+		}
 
 		initialized.set(false);
 		nodeShapes = Collections.emptyList();
@@ -374,13 +377,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
 	 */
-	Lock acquireExclusiveWriteLock(Lock stamp) {
+	Lock acquireExclusiveWriteLock(Lock lock) {
 
-		if (stamp != null && stamp.isActive()) {
-			return stamp;
+		if (lock != null && lock.isActive()) {
+			return lock;
 		}
 
-		assert stamp == null;
+		assert lock == null;
 
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
@@ -389,35 +392,26 @@ public class ShaclSail extends NotifyingSailWrapper {
 							"while another connection also tries to modify the shapes!");
 		}
 
-		Lock writeLock = null;
-		while (writeLock == null) {
-			try {
-				writeLock = lockManager.getWriteLock();
-			} catch (InterruptedException e) {
-
-			}
+		try {
+			Lock writeLock = lockManager.getWriteLock();
+			threadHoldingWriteLock = Thread.currentThread();
+			return writeLock;
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
 		}
-		threadHoldingWriteLock = Thread.currentThread();
-		return writeLock;
 	}
-
-//	boolean holdsWriteLock(long stamp) {
-//		return lock.validate(stamp) && lock.isWriteLocked();
-//	}
 
 	/**
 	 * Releases the exclusive write lock.
 	 *
 	 * @return
 	 */
-	Lock releaseExclusiveWriteLock(Lock stamp) {
-		assert stamp != null;
-		stamp.release();
+	Lock releaseExclusiveWriteLock(Lock lock) {
+		assert lock != null;
 		threadHoldingWriteLock = null;
+		lock.release();
 		return null;
 	}
-
-	Map<Thread, Thread> readLocks = Collections.synchronizedMap(new IdentityHashMap<>());
 
 	Lock acquireReadlock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
@@ -426,25 +420,18 @@ public class ShaclSail extends NotifyingSailWrapper {
 							"interleaved and one connection has modified the shapes without calling commit() " +
 							"while another connection calls commit()!");
 		}
-		Lock readLock = null;
-
-		while (readLock == null) {
-			try {
-				readLock = lockManager.getReadLock();
-			} catch (InterruptedException e) {
-
-			}
+		try {
+			return lockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
 		}
-
-		return readLock;
 
 	}
 
-	Lock releaseReadlock(Lock stamp) {
-		assert stamp != null;
+	Lock releaseReadlock(Lock lock) {
+		assert lock != null;
 
-		stamp.release();
-		readLocks.remove(Thread.currentThread());
+		lock.release();
 
 		return null;
 	}
@@ -464,8 +451,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 //		}
 //
 //		System.out.println("convertToReadLock");
-//		readLocks.put(Thread.currentThread(), Thread.currentThread());
-//		threadHoldingWriteLock = null;
 //		return readLock;
 //
 //
