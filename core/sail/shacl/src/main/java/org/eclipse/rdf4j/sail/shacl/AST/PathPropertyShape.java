@@ -61,14 +61,15 @@ public abstract class PathPropertyShape extends PropertyShape {
 			PathPropertyShape parent, Resource path) {
 		super(id, nodeShape, deactivated ? deactivated : !validPath(path, connection), parent);
 
-		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
-		// undefined.
+		// Only simple path is supported. Use of complex paths will make the property shape deactivated and log a
+		// warning
 		if (path != null) {
 			if (validPath(path, connection)) {
 				this.path = new SimplePath((IRI) path);
 			} else {
 				logger.warn(
-						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. \n{}",
+						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
+						id,
 						describe(connection, path));
 			}
 
