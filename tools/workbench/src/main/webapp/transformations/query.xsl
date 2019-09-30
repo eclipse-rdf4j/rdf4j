@@ -141,7 +141,7 @@ USING NAMESPACE</xsl:text>
 				</xsl:choose>
 			</xsl:for-each>
 		</pre>
-		<script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
+		<script src="../../scripts/codemirror-5.1.17.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
 		<script src="../../scripts/query.js" type="text/javascript"></script>

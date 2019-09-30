@@ -119,7 +119,7 @@
 				<textarea id="{$query}-text" style="display: none;"><xsl:value-of select="sparql:binding[@name='queryText']" /></textarea>
 			</div>
 		</xsl:for-each>
-		<script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
+		<script src="../../scripts/codemirror-5.1.17.js" type="text/javascript"></script>
         <script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
 		<script src="../../scripts/saved-queries.js" type="text/javascript"></script>
 	</xsl:template>
