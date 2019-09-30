@@ -269,8 +269,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			executorService = null;
 		}
 
-		executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
-
 		if (super.getBaseSail().getDataDir() != null) {
 			String path = super.getBaseSail().getDataDir().getPath();
 			if (path.endsWith("/")) {
@@ -333,7 +331,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		super.shutDown();
 	}
 
-	public <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+	public synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+		if (executorService == null) {
+			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+		}
 		return executorService.submit(runnable);
 	}
 
