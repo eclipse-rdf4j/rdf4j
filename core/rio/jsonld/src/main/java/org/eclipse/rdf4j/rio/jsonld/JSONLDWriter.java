@@ -83,7 +83,8 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
 	 *
-	 * @param writer The Writer to write to.
+	 * @param writer  The Writer to write to.
+	 * @param baseURI base URI
 	 */
 	public JSONLDWriter(Writer writer, String baseURI) {
 		this.baseURI = baseURI;
@@ -170,10 +171,15 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 		return RDFFormat.JSONLD;
 	}
 
+	/**
+	 * Add name space prefixes to JSON-LD context, empty prefix gets the '@vocab' prefix
+	 * 
+	 * @param ctx        context
+	 * @param namespaces set of RDF name spaces
+	 */
 	private static void addPrefixes(Map<String, Object> ctx, Set<Namespace> namespaces) {
 		for (final Namespace ns : namespaces) {
-			ctx.put(ns.getPrefix(), ns.getName());
+			ctx.put(ns.getPrefix().isEmpty() ? "@vocab" : ns.getPrefix(), ns.getName());
 		}
-
 	}
 }

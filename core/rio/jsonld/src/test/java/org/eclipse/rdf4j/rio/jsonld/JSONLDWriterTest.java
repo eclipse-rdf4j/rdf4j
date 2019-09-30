@@ -7,18 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
+import java.io.BufferedReader;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -31,6 +38,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -38,6 +46,7 @@ import org.junit.Test;
  * @author Peter Ansell
  */
 public class JSONLDWriterTest extends RDFWriterTest {
+	private final String exNs = "http://example.org/";
 
 	public JSONLDWriterTest() {
 		super(new JSONLDWriterFactory(), new JSONLDParserFactory());
@@ -63,8 +72,36 @@ public class JSONLDWriterTest extends RDFWriterTest {
 	}
 
 	@Test
+	public void testEmptyNamespace() throws Exception {
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		IRI uri1 = vf.createIRI(exNs, "uri1");
+
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+		rdfWriter.handleNamespace("", exNs);
+		rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
+		rdfWriter.endRDF();
+		out.close();
+
+		ByteArrayInputStream is = new ByteArrayInputStream(out.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model model = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(model));
+		rdfParser.parse(is, exNs);
+		is.close();
+		model.forEach(st -> System.err.println(st));
+
+		Set<Namespace> namespaces = model.getNamespaces();
+		System.err.println(namespaces);
+
+		assertTrue("Invalid number of namespaces ", namespaces != null && namespaces.size() == 2);
+		assertTrue("Namespace DCTERMS not found", namespaces.contains(DCTERMS.NS));
+	}
+
+	@Test
 	public void testRoundTripNamespaces() throws Exception {
-		String exNs = "http://example.org/";
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");
 		Literal plainLit = vf.createLiteral("plain", XMLSchema.STRING);
