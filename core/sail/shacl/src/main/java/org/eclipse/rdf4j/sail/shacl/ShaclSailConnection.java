@@ -81,7 +81,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private SailRepositoryConnection shapesRepoConnection;
 
 	// write lock
-	private Lock writeLockStamp;
+	private Lock writeLock;
 
 	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
 	private boolean connectionListenerActive = false;
@@ -169,11 +169,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			sail.setNodeShapes(nodeShapes);
 		}
 
-		if (writeLockStamp != null && writeLockStamp.isActive()) {
-			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
+		if (writeLock != null && writeLock.isActive()) {
+			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
 
-		assert writeLockStamp == null;
+		assert writeLock == null;
 
 		if (sail.isPerformanceLogging()) {
 			logger.info("commit() excluding validation and cleanup took {} ms", System.currentTimeMillis() - before);
@@ -185,7 +185,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -197,7 +197,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -208,7 +208,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -219,7 +219,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -249,10 +249,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				sail.setNodeShapes(nodeShapes);
 			}
 		}
-		if ((writeLockStamp != null && writeLockStamp.isActive())) {
-			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
+		if ((writeLock != null && writeLock.isActive())) {
+			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
-		assert writeLockStamp == null;
+		assert writeLock == null;
 		cleanup();
 	}
 
@@ -283,7 +283,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		isShapeRefreshNeeded = false;
 		shapesModifiedInCurrentTransaction = false;
 
-		assert writeLockStamp == null;
+		assert writeLock == null;
 		currentIsolationLevel = null;
 		if (sail.isPerformanceLogging()) {
 			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
@@ -408,6 +408,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 				return callableStream
 						.map(sail::submitRunnableToExecutorService)
+						// Creating a list is needed to actually make things run multi-threaded, without this the
+						// laziness of java streams will make this run serially
 						.collect(Collectors.toList())
 						.stream()
 						.flatMap(f -> {
@@ -542,7 +544,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			sail.closeConnection(this);
 		}
 
-		assert writeLockStamp == null;
+		assert writeLock == null;
 
 	}
 
@@ -550,7 +552,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void prepare() throws SailException {
 		flush();
 
-		Lock readStamp = null;
+		Lock readLock = null;
 
 		try {
 			long before = 0;
@@ -562,12 +564,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
 
 			if (useSerializableValidation) {
-				if (!(writeLockStamp != null && writeLockStamp.isActive())) {
-					writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+				if (!(writeLock != null && writeLock.isActive())) {
+					writeLock = sail.acquireExclusiveWriteLock(writeLock);
 				}
 			} else {
-				if (!(writeLockStamp != null && writeLockStamp.isActive())) {
-					readStamp = sail.acquireReadlock();
+				if (!(writeLock != null && writeLock.isActive())) {
+					readLock = sail.acquireReadlock();
 				}
 			}
 
@@ -612,12 +614,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (invalidTuples == null) {
-//				if (writeLockStamp != null && writeLockStamp.isActive()) {
+//				if (writeLock != null && writeLock.isActive()) {
 // also check if write lock was acquired in prepare() because if it was acquire in one of the other places then we shouldn't downgrade now.
 				// also - are there actually any cases that would execute this code while using multiple threads?
-//					assert readStamp == null;
-//					readStamp = sail.convertToReadLock(writeLockStamp);
-//					writeLockStamp = null;
+//					assert readLock == null;
+//					readLock = sail.convertToReadLock(writeLock);
+//					writeLock = null;
 //				}
 				invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			}
@@ -634,10 +636,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 		} finally {
 
-			if (readStamp != null) {
-				readStamp = sail.releaseReadlock(readStamp);
+			if (readLock != null) {
+				readLock = sail.releaseReadlock(readLock);
 			}
-			assert readStamp == null;
+			assert readLock == null;
 
 			preparedHasRun = true;
 

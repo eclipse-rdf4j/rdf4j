@@ -264,11 +264,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
-		if (executorService != null) {
-			executorService.shutdown();
-			executorService = null;
-		}
-
 		if (super.getBaseSail().getDataDir() != null) {
 			String path = super.getBaseSail().getDataDir().getPath();
 			if (path.endsWith("/")) {
