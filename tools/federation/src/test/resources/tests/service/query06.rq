@@ -1,0 +1,21 @@
+# Select all projects that have a responsible person (3 relevant endpoints)
+# using the ID of the federation member in the service clause
+
+PREFIX ns3: <http://namespace3.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> 
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+
+SELECT ?project ?label ?person ?name WHERE {
+	SERVICE <http://endpoint2> {
+ 		?person rdf:type foaf:Person .
+ 		?person foaf:name ?name .
+ 		FILTER regex(str(?name), "Person7") 
+ 	} .
+ 	SERVICE <http://endpoint3> { 		
+ 		?project ns3:responsible ?person .
+ 		?project rdf:type ns3:Project .
+ 		?project rdfs:label ?label .
+ 	}
+}

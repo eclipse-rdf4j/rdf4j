@@ -24,6 +24,7 @@
 	<modules>
 		<module>config</module>
 		<module>console</module>
+		<module>federation</module>
 		<module>server</module>
 		<module>server-spring</module>
 		<module>workbench</module>

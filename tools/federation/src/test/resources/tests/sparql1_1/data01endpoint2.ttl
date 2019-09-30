@@ -1,0 +1,4 @@
+@prefix : <http://example.org/> .
+
+:myint :int 3 .
+:str3 :str "Andreas" .
