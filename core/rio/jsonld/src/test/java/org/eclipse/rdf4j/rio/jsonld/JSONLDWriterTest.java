@@ -7,17 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import java.io.BufferedReader;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.Arrays;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -73,31 +69,30 @@ public class JSONLDWriterTest extends RDFWriterTest {
 
 	@Test
 	public void testEmptyNamespace() throws Exception {
-		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		IRI uri1 = vf.createIRI(exNs, "uri1");
-
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
-		rdfWriter.handleNamespace("", exNs);
-		rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
-		rdfWriter.startRDF();
-		rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
-		rdfWriter.endRDF();
-		out.close();
-
-		ByteArrayInputStream is = new ByteArrayInputStream(out.toByteArray());
-		RDFParser rdfParser = rdfParserFactory.getParser();
+		IRI uri2 = vf.createIRI(exNs, "uri2");
 		Model model = new LinkedHashModel();
-		rdfParser.setRDFHandler(new StatementCollector(model));
-		rdfParser.parse(is, exNs);
-		is.close();
-		model.forEach(st -> System.err.println(st));
 
-		Set<Namespace> namespaces = model.getNamespaces();
-		System.err.println(namespaces);
+		try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {	
+			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+			rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+			rdfWriter.handleNamespace("", exNs);
+			rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
+			rdfWriter.startRDF();
+			rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
+			rdfWriter.handleStatement(vf.createStatement(uri1, uri2, vf.createBNode()));
+			rdfWriter.endRDF();
 
-		assertTrue("Invalid number of namespaces ", namespaces != null && namespaces.size() == 2);
-		assertTrue("Namespace DCTERMS not found", namespaces.contains(DCTERMS.NS));
+			try (ByteArrayInputStream is = new ByteArrayInputStream(out.toByteArray())) {
+				RDFParser rdfParser = rdfParserFactory.getParser();
+				rdfParser.setRDFHandler(new StatementCollector(model));
+				rdfParser.parse(is, exNs);
+				Set<Namespace> namespaces = model.getNamespaces();
+			
+				assertTrue("Invalid number of namespaces ", namespaces != null && namespaces.size() == 1);
+				assertTrue("Namespace DCTERMS not found", namespaces.contains(DCTERMS.NS));
+			}
+		}
 	}
 
 	@Test

@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+
+import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
 import com.github.jsonldjava.core.JsonLdProcessor;
@@ -136,7 +138,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 				final Map<String, Object> ctx = new LinkedHashMap<>();
 				addPrefixes(ctx, model.getNamespaces());
 				final Map<String, Object> localCtx = new HashMap<>();
-				localCtx.put("@context", ctx);
+				localCtx.put(JsonLdConsts.CONTEXT, ctx);
 
 				output = JsonLdProcessor.compact(output, localCtx, opts);
 			}
@@ -179,7 +181,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 */
 	private static void addPrefixes(Map<String, Object> ctx, Set<Namespace> namespaces) {
 		for (final Namespace ns : namespaces) {
-			ctx.put(ns.getPrefix().isEmpty() ? "@vocab" : ns.getPrefix(), ns.getName());
+			ctx.put(ns.getPrefix().isEmpty() ? JsonLdConsts.VOCAB : ns.getPrefix(), ns.getName());
 		}
 	}
 }
