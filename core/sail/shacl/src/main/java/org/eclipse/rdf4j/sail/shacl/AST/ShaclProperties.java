@@ -6,6 +6,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -179,8 +180,8 @@ public class ShaclProperties {
 				case "http://www.w3.org/ns/shacl#property":
 					break;
 				default:
-					if (predicate.startsWith("http://www.w3.org/ns/shacl#")) {
-						logger.debug("Unsupported SHACL feature detected {} in statement {}",
+					if (predicate.startsWith(SHACL.NAMESPACE)) {
+						logger.warn("Unsupported SHACL feature detected {} in statement {}",
 								predicate.replace("http://www.w3.org/ns/shacl#", "sh:"),
 								statement);
 					}
