@@ -659,14 +659,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						() -> getRdfsSubClassOfReasoner())) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
-					connectionsGroup.getBaseConnection().hasStatement(null, null, null, false); // actually force a
-					// transaction to start
+					// actually force a transaction to start
+					connectionsGroup.getBaseConnection().hasStatement(null, null, null, false);
 
 					connectionsGroup.getPreviousStateConnection().begin(IsolationLevels.SNAPSHOT);
-					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false); // actually
-					// force a
-					// transaction
-					// to start
+					// actually force a transaction to start
+					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false);
 
 					stats.setBaseSailEmpty(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
 
