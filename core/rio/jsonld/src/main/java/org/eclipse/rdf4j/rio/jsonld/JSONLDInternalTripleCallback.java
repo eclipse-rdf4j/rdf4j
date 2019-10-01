@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.eclipse.rdf4j.rio.helpers.RDFParserHelper;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
+import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdTripleCallback;
 import com.github.jsonldjava.core.RDFDataset;
 
@@ -101,9 +102,9 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 
 	private Resource createResource(String resource) {
 		// Blank node without any given identifier
-		if (resource.equals("_:")) {
+		if (resource.equals(JsonLdConsts.BLANK_NODE_PREFIX)) {
 			return anonymousBNodeCreator.get();
-		} else if (resource.startsWith("_:")) {
+		} else if (resource.startsWith(JsonLdConsts.BLANK_NODE_PREFIX)) {
 			return namedBNodeCreator.apply(resource.substring(2));
 		} else {
 			return vf.createIRI(resource);
@@ -206,7 +207,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 		}
 		for (String graphName : dataset.keySet()) {
 			final List<RDFDataset.Quad> quads = dataset.getQuads(graphName);
-			if ("@default".equals(graphName)) {
+			if (JsonLdConsts.DEFAULT.equals(graphName)) {
 				graphName = null;
 			}
 			for (final RDFDataset.Quad quad : quads) {
