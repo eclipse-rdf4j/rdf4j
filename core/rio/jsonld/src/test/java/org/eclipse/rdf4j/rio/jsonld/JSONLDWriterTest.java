@@ -13,12 +13,11 @@ import static org.junit.Assert.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Set;
+import java.io.StringWriter;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
@@ -71,28 +70,19 @@ public class JSONLDWriterTest extends RDFWriterTest {
 	public void testEmptyNamespace() throws Exception {
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");
-		Model model = new LinkedHashModel();
 
-		try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {	
-			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-			rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
-			rdfWriter.handleNamespace("", exNs);
-			rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
-			rdfWriter.startRDF();
-			rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
-			rdfWriter.handleStatement(vf.createStatement(uri1, uri2, vf.createBNode()));
-			rdfWriter.endRDF();
+		StringWriter w = new StringWriter();
+		
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(w);
+		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+		rdfWriter.handleNamespace("", exNs);
+		rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri2, vf.createBNode()));
+		rdfWriter.endRDF();
 
-			try (ByteArrayInputStream is = new ByteArrayInputStream(out.toByteArray())) {
-				RDFParser rdfParser = rdfParserFactory.getParser();
-				rdfParser.setRDFHandler(new StatementCollector(model));
-				rdfParser.parse(is, exNs);
-				Set<Namespace> namespaces = model.getNamespaces();
-			
-				assertTrue("Invalid number of namespaces ", namespaces != null && namespaces.size() == 1);
-				assertTrue("Namespace DCTERMS not found", namespaces.contains(DCTERMS.NS));
-			}
-		}
+		assertTrue("Does not contain @vocab", w.toString().contains("@vocab"));
 	}
 
 	@Test
