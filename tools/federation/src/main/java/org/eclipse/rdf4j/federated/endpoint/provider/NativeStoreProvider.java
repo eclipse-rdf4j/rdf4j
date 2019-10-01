@@ -15,16 +15,16 @@ import org.eclipse.rdf4j.federated.endpoint.ManagedRepositoryEndpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.util.FileUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStoreExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Provider for an Endpoint that uses a RDF4J {@link NativeStore} as underlying repository. For optimization purposes
- * the NativeStore is wrapped within a {@link NativeStoreExt} to allow for evaluation of prepared queries without prior
+ * the {@link SailSourceEvaluationStrategyFactory} is used to allow for evaluation of prepared queries without prior
  * optimization. Note that NativeStores are always classified as 'Local'.
  * 
  * <p>
@@ -63,7 +63,11 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 		}
 
 		try {
-			NativeStore ns = new NativeStoreExt(store);
+			NativeStore ns = new NativeStore(store);
+			EvaluationStrategyFactory factory = new SailSourceEvaluationStrategyFactory(
+					ns.getEvaluationStrategyFactory());
+			ns.setEvaluationStrategyFactory(factory);
+
 			SailRepository repo = new SailRepository(ns);
 
 			try {

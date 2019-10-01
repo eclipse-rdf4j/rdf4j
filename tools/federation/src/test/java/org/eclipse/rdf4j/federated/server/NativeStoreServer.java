@@ -18,9 +18,11 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.federated.endpoint.provider.RepositoryInformation;
+import org.eclipse.rdf4j.federated.endpoint.provider.SailSourceEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStoreExt;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 public class NativeStoreServer implements Server {
 
@@ -37,8 +39,12 @@ public class NativeStoreServer implements Server {
 	public void initialize(int nRepositories) throws Exception {
 
 		for (int i = 1; i <= nRepositories; i++) {
+			NativeStore store = new NativeStore(new File(dataDir, "endpoint" + i));
+			EvaluationStrategyFactory factory = new SailSourceEvaluationStrategyFactory(
+					store.getEvaluationStrategyFactory());
+			store.setEvaluationStrategyFactory(factory);
 			ConfigurableSailRepository repo = new ConfigurableSailRepository(
-					new NativeStoreExt(new File(dataDir, "endpoint" + i)), true);
+					store, true);
 			repo.init();
 			repositories.add(repo);
 			repo.shutDown();
