@@ -72,7 +72,7 @@ public class JSONLDWriterTest extends RDFWriterTest {
 		IRI uri2 = vf.createIRI(exNs, "uri2");
 
 		StringWriter w = new StringWriter();
-		
+
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(w);
 		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
 		rdfWriter.handleNamespace("", exNs);
