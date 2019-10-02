@@ -102,10 +102,10 @@ class ContextStore implements Iterable<Resource> {
 		try {
 			readContextsFromFile();
 		} catch (FileNotFoundException fe) {
-			logger.info("context index has not been created yet: " + fe.getMessage());
+			logger.debug("context index has not been created yet: " + fe.getMessage());
 			initializeContextCache();
 			writeContextsToFile();
-			logger.info("context index construction complete");
+			logger.debug("context index construction complete");
 		} catch (IOException ioe) {
 			logger.info("could not read context index: " + ioe.getMessage(), ioe);
 			logger.debug("attempting reconstruction from store (this may take a while)");
