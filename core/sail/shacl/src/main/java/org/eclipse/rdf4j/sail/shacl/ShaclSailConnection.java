@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,19 +29,21 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -78,7 +81,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private SailRepositoryConnection shapesRepoConnection;
 
 	// write lock
-	private long writeLockStamp;
+	private Lock writeLock;
 
 	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
 	private boolean connectionListenerActive = false;
@@ -166,9 +169,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			sail.setNodeShapes(nodeShapes);
 		}
 
-		if (sail.holdsWriteLock(writeLockStamp)) {
-			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
+		if (writeLock != null && writeLock.isActive()) {
+			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
+
+		assert writeLock == null;
 
 		if (sail.isPerformanceLogging()) {
 			logger.info("commit() excluding validation and cleanup took {} ms", System.currentTimeMillis() - before);
@@ -180,7 +185,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -192,7 +197,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -203,7 +208,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -214,7 +219,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
-			writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+			writeLock = sail.acquireExclusiveWriteLock(writeLock);
 			shapesRepoConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		} else {
@@ -244,9 +249,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				sail.setNodeShapes(nodeShapes);
 			}
 		}
-		if (sail.holdsWriteLock(writeLockStamp)) {
-			writeLockStamp = sail.releaseExclusiveWriteLock(writeLockStamp);
+		if ((writeLock != null && writeLock.isActive())) {
+			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
+		assert writeLock == null;
 		cleanup();
 	}
 
@@ -277,7 +283,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		isShapeRefreshNeeded = false;
 		shapesModifiedInCurrentTransaction = false;
 
-		assert writeLockStamp == 0;
+		assert writeLock == null;
 		currentIsolationLevel = null;
 		if (sail.isPerformanceLogging()) {
 			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
@@ -342,63 +348,89 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			Stream<PlanNode> planNodeStream = nodeShapes
+			Stream<Callable<List<Tuple>>> callableStream = nodeShapes
 					.stream()
 					.flatMap(nodeShape -> nodeShape
 							.generatePlans(connectionsGroup, nodeShape, sail.isLogValidationPlans(),
-									validateEntireBaseSail));
+									validateEntireBaseSail))
+					.filter(Objects::nonNull)
+					.map(planNode -> () -> {
+						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
+						planNode.receiveLogger(validationExecutionLogger);
+
+						try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
+										+ propertyShape.getId());
+							}
+
+							long before = 0;
+							if (sail.isPerformanceLogging()) {
+								before = System.currentTimeMillis();
+							}
+
+							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							validationExecutionLogger.flush();
+
+							if (sail.isPerformanceLogging()) {
+								long after = System.currentTimeMillis();
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Execution of plan took {} ms for {} : {}", (after - before),
+										propertyShape.getNodeShape().toString(), propertyShape.toString());
+							}
+
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+								logger.info("Finished execution of plan {} : {}",
+										propertyShape.getNodeShape().toString(),
+										propertyShape.getId());
+							}
+
+							boolean valid = collect.size() == 0;
+
+							if (!valid && sail.isLogValidationViolations()) {
+								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+
+								logger.info(
+										"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+										propertyShape.getNodeShape().getId(), propertyShape.getId(),
+										collect.stream()
+												.map(a -> a.toString() + " -cause-> " + a.getCause())
+												.collect(Collectors.joining("\n\t\t")));
+							}
+
+							return collect;
+						}
+					});
+
 			if (sail.isParallelValidation()) {
-				planNodeStream = planNodeStream.parallel();
+
+				return callableStream
+						.map(sail::submitRunnableToExecutorService)
+						// Creating a list is needed to actually make things run multi-threaded, without this the
+						// laziness of java streams will make this run serially
+						.collect(Collectors.toList())
+						.stream()
+						.flatMap(f -> {
+							try {
+								return f.get().stream();
+							} catch (InterruptedException | ExecutionException e) {
+								throw new RuntimeException(e);
+							}
+						})
+						.collect(Collectors.toList());
+
+			} else {
+				return callableStream.flatMap(c -> {
+					try {
+						return c.call().stream();
+					} catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+				}).collect(Collectors.toList());
 			}
 
-			return planNodeStream.filter(Objects::nonNull).flatMap(planNode -> {
-				ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
-				planNode.receiveLogger(validationExecutionLogger);
-
-				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
-					if (GlobalValidationExecutionLogging.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
-								+ propertyShape.getId());
-					}
-
-					long before = 0;
-					if (sail.isPerformanceLogging()) {
-						before = System.currentTimeMillis();
-					}
-
-					List<Tuple> collect = stream.collect(Collectors.toList());
-					validationExecutionLogger.flush();
-
-					if (sail.isPerformanceLogging()) {
-						long after = System.currentTimeMillis();
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Execution of plan took {} ms for {} : {}", (after - before),
-								propertyShape.getNodeShape().toString(), propertyShape.toString());
-					}
-
-					if (GlobalValidationExecutionLogging.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(),
-								propertyShape.getId());
-					}
-
-					boolean valid = collect.size() == 0;
-
-					if (!valid && sail.isLogValidationViolations()) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-
-						logger.info(
-								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-								propertyShape.getNodeShape().getId(), propertyShape.getId(),
-								collect.stream()
-										.map(a -> a.toString() + " -cause-> " + a.getCause())
-										.collect(Collectors.joining("\n\t\t")));
-					}
-
-					return collect.stream();
-				}
-			}).collect(Collectors.toList());
 		} finally {
 			if (sail.isPerformanceLogging()) {
 				logger.info("Actual validation and generating plans took {} ms",
@@ -511,13 +543,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} finally {
 			sail.closeConnection(this);
 		}
+
+		assert writeLock == null;
+
 	}
 
 	@Override
 	public void prepare() throws SailException {
 		flush();
 
-		long readStamp = 0;
+		Lock readLock = null;
 
 		try {
 			long before = 0;
@@ -529,12 +564,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
 
 			if (useSerializableValidation) {
-				if (!sail.holdsWriteLock(writeLockStamp)) {
-					writeLockStamp = sail.acquireExclusiveWriteLock(writeLockStamp);
+				if (!(writeLock != null && writeLock.isActive())) {
+					writeLock = sail.acquireExclusiveWriteLock(writeLock);
 				}
 			} else {
-				if (!sail.holdsWriteLock(writeLockStamp)) {
-					readStamp = sail.acquireReadlock();
+				if (!(writeLock != null && writeLock.isActive())) {
+					readLock = sail.acquireReadlock();
 				}
 			}
 
@@ -579,10 +614,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (invalidTuples == null) {
-				if (writeLockStamp != 0) {
-					readStamp = sail.convertToReadLock(writeLockStamp);
-					writeLockStamp = 0;
-				}
+//				if (writeLock != null && writeLock.isActive()) {
+// also check if write lock was acquired in prepare() because if it was acquire in one of the other places then we shouldn't downgrade now.
+				// also - are there actually any cases that would execute this code while using multiple threads?
+//					assert readLock == null;
+//					readLock = sail.convertToReadLock(writeLock);
+//					writeLock = null;
+//				}
 				invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			}
 
@@ -597,11 +635,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				throw new ShaclSailValidationException(invalidTuples);
 			}
 		} finally {
+
+			if (readLock != null) {
+				readLock = sail.releaseReadlock(readLock);
+			}
+			assert readLock == null;
+
 			preparedHasRun = true;
 
-			if (readStamp != 0 && !sail.holdsWriteLock(writeLockStamp)) {
-				readStamp = sail.releaseReadlock(readStamp);
-			}
 			previousStateConnection.prepare();
 			super.prepare();
 		}
@@ -618,14 +659,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						() -> getRdfsSubClassOfReasoner())) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
-					connectionsGroup.getBaseConnection().hasStatement(null, null, null, false); // actually force a
-					// transaction to start
+					// actually force a transaction to start
+					connectionsGroup.getBaseConnection().hasStatement(null, null, null, false);
 
 					connectionsGroup.getPreviousStateConnection().begin(IsolationLevels.SNAPSHOT);
-					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false); // actually
-																											// force a
-					// transaction
-					// to start
+					// actually force a transaction to start
+					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false);
 
 					stats.setBaseSailEmpty(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
 

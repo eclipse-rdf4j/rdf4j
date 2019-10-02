@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -37,8 +39,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.StampedLock;
 
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
@@ -148,8 +153,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	private SailRepository shapesRepo;
 
-	// exclusive lock for modifying the shapes.
-	private final StampedLock lock = new StampedLock();
+	// lockManager used for read/write locks used to synchronize changes to the shapes (and caching of shapes) and used
+	// to synchronize validation so that SNAPSHOT isolation is sufficient to achieve SERIALIZABLE isolation wrt.
+	// validation
+	final private ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager();
+
 	transient private Thread threadHoldingWriteLock;
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
@@ -176,6 +184,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 
 	}
+
+	private ExecutorService executorService;
 
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
@@ -307,9 +317,20 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
+		if (executorService != null) {
+			executorService.shutdown();
+		}
+
 		initialized.set(false);
 		nodeShapes = Collections.emptyList();
 		super.shutDown();
+	}
+
+	public synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+		if (executorService == null) {
+			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+		}
+		return executorService.submit(runnable);
 	}
 
 	@Override
@@ -352,10 +373,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
 	 */
-	long acquireExclusiveWriteLock(long stamp) {
-		if (lock.validate(stamp)) {
-			return stamp;
+	Lock acquireExclusiveWriteLock(Lock lock) {
+
+		if (lock != null && lock.isActive()) {
+			return lock;
 		}
+
+		assert lock == null;
 
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
@@ -364,13 +388,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 							"while another connection also tries to modify the shapes!");
 		}
 
-		long newStamp = lock.writeLock();
-		threadHoldingWriteLock = Thread.currentThread();
-		return newStamp;
-	}
-
-	boolean holdsWriteLock(long stamp) {
-		return lock.validate(stamp);
+		try {
+			Lock writeLock = lockManager.getWriteLock();
+			threadHoldingWriteLock = Thread.currentThread();
+			return writeLock;
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	/**
@@ -378,37 +402,55 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @return
 	 */
-	long releaseExclusiveWriteLock(long stamp) {
-		assert stamp != 0;
+	Lock releaseExclusiveWriteLock(Lock lock) {
+		assert lock != null;
 		threadHoldingWriteLock = null;
-		lock.unlockWrite(stamp);
-		return 0;
+		lock.release();
+		return null;
 	}
 
-	long acquireReadlock() {
+	Lock acquireReadlock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
 					"Deadlock detected when a single thread uses multiple connections " +
 							"interleaved and one connection has modified the shapes without calling commit() " +
 							"while another connection calls commit()!");
 		}
-		return lock.readLock();
+		try {
+			return lockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+
 	}
 
-	long releaseReadlock(long stamp) {
-		assert stamp != 0;
+	Lock releaseReadlock(Lock lock) {
+		assert lock != null;
 
-		lock.unlockRead(stamp);
-		return 0;
+		lock.release();
+
+		return null;
 	}
 
-	synchronized long convertToReadLock(long writeLockStamp) {
-		assert writeLockStamp != 0;
-		long l = lock.tryConvertToReadLock(writeLockStamp);
-		assert l != 0;
-		threadHoldingWriteLock = null;
-		return l;
-	}
+//	Lock convertToReadLock(Lock writeLockStamp) {
+//		assert writeLockStamp != null;
+//
+//		writeLockStamp.release();
+//
+//		Lock readLock = null;
+//		while (readLock == null) {
+//			try {
+//				readLock = lockManager.getReadLock();
+//			} catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
+//		}
+//
+//		System.out.println("convertToReadLock");
+//		return readLock;
+//
+//
+//	}
 
 	void setNodeShapes(List<NodeShape> nodeShapes) {
 		this.nodeShapes = nodeShapes;
