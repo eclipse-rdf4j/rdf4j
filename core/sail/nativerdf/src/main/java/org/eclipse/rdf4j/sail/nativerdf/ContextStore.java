@@ -14,6 +14,7 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
@@ -100,8 +101,13 @@ class ContextStore implements Iterable<Resource> {
 
 		try {
 			readContextsFromFile();
-		} catch (IOException e) {
-			logger.info("could not read context index: " + e.getMessage(), e);
+		} catch (FileNotFoundException fe) {
+			logger.info("context index has not been created yet: " + fe.getMessage());
+			initializeContextCache();
+			writeContextsToFile();
+			logger.info("context index construction complete");
+		} catch (IOException ioe) {
+			logger.info("could not read context index: " + ioe.getMessage(), ioe);
 			logger.debug("attempting reconstruction from store (this may take a while)");
 			initializeContextCache();
 			writeContextsToFile();
@@ -180,7 +186,7 @@ class ContextStore implements Iterable<Resource> {
 	private void readContextsFromFile() throws IOException {
 		synchronized (file) {
 			if (!file.exists()) {
-				throw new IOException("context index file " + file + " does not exist");
+				throw new FileNotFoundException("context index file " + file + " does not exist");
 			}
 
 			try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
