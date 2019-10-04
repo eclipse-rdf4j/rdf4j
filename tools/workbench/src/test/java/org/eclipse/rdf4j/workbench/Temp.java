@@ -30,8 +30,6 @@ public class Temp {
 
 	public static void main(String[] args) throws IOException {
 
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
 		NotifyingSail spinSail = new SpinSail(new MemoryStore());
 		SailRepository sailRepository = new SailRepository(spinSail);
 
@@ -45,7 +43,7 @@ public class Temp {
 			connection.add(Temp.class.getClassLoader().getResourceAsStream("rule.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
 
-			print(vf, connection);
+			print(connection);
 
 			System.out.println("Loading data");
 
@@ -53,7 +51,7 @@ public class Temp {
 			connection.add(Temp.class.getClassLoader().getResourceAsStream("test100.owl"), "", RDFFormat.RDFXML);
 			connection.commit();
 
-			print(vf, connection);
+			print(connection);
 
 			System.out.println("Update age to 10");
 			connection.begin();
@@ -62,7 +60,7 @@ public class Temp {
 			connection.prepareUpdate(query).execute();
 			connection.commit();
 
-			print(vf, connection);
+			print(connection);
 
 			System.out.println("Update age to 19");
 
@@ -72,7 +70,7 @@ public class Temp {
 			connection.prepareUpdate(query2).execute();
 			connection.commit();
 
-			print(vf, connection);
+			print(connection);
 
 		}
 
@@ -80,7 +78,9 @@ public class Temp {
 
 	}
 
-	private static void print(SimpleValueFactory vf, SailRepositoryConnection connection) {
+	static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+	private static void print(SailRepositoryConnection connection) {
 		System.out.println(
 				"##########################################################################################################");
 		System.out.println("EXAMPLE DATA");
