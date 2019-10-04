@@ -1,0 +1,21 @@
+PREFIX ex: <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+DELETE {
+        ?details ex:age ?age.
+        ?details ex:seq ?highestSeq.
+
+}
+
+INSERT {
+        ?details ex:age 19.
+        ?details ex:seq ?highestSeqInc.
+}
+
+WHERE {
+        ?details ex:age ?age.
+        ?details ex:seq ?highestSeq.
+
+        BIND((?highestSeq + 1 ) AS ?highestSeqInc)
+
+}

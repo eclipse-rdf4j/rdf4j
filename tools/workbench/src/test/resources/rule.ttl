@@ -1,0 +1,22 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <http://example.org/>.
+
+
+ex:Person a rdfs:Class ;
+        spin:rule [
+                a sp:Construct ;
+        sp:text """PREFIX ex: <http://example.org/>
+                   CONSTRUCT { ?this ex:volwassen true . }
+                   WHERE { ?this ex:hasDetails ?details.
+							?details ex:age ?age .
+							?details ex:seq ?highestSeq .
+							{
+							SELECT (max(?seq) as ?highestSeq)
+                            WHERE {
+								?details ex:seq ?seq .
+                            }
+                          }
+				   FILTER (?age > 18) .}"""
+] .
