@@ -12,9 +12,15 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
@@ -23,6 +29,7 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -284,6 +291,27 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 		return Arrays.toString(collect.toArray());
 
+	}
+
+	String describe(SailRepositoryConnection connection, Resource resource) {
+		GraphQuery graphQuery = connection.prepareGraphQuery("describe ?a where {BIND(?resource as ?a)}");
+		graphQuery.setBinding("resource", resource);
+
+		try (Stream<Statement> stream = Iterations.stream(graphQuery.evaluate())) {
+
+			LinkedHashModel statements = stream.collect(Collectors.toCollection(LinkedHashModel::new));
+			statements.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
+
+			WriterConfig config = new WriterConfig();
+			config.set(BasicWriterSettings.PRETTY_PRINT, true);
+			config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+
+			StringWriter stringWriter = new StringWriter();
+
+			Rio.write(statements, stringWriter, RDFFormat.TURTLE, config);
+
+			return stringWriter.toString();
+		}
 	}
 
 }

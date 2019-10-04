@@ -8,41 +8,96 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public abstract class PathPropertyShape extends PropertyShape {
 
 	private Path path;
 
+	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
+
+	private final static Set<IRI> complexPathPredicates = new HashSet<>(
+			Arrays.asList(
+					RDF.FIRST,
+					RDF.REST,
+					SHACL.ALTERNATIVE_PATH,
+					SHACL.INVERSE_PATH,
+					SHACL.ZERO_OR_MORE_PATH,
+					SHACL.ONE_OR_MORE_PATH,
+					SHACL.ZERO_OR_ONE_PATH));
+
 	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path) {
-		super(id, nodeShape, deactivated, parent);
+		super(id, nodeShape, deactivated ? deactivated : !validPath(path, connection), parent);
 
-		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is
-		// undefined.
+		// Only simple path is supported. Use of complex paths will make the property shape deactivated and log a
+		// warning
 		if (path != null) {
-			this.path = new SimplePath((IRI) path);
+			if (validPath(path, connection)) {
+				this.path = new SimplePath((IRI) path);
+			} else {
+				logger.warn(
+						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
+						id,
+						describe(connection, path));
+			}
+
 		}
 
+	}
+
+	private static boolean validPath(Resource path, SailRepositoryConnection connection) {
+
+		if (path != null) {
+			if (!(path instanceof IRI)) {
+				return false;
+			} else {
+
+				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(path, null, null))) {
+
+					boolean complexPath = stream
+							.map(Statement::getPredicate)
+							.anyMatch(complexPathPredicates::contains);
+
+					if (complexPath) {
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
 	}
 
 	PathPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path) {
