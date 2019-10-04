@@ -32,19 +32,11 @@ public class Temp {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-
 		NotifyingSail spinSail = new SpinSail(new MemoryStore());
 		SailRepository sailRepository = new SailRepository(spinSail);
 
-
 		System.out.println("init");
 		sailRepository.init();
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.begin();
-			connection.remove((Resource) null, null, null);
-			connection.commit();
-		}
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
@@ -63,10 +55,10 @@ public class Temp {
 
 			print(vf, connection);
 
-
 			System.out.println("Update age to 10");
 			connection.begin();
-			String query = IOUtils.toString(Temp.class.getClassLoader().getResourceAsStream("update.rq"), StandardCharsets.UTF_8);
+			String query = IOUtils.toString(Temp.class.getClassLoader().getResourceAsStream("update.rq"),
+					StandardCharsets.UTF_8);
 			connection.prepareUpdate(query).execute();
 			connection.commit();
 
@@ -75,7 +67,8 @@ public class Temp {
 			System.out.println("Update age to 19");
 
 			connection.begin();
-			String query2 = IOUtils.toString(Temp.class.getClassLoader().getResourceAsStream("update2.rq"), StandardCharsets.UTF_8);
+			String query2 = IOUtils.toString(Temp.class.getClassLoader().getResourceAsStream("update2.rq"),
+					StandardCharsets.UTF_8);
 			connection.prepareUpdate(query2).execute();
 			connection.commit();
 
@@ -88,20 +81,25 @@ public class Temp {
 	}
 
 	private static void print(SimpleValueFactory vf, SailRepositoryConnection connection) {
-		System.out.println("##########################################################################################################");
+		System.out.println(
+				"##########################################################################################################");
 		System.out.println("EXAMPLE DATA");
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, null, null, false))) {
-			stream.filter(s -> s.getPredicate().toString().startsWith("http://example.org/")).forEach(System.out::println);
+			stream.filter(s -> s.getPredicate().toString().startsWith("http://example.org/"))
+					.forEach(System.out::println);
 		}
-		System.out.println("----------------------------------------------------------------------------------------------------------");
+		System.out.println(
+				"----------------------------------------------------------------------------------------------------------");
 
 		System.out.println("VOLWASSEN");
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, vf.createIRI("http://example.org/", "volwassen"), null, true))) {
+		try (Stream<Statement> stream = Iterations
+				.stream(connection.getStatements(null, vf.createIRI("http://example.org/", "volwassen"), null, true))) {
 			stream.forEach(System.out::println);
 		}
-		System.out.println("----------------------------------------------------------------------------------------------------------");
+		System.out.println(
+				"----------------------------------------------------------------------------------------------------------");
 
 		System.out.println("\n\n");
 	}
