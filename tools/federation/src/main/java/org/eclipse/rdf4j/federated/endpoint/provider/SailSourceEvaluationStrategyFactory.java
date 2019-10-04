@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
  * @author Andreas Schwarte
  * @see NativeStoreProvider
  */
-public class SailSourceEvaluationStrategyFactory implements EvaluationStrategyFactory {
+/* package */ class SailSourceEvaluationStrategyFactory implements EvaluationStrategyFactory {
 
 	private final EvaluationStrategyFactory delegate;
 
