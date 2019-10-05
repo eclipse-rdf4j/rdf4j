@@ -309,7 +309,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 				}
 			} else {
 				if (hasRepositoryConfig(config.getID())) {
-					// update existing
+					protocolSession.updateRepository(config);
 				} else {
 					protocolSession.createRepository(config);
 				}

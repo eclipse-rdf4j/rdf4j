@@ -22,6 +22,7 @@ import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.protocol.HttpClientContext;
@@ -74,6 +75,14 @@ public class RDF4JProtocolSessionTest {
 		RepositoryConfig config = new RepositoryConfig("test");
 		subject.createRepository(config);
 		verify(httpclient).execute(any(HttpPut.class), any(HttpContext.class));
+		verifyHeaders();
+	}
+
+	@Test
+	public void testUpdateRepositoryExecutesPost() throws Exception {
+		RepositoryConfig config = new RepositoryConfig("test");
+		subject.updateRepository(config);
+		verify(httpclient).execute(any(HttpPost.class), any(HttpContext.class));
 		verifyHeaders();
 	}
 

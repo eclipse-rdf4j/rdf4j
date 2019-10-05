@@ -315,7 +315,40 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				method.reset();
 			}
 		}
+	}
 
+	/**
+	 * Update the config of an existing repository.
+	 * 
+	 * @param config the repository configuration
+	 * @throws IOException
+	 * @throws RepositoryException
+	 */
+	public void updateRepository(RepositoryConfig config) throws IOException, RepositoryException {
+		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+		setRepository(baseURI);
+		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+		Model model = new LinkedHashModel();
+		config.export(model, ctx);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Rio.write(model, baos, getPreferredRDFFormat());
+
+		HttpEntityEnclosingRequestBase method = null;
+		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
+			HttpEntity entity = new InputStreamEntity(contents, -1,
+					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));
+			method = applyAdditionalHeaders(new HttpPost(Protocol.getRepositoryConfigLocation(baseURI)));
+			method.setEntity(entity);
+			executeNoContent((HttpUriRequest) method);
+		} catch (RepositoryException | RDFParseException e) {
+			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		} finally {
+			if (method != null) {
+				method.reset();
+			}
+		}
 	}
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {

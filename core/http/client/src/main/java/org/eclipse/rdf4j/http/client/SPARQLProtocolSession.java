@@ -964,7 +964,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				return response; // everything OK, control flow can continue
 			} else {
 				// trying to contact a non-SPARQL server?
-				throw new RepositoryException("Failed to get server protocol; no such resource on this server: "
+				throw new RepositoryException("Request failed with status " + httpCode + ": "
 						+ method.getURI().toString());
 			}
 		} finally {

@@ -54,6 +54,10 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
 		wireMockRule
 				.stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(204)));
+		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+				.willReturn(aResponse().withHeader("Content-type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list-response.srx")
+						.withStatus(200)));
 
 		RepositoryConfig config = new RepositoryConfig("test");
 
@@ -61,6 +65,28 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 		wireMockRule.verify(
 				putRequestedFor(urlEqualTo("/rdf4j-server/repositories/test")).withRequestBody(matching("^BRDF.*"))
+						.withHeader("Content-Type", equalTo("application/x-binary-rdf")));
+	}
+
+	@Test
+	public void testAddRepositoryConfigExisting() throws Exception {
+		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
+				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
+		wireMockRule
+				.stubFor(post(urlEqualTo("/rdf4j-server/repositories/mem-rdf/config"))
+						.willReturn(aResponse().withStatus(204)));
+		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+				.willReturn(aResponse().withHeader("Content-type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list-response.srx")
+						.withStatus(200)));
+
+		RepositoryConfig config = new RepositoryConfig("mem-rdf"); // this repo already exists
+
+		subject.addRepositoryConfig(config);
+
+		wireMockRule.verify(
+				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/mem-rdf/config"))
+						.withRequestBody(matching("^BRDF.*"))
 						.withHeader("Content-Type", equalTo("application/x-binary-rdf")));
 	}
 
