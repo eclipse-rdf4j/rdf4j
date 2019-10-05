@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Manages a set of active locks. If any active lock is garbage collected it is automatically removed from the set and
  * logged.
- * 
+ *
  * @author James Leigh
  */
 public class LockManager {
@@ -32,6 +32,8 @@ public class LockManager {
 	private static final int INITIAL_WAIT_TO_COLLECT = 10000;
 
 	private static final int MAX_WAIT_TO_COLLECT = 90 * 60 * 1000;
+
+	private static final int POSSIBLE_NO_CHANGE_THRESHOLD = 1000;
 
 	private static final AtomicLong seq = new AtomicLong();
 
@@ -76,7 +78,7 @@ public class LockManager {
 
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
-	 * 
+	 *
 	 * @param trackLocks Controls whether to keep a stack trace of active locks. Enabling lock tracking will add some
 	 *                   overhead, but can be very useful for debugging.
 	 */
@@ -86,7 +88,7 @@ public class LockManager {
 
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
-	 * 
+	 *
 	 * @param trackLocks          Controls whether to keep a stack trace of active locks. Enabling lock tracking will
 	 *                            add some overhead, but can be very useful for debugging.
 	 * @param collectionFrequency Number of milliseconds to block the first thread, waiting for active locks to finish,
@@ -99,7 +101,7 @@ public class LockManager {
 
 	/**
 	 * If any locks in this collection that are still active.
-	 * 
+	 *
 	 * @return <code>true</code> of one or more locks that have not be released.
 	 */
 	public boolean isActiveLock() {
@@ -110,27 +112,50 @@ public class LockManager {
 
 	/**
 	 * Blocks current thread until the number of active locks has reached zero.
-	 * 
+	 *
 	 * @throws InterruptedException if any thread interrupted the current thread before or while the current thread was
 	 *                              waiting for a notification. The interrupted status of the current thread is cleared
 	 *                              when this exception is thrown.
 	 */
 	public void waitForActiveLocks() throws InterruptedException {
 		long now = -1;
+		int possibleNoChangeCounter = POSSIBLE_NO_CHANGE_THRESHOLD;
 		while (true) {
 			boolean nochange;
-			Set<WeakLockReference> before;
+			Set<WeakLockReference> before = null;
+			long activeLocksSize;
 			synchronized (activeLocks) {
 				if (activeLocks.isEmpty())
 					return;
-				before = new HashSet<>(activeLocks);
+
+				activeLocksSize = activeLocks.size();
+
+				// Creating a new HashSet to be able to compare before and after to see if none of the locks have
+				// changed is a very very very expensive operation.
+				// This is why we have a possibleNoChangeCounter which gets decremented with a much cheaper .size()
+				// before and after comparison. If the possibleNoChangeCounter
+				// becomes 0 then we can create the HashSet and do a real comparison.
+				if (possibleNoChangeCounter <= 0) {
+					before = new HashSet<>(activeLocks);
+				}
 				if (now < 0) {
 					now = System.currentTimeMillis();
 				}
 				activeLocks.wait(waitToCollect);
 				if (activeLocks.isEmpty())
 					return;
-				nochange = before.equals(activeLocks);
+
+				if (activeLocksSize == activeLocks.size()) {
+					possibleNoChangeCounter--;
+					Thread.yield();
+				}
+
+				if (before != null) {
+					nochange = before.equals(activeLocks);
+					possibleNoChangeCounter = POSSIBLE_NO_CHANGE_THRESHOLD;
+				} else {
+					nochange = false;
+				}
 			}
 			// guard against so-called spurious wakeup
 			if (nochange && System.currentTimeMillis() - now >= waitToCollect / 2) {
@@ -138,12 +163,13 @@ public class LockManager {
 				now = -1;
 			}
 		}
+
 	}
 
 	/**
 	 * Creates a new active lock. This increases the number of active locks until its {@link Lock#release()} method is
 	 * called, which decreases the number of active locks by the same amount.
-	 * 
+	 *
 	 * @param alias a short string used to log abandon locks
 	 * @return an active lock
 	 */
