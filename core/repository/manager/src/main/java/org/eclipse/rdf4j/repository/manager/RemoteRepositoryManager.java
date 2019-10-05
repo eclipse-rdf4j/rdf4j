@@ -308,7 +308,11 @@ public class RemoteRepositoryManager extends RepositoryManager {
 							ctx);
 				}
 			} else {
-				protocolSession.createRepository(config);
+				if (hasRepositoryConfig(config.getID())) {
+					// update existing
+				} else {
+					protocolSession.createRepository(config);
+				}
 			}
 		} catch (IOException | QueryEvaluationException | UnauthorizedException | NumberFormatException e) {
 			throw new RepositoryException(e);

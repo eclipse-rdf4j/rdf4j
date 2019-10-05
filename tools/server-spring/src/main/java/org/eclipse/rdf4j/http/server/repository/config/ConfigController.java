@@ -75,9 +75,8 @@ public class ConfigController extends AbstractController {
 
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
 				RDFWriterRegistry.getInstance());
-
-		RepositoryConfig repositoryConfig = repositoryManager
-				.getRepositoryConfig(RepositoryInterceptor.getRepositoryID(request));
+		String repId = RepositoryInterceptor.getRepositoryID(request);
+		RepositoryConfig repositoryConfig = repositoryManager.getRepositoryConfig(repId);
 
 		Model configData = modelFactory.createEmptyModel();
 		String baseURI = request.getRequestURL().toString();

@@ -284,7 +284,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	/**
-	 * Create a new repository or update its configuration.
+	 * Create a new repository.
 	 * 
 	 * @param config the repository configuration
 	 * @throws IOException

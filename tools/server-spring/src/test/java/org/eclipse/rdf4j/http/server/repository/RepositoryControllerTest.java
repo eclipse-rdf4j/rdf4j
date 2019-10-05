@@ -5,34 +5,31 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.http.server.repository.config;
+package org.eclipse.rdf4j.http.server.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.apache.commons.codec.Charsets;
-import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.web.servlet.ModelAndView;
 
-public class ConfigControllerTest {
+public class RepositoryControllerTest {
 
-	final String repositoryId = "test-config";
-	final ConfigController controller = new ConfigController();
+	final String repositoryId = "test-repo";
+	final RepositoryController controller = new RepositoryController();
 
 	private MockHttpServletRequest request;
 	private MockHttpServletResponse response;
@@ -49,38 +46,37 @@ public class ConfigControllerTest {
 	}
 
 	@Test
-	public void getRequestRetrievesConfiguration() throws Exception {
-		request.setMethod(HttpMethod.GET.name());
-		request.addHeader("Accept", RDFFormat.NTRIPLES.getDefaultMIMEType());
-
-		RepositoryConfig config = new RepositoryConfig(repositoryId, new SailRepositoryConfig(new MemoryStoreConfig()));
-		when(manager.getRepositoryConfig(repositoryId)).thenReturn(config);
-
-		ModelAndView result = controller.handleRequest(request, response);
-
-		verify(manager).getRepositoryConfig(repositoryId);
-		assertThat(result.getModel().containsKey(ConfigView.CONFIG_DATA_KEY));
-
-		Model resultData = (Model) result.getModel().get(ConfigView.CONFIG_DATA_KEY);
-		RepositoryConfig resultConfig = RepositoryConfigUtil.getRepositoryConfig(resultData, repositoryId);
-		assertThat(resultConfig).isNotNull();
-	}
-
-	@Test
-	public void postRequestModifiesConfiguration() throws Exception {
-		request.setMethod(HttpMethod.POST.name());
+	public void putOnNewRepoSucceeds() throws Exception {
+		request.setMethod(HttpMethod.PUT.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
 				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
 						.getBytes(Charsets.UTF_8));
 
-		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
+		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(false);
 
 		ArgumentCaptor<RepositoryConfig> config = ArgumentCaptor.forClass(RepositoryConfig.class);
 
-		controller.handleRequest(request, new MockHttpServletResponse());
+		controller.handleRequest(request, response);
 
 		verify(manager).addRepositoryConfig(config.capture());
 		assertThat(config.getValue().getID()).isEqualTo(repositoryId);
+	}
+
+	@Test
+	public void putOnExistingRepoFails() throws Exception {
+		request.setMethod(HttpMethod.PUT.name());
+		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
+		request.setContent(
+				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
+						.getBytes(Charsets.UTF_8));
+		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
+
+		try {
+			controller.handleRequest(request, response);
+			fail("expected exception");
+		} catch (ClientHTTPException e) {
+			assertThat(e.getStatusCode()).isEqualTo(409);
+		}
 	}
 }
