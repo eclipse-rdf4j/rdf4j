@@ -349,7 +349,7 @@ rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 
 To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an Rdf4j Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing `-D` commandline switches to the JRE in which the application runs.
 
-The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, `BasicParserSettings.VERIFY_LANGAGUAGE_TAGS` (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
+The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, `BasicParserSettings.VERIFY_LANGUAGE_TAGS` (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
 

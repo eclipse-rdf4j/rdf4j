@@ -14,7 +14,7 @@ hide_page_title: "true"
 - <a href="custom-sparql-functions/">Creating custom SPARQL functions</a>
 - <a href="sparqlbuilder/">Creating SPARQL queries with the SparqlBuilder</a>
 
-# Programming with rdf4j
+# Programming with Rdf4j
 
 - <a href="programming/setup/">Setting up your development environment</a>
 - <a href="programming/model/">The RDF Model API</a>
@@ -25,13 +25,20 @@ hide_page_title: "true"
 - <a href="programming/shacl/">Validation with SHACL</a>
 - <a href="programming/geosparql/">GeoSPARQL</a>
 
+# Rd4j Server, Workbench and Console
+
+- <a href="tools/server-workbench/">Server and Workbench</a>
+- <a href="tools/console/">Console</a>
+- <a href="tools/application-directory/">Application directory</a>
+- <a href="tools/repository-configuration/">Repository configuration and templates</a>
+
 # Reference documentation
 
 - <a href="rest-api/">The Rdf4j Server REST API</a>
 - <a href="sail/">The SAIL API (draft)</a>
 - <a href="migration/">Sesame to Rdf4j migration</a>
-- <a href="server-workbench-console/">Rdf4j Server, Workbench, and Console</a>
 - <a href="rdf4j-binary/">Rdf4j Binary RDF Format</a>
+- <a href="migration/">Sesame to Rdf4j migration</a>
 
 # Javadoc
 
