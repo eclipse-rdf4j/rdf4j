@@ -1,17 +1,6 @@
-<h3>News</h3>
-  {{ range first 3 (.Site.Taxonomies.categories.news) }}
-    <div class="news_item">
-      <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
-      <div class="news_item_title">
-        <h4><a href="{{.Permalink}}">{{ .Title }}</a></h4>
-      </div>
-      <div class="news_item_description">
-        {{ .Summary }}
-      </div>
-      <div style="text-align: right; font-size: smaller;">
-        <a href="{{.Permalink}}">[read more]</a>
-      </div>
-      <hr>
-    </div>
-  {{ end }}
-<div class="news_view_all"><a href="{{ .Site.BaseURL }}/news">View all news</a></div>
+<h3>Welcome</h3>
+
+<p>
+<strong>Eclipse rdf<span style="color: #DA5800;">4</span>j</strong> is a powerful Java framework for processing and handling RDF data. This includes creating, parsing, scalable storage, reasoning and querying with RDF and Linked Data. It offers an easy-to-use API that can be connected to all leading RDF database solutions. It allows you to connect with SPARQL endpoints and create applications that leverage the power of linked data and Semantic Web.
+<p>
+<a href="https://www.eclipse.org/projects/what-is-incubation.php"><img height="200" src="https://projects.eclipse.org/sites/all/modules/custom/pmi/project_state/images/incubating.png"></a>

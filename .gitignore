@@ -1,4 +1,5 @@
 /html/
+/site/public/
 .idea
 *.iml
 target/

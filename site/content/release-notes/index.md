@@ -28,12 +28,23 @@ Rdf4j 3.0 contains several [backward incompatible changes](https://github.com/ec
 - The [deprecated Graph API has been removed](https://github.com/eclipse/rdf4j/issues/389). Any code that still uses `Graph`, `GraphImpl`, or `GraphUtil` will need to be rewritten to use corresponding features in the [Model API](https://rdf4j.eclipse.org/documentation/programming/model/#the-model-interface).
 - [Deprecated methods have been removed from the Model API](https://github.com/eclipse/rdf4j/issues/748). Any existing code that uses the deprecated methods will need to be rewritten to use the recommend new methods.
 - The [deprecated package org.eclipse.rdf4j.model.util.language](https://github.com/eclipse/rdf4j/issues/675) has been removed.
+- The [SHACL Sail shape persistence directory](https://github.com/eclipse/rdf4j/issues/1504) has been moved.
 
 ### third-party sail / repository implementors
 
 - invoking `init()` (or `initialize()`) on a Repository or Sail object is [no longer mandatory](https://github.com/eclipse/rdf4j/issues/1223). 
 - we allow [injection of optimizers](https://github.com/eclipse/rdf4j/issues/1280) into a Sail object. 
 - as part of a massive restructure of our code repositories and the way in which the project is tested, [testsuites and compliance tests have been moved and refactored](https://github.com/eclipse/rdf4j/issues/1236). If you were depending on a particular testsuite and can no longer find it, contact us. 
+
+# 2.5.4
+
+Rdf4j 2.5.4 is a patch release containing several bug fixes, including:
+
+- handling of negation in property paths
+- stack overflow in Models.isomorphic
+- NullPointerException in Native Store Context Cache initialization 
+
+For a complete overview, see [all issues fixed in 2.5.4](https://github.com/eclipse/rdf4j/milestone/40?closed=1).
 
 # 2.5.3
 
