@@ -63,11 +63,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 		}
 
 		try {
-			NativeStore ns = new NativeStore(store);
-			EvaluationStrategyFactory factory = new SailSourceEvaluationStrategyFactory(
-					ns.getEvaluationStrategyFactory());
-			ns.setEvaluationStrategyFactory(factory);
-
+			NativeStore ns = createNativeStore(store);
 			SailRepository repo = new SailRepository(ns);
 
 			try {
@@ -89,6 +85,20 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
 					e);
 		}
+	}
+
+	/**
+	 * Create a {@link NativeStore} and apply the {@link SailSourceEvaluationStrategyFactory}.
+	 * 
+	 * @param store
+	 * @return the store
+	 */
+	protected NativeStore createNativeStore(File store) {
+		NativeStore ns = new NativeStore(store);
+		EvaluationStrategyFactory factory = new SailSourceEvaluationStrategyFactory(
+				ns.getEvaluationStrategyFactory());
+		ns.setEvaluationStrategyFactory(factory);
+		return ns;
 	}
 
 }
