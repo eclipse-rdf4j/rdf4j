@@ -285,63 +285,10 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		System.err.println("disabled testGetNamespace() as namespace retrieval is not supported by SPARQL");
 	}
 
-	@Ignore("temporarily disabled for SPARQLRepository")
-	@Test
-	@Override
-	public void testTransactionIsolationForRead() throws Exception {
-		System.err.println("temporarily disabled testTransactionIsolationForRead() for SPARQLRepository");
-	}
-
-	@Ignore("temporarily disabled for SPARQLRepository")
-	@Test
-	@Override
-	public void testTransactionIsolationForReadWithDeleteOperation() throws Exception {
-		System.err.println(
-				"temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for SPARQLRepository");
-	}
-
 	@Override
 	@Ignore
 	public void testTransactionIsolation() throws Exception {
 		System.err.println("temporarily disabled testTransactionIsolation() for SPARQLRepository");
-	}
-
-	@Override
-	public void testPreparedTupleQuery2() throws Exception {
-		testCon.add(alice, name, nameAlice, context2);
-		testCon.add(alice, mbox, mboxAlice, context2);
-		testCon.add(context2, publisher, nameAlice);
-
-		testCon.add(bob, name, nameBob, context1);
-		testCon.add(bob, mbox, mboxBob, context1);
-		testCon.add(context1, publisher, nameBob);
-
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + ">");
-		queryBuilder.append(" SELECT ?name ?mbox");
-		queryBuilder.append(" WHERE {?p  foaf:name ?name ;");
-		queryBuilder.append("            foaf:mbox ?mbox .");
-		queryBuilder.append(" FILTER (?p = ?VAR) } ");
-
-		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString());
-		query.setBinding("VAR", bob);
-
-		try (TupleQueryResult result = query.evaluate()) {
-			assertTrue(result != null);
-			assertTrue(result.hasNext());
-
-			while (result.hasNext()) {
-				BindingSet solution = result.next();
-				assertTrue(solution.hasBinding("name"));
-				assertTrue(solution.hasBinding("mbox"));
-
-				Value nameResult = solution.getValue("name");
-				Value mboxResult = solution.getValue("mbox");
-
-				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
-				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
-			}
-		}
 	}
 
 	@Override

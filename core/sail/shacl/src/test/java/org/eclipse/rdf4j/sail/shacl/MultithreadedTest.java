@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -47,143 +46,147 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testDataAndShapes() {
 
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		Properties.setLockTrackingEnabled(true);
 
-		List<List<Transaction>> list = new ArrayList<>();
+		for (int r = 0; r < 1; r++) {
 
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
-				String join = String.join("\n", "",
-						"ex:data_" + i + "_" + j,
-						"  ex:age " + i + j + 100,
-						"  ."
+			List<List<Transaction>> list = new ArrayList<>();
 
-				);
-				transaction.add(join, null);
-
-				transactions.add(transaction);
-			}
-			list.add(transactions);
-		}
-
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
-
-				String join = String.join("\n", "",
-						"ex:shape_" + i + "_" + j,
-						"        a sh:NodeShape  ;",
-						"        sh:targetClass ex:Person" + j + " ;",
-						"        sh:property [",
-						"                sh:path ex:age ;",
-						"                sh:datatype sh:integer ;",
-						"                sh:minCount 1 ;",
-						"                sh:maxCount 1 ;",
-						"        ] .");
-
-				transaction.add(join, RDF4J.SHACL_SHAPE_GRAPH);
-				transactions.add(transaction);
-			}
-			list.add(transactions);
-		}
-
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
-				String join;
-				if (i % 2 == 0) {
-					join = String.join("\n", "",
-							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-							"  ex:age" + i + " " + i + j,
-							"  ."
-
-					);
-				} else {
-					join = String.join("\n", "",
-							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-							"  ."
-
-					);
-				}
-
-				transaction.add(join, null);
-				transactions.add(transaction);
-			}
-			list.add(transactions);
-		}
-
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
-				if (i % 2 == 0) {
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
 					String join = String.join("\n", "",
 							"ex:data_" + i + "_" + j,
-							"  ex:age" + i + " " + i + j + 100,
+							"  ex:age " + i + j + 100,
 							"  ."
 
 					);
 					transaction.add(join, null);
+
+					transactions.add(transaction);
 				}
-
-				transactions.add(transaction);
+				list.add(transactions);
 			}
-			list.add(transactions);
-		}
 
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
 
-				String join = String.join("\n", "",
-						"ex:shape_" + i + "_" + j,
-						"        a sh:NodeShape  ;",
-						"        sh:targetClass ex:Person" + j + " ;",
-						"        sh:property [",
-						"                sh:path ex:age ;",
-						"                sh:datatype sh:integer ;",
-						"                sh:minCount 1 ;",
-						"                sh:maxCount 1 ;",
-						"        ] .");
+					String join = String.join("\n", "",
+							"ex:shape_" + i + "_" + j,
+							"        a sh:NodeShape  ;",
+							"        sh:targetClass ex:Person" + j + " ;",
+							"        sh:property [",
+							"                sh:path ex:age ;",
+							"                sh:datatype sh:integer ;",
+							"                sh:minCount 1 ;",
+							"                sh:maxCount 1 ;",
+							"        ] .");
 
-				transaction.remove(join, RDF4J.SHACL_SHAPE_GRAPH);
-				transactions.add(transaction);
-			}
-			list.add(transactions);
-		}
-
-		for (int j = 0; j < 10; j++) {
-			ArrayList<Transaction> transactions = new ArrayList<>();
-			for (int i = 0; i < 10; i++) {
-				Transaction transaction = new Transaction();
-				String join;
-				if (i % 2 == 0) {
-					join = String.join("\n", "",
-							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-							"  ex:age" + i + " " + i + j,
-							"  ."
-
-					);
-				} else {
-					join = String.join("\n", "",
-							"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
-							"  ."
-
-					);
+					transaction.add(join, RDF4J.SHACL_SHAPE_GRAPH);
+					transactions.add(transaction);
 				}
-
-				transaction.remove(join, null);
-				transactions.add(transaction);
+				list.add(transactions);
 			}
-			list.add(transactions);
-		}
 
-		parallelTest(list, IsolationLevels.SNAPSHOT);
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
+					String join;
+					if (i % 2 == 0) {
+						join = String.join("\n", "",
+								"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+								"  ex:age" + i + " " + i + j,
+								"  ."
+
+						);
+					} else {
+						join = String.join("\n", "",
+								"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+								"  ."
+
+						);
+					}
+
+					transaction.add(join, null);
+					transactions.add(transaction);
+				}
+				list.add(transactions);
+			}
+
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
+					if (i % 2 == 0) {
+						String join = String.join("\n", "",
+								"ex:data_" + i + "_" + j,
+								"  ex:age" + i + " " + i + j + 100,
+								"  ."
+
+						);
+						transaction.add(join, null);
+					}
+
+					transactions.add(transaction);
+				}
+				list.add(transactions);
+			}
+
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
+
+					String join = String.join("\n", "",
+							"ex:shape_" + i + "_" + j,
+							"        a sh:NodeShape  ;",
+							"        sh:targetClass ex:Person" + j + " ;",
+							"        sh:property [",
+							"                sh:path ex:age ;",
+							"                sh:datatype sh:integer ;",
+							"                sh:minCount 1 ;",
+							"                sh:maxCount 1 ;",
+							"        ] .");
+
+					transaction.remove(join, RDF4J.SHACL_SHAPE_GRAPH);
+					transactions.add(transaction);
+				}
+				list.add(transactions);
+			}
+
+			for (int j = 0; j < 10; j++) {
+				ArrayList<Transaction> transactions = new ArrayList<>();
+				for (int i = 0; i < 10; i++) {
+					Transaction transaction = new Transaction();
+					String join;
+					if (i % 2 == 0) {
+						join = String.join("\n", "",
+								"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+								"  ex:age" + i + " " + i + j,
+								"  ."
+
+						);
+					} else {
+						join = String.join("\n", "",
+								"ex:data_" + i + "_" + j + " a ex:Person" + j + "; ",
+								"  ."
+
+						);
+					}
+
+					transaction.remove(join, null);
+					transactions.add(transaction);
+				}
+				list.add(transactions);
+			}
+
+			parallelTest(list, IsolationLevels.SNAPSHOT);
+		}
 
 	}
 

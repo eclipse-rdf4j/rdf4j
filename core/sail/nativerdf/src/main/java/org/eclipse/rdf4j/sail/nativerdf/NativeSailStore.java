@@ -520,12 +520,18 @@ class NativeSailStore implements SailStore {
 				}
 
 				final int[] contextIds = new int[contexts.length == 0 ? 1 : contexts.length];
-				if (contexts.length == 0) {
+				if (contexts.length == 0) { // remove from all contexts
 					contextIds[0] = NativeValue.UNKNOWN_ID;
 				} else {
 					for (int i = 0; i < contexts.length; i++) {
 						Resource context = contexts[i];
-						contextIds[i] = context == null ? 0 : valueStore.getID(context);
+						if (context == null) {
+							contextIds[i] = 0;
+						} else {
+							int id = valueStore.getID(context);
+							// unknown_id cannot be used (would result in removal from all contexts)
+							contextIds[i] = (id != NativeValue.UNKNOWN_ID) ? id : Integer.MIN_VALUE;
+						}
 					}
 				}
 

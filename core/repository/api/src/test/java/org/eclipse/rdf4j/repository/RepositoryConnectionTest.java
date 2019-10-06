@@ -57,7 +57,6 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Namespaces;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -81,7 +80,6 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -308,71 +306,6 @@ public abstract class RepositoryConnectionTest {
 		testCon.commit();
 		assertThat(testCon.hasStatement(bob, name, nameBob, false)).isTrue();
 		assertThat(testCon2.hasStatement(bob, name, nameBob, false)).isTrue();
-	}
-
-	@Test
-	@Ignore("this test is no longer generally applicable, since the outcome depends on the transaction isolation level selected by the store")
-	public void testTransactionIsolationForRead() throws Exception {
-		testCon.begin();
-		try {
-			// Add but do not commit
-			testCon.add(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT);
-			assertTrue("Should be able to see uncommitted statement on same connection",
-					testCon.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-
-			assertFalse("Should not be able to see uncommitted statement on separate connection outside transaction",
-					testCon2.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-
-			testCon2.begin();
-			try {
-				assertFalse("Should not be able to see uncommitted statement on separate connection inside transaction",
-						testCon2.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-
-				String query = "CONSTRUCT WHERE { <" + OWL.CLASS + "> <" + RDFS.COMMENT + ">  ?obj . }";
-
-				try (GraphQueryResult queryResult = testCon2.prepareGraphQuery(QueryLanguage.SPARQL, query)
-						.evaluate();) {
-					assertFalse(
-							"Should not be able to see uncommitted statement on separate connection inside transaction",
-							queryResult.hasNext());
-				}
-			} finally {
-				testCon2.rollback();
-			}
-
-		} finally {
-			testCon.rollback();
-		}
-
-	}
-
-	@Test
-	@Ignore("this test is no longer generally applicable, since the outcome depends on the transaction isolation level selected by the store")
-	public void testTransactionIsolationForReadWithDeleteOperation() throws Exception {
-		try {
-			testCon.begin();
-			testCon.add(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT);
-			testCon.commit();
-
-			testCon.begin();
-			// Remove but do not commit
-			testCon.remove(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT);
-			assertFalse("Should not see removed statement on same connection",
-					testCon.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-
-			assertTrue("Statement should not be removed for different connection",
-					testCon2.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-
-			testCon2.begin();
-			try {
-				assertTrue("Statement should not be removed for different connection inside transaction",
-						testCon2.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
-			} finally {
-				testCon2.rollback();
-			}
-		} finally {
-			testCon.rollback();
-		}
 	}
 
 	@Test
@@ -672,38 +605,6 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
 		query.setBinding(NAME, nameBob);
-
-		try (TupleQueryResult result = query.evaluate();) {
-			assertThat(result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			while (result.hasNext()) {
-				BindingSet solution = result.next();
-				assertThat(solution.hasBinding(NAME)).isTrue();
-				assertThat(solution.hasBinding(MBOX)).isTrue();
-				Value nameResult = solution.getValue(NAME);
-				Value mboxResult = solution.getValue(MBOX);
-				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
-				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
-			}
-		}
-	}
-
-	@Test
-	public void testPreparedTupleQuery2() throws Exception {
-		testCon.add(alice, name, nameAlice, context2);
-		testCon.add(alice, mbox, mboxAlice, context2);
-		testCon.add(context2, publisher, nameAlice);
-		testCon.add(bob, name, nameBob, context1);
-		testCon.add(bob, mbox, mboxBob, context1);
-		testCon.add(context1, publisher, nameBob);
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" SELECT name, mbox");
-		queryBuilder.append(" FROM {p} foaf:name {name};");
-		queryBuilder.append("         foaf:mbox {mbox}");
-		queryBuilder.append(" WHERE p = VAR");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
-		query.setBinding("VAR", bob);
 
 		try (TupleQueryResult result = query.evaluate();) {
 			assertThat(result).isNotNull();

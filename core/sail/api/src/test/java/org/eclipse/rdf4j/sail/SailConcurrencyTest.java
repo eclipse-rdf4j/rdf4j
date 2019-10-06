@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -233,6 +234,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
+	@Ignore("This test takes a long time and accomplishes little extra")
 	public void testGetContextIDs() throws Exception {
 		// Create one thread which writes statements to the repository, on a
 		// number of named graphs.

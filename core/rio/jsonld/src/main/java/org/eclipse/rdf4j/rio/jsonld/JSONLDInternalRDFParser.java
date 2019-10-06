@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
+import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.RDFDataset;
 
@@ -76,7 +77,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 		} else if (subject instanceof IRI) {
 			return subject.stringValue();
 		} else if (subject instanceof BNode) {
-			return "_:" + subject.stringValue();
+			return JsonLdConsts.BLANK_NODE_PREFIX + subject.stringValue();
 		}
 
 		throw new IllegalStateException("Did not recognise resource type: " + subject.getClass().getName());

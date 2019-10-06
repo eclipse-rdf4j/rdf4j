@@ -88,8 +88,6 @@ public class SparqlBuilderUtils {
 			if (pad) {
 				es.insert(open.length(), PAD).append(PAD);
 			}
-		} else {
-			es.append(PAD);
 		}
 		es.append(close);
 
