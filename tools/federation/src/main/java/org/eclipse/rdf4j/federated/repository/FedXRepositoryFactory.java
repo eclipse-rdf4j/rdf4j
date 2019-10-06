@@ -11,10 +11,9 @@ import java.io.File;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
-import org.eclipse.rdf4j.federated.repository.FedXRepository;
-import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfig;
-import org.eclipse.rdf4j.federated.repository.FedXRepositoryResolverBean;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -115,6 +114,10 @@ public class FedXRepositoryFactory implements RepositoryFactory {
 					throw new RepositoryException("Failed to initialize config: " + e.getMessage(), e);
 				}
 
+				// explicit federation members model
+				Model members = fedXConfig.getMembers();
+
+				// optional data config
 				File dataConfigFile = null;
 				if (fedXConfig.getDataConfig() != null) {
 					dataConfigFile = new File(baseDir, fedXConfig.getDataConfig());
@@ -122,19 +125,27 @@ public class FedXRepositoryFactory implements RepositoryFactory {
 					dataConfigFile = new File(baseDir, Config.getConfig().getDataConfig());
 				}
 
-				if (dataConfigFile == null) {
+				if (members == null && dataConfigFile == null) {
 					throw new RepositoryException(
-							"No data config provided, neither explicitly nor via fedx configuration");
+							"No federation members defined: neither explicitly nor via data config.");
 				}
 
 				FedXRepository fedxRepo;
 				try {
 					// apply a repository resolver (if any) from FedXRepositoryResolverBean
-					fedxRepo = FedXFactory.newFederation()
+					FedXFactory factory = FedXFactory.newFederation()
 							.withFedXBaseDir(baseDir)
-							.withRepositoryResolver(FedXRepositoryResolverBean.getRepositoryResolver())
-							.withMembers(dataConfigFile)
-							.create();
+							.withRepositoryResolver(FedXRepositoryResolverBean.getRepositoryResolver());
+
+					if (dataConfigFile != null) {
+						factory.withMembers(dataConfigFile);
+					}
+
+					if (members != null) {
+						factory.withMembers(members);
+					}
+
+					fedxRepo = factory.create();
 				} catch (Exception e) {
 					throw new RepositoryException(e);
 				}

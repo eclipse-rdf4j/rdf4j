@@ -194,10 +194,14 @@ public class EndpointFactory {
 	}
 
 	/**
-	 * Utility function to load federation members from a data configuration file. A data configuration file provides
-	 * information about federation members in form of turtle. Currently the types NativeStore and SPARQLEndpoint are
-	 * supported. For details please refer to the documentation in {@link NativeRepositoryInformation} and
+	 * Utility function to load federation members from a data configuration file.
+	 * 
+	 * <p>
+	 * A data configuration file provides information about federation members in form of turtle. Currently the types
+	 * NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to the documentation
+	 * in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
 	 * {@link SPARQLRepositoryInformation}.
+	 * </p>
 	 * 
 	 * @param dataConfig
 	 * 
@@ -221,9 +225,26 @@ public class EndpointFactory {
 			throw new FedXException("Unable to parse dataconfig " + dataConfig + ":" + e.getMessage());
 		}
 
+		return loadFederationMembers(graph);
+	}
+
+	/**
+	 * Utility function to load federation members from a model.
+	 * <p>
+	 * Currently the types NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to
+	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
+	 * {@link SPARQLRepositoryInformation}.
+	 * </p>
+	 * 
+	 * @param members
+	 * @return
+	 * @throws FedXException
+	 */
+	public static List<Endpoint> loadFederationMembers(Model members) throws FedXException {
+
 		List<Endpoint> res = new ArrayList<>();
-		for (Statement st : graph.filter(null, Vocabulary.FEDX.STORE, null)) {
-			Endpoint e = loadEndpoint(graph, st.getSubject(), st.getObject());
+		for (Statement st : members.filter(null, Vocabulary.FEDX.STORE, null)) {
+			Endpoint e = loadEndpoint(members, st.getSubject(), st.getObject());
 			res.add(e);
 		}
 

@@ -7,11 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
@@ -21,7 +25,14 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 /**
  * A {@link RepositoryImplConfig} to configure FedX for the use in the RDF4J workbench.
  * 
+ * <p>
+ * Federation member repositories (e.g. NativeStore or SPARQL endpoints) can be managed in the RDF4J Workbench, and
+ * referenced as members in the federation. Alternatively, FedX can manage repositories, please refer to the
+ * documentation for <i>data configuration</i>.
+ * </p>
+ * <p>
  * Example configuration file:
+ * </p>
  * 
  * <pre>
  * # RDF4J configuration template for a FedX Repository
@@ -33,7 +44,16 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
  * [] a rep:Repository ;
  * rep:repositoryImpl [
  *   rep:repositoryType "fedx:FedXRepository" ;
- *   fedx:fedxConfig "fedxConfig.prop" ;
+ *   fedx:member [
+ *      fedx:store "ResolvableRepository" ;
+ *      fedx:repositoryName "endpoint1" 
+ *   ],
+ *   [
+ *      fedx:store "ResolvableRepository" ;
+ *      fedx:repositoryName "endpoint2" 
+ *   ]
+ *   # optionally define data config
+ *   #fedx:fedxConfig "fedxConfig.prop" ;
  *   fedx:dataConfig "dataConfig.ttl" ;
  * ];
  * rep:repositoryID "fedx" ;
@@ -68,6 +88,11 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final IRI DATA_CONFIG = vf.createIRI(NAMESPACE, "dataConfig");
 
 	/**
+	 * IRI of the property pointing to a federation member node
+	 */
+	public static final IRI MEMBER = vf.createIRI(NAMESPACE, "member");
+
+	/**
 	 * the location of the fedx configuration
 	 */
 	private String fedxConfig;
@@ -76,6 +101,18 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	 * the location of the data configuration
 	 */
 	private String dataConfig;
+
+	/**
+	 * the model representing the members
+	 * 
+	 * <pre>
+	 * :member1 fedx:store "ResolvableRepository" ;
+	 * 		fedx:repositoryName "endpoint1" .
+	 * :member2 fedx:store "ResolvableRepository" ;
+	 * 		fedx:repositoryName "endpoint2" .
+	 * </pre>
+	 */
+	private Model members;
 
 	public FedXRepositoryConfig() {
 		super(FedXRepositoryFactory.REPOSITORY_TYPE);
@@ -103,6 +140,14 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		this.dataConfig = dataConfig;
 	}
 
+	public Model getMembers() {
+		return this.members;
+	}
+
+	public void setMembers(Model members) {
+		this.members = members;
+	}
+
 	@Override
 	public Resource export(Model m) {
 
@@ -116,6 +161,16 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 			m.add(implNode, DATA_CONFIG, vf.createLiteral(getDataConfig()));
 		}
 
+		if (getMembers() != null) {
+
+			Model members = getMembers();
+			Set<Resource> memberNodes = members.subjects();
+			for (Resource memberNode : memberNodes) {
+				m.add(implNode, MEMBER, memberNode);
+				m.addAll(members.filter(memberNode, null, null));
+			}
+		}
+
 		return implNode;
 	}
 
@@ -123,11 +178,14 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public void validate() throws RepositoryConfigException {
 		super.validate();
 
-		if (getDataConfig() == null && getFedxConfig() == null) {
-			throw new RepositoryConfigException(
-					"At least one of fedxConfig or dataConfig needs to be "
-							+ "provided to initialize the federation");
+		if (getMembers() == null) {
+			if (getDataConfig() == null && getFedxConfig() == null) {
+				throw new RepositoryConfigException(
+						"At least one of fedxConfig or dataConfig needs to be "
+								+ "provided to initialize the federation, if no explicit members are defined");
+			}
 		}
+
 	}
 
 	@Override
@@ -139,6 +197,21 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 					.ifPresent(value -> setFedxConfig(value.stringValue()));
 			Models.objectLiteral(m.filter(implNode, DATA_CONFIG, null))
 					.ifPresent(value -> setDataConfig(value.stringValue()));
+
+			Set<Value> memberNodes = m.filter(implNode, MEMBER, null).objects();
+			if (!memberNodes.isEmpty()) {
+				Model members = new TreeModel();
+
+				// add all statements for the given member node
+				for (Value memberNode : memberNodes) {
+					if (!(memberNode instanceof Resource)) {
+						throw new RepositoryConfigException("Member nodes must be of type resource, was " + memberNode);
+					}
+					members.addAll(m.filter((Resource) memberNode, null, null));
+				}
+
+				this.members = members;
+			}
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}

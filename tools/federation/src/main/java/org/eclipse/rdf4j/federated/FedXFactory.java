@@ -16,11 +16,15 @@ import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
+import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
+import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
+import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.statistics.Statistics;
 import org.eclipse.rdf4j.federated.statistics.StatisticsImpl;
 import org.eclipse.rdf4j.federated.util.FileUtil;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.sail.Sail;
 import org.slf4j.Logger;
@@ -127,6 +131,23 @@ public class FedXFactory {
 	public FedXFactory withMembers(File dataConfig) {
 		log.info("Loading federation members from dataConfig " + dataConfig + ".");
 		members.addAll(EndpointFactory.loadFederationMembers(dataConfig));
+		return this;
+	}
+
+	/**
+	 * Initialize the federation with members from the model.
+	 * <p>
+	 * Currently the types NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to
+	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
+	 * {@link SPARQLRepositoryInformation}.
+	 * </p>
+	 * 
+	 * @param model the model defining the federation members
+	 * @return the factory
+	 */
+	public FedXFactory withMembers(Model model) {
+		log.debug("Loading federation members from model.");
+		members.addAll(EndpointFactory.loadFederationMembers(model));
 		return this;
 	}
 
