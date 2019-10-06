@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the Provenance Ontology.
  *
@@ -187,7 +186,6 @@ public class PROV {
 
 	/** prov:Usage */
 	public static final IRI USAGE;
-
 
 	// Properties
 	/** prov:actedOnBehalfOf */
@@ -393,7 +391,6 @@ public class PROV {
 
 	/** prov:wasStartedBy */
 	public static final IRI WAS_STARTED_BY;
-
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();

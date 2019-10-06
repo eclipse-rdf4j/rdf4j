@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the Open Digital Rights Language.
  *
@@ -118,7 +117,6 @@ public class ODRL2 {
 	/** odrl:UndefinedTerm */
 	@Deprecated
 	public static final IRI UNDEFINED_TERM;
-
 
 	// Properties
 	/** odrl:action */
@@ -301,7 +299,6 @@ public class ODRL2 {
 
 	/** odrl:xone */
 	public static final IRI XONE;
-
 
 	// Individuals
 	/** odrl:All */
@@ -697,7 +694,6 @@ public class ODRL2 {
 	/** odrl:writeTo */
 	@Deprecated
 	public static final IRI WRITE_TO;
-
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();

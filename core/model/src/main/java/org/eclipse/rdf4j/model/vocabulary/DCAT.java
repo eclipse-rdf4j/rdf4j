@@ -63,7 +63,6 @@ public class DCAT {
 	/** dcat:Role */
 	public static final IRI ROLE;
 
-
 	// Properties
 	/** dcat:accessService */
 	public static final IRI ACCESS_SERVICE;

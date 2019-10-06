@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Constants for the Time Ontology in OWL.
  *
@@ -99,7 +98,6 @@ public class TIME {
 	/** time:Year */
 	@Deprecated
 	public static final IRI YEAR;
-
 
 	// Properties
 	/** time:after */
@@ -278,8 +276,7 @@ public class TIME {
 	/** time:years */
 	public static final IRI YEARS;
 
-
-	// Individuals	
+	// Individuals
 	/** time:Monday */
 	public static final IRI MONDAY;
 
@@ -321,7 +318,6 @@ public class TIME {
 
 	/** time:unitYear */
 	public static final IRI UNIT_YEAR;
-
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
@@ -421,4 +417,3 @@ public class TIME {
 		YEARS = factory.createIRI(NAMESPACE, "years");
 	}
 }
-
