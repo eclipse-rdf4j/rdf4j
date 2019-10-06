@@ -85,6 +85,7 @@ http://www.springframework.org/schema/aop http://www.springframework.org/schema/
 			<props>
 				<prop key="/repositories/*/namespaces/*">rdf4jRepositoryNamespaceController</prop>
 				<prop key="/repositories/*/namespaces">rdf4jRepositoryNamespacesController</prop>
+				<prop key="/repositories/*/config">rdf4jRepositoryConfigController</prop>
 				<prop key="/repositories/*/contexts">rdf4jRepositoryContextsController</prop>
 				<prop key="/repositories/*/statements">rdf4jRepositoryStatementsController</prop>
 				<prop key="/repositories/*/rdf-graphs">rdf4jRepositoryContextsController</prop>
@@ -131,6 +132,9 @@ http://www.springframework.org/schema/aop http://www.springframework.org/schema/
 		<property name="repositoryManager" ref="rdf4jRepositoryManager" />
 	</bean>
 	<bean id="rdf4jRepositoryController" class="org.eclipse.rdf4j.http.server.repository.RepositoryController">
+		<property name="repositoryManager" ref="rdf4jRepositoryManager" />
+	</bean>
+	<bean id="rdf4jRepositoryConfigController" class="org.eclipse.rdf4j.http.server.repository.config.ConfigController">
 		<property name="repositoryManager" ref="rdf4jRepositoryManager" />
 	</bean>
 	<bean id="rdf4jRepositoryContextsController"

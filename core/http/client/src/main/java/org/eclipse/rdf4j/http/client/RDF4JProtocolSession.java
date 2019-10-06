@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -283,7 +284,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	/**
-	 * Create a new repository or update its configuration.
+	 * Create a new repository.
 	 * 
 	 * @param config the repository configuration
 	 * @throws IOException
@@ -314,7 +315,40 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				method.reset();
 			}
 		}
+	}
 
+	/**
+	 * Update the config of an existing repository.
+	 * 
+	 * @param config the repository configuration
+	 * @throws IOException
+	 * @throws RepositoryException
+	 */
+	public void updateRepository(RepositoryConfig config) throws IOException, RepositoryException {
+		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+		setRepository(baseURI);
+		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+		Model model = new LinkedHashModel();
+		config.export(model, ctx);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Rio.write(model, baos, getPreferredRDFFormat());
+
+		HttpEntityEnclosingRequestBase method = null;
+		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
+			HttpEntity entity = new InputStreamEntity(contents, -1,
+					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));
+			method = applyAdditionalHeaders(new HttpPost(Protocol.getRepositoryConfigLocation(baseURI)));
+			method.setEntity(entity);
+			executeNoContent((HttpUriRequest) method);
+		} catch (RepositoryException | RDFParseException e) {
+			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		} finally {
+			if (method != null) {
+				method.reset();
+			}
+		}
 	}
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {
@@ -330,6 +364,42 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new RepositoryException(e);
 		} finally {
 			method.reset();
+		}
+	}
+
+	/**
+	 * Retrieve configuration of the current repository and send it to the supplied {@link StatementCollector}
+	 *
+	 * @param statementCollector receiver of the repository config information
+	 * @throws IOException
+	 * @throws RepositoryException
+	 * @throws RDFHandlerException
+	 * @throws QueryInterruptedException
+	 * @throws UnauthorizedException
+	 * 
+	 * @since 3.1.0
+	 */
+	public void getRepositoryConfig(StatementCollector statementCollector) throws UnauthorizedException,
+			QueryInterruptedException, RDFHandlerException, RepositoryException, IOException {
+		checkRepositoryURL();
+
+		try {
+			String baseLocation = Protocol.getRepositoryConfigLocation(getRepositoryURL());
+			URIBuilder url = new URIBuilder(baseLocation);
+
+			HttpRequestBase method = new HttpGet(url.build());
+			method = applyAdditionalHeaders(method);
+
+			try {
+				getRDF(method, statementCollector, true);
+			} catch (MalformedQueryException e) {
+				logger.warn("Server reported unexpected malformed query error", e);
+				throw new RepositoryException(e.getMessage(), e);
+			} finally {
+				method.reset();
+			}
+		} catch (URISyntaxException e) {
+			throw new AssertionError(e);
 		}
 	}
 

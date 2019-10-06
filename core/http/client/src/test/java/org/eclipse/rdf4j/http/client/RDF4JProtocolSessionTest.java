@@ -21,16 +21,22 @@ import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Unit tests for {@link RDF4JProtocolSession}
@@ -73,6 +79,14 @@ public class RDF4JProtocolSessionTest {
 	}
 
 	@Test
+	public void testUpdateRepositoryExecutesPost() throws Exception {
+		RepositoryConfig config = new RepositoryConfig("test");
+		subject.updateRepository(config);
+		verify(httpclient).execute(any(HttpPost.class), any(HttpContext.class));
+		verifyHeaders();
+	}
+
+	@Test
 	public void testSize() throws Exception {
 		when(response.getEntity()).thenReturn(new StringEntity("8"));
 
@@ -81,12 +95,31 @@ public class RDF4JProtocolSessionTest {
 	}
 
 	@Test
+	public void testGetRepositoryConfig() throws Exception {
+		ArgumentCaptor<HttpGet> method = ArgumentCaptor.forClass(HttpGet.class);
+
+		Header h = new BasicHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
+		when(response.getHeaders("Content-Type")).thenReturn(new Header[] { h });
+		InputStreamEntity responseData = new InputStreamEntity(
+				getClass().getResourceAsStream("/fixtures/repository-config.nt"));
+		when(response.getEntity()).thenReturn(responseData);
+
+		subject.getRepositoryConfig(mock(StatementCollector.class));
+
+		verify(httpclient).execute(method.capture(), any(HttpClientContext.class));
+		assertThat(method.getValue().getURI().toASCIIString())
+				.isEqualTo("http://localhost/rdf4j-server/repositories/test/config");
+
+		verifyHeaders();
+	}
+
+	@Test
 	public void testRepositoryList() throws Exception {
 		Header h = new BasicHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType());
 		when(response.getHeaders("Content-Type")).thenReturn(new Header[] { h });
-		InputStreamEntity reponseData = new InputStreamEntity(
+		InputStreamEntity responseData = new InputStreamEntity(
 				getClass().getResourceAsStream("/fixtures/repository-list.xml"));
-		when(response.getEntity()).thenReturn(reponseData);
+		when(response.getEntity()).thenReturn(responseData);
 
 		assertThat(subject.getRepositoryList().getBindingNames()).contains("id");
 		verifyHeaders();

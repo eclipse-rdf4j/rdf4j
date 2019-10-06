@@ -76,8 +76,13 @@ public abstract class Protocol {
 
 	/**
 	 * Protocol version.
+	 * 
+	 * <ul>
+	 * <li>10: since RDF4J 3.1.0</li>
+	 * <li>9: since RDF4J 3.0.0</li>
+	 * </ul>
 	 */
-	public static final String VERSION = "9";
+	public static final String VERSION = "10";
 
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.
@@ -307,6 +312,17 @@ public abstract class Protocol {
 	 */
 	public static final String getRepositoryLocation(String serverLocation, String repositoryID) {
 		return getRepositoriesLocation(serverLocation) + "/" + repositoryID;
+	}
+
+	/**
+	 * Get the location of the config of a specific repository resource.
+	 * 
+	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+	 * @return the location of the configuration resource for the specified repository
+	 * 
+	 */
+	public static final String getRepositoryConfigLocation(String repositoryLocation) {
+		return repositoryLocation + "/" + CONFIG;
 	}
 
 	/**

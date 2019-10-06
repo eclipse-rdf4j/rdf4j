@@ -25,6 +25,8 @@ public class ErrorType {
 
 	public static final ErrorType UNSUPPORTED_FILE_FORMAT = register("UNSUPPORTED FILE FORMAT");
 
+	public static final ErrorType REPOSITORY_EXISTS = register("REPOSITORY EXISTS");
+
 	protected static ErrorType register(String label) {
 		synchronized (registry) {
 			ErrorType errorType = registry.get(label);
