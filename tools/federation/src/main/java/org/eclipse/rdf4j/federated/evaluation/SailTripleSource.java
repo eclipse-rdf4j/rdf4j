@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
@@ -36,8 +37,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStoreConnectionExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -181,27 +180,29 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 		/*
 		 * Implementation note:
 		 * 
-		 * a hook is introduced for NativeStore instances such that an extended connection is used. The extended
-		 * connection provides a method to evaluate prepared queries without prior (obsolete) optimization.
+		 * a special strategy is registered for NativeStore instances. The specialized strategy allows to evaluate
+		 * prepared queries without prior (obsolete) optimization.
 		 */
 		return withConnection((conn, resultHolder) -> {
 
 			CloseableIteration<BindingSet, QueryEvaluationException> res;
 			SailConnection sailConn = ((SailRepositoryConnection) conn).getSailConnection();
 
-			if (sailConn instanceof NativeStoreConnectionExt) {
-				NativeStoreConnectionExt _conn = (NativeStoreConnectionExt) sailConn;
-				res = (CloseableIteration<BindingSet, QueryEvaluationException>) _conn
-						.evaluatePrecompiled(preparedQuery);
-			} else {
-				try {
-					log.warn(
-							"Precompiled query optimization for native store could not be applied: use extended NativeStore initialization using NativeStoreConnectionExt");
-					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
-							null, EmptyBindingSet.getInstance(), true);
-				} catch (SailException e) {
-					throw new QueryEvaluationException(e);
-				}
+			try {
+
+				// optimization attempt: use precompiled query
+				PrecompiledQueryNode precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);
+				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(precompiledQueryNode,
+						null, EmptyBindingSet.getInstance(), true);
+
+			} catch (Exception e) {
+				log.warn(
+						"Precompiled query optimization for native store could not be applied: " + e.getMessage());
+				log.debug("Details:", e);
+
+				// fallback: attempt the original tuple expression
+				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
+						null, EmptyBindingSet.getInstance(), true);
 			}
 
 			if (bindings.size() > 0) {
