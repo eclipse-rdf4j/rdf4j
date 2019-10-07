@@ -68,7 +68,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out The OutputStream to write the RDF/XML document to.
+	 * @param out     The OutputStream to write the RDF/XML document to.
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
@@ -87,7 +87,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
 	 *
-	 * @param writer The Writer to write the RDF/XML document to.
+	 * @param writer  The Writer to write the RDF/XML document to.
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(Writer writer, ParsedIRI baseIRI) {
@@ -123,12 +123,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			// prefix for it if there isn't one yet.
 			setNamespace(RDF.PREFIX, RDF.NAMESPACE);
 
-			WriterConfig writerConfig = getWriterConfig(); 
+			WriterConfig writerConfig = getWriterConfig();
 			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? '\'' : '\"';
-			
+
 			if (writerConfig.get(XMLWriterSettings.INCLUDE_XML_PI)) {
-				writer.write("<?xml version=" + quote + "1.0" + quote + 
-								" encoding=" + quote + "UTF-8" + quote + "?>\n");
+				writer.write((quote == '\"') ? "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+						: "<?xml version='1.0' encoding='UTF-8'?>\n");
 			}
 
 			if (writerConfig.get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {
@@ -137,9 +137,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 				if (defaultNamespace != null) {
 					writeNewLine();
 					writeIndent();
-					writer.write("xmlns=" + quote);
-					writer.write(XMLUtil.escapeDoubleQuotedAttValue(defaultNamespace));
-					writer.write(quote);
+					writeQuotedAttribute("xmlns", defaultNamespace);
 				}
 
 				for (Map.Entry<String, String> entry : namespaceTable.entrySet()) {
@@ -148,19 +146,13 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 					writeNewLine();
 					writeIndent();
-					writer.write("xmlns:");
-					writer.write(prefix);
-					writer.write("=" + quote);
-					writer.write(XMLUtil.escapeDoubleQuotedAttValue(name));
-					writer.write(quote);
+					writeQuotedAttribute("xmlns:" + prefix, name);
 				}
 
 				if (baseIRI != null && writerConfig.get(BasicWriterSettings.BASE_DIRECTIVE)) {
 					writeNewLine();
 					writeIndent();
-					writer.write("xml:base=" + quote);
-					writer.write(baseIRI.toString());
-					writer.write(quote);
+					writeQuotedAttribute("xml:base", baseIRI.toString());
 				}
 
 				writeEndOfStartTag();
@@ -211,7 +203,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			return;
 		}
 
-		if (prefix.length() == 0) {
+		if (prefix.isEmpty()) {
 			defaultNamespace = name;
 			return;
 		}
@@ -389,9 +381,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			if (prefix == null || !getWriterConfig().get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {
 				writer.write("<");
 				writer.write(localName);
-				writer.write(" xmlns=" + quote);
-				writer.write(XMLUtil.escapeDoubleQuotedAttValue(namespace));
-				writer.write(quote);
+				writeQuotedAttribute(" xmlns", namespace);
 			} else {
 				writer.write("<");
 				writer.write(prefix);
@@ -403,10 +393,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected void writeAttribute(String attName, String value) throws IOException {
 		writer.write(" ");
-		writer.write(attName);
-		writer.write("=" + quote);
-		writer.write(XMLUtil.escapeDoubleQuotedAttValue(value));
-		writer.write(quote);
+		writeQuotedAttribute(attName, value);
 	}
 
 	protected void writeAttribute(String namespace, String attName, String value)
@@ -422,17 +409,36 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		writeQuotedAttribute(" " + prefix + ":" + attName, value);
 	}
 
-
+	/**
+	 * Write quoted attribute
+	 * 
+	 * @param attName attribute name
+	 * @param value   string value
+	 * @throws IOException
+	 */
 	protected void writeQuotedAttribute(String attName, String value) throws IOException {
-		String quoted = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value) 
-										: XMLUtil.escapeSingleQuotedAttValue(value);
-		writer.write(attName + "=" + quote + quoted + quote);
+		writer.write(attName);
+		writer.write("=");
+		writer.write(quote);
+		writer.write((quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value)
+				: XMLUtil.escapeSingleQuotedAttValue(value));
+		writer.write(quote);
 	}
 
+	/**
+	 * Write &gt;
+	 * 
+	 * @throws IOException
+	 */
 	protected void writeEndOfStartTag() throws IOException {
 		writer.write(">");
 	}
 
+	/**
+	 * Write &gt; or /&gt;
+	 * 
+	 * @throws IOException
+	 */
 	protected void writeEndOfEmptyTag() throws IOException {
 		writer.write("/>");
 	}
@@ -458,10 +464,20 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		writer.write(XMLUtil.escapeCharacterData(chars));
 	}
 
+	/**
+	 * Write tab
+	 * 
+	 * @throws IOException
+	 */
 	protected void writeIndent() throws IOException {
 		writer.write("\t");
 	}
 
+	/**
+	 * Write newline character
+	 * 
+	 * @throws IOException
+	 */
 	protected void writeNewLine() throws IOException {
 		writer.write("\n");
 	}
