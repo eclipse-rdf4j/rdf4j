@@ -132,9 +132,14 @@ public class LockManager {
 
 				// Creating a new HashSet to be able to compare before and after to see if none of the locks have
 				// changed is a very very very expensive operation.
+				//
 				// This is why we have a possibleNoChangeCounter which gets decremented with a much cheaper .size()
-				// before and after comparison. If the possibleNoChangeCounter
-				// becomes 0 then we can create the HashSet and do a real comparison.
+				// before and after comparison. If the possibleNoChangeCounter becomes 0 then we can create the HashSet
+				// and do a real comparison.
+				//
+				// Or as Jeen put it: "if the size of the active locks hasn't changed, we don't want to immediately
+				// check if the set of active locks is exactly the same as before or not. Only when we've had the same
+				// size for 1,000 [POSSIBLE_NO_CHANGE_THRESHOLD] times will we do a check for abandoned locks"
 				if (possibleNoChangeCounter <= 0) {
 					before = new HashSet<>(activeLocks);
 				}
