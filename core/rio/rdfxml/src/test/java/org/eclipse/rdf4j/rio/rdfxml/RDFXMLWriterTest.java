@@ -60,7 +60,7 @@ public class RDFXMLWriterTest extends RDFWriterTest {
 	/**
 	 * Write a statement with a literal that needs escaping as RDF/XML to a string
 	 * 
-	 * @param useSingle use single quotes
+	 * @param useSingle  use single quotes
 	 * @param withinText quotes to entity within text
 	 * @return RDF/XML output as string
 	 */
