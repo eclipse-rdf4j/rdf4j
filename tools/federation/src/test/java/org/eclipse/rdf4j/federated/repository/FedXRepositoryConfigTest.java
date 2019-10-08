@@ -32,10 +32,10 @@ public class FedXRepositoryConfigTest {
 
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
 		config.parse(model, implNode(model));
-		
+
 		Assertions.assertEquals("fedxConfig.prop", config.getFedxConfig());
 		Assertions.assertNull(config.getDataConfig());
-		
+
 		Model members = config.getMembers();
 		Assertions.assertEquals(2, members.filter(null, FEDX.STORE, null).size()); // 2 members
 		Assertions.assertEquals(Sets.newHashSet("endpoint1", "endpoint2"),

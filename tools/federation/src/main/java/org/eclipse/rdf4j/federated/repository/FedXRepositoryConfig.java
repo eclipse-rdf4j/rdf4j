@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.repository;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -73,9 +74,9 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * FedX schema namespace (<tt>http://www.fluidops.com/config/fedx#</tt>).
+	 * FedX schema namespace (<tt>http://rdf4j.org/config/federation#</tt>).
 	 */
-	public static final String NAMESPACE = "http://www.fluidops.com/config/fedx#";
+	public static final String NAMESPACE = FEDX.NAMESPACE;
 
 	/**
 	 * IRI of the property pointing to the FedX configuration
