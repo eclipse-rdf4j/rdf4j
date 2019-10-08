@@ -40,10 +40,6 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  */
 public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	protected ParsedIRI baseIRI;
 	protected Writer writer;
 	protected String defaultNamespace;
@@ -51,10 +47,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected boolean headerWritten;
 	protected Resource lastWrittenSubject;
 	protected char quote;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	protected boolean entityQuote;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -98,11 +91,8 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		headerWritten = false;
 		lastWrittenSubject = null;
 		quote = '"';
+		entityQuote = false;
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public RDFFormat getRDFFormat() {
@@ -125,10 +115,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 			WriterConfig writerConfig = getWriterConfig();
 			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? '\'' : '\"';
+			entityQuote = writerConfig.get(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);
 
 			if (writerConfig.get(XMLWriterSettings.INCLUDE_XML_PI)) {
-				writer.write((quote == '\"') ? "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-						: "<?xml version='1.0' encoding='UTF-8'?>\n");
+				String str = (quote == '\"') ? "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+						: "<?xml version='1.0' encoding='UTF-8'?>\n";
+				writer.write(str);
 			}
 
 			if (writerConfig.get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {
@@ -392,8 +384,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	protected void writeAttribute(String attName, String value) throws IOException {
-		writer.write(" ");
-		writeQuotedAttribute(attName, value);
+		writeQuotedAttribute(" " + attName, value);
 	}
 
 	protected void writeAttribute(String namespace, String attName, String value)
@@ -417,11 +408,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @throws IOException
 	 */
 	protected void writeQuotedAttribute(String attName, String value) throws IOException {
+		String str = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value)
+				: XMLUtil.escapeSingleQuotedAttValue(value);
 		writer.write(attName);
 		writer.write("=");
 		writer.write(quote);
-		writer.write((quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value)
-				: XMLUtil.escapeSingleQuotedAttValue(value));
+		writer.write(str);
 		writer.write(quote);
 	}
 
@@ -460,8 +452,21 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	/**
+	 * Replace special characters in text with entities.
+	 * 
+	 * @param chars text
+	 * @throws IOException
+	 */
 	protected void writeCharacterData(String chars) throws IOException {
-		writer.write(XMLUtil.escapeCharacterData(chars));
+		String str;
+		if (!entityQuote) {
+			str = XMLUtil.escapeCharacterData(chars);
+		} else {
+			str = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(chars)
+					: XMLUtil.escapeSingleQuotedAttValue(chars);
+		}
+		writer.write(str);
 	}
 
 	/**
