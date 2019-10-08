@@ -33,8 +33,6 @@ public class LockManager {
 
 	private static final int MAX_WAIT_TO_COLLECT = 90 * 60 * 1000;
 
-	private static final int POSSIBLE_NO_CHANGE_THRESHOLD = 1000;
-
 	private static final AtomicLong seq = new AtomicLong();
 
 	private static class WeakLockReference {
@@ -119,47 +117,35 @@ public class LockManager {
 	 */
 	public void waitForActiveLocks() throws InterruptedException {
 		long now = -1;
-		int possibleNoChangeCounter = POSSIBLE_NO_CHANGE_THRESHOLD;
+		boolean checkForChange = false;
 		while (true) {
-			boolean nochange;
+			boolean nochange = false;
 			Set<WeakLockReference> before = null;
-			long activeLocksSize;
+
 			synchronized (activeLocks) {
-				if (activeLocks.isEmpty())
+				if (activeLocks.isEmpty()) {
 					return;
+				}
 
-				activeLocksSize = activeLocks.size();
+				// The call to releaseAbandoned() further down in the code is only called if "System.currentTimeMillis()
+				// - now >= waitToCollect / 2". We optimize the code so we only create a `before` HashSet if we are
+				// actually going to use it.
+				checkForChange = now > -1 && System.currentTimeMillis() - now >= waitToCollect / 2;
 
-				// Creating a new HashSet to be able to compare before and after to see if none of the locks have
-				// changed is a very very very expensive operation.
-				//
-				// This is why we have a possibleNoChangeCounter which gets decremented with a much cheaper .size()
-				// before and after comparison. If the possibleNoChangeCounter becomes 0 then we can create the HashSet
-				// and do a real comparison.
-				//
-				// Or as Jeen put it: "if the size of the active locks hasn't changed, we don't want to immediately
-				// check if the set of active locks is exactly the same as before or not. Only when we've had the same
-				// size for 1,000 [POSSIBLE_NO_CHANGE_THRESHOLD] times will we do a check for abandoned locks"
-				if (possibleNoChangeCounter <= 0) {
+				if (checkForChange) {
 					before = new HashSet<>(activeLocks);
 				}
 				if (now < 0) {
 					now = System.currentTimeMillis();
 				}
-				activeLocks.wait(waitToCollect);
-				if (activeLocks.isEmpty())
-					return;
 
-				if (activeLocksSize == activeLocks.size()) {
-					possibleNoChangeCounter--;
-					Thread.yield();
+				activeLocks.wait(waitToCollect);
+				if (activeLocks.isEmpty()) {
+					return;
 				}
 
-				if (before != null) {
+				if (checkForChange) {
 					nochange = before.equals(activeLocks);
-					possibleNoChangeCounter = POSSIBLE_NO_CHANGE_THRESHOLD;
-				} else {
-					nochange = false;
 				}
 			}
 			// guard against so-called spurious wakeup
@@ -240,7 +226,7 @@ public class LockManager {
 					// No active locks were found to be abandoned
 					// wait longer next time before running gc
 					if (waitToCollect < MAX_WAIT_TO_COLLECT) {
-						waitToCollect = waitToCollect * 2;
+						waitToCollect = Math.max(waitToCollect, waitToCollect * 2);
 					}
 					logStalledLock(activeLocks);
 				}

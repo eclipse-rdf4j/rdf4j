@@ -55,7 +55,7 @@ import static org.junit.Assert.assertFalse;
 //		"-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile",
 //		"-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions",
 //		"-XX:+DebugNonSafepoints" })
-@Measurement(iterations = 20)
+@Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class BasicBenchmarks {
 
@@ -84,6 +84,8 @@ public class BasicBenchmarks {
 
 		SpinSail spinSail = new SpinSail(new MemoryStore());
 		spinSail.initialize();
+		spinSail.shutDown();
+
 	}
 
 	@Benchmark
@@ -91,6 +93,7 @@ public class BasicBenchmarks {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.init();
+		memoryStore.shutDown();
 	}
 
 	@Benchmark
@@ -100,7 +103,7 @@ public class BasicBenchmarks {
 		NotifyingSail rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		SailRepository repo = new SailRepository(spinSail);
-		repo.initialize();
+		repo.init();
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
@@ -110,6 +113,9 @@ public class BasicBenchmarks {
 			assertFalse(bq.evaluate());
 
 		}
+
+		repo.shutDown();
+
 	}
 
 	@Benchmark
@@ -119,7 +125,7 @@ public class BasicBenchmarks {
 		NotifyingSail rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		SailRepository repo = new SailRepository(spinSail);
-		repo.initialize();
+		repo.init();
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 
 			loadRDF("/schema/spif.ttl", conn);
@@ -129,14 +135,8 @@ public class BasicBenchmarks {
 			assertFalse(bq.evaluate());
 
 		}
-	}
 
-	private void loadRDF(String path, SailRepositoryConnection conn)
-			throws IOException {
-		URL url = getClass().getResource(path);
-		try (InputStream in = url.openStream()) {
-			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
+		repo.init();
 	}
 
 	@Benchmark
@@ -155,6 +155,8 @@ public class BasicBenchmarks {
 			connection.remove(alice, null, null);
 		}
 
+		spinSail.shutDown();
+
 	}
 
 	@Benchmark
@@ -166,6 +168,8 @@ public class BasicBenchmarks {
 			connection.remove(bob, name, nameBob);
 			connection.remove(alice, null, null);
 		}
+
+		spinSail.shutDown();
 
 	}
 
@@ -185,6 +189,7 @@ public class BasicBenchmarks {
 			connection.commit();
 
 		}
+		spinSail.shutDown();
 
 	}
 
@@ -207,6 +212,7 @@ public class BasicBenchmarks {
 			connection.commit();
 
 		}
+		spinSail.shutDown();
 
 	}
 
@@ -225,7 +231,16 @@ public class BasicBenchmarks {
 			connection.remove((Resource) null, null, null);
 
 		}
+		spinSail.shutDown();
 
+	}
+
+	private void loadRDF(String path, SailRepositoryConnection conn)
+			throws IOException {
+		URL url = getClass().getResource(path);
+		try (InputStream in = url.openStream()) {
+			conn.add(in, url.toString(), RDFFormat.TURTLE);
+		}
 	}
 
 }
