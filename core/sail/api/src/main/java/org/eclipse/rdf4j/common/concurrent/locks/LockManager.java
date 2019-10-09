@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Manages a set of active locks. If any active lock is garbage collected it is automatically removed from the set and
  * logged.
- * 
+ *
  * @author James Leigh
  */
 public class LockManager {
@@ -76,7 +76,7 @@ public class LockManager {
 
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
-	 * 
+	 *
 	 * @param trackLocks Controls whether to keep a stack trace of active locks. Enabling lock tracking will add some
 	 *                   overhead, but can be very useful for debugging.
 	 */
@@ -86,7 +86,7 @@ public class LockManager {
 
 	/**
 	 * Creates a new set of locks, optionally with lock tracking enabled.
-	 * 
+	 *
 	 * @param trackLocks          Controls whether to keep a stack trace of active locks. Enabling lock tracking will
 	 *                            add some overhead, but can be very useful for debugging.
 	 * @param collectionFrequency Number of milliseconds to block the first thread, waiting for active locks to finish,
@@ -99,7 +99,7 @@ public class LockManager {
 
 	/**
 	 * If any locks in this collection that are still active.
-	 * 
+	 *
 	 * @return <code>true</code> of one or more locks that have not be released.
 	 */
 	public boolean isActiveLock() {
@@ -110,27 +110,43 @@ public class LockManager {
 
 	/**
 	 * Blocks current thread until the number of active locks has reached zero.
-	 * 
+	 *
 	 * @throws InterruptedException if any thread interrupted the current thread before or while the current thread was
 	 *                              waiting for a notification. The interrupted status of the current thread is cleared
 	 *                              when this exception is thrown.
 	 */
 	public void waitForActiveLocks() throws InterruptedException {
 		long now = -1;
+		boolean checkForChange = false;
 		while (true) {
-			boolean nochange;
-			Set<WeakLockReference> before;
+			boolean nochange = false;
+			Set<WeakLockReference> before = null;
+
 			synchronized (activeLocks) {
-				if (activeLocks.isEmpty())
+				if (activeLocks.isEmpty()) {
 					return;
-				before = new HashSet<>(activeLocks);
+				}
+
+				// The call to releaseAbandoned() further down in the code is only called if "System.currentTimeMillis()
+				// - now >= waitToCollect / 2". We optimize the code so we only create a `before` HashSet if we are
+				// actually going to use it.
+				checkForChange = now > -1 && System.currentTimeMillis() - now >= waitToCollect / 2;
+
+				if (checkForChange) {
+					before = new HashSet<>(activeLocks);
+				}
 				if (now < 0) {
 					now = System.currentTimeMillis();
 				}
+
 				activeLocks.wait(waitToCollect);
-				if (activeLocks.isEmpty())
+				if (activeLocks.isEmpty()) {
 					return;
-				nochange = before.equals(activeLocks);
+				}
+
+				if (checkForChange) {
+					nochange = before.equals(activeLocks);
+				}
 			}
 			// guard against so-called spurious wakeup
 			if (nochange && System.currentTimeMillis() - now >= waitToCollect / 2) {
@@ -138,12 +154,13 @@ public class LockManager {
 				now = -1;
 			}
 		}
+
 	}
 
 	/**
 	 * Creates a new active lock. This increases the number of active locks until its {@link Lock#release()} method is
 	 * called, which decreases the number of active locks by the same amount.
-	 * 
+	 *
 	 * @param alias a short string used to log abandon locks
 	 * @return an active lock
 	 */
@@ -209,7 +226,7 @@ public class LockManager {
 					// No active locks were found to be abandoned
 					// wait longer next time before running gc
 					if (waitToCollect < MAX_WAIT_TO_COLLECT) {
-						waitToCollect = waitToCollect * 2;
+						waitToCollect = Math.max(waitToCollect, waitToCollect * 2);
 					}
 					logStalledLock(activeLocks);
 				}

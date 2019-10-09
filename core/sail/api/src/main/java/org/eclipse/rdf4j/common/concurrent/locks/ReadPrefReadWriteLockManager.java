@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 /**
  * A read/write lock manager with reader preference. This lock manager block any requests for write locks until all read
  * locks have been released.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -34,7 +34,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 
 	/**
 	 * Creates a new MultiReadSingleWriteLockManager, optionally with lock tracking enabled.
-	 * 
+	 *
 	 * @param trackLocks Controls whether the lock manager will keep track of active locks. Enabling lock tracking will
 	 *                   add some overhead, but can be very useful for debugging.
 	 */
@@ -84,8 +84,9 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 	@Override
 	public Lock tryWriteLock() {
-		if (isWriterActive() || isReaderActive())
+		if (isWriterActive() || isReaderActive()) {
 			return null;
+		}
 		synchronized (this) {
 			if (isWriterActive() || isReaderActive()) {
 				return null;
@@ -104,8 +105,9 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	public Lock getWriteLock() throws InterruptedException {
 		while (true) {
 			Lock lock = tryWriteLock();
-			if (lock != null)
+			if (lock != null) {
 				return lock;
+			}
 			waitForActiveWriter();
 			waitForActiveReaders();
 		}
