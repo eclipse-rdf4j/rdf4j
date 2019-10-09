@@ -25,7 +25,7 @@ hide_page_title: "true"
 - <a href="programming/shacl/">Validation with SHACL</a>
 - <a href="programming/geosparql/">GeoSPARQL</a>
 
-# Rd4j Server, Workbench and Console
+# Rdf4j Server, Workbench and Console
 
 - <a href="tools/server-workbench/">Server and Workbench</a>
 - <a href="tools/console/">Console</a>
