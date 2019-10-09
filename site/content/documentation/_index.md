@@ -38,7 +38,6 @@ hide_page_title: "true"
 - <a href="sail/">The SAIL API (draft)</a>
 - <a href="migration/">Sesame to Rdf4j migration</a>
 - <a href="rdf4j-binary/">Rdf4j Binary RDF Format</a>
-- <a href="migration/">Sesame to Rdf4j migration</a>
 
 # Javadoc
 
