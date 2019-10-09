@@ -24,7 +24,7 @@ public class XMLWriterSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.include_xml_pi}
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.include_xml_pi}
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
@@ -38,7 +38,7 @@ public class XMLWriterSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.include_root_rdf_tag}
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.include_root_rdf_tag}
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
@@ -52,7 +52,7 @@ public class XMLWriterSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.use_single_quotes}
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.use_single_quotes}
 	 */
 	public static final RioSetting<Boolean> USE_SINGLE_QUOTES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.use_single_quotes", "Use single quotes", Boolean.FALSE);
@@ -64,7 +64,7 @@ public class XMLWriterSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.quotes_to_entities_in_text}
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.quotes_to_entities_in_text}
 	 */
 	public static final RioSetting<Boolean> QUOTES_TO_ENTITIES_IN_TEXT = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.quotes_to_entities_in_text", "Use single quotes", Boolean.FALSE);
