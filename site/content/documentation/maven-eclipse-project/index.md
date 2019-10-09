@@ -149,7 +149,7 @@ Once you have done this, you will notice some red lines appearing:
 
 This is Eclipse telling you that there is something wrong with your code. In this case, the problem is that several import statements are missing, so we’ll need to add those. You can add each import manually of course, but luckily Eclipse has a shortcut. Hit Ctrl-Shift-O and Eclipse should automatically resolve all missing imports for you (it will pop up a dialog if there is more than one possibility for a particular import).
 
-Now that we have created our repository, we need to initialize it. This is done by calling the `rep.initialize()` method. Notice how, when you start typing, Eclipse shows autocompletion candidates for the methods available and how each method is described in the box:
+Now that we have created our repository, we should initialize it. This is done by calling the `rep.initialize()` method (or `rep.init()` in recent rdf4j versions). Notice how, when you start typing, Eclipse shows autocompletion candidates for the methods available and how each method is described in the box:
 
 ![Image](images/eclipse-autocomplete-1.png)
 
