@@ -29,11 +29,11 @@ After you have deployed the Rdf4j Workbench webapp, you should be able to access
 
 #### UTF-8 in the Request URI (GET)
 
-There is a known issue (https://github.com/eclipse/rdf4j/issues/464[464]) affecting the proper exploring of resources that use an extended character set. Workbench client-side code generates URI’s assuming an ISO-8859-1 character encoding, and often Tomcat comes pre-configured to expect UTF-8 encoded URI’s. It will be necessary to change the HTTP Connector configuration, or to add a separate HTTP Connector that uses ISO-8859-1. For details, see https://tomcat.apache.org/tomcat-6.0-doc/config/http.html[here] for Tomcat 6 or https://tomcat.apache.org/tomcat-7.0-doc/config/http.html[here] for Tomcat 7.
+There is a [known issue](https://github.com/eclipse/rdf4j/issues/391) affecting the proper exploring of resources that use an extended character set. Workbench client-side code generates URI’s assuming an ISO-8859-1 character encoding, and often Tomcat comes pre-configured to expect UTF-8 encoded URI’s. It will be necessary to change the HTTP Connector configuration, or to add a separate HTTP Connector that uses ISO-8859-1. For details, see the [Tomcat 8.5](https://tomcat.apache.org/tomcat-8.5-doc/config/http.html) or [Tomcat 9](https://tomcat.apache.org/tomcat-9.0-doc/config/http.html) documentation.
 
 #### UTF-8 in the Request Body (POST)
 
-To resolve issues where the request body is not getting properly interpreted as UTF-8, it is necessary to configure Tomcat to use its built in SetCharacterEncodingFilter. Some details are at https://wiki.apache.org/tomcat/FAQ/CharacterEncoding#Q3. With Tomcat 6, version 6.0.36 or later is required. On Tomcat 7, un-commenting the <filter> and <filter-mapping> elements for setCharacterEncodingFilter in `$CATALINA_BASE/conf/web.xml`, and restarting the server, were the only necessary steps.
+To resolve issues where the request body is not getting properly interpreted as UTF-8, it is necessary to configure Tomcat to use its built-in SetCharacterEncodingFilter. More details are available at the [Tomcat wiki](https://cwiki.apache.org/confluence/display/TOMCAT/Character+Encoding#CharacterEncoding-Q3). Un-commenting the <filter> and <filter-mapping> elements for setCharacterEncodingFilter in `$CATALINA_BASE/conf/web.xml`, and restarting the server, should be the only necessary steps.
 
 ## Application directory configuration
 
@@ -216,8 +216,8 @@ This chapter will refer to URLs on a local server served from port 8080, which i
 
 ## Browser Client Support
 
-.Browser Client Support Matrix
-|===
+Browser Client Support Matrix
+
 <table border=1 style="cellpadding: 4px;">
 <tr><th>Browser</th><th>Fully Working Versions</th><th>Non-working Versions</th></tr>
 <tr><td>Firefox</td><td> Any recent</td><td> </td></tr>
@@ -244,7 +244,8 @@ A full URL is expected in the “Change Server” field. You may enter a `file:/
 
 ### Important Security Consideration
 
-Workbench stores user name and password credentials in plain-text cookies in the browser. You will need to configure your Workbench server for HTTPS to properly protect these credentials. See https://tomcat.apache.org/tomcat-6.0-doc/ssl-howto.html or https://tomcat.apache.org/tomcat-7.0-doc/ssl-howto.html for more information.
+Workbench stores user name and password credentials in plain-text cookies in the browser. You will need to configure your Workbench server for HTTPS to properly
+ protect these credentials. See the [Tomcat 8.5](https://tomcat.apache.org/tomcat-8.5-doc/ssl-howto.html) or [Tomcat 9](https://tomcat.apache.org/tomcat-9.0-doc/ssl-howto.html) SSL/TLS documentation for more information.
 
 ### Setting the Repository
 
