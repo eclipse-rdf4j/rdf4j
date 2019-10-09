@@ -29,7 +29,7 @@ public class Vocabulary {
 	 */
 	public static class FEDX {
 
-		public static final String NAMESPACE = "http://www.fluidops.com/config/fedx#";
+		public static final String NAMESPACE = "http://rdf4j.org/config/federation#";
 
 		/*
 		 * Properties

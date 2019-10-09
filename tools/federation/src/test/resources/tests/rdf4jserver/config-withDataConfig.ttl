@@ -9,14 +9,7 @@
    rep:repositoryImpl [
       rep:repositoryType "fedx:FedXRepository" ;
       fedx:fedxConfig "fedxConfig.prop" ;
-      fedx:member [
-         fedx:store "ResolvableRepository" ;
-         fedx:repositoryName "endpoint1" 
-      ] ,
-      [
-         fedx:store "ResolvableRepository" ;
-         fedx:repositoryName "endpoint2" 
-      ]
+      fedx:dataConfig "dataConfig.ttl" ;
    ];
    rep:repositoryID "my-federation" ;
    rdfs:label "FedX Federation" .

@@ -1,5 +1,5 @@
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix fedx: <http://www.fluidops.com/config/fedx#>.
+@prefix fedx: <http://rdf4j.org/config/federation#>.
 
 <http://dbpedia> a sd:Service ;
 	fedx:store "SPARQLEndpoint";
