@@ -45,7 +45,7 @@ Search is case-insensitive, wildcards and other modifiers can be used to broaden
 {{< highlight java >}}
 ....
 Repository repo = new SailRepository(lucenesail);
-repo.initialize();
+repo.init();
 
 // Get the subjects and a highlighted snippet
 String qry = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> " +

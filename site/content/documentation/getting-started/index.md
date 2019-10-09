@@ -555,7 +555,7 @@ Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 // Create a new Repository. Here, we choose a database implementation
 // that simply stores everything in main memory.
 Repository db = new SailRepository(new MemoryStore());
-db.initialize();
+db.init();
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
@@ -595,7 +595,7 @@ In link:#code-example-12[code example 12] in the previous section, we first load
 {{< highlight java "linenos=table" >}}
 // Create a new Repository.
 Repository db = new SailRepository(new MemoryStore());
-db.initialize();
+db.init();
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
@@ -633,7 +633,7 @@ The main difference with the previous example is on lines 8-12: we still open an
 {{< highlight java "linenos=table" >}}
 // Create a new Repository.
 Repository db = new SailRepository(new MemoryStore());
-db.initialize();
+db.init();
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
@@ -712,7 +712,7 @@ Another type of SPARQL query is the CONSTRUCT-query: instead of returning the re
 {{< highlight java "linenos=table" >}}
 // Create a new Repository.
 Repository db = new SailRepository(new MemoryStore());
-db.initialize();
+db.init();
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {

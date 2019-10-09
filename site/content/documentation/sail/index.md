@@ -15,7 +15,7 @@ WARNING: this document is currently in draft, and incomplete. Feedback and sugge
 {{< gravizo "SAIL Main interfaces" >}}
   @startuml;
   interface Sail {;
-    + initialize();
+    + init();
     + getConnection();
     + shutDown();
     + isWritable();

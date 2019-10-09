@@ -37,7 +37,7 @@ public class Example15SimpleSPARQLQuery {
 	{
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.initialize();
+		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
