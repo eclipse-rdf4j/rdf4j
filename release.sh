@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 echo "Enabling fail on error";
 set -e -o pipefail
@@ -10,6 +10,15 @@ case "$choice" in
   n|N ) exit;;
   * ) echo "unknown response, exitting"; exit;;
 esac
+
+
+
+ if  !  mvn -v | grep -q "Java version: 1.8."; then
+         echo "You need to use Java 8!";
+         echo "mvn -v";
+         echo "";
+        exit 1;
+ fi
 
 
  if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
@@ -40,9 +49,12 @@ MVN_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='versi
 
 echo "Your maven version is: ${MVN_VERSION}"
 
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
 
+git branch --delete --force releases/${MVN_VERSION}
 git checkout -b releases/${MVN_VERSION}
 git commit -s -a -m "release ${MVN_VERSION}"
 
@@ -58,9 +70,17 @@ esac
 git push origin ${MVN_VERSION}
 
 
+read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel)"; printf "\n\n";
+
+# build one jar
+mvn -Passembly clean install -DskipTests
+
+# todo upload to SFTP (also check sftp credentials at beginning of this script)
 
 
-
-
+# Finally cleanup
+git checkout master
+mvn clean install -DskipTests
+git branch --delete --force releases/${MVN_VERSION}
 
 
