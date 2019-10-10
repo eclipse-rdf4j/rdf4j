@@ -8,7 +8,7 @@ read -p "Start the release process (y/n)?" choice
 case "${choice}" in
   y|Y ) echo "";;
   n|N ) exit;;
-  * ) echo "unknown response, exitting"; exit;;
+  * ) echo "unknown response, exiting"; exit;;
 esac
 
 
@@ -74,7 +74,7 @@ read -p "Push tag (y/n)?" choice
 case "${choice}" in
   y|Y ) echo "";;
   n|N ) exit;;
-  * ) echo "unknown response, exitting"; exit;;
+  * ) echo "unknown response, exiting"; exit;;
 esac
 
 # push tag (only tag, not branch)
