@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
- * 
+ *
  * @author James Leigh
  */
 class MemorySailStore implements SailStore {
@@ -234,7 +234,7 @@ class MemorySailStore implements SailStore {
 	/**
 	 * Removes statements from old snapshots from the main statement list and resets the snapshot to 1 for the rest of
 	 * the statements.
-	 * 
+	 *
 	 * @throws InterruptedException
 	 */
 	protected void cleanSnapshots() throws InterruptedException {
@@ -311,16 +311,12 @@ class MemorySailStore implements SailStore {
 		synchronized (snapshotCleanupThreadLockObject) {
 			Thread toCheckSnapshotCleanupThread = snapshotCleanupThread;
 			if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
-				Runnable runnable = new Runnable() {
-
-					@Override
-					public void run() {
-						try {
-							cleanSnapshots();
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							logger.warn("snapshot cleanup interrupted");
-						}
+				Runnable runnable = () -> {
+					try {
+						cleanSnapshots();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						logger.warn("snapshot cleanup interrupted");
 					}
 				};
 

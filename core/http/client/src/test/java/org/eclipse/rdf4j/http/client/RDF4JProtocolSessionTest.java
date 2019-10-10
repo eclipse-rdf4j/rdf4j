@@ -7,36 +7,38 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.lessThanOrExactly;
+import static com.github.tomakehurst.wiremock.client.WireMock.moreThanOrExactly;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
-import java.util.concurrent.ScheduledExecutorService;
 
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.StatusLine;
-import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.entity.InputStreamEntity;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.message.BasicHeader;
-import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+
+import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
 /**
  * Unit tests for {@link RDF4JProtocolSession}
@@ -45,26 +47,21 @@ import org.mockito.ArgumentCaptor;
  */
 public class RDF4JProtocolSessionTest {
 
+	@ClassRule
+	public static WireMockRule wireMockRule = new WireMockRule(8089); // No-args constructor defaults to port 8080
+
 	private RDF4JProtocolSession subject;
-	private HttpClient httpclient;
 
 	private String testHeader = "X-testing-header";
 	private String testValue = "foobar";
-	private HttpResponse response;
+
+	private String serverURL = "http://localhost:8089/rdf4j-server";
+	private String repositoryID = "test";
 
 	@Before
 	public void setUp() throws Exception {
-		httpclient = mock(HttpClient.class);
-		response = mock(HttpResponse.class);
-		StatusLine statusLine = mock(StatusLine.class);
-
-		when(httpclient.execute(any(HttpUriRequest.class), any(HttpContext.class))).thenReturn(response);
-		when(response.getStatusLine()).thenReturn(statusLine);
-		when(statusLine.getStatusCode()).thenReturn(200);
-
-		subject = new RDF4JProtocolSession(httpclient, mock(ScheduledExecutorService.class));
-		subject.setRepository("http://localhost/rdf4j-server/repositories/test");
-
+		subject = new SharedHttpClientSessionManager().createRDF4JProtocolSession(serverURL);
+		subject.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);
 		subject.setAdditionalHttpHeaders(additionalHeaders);
@@ -72,10 +69,11 @@ public class RDF4JProtocolSessionTest {
 
 	@Test
 	public void testCreateRepositoryExecutesPut() throws Exception {
+		stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(200)));
 		RepositoryConfig config = new RepositoryConfig("test");
 		subject.createRepository(config);
-		verify(httpclient).execute(any(HttpPut.class), any(HttpContext.class));
-		verifyHeaders();
+		verify(putRequestedFor(urlEqualTo("/rdf4j-server/repositories/test")));
+		verifyHeader("/rdf4j-server/repositories/test");
 	}
 
 	@Test
@@ -88,10 +86,11 @@ public class RDF4JProtocolSessionTest {
 
 	@Test
 	public void testSize() throws Exception {
-		when(response.getEntity()).thenReturn(new StringEntity("8"));
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/size"))
+				.willReturn(aResponse().withStatus(200).withBody("8")));
 
 		assertThat(subject.size()).isEqualTo(8);
-		verifyHeaders();
+		verifyHeader("/rdf4j-server/repositories/test/size");
 	}
 
 	@Test
@@ -115,18 +114,43 @@ public class RDF4JProtocolSessionTest {
 
 	@Test
 	public void testRepositoryList() throws Exception {
-		Header h = new BasicHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType());
-		when(response.getHeaders("Content-Type")).thenReturn(new Header[] { h });
-		InputStreamEntity responseData = new InputStreamEntity(
-				getClass().getResourceAsStream("/fixtures/repository-list.xml"));
-		when(response.getEntity()).thenReturn(responseData);
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml")));
 
 		assertThat(subject.getRepositoryList().getBindingNames()).contains("id");
-		verifyHeaders();
+		verifyHeader("/rdf4j-server/repositories");
 	}
 
-	private void verifyHeaders() throws Exception {
-		verify(httpclient).execute(argThat(r -> r.getFirstHeader(testHeader).getValue().equals(testValue)),
-				any(HttpContext.class));
+	@Test
+	public void testClose() throws Exception {
+		System.setProperty(Protocol.CACHE_TIMEOUT_PROPERTY, "1");
+		subject = new SharedHttpClientSessionManager().createRDF4JProtocolSession(serverURL);
+		subject.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
+
+		String transactionStartUrl = Protocol.getTransactionsLocation(subject.getRepositoryURL());
+
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/transactions"))
+				.willReturn(aResponse().withStatus(201).withHeader("Location", transactionStartUrl + "/1")));
+		stubFor(post("/rdf4j-server/repositories/test/transactions/1?action=PING")
+				.willReturn(aResponse().withStatus(200).withBody("2000")));
+
+		subject.beginTransaction(IsolationLevels.SERIALIZABLE);
+		Thread.sleep(2000);
+
+		verify(moreThanOrExactly(2),
+				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
+
+		subject.close();
+		Thread.sleep(1000);
+
+		// we should not have received any further pings after the session was closed.
+		verify(lessThanOrExactly(3),
+				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
+	}
+
+	private void verifyHeader(String path) throws Exception {
+		verify(anyRequestedFor(urlEqualTo(path)).withHeader(testHeader, containing(testValue)));
 	}
 }
