@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "This script will stop if and unhandled error occurs";
+echo "This script will stop if an unhandled error occurs";
 set -e -o pipefail
 
 
