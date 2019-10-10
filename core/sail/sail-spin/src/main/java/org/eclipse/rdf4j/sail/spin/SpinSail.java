@@ -176,10 +176,26 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 		return initializing;
 	}
 
+	/**
+	 * <p>
+	 * Disable or enable SPIN constraint validation. This can be very useful in order to improve performance
+	 * </p>
+	 *
+	 * <p>
+	 * Default true (constraint validation enabled).
+	 * </p>
+	 * 
+	 * @param validateConstraints (true if enabled)
+	 */
 	public void setValidateConstraints(boolean validateConstraints) {
 		this.validateConstraints = validateConstraints;
 	}
 
+	/**
+	 * Check is SPIN constraint validation is enabled.
+	 * 
+	 * @return true if enabled
+	 */
 	public boolean isValidateConstraints() {
 		return validateConstraints;
 	}

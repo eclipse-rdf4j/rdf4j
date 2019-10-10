@@ -49,8 +49,8 @@ import static org.junit.Assert.assertFalse;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures",
 //		"-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile",
 //		"-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions",
@@ -108,8 +108,8 @@ public class BasicBenchmarks {
 
 			loadRDF("/schema/spif.ttl", conn);
 			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
@@ -130,8 +130,8 @@ public class BasicBenchmarks {
 
 			loadRDF("/schema/spif.ttl", conn);
 			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
@@ -266,7 +266,6 @@ public class BasicBenchmarks {
 		SailRepository sail = new SailRepository(spinSail);
 		sail.init();
 
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.add(bob, name, nameBob);
@@ -282,7 +281,7 @@ public class BasicBenchmarks {
 	}
 
 	private void loadRDF(String path, SailRepositoryConnection conn)
-		throws IOException {
+			throws IOException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
