@@ -181,6 +181,19 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		return Protocol.getStatementsLocation(getQueryURL());
 	}
 
+	@Override
+	public void close() {
+		try {
+			super.close();
+		} finally {
+			transactionURL = null;
+			if (ping != null) {
+				ping.cancel(false);
+				ping = null;
+			}
+		}
+	}
+
 	private synchronized String getTransactionURL() {
 		return transactionURL;
 	}
