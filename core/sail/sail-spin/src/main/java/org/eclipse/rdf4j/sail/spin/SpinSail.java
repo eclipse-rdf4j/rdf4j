@@ -45,6 +45,8 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	private boolean axiomClosureNeeded = true;
 
+	private boolean validateConstraints = true;
+
 	volatile private boolean initializing;
 
 	public SpinSail() {
@@ -108,7 +110,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	/**
 	 * Indicates if the SPIN Sail should itself load the full deductive closure of the SPIN axioms. Typically, this will
 	 * be {@code false} if the underlying Sail stack already supports RDFS inferencing, {@code true} if not.
-	 * 
+	 *
 	 * @return {@code true} if the SpinSail needs to load the full axiom closure, {@code false} otherwise.
 	 */
 	public boolean isAxiomClosureNeeded() {
@@ -172,5 +174,13 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	public boolean isInitializing() {
 		return initializing;
+	}
+
+	public void setValidateConstraints(boolean validateConstraints) {
+		this.validateConstraints = validateConstraints;
+	}
+
+	public boolean isValidateConstraints() {
+		return validateConstraints;
 	}
 }
