@@ -3,6 +3,12 @@ title: "Eclipse rdf4j release notes"
 layout: "doc"
 ---
 
+# 3.0.1 
+
+RDF4J 3.0.1 is a patch release with a number of bug fixes, including a major issue in `DROP GRAPH` execution on native stores.
+
+For a complete overview, see [all issues fixed in 3.0.1](https://github.com/eclipse/rdf4j/milestone/41?closed=1).
+
 # 3.0.0
 
 Rdf4j 3.0 is a major new release of the Eclipse rdf4j framework. Some highlights:
