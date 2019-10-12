@@ -20,6 +20,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
@@ -36,20 +37,20 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
 /**
  * Unit tests for {@link RDF4JProtocolSession}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class RDF4JProtocolSessionTest {
 
 	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(8089); // No-args constructor defaults to port 8080
+	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
 
 	private RDF4JProtocolSession subject;
 
 	private String testHeader = "X-testing-header";
 	private String testValue = "foobar";
 
-	private String serverURL = "http://localhost:8089/rdf4j-server";
+	private String serverURL = "http://localhost:" + wireMockRule.port() + "/rdf4j-server";
 	private String repositoryID = "test";
 
 	@Before
@@ -117,7 +118,7 @@ public class RDF4JProtocolSessionTest {
 				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
 	}
 
-	private void verifyHeader(String path) throws Exception {
+	private void verifyHeader(String path) {
 		verify(anyRequestedFor(urlEqualTo(path)).withHeader(testHeader, containing(testValue)));
 	}
 }
