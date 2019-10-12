@@ -11,6 +11,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.lessThanOrExactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.moreThanOrExactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -24,11 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
 
+import org.apache.http.Header;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.message.BasicHeader;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.protocol.HttpClientContext;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -79,9 +80,13 @@ public class RDF4JProtocolSessionTest {
 	@Test
 	public void testUpdateRepositoryExecutesPost() throws Exception {
 		RepositoryConfig config = new RepositoryConfig("test");
+
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/config")).willReturn(aResponse().withStatus(200)));
+
 		subject.updateRepository(config);
-		verify(httpclient).execute(any(HttpPost.class), any(HttpContext.class));
-		verifyHeaders();
+
+		verify(postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
+		verifyHeader("/rdf4j-server/repositories/test/config");
 	}
 
 	@Test
@@ -98,18 +103,16 @@ public class RDF4JProtocolSessionTest {
 		ArgumentCaptor<HttpGet> method = ArgumentCaptor.forClass(HttpGet.class);
 
 		Header h = new BasicHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
-		when(response.getHeaders("Content-Type")).thenReturn(new Header[] { h });
-		InputStreamEntity responseData = new InputStreamEntity(
-				getClass().getResourceAsStream("/fixtures/repository-config.nt"));
-		when(response.getEntity()).thenReturn(responseData);
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType())
+						.withBodyFile("repository-config.nt")));
 
-		subject.getRepositoryConfig(mock(StatementCollector.class));
+		subject.getRepositoryConfig(new StatementCollector());
 
-		verify(httpclient).execute(method.capture(), any(HttpClientContext.class));
-		assertThat(method.getValue().getURI().toASCIIString())
-				.isEqualTo("http://localhost/rdf4j-server/repositories/test/config");
+		verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
 
-		verifyHeaders();
+		verifyHeader("/rdf4j-server/repositories/test/config");
 	}
 
 	@Test
