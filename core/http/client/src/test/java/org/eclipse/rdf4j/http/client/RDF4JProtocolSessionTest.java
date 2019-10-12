@@ -64,7 +64,6 @@ public class RDF4JProtocolSessionTest {
 
 	@Test
 	public void testCreateRepositoryExecutesPut() throws Exception {
-		System.out.println(wireMockRule.port());
 		stubFor(put(urlEqualTo("/rdf4j-server/repositories/test")).willReturn(aResponse().withStatus(200)));
 		RepositoryConfig config = new RepositoryConfig("test");
 		subject.createRepository(config);
