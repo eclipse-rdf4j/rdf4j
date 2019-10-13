@@ -241,11 +241,6 @@ class MemorySailStore implements SailStore {
 		// System.out.println("cleanSnapshots() starting...");
 		// long startTime = System.currentTimeMillis();
 
-		// Sets used to keep track of which lists have already been processed
-		HashSet<MemValue> processedSubjects = new HashSet<>();
-		HashSet<MemValue> processedPredicates = new HashSet<>();
-		HashSet<MemValue> processedObjects = new HashSet<>();
-		HashSet<MemValue> processedContexts = new HashSet<>();
 
 		int lastStmtPos;
 		Lock stReadLock = statementListLockManager.getReadLock();
@@ -254,6 +249,13 @@ class MemorySailStore implements SailStore {
 		} finally {
 			stReadLock.release();
 		}
+
+		// Sets used to keep track of which lists have already been processed
+		HashSet<MemValue> processedSubjects = new HashSet<>();
+		HashSet<MemValue> processedPredicates = new HashSet<>();
+		HashSet<MemValue> processedObjects = new HashSet<>();
+		HashSet<MemValue> processedContexts = new HashSet<>();
+
 
 		/*
 		 * The order of the statement list won't change from lastStmtPos down while we don't have the write lock (it
@@ -299,6 +301,7 @@ class MemorySailStore implements SailStore {
 				}
 			} finally {
 				stWriteLock.release();
+				Thread.yield();
 			}
 		}
 

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
@@ -117,26 +118,50 @@ public class MemStatementList {
 	public void cleanSnapshots(int currentSnapshot) {
 		int i = size - 1;
 
-		// remove all deprecated statements from the end of the list
-		for (; i >= 0; i--) {
-			if (statements[i].getTillSnapshot() <= currentSnapshot) {
-				--size;
-				statements[i] = null;
-			} else {
-				i--;
-				break;
+
+		int count = 0;
+		for (MemStatement statement : statements) {
+			if (statements[i].getTillSnapshot() > currentSnapshot) {
+				count++;
 			}
 		}
 
-		// remove all deprecated statements that are not at the end of the list
-		for (; i >= 0; i--) {
-			if (statements[i].getTillSnapshot() <= currentSnapshot) {
-				// replace statement with last statement in the list
-				--size;
-				statements[i] = statements[size];
-				statements[size] = null;
+		if (count == 0) {
+			return;
+		}
+
+		if (count > size / 3) {
+			ArrayList<MemStatement> memStatements = new ArrayList<>(statements.length);
+			for (MemStatement statement : statements) {
+				if (statement.getTillSnapshot() > currentSnapshot) {
+					memStatements.add(statement);
+				}
+			}
+			statements = (MemStatement[]) memStatements.toArray();
+			size = statements.length;
+		} else {
+			// remove all deprecated statements from the end of the list
+			for (; i >= 0; i--) {
+				if (statements[i].getTillSnapshot() <= currentSnapshot) {
+					--size;
+					statements[i] = null;
+				} else {
+					i--;
+					break;
+				}
+			}
+
+			// remove all deprecated statements that are not at the end of the list
+			for (; i >= 0; i--) {
+				if (statements[i].getTillSnapshot() <= currentSnapshot) {
+					// replace statement with last statement in the list
+					--size;
+					statements[i] = statements[size];
+					statements[size] = null;
+				}
 			}
 		}
+
 	}
 
 	private void growArray(int newSize) {
