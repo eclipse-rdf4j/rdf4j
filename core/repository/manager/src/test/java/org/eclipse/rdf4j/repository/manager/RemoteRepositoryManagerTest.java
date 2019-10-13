@@ -18,6 +18,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -32,24 +33,24 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
 /**
  * Unit tests for {@link RemoteRepositoryManager}
- * 
+ *
  * @author Jeen Broekstra
  *
  */
 public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(8089); // No-args constructor defaults to port 8080
+	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
 
 	@Override
 	@Before
 	public void setUp() {
-		subject = new RemoteRepositoryManager("http://localhost:8089/rdf4j-server");
+		subject = new RemoteRepositoryManager("http://localhost:" + wireMockRule.port() + "/rdf4j-server");
 		wireMockRule.resetAll();
 	}
 
 	@Test
-	public void testAddRepositoryConfig() throws Exception {
+	public void testAddRepositoryConfig() {
 		wireMockRule.stubFor(get(urlEqualTo("/rdf4j-server/protocol"))
 				.willReturn(aResponse().withStatus(200).withBody(Protocol.VERSION)));
 		wireMockRule
@@ -106,7 +107,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
-	public void testAddRepositoryConfigLegacy() throws Exception {
+	public void testAddRepositoryConfigLegacy() {
 		wireMockRule.stubFor(
 				get(urlEqualTo("/rdf4j-server/protocol")).willReturn(aResponse().withStatus(200).withBody("8")));
 		wireMockRule.stubFor(post(urlPathEqualTo("/rdf4j-server/repositories/SYSTEM/statements"))
