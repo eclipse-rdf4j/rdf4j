@@ -17,7 +17,7 @@ public class SpinSailFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 *
+	 * 
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "openrdf:SpinSail";
@@ -44,8 +44,6 @@ public class SpinSailFactory implements SailFactory {
 		SpinSail spinSail = new SpinSail();
 		if (config instanceof SpinSailConfig) {
 			spinSail.setAxiomClosureNeeded(((SpinSailConfig) config).isAxiomClosureNeeded());
-			spinSail.setValidateConstraints(((SpinSailConfig) config).isValidateConstraints());
-
 		}
 
 		return spinSail;
