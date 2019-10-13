@@ -667,7 +667,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private void checkConstraints(Resource subj, List<IRI> classHierarchy)
 			throws RDF4JException {
-		if (sail.isInitializing()) {
+		if (sail.isInitializing() || !sail.isValidateConstraints()) {
 			return;
 		}
 
