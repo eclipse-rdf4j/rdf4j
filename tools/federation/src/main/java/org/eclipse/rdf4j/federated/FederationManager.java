@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
-import org.eclipse.rdf4j.federated.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
-import org.eclipse.rdf4j.federated.statistics.Statistics;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.Version;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -96,12 +95,11 @@ public class FederationManager {
 	 * {@link FederationManager} remains initialized until {@link #shutDown()} is invoked, usually this is done by
 	 * invoking {@link Repository#shutDown()}:
 	 * 
-	 * @param members    initialize the federation with a list of repository members, null and empty lists are allowed
-	 * @param cache      the cache instance to be used
-	 * @param statistics the statistics instance to be used
+	 * @param members initialize the federation with a list of repository members, null and empty lists are allowed
+	 * @param cache   the cache instance to be used
 	 * @return the initialized {@link Repository} representing the federation. Needs to be shut down by the caller
 	 */
-	static synchronized FedXRepository initialize(List<Endpoint> members, Cache cache, Statistics statistics) {
+	static synchronized FedXRepository initialize(List<Endpoint> members, Cache cache) {
 		if (instance != null)
 			throw new FedXRuntimeException("FederationManager already initialized.");
 
@@ -117,7 +115,7 @@ public class FederationManager {
 
 		FedXRepository repo = new FedXRepository(federation);
 
-		instance = new FederationManager(federation, cache, statistics, ex, repo);
+		instance = new FederationManager(federation, cache, ex, repo);
 		instance.updateStrategy();
 		instance.reset();
 
@@ -188,7 +186,6 @@ public class FederationManager {
 	/* Instance variables */
 	protected FedX federation;
 	protected Cache cache;
-	protected Statistics statistics;
 	protected ExecutorService executor;
 	protected FederationEvalStrategy strategy;
 	protected FederationType type;
@@ -196,11 +193,10 @@ public class FederationManager {
 	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
 
-	private FederationManager(FedX federation, Cache cache, Statistics statistics, ExecutorService executor,
+	private FederationManager(FedX federation, Cache cache, ExecutorService executor,
 			Repository repo) {
 		this.federation = federation;
 		this.cache = cache;
-		this.statistics = statistics;
 		this.executor = executor;
 		QueryManager.instance = new QueryManager(this, repo); // initialize the singleton query manager
 	}
@@ -236,10 +232,6 @@ public class FederationManager {
 
 	public Cache getCache() {
 		return cache;
-	}
-
-	public Statistics getStatistics() {
-		return statistics;
 	}
 
 	public Executor getExecutor() {
@@ -467,7 +459,7 @@ public class FederationManager {
 	 * {@link Endpoint#getEndpointClassification()}:
 	 * <p>
 	 * 
-	 * Which strategy is applied depends on {@link EvaluationStrategyFactory}.
+	 * Which strategy is applied depends on {@link FederationEvaluationStrategyFactory}.
 	 * 
 	 * Default strategies:
 	 * <ul>
@@ -506,7 +498,7 @@ public class FederationManager {
 		}
 
 		if (updated) {
-			strategy = EvaluationStrategyFactory.getEvaluationStrategy(type);
+			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type);
 			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
 					+ instance.strategy.getClass().getSimpleName());
 		}

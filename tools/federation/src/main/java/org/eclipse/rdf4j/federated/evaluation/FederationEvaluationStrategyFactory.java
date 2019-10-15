@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.federated.FederationManager.FederationType;
  * 
  * @author Andreas Schwarte
  */
-public class EvaluationStrategyFactory {
+public class FederationEvaluationStrategyFactory {
 
 	/**
 	 * Return an instance of {@link FederationEvalStrategy} which is used for evaluating the query. The type depends on

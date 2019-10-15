@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.statistics.Statistics;
+import org.eclipse.rdf4j.federated.optimizer.Optimizer;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
@@ -92,7 +93,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	protected Executor executor;
 	protected Cache cache;
-	protected Statistics statistics;
 
 	public FederationEvalStrategy() {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
@@ -114,7 +114,20 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}, DelegateFederatedServiceResolver.getInstance());
 		this.executor = FederationManager.getInstance().getExecutor();
 		this.cache = FederationManager.getInstance().getCache();
-		this.statistics = FederationManager.getInstance().getStatistics();
+	}
+
+	@Override
+	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingSet bindings) {
+
+		if (!(evaluationStatistics instanceof FederationEvaluationStatistics)) {
+			throw new FedXRuntimeException(
+					"Expected FederationEvaluationStatistics, was " + evaluationStatistics.getClass());
+		}
+
+		FederationEvaluationStatistics stats = (FederationEvaluationStatistics) evaluationStatistics;
+		return Optimizer.optimize(expr, stats.getDataset(), bindings, this,
+				stats.getQueryInfo());
 	}
 
 	@Override

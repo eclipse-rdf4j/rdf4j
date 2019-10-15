@@ -21,8 +21,6 @@ import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInforma
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
-import org.eclipse.rdf4j.federated.statistics.Statistics;
-import org.eclipse.rdf4j.federated.statistics.StatisticsImpl;
 import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -220,7 +218,6 @@ public class FedXFactory {
 
 		// initialize defaults
 		Cache cache = initializeCache();
-		Statistics statistics = new StatisticsImpl();
 
 		initializeMembersFromConfig();
 
@@ -229,7 +226,7 @@ public class FedXFactory {
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}
-		return FederationManager.initialize(members, cache, statistics);
+		return FederationManager.initialize(members, cache);
 	}
 
 	protected Cache initializeCache() {
