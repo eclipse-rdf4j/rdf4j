@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
@@ -160,10 +159,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (expr instanceof FedXService) {
 			return evaluateService((FedXService) expr, bindings);
-		}
-
-		if (expr instanceof IndependentJoinGroup) {
-			return evaluateIndependentJoinGroup((IndependentJoinGroup) expr, bindings); // XXX
 		}
 
 		if (expr instanceof EmptyResult)
@@ -396,12 +391,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 */
 	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
 			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
-
-	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
-			IndependentJoinGroup joinGroup, final BindingSet bindings) throws QueryEvaluationException;
-
-	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
-			IndependentJoinGroup joinGroup, final List<BindingSet> bindings) throws QueryEvaluationException;
 
 	/**
 	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.

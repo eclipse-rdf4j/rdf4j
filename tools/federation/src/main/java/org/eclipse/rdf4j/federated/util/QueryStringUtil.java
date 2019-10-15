@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
@@ -382,85 +381,6 @@ public class QueryStringUtil {
 			res.append(" ?").append(var);
 
 		res.append(" WHERE {").append(unions).append(" }");
-
-		return res.toString();
-	}
-
-	/**
-	 * 
-	 * SELECT ?v_0 ?v_1 WHERE { { ?v_0 p1 o1 . } UNION { ?v_1 p2 o1 . } }
-	 * 
-	 * @param joinGroup
-	 * @param bindings
-	 * @return the SELECT query string
-	 */
-	public static String selectQueryStringIndependentJoinGroup(IndependentJoinGroup joinGroup, BindingSet bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		StringBuilder unions = new StringBuilder();
-		for (int i = 0; i < joinGroup.getMemberCount(); i++) {
-			StatementPattern stmt = (StatementPattern) joinGroup.getMembers().get(i);
-			String s = constructStatementId(stmt, Integer.toString(i), varNames, bindings);
-			if (i > 0)
-				unions.append(" UNION");
-			unions.append(" { ").append(s).append(" }");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames)
-			res.append(" ?").append(var);
-
-		res.append(" WHERE {");
-
-		res.append(unions);
-
-		res.append(" }");
-
-		return res.toString();
-	}
-
-	/**
-	 * Construct a select query representing a bound independent join group.
-	 * 
-	 * ?v_%stmt%_%bindingId$
-	 * 
-	 * SELECT ?v_0_0 ?v_0_1 ?v_1_0 ... WHERE { { ?v_0#0 p o UNION ?v_0_1 p o UNION ... } UNION { ?v_1_0 p o UNION ?v_1_1
-	 * p o UNION ... } UNION ... }
-	 * 
-	 * @param joinGroup
-	 * @param bindings
-	 * @return the SELECT query string
-	 */
-	public static String selectQueryStringIndependentJoinGroup(IndependentJoinGroup joinGroup,
-			List<BindingSet> bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		StringBuilder outerUnion = new StringBuilder();
-		for (int i = 0; i < joinGroup.getMemberCount(); i++) {
-			String innerUnion = constructInnerUnion((StatementPattern) joinGroup.getMembers().get(i), i, varNames,
-					bindings);
-			if (i > 0)
-				outerUnion.append(" UNION");
-			outerUnion.append(" { ").append(innerUnion).append("}");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames)
-			res.append(" ?").append(var);
-
-		res.append(" WHERE {");
-
-		res.append(outerUnion);
-
-		res.append(" }");
 
 		return res.toString();
 	}
