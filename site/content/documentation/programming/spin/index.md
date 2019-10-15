@@ -16,7 +16,7 @@ SpinSail spinSail = new SpinSail();
 spinSail.setBaseSail(new MemoryStore());
 // create a repository with the Sail stack:
 Repository rep = new SailRepository(spinSail);
-rep.initialize();
+rep.init();
 {{< / highlight >}}
 
 Alternatively, a SpinSail can be configured via the `RepositoryManager`:

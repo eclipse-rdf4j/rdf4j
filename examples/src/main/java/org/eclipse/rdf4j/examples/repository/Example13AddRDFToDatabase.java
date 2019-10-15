@@ -43,7 +43,7 @@ public class Example13AddRDFToDatabase {
 		// See http://docs.rdf4j.org/programming/#_the_repository_api for more extensive examples on
 		// how to create and maintain different types of databases.
 		Repository db = new SailRepository(new MemoryStore());
-		db.initialize();
+		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {

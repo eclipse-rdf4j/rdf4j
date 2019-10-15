@@ -1,43 +1,43 @@
 ---
-title: "Download rdf4j"
+title: "Download RDF4J"
 slug: "download"
 layout: "doc"
 hide_page_title: "true"
 ---
 
-# Get rdf4j
+# Get RDF4J
 
-You can either retrieve rdf4j via Apache Maven, or download the SDK or onejar directly.
+You can either retrieve RDF4J via Apache Maven, or download the SDK or onejar directly.
 
-# Download rdf4j 3.0.0 (latest)
+# Download RDF4J 3.0.1 (latest)
 
-rdf4j 3.0.0 is our latest stable release. It requires Java 8. For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/#3-0-0).
+RDF4J 3.0.1 is our latest stable release. It requires Java 8. For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/#3-0-1).
 
-- [rdf4j 3.0.0 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-sdk.zip)<br/>
-  Full Eclipse rdf4j SDK, containing all libraries, rdf4j Server, Workbench, and Console applications, and Javadoc API.
+- [RDF4J 3.0.1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.1-sdk.zip)<br/>
+  Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [rdf4j 3.0.0 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.0-onejar.jar)<br/>
-  Single jar file for easy inclusion of the full rdf4j toolkit in your Java project.
+- [RDF4J 3.0.1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.0.1-onejar.jar)<br/>
+  Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
-- [rdf4j artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
+- [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
 
 # Using Maven Dependencies
 
-You can include rdf4j as a Maven dependency in your Java project by including the following BOM (Bill-of-Materials):
+You can include RDF4J as a Maven dependency in your Java project by including the following BOM (Bill-of-Materials):
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.eclipse.rdf4j</groupId>
+                <groupId>org.eclipse.RDF4J</groupId>
                 <artifactId>rdf4j-bom</artifactId>
-                <version>3.0.0</version>
+                <version>3.0.1</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
 
-Rdf4j is a multi-module project, you can pick and choose which libraries you need. To include the full project, simply import the following dependency:
+RDF4J is a multi-module project, you can pick and choose which libraries you need. To include the full project, simply import the following dependency:
 
     <dependency>
       <groupId>org.eclipse.rdf4j</groupId>
@@ -51,29 +51,29 @@ which artifacts RDF4J provides.
 
 # Older releases
 
-## rdf4j 2.5
+## RDF4J 2.5
 
-- [rdf4j 2.5.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.4-sdk.zip)
-- [rdf4j 2.5.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.4-onejar.jar)
+- [RDF4J 2.5.5 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.5-sdk.zip)
+- [RDF4J 2.5.5 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.5.5-onejar.jar)
 
-## rdf4j 2.4
+## RDF4J 2.4
 
-- [rdf4j 2.4.6 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.4.6-sdk.zip)
-- [rdf4j 2.4.6 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.4.6-onejar.jar)
+- [RDF4J 2.4.6 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.4.6-sdk.zip)
+- [RDF4J 2.4.6 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.4.6-onejar.jar)
 
-## rdf4j 2.3
+## RDF4J 2.3
 
-- [rdf4j 2.3.3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.3.3-sdk.zip)
-- [rdf4j 2.3.3 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.3.3-onejar.jar)
+- [RDF4J 2.3.3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.3.3-sdk.zip)
+- [RDF4J 2.3.3 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.3.3-onejar.jar)
 
-## rdf4j 2.2
+## RDF4J 2.2
 
-- [rdf4j 2.2.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.2.4-sdk.zip)
-- [rdf4j 2.2.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.2.4-onejar.jar)
+- [RDF4J 2.2.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.2.4-sdk.zip)
+- [RDF4J 2.2.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-2.2.4-onejar.jar)
 
 # Source code and nightly builds
 
-You can access the rdf4j source code directly from [our GitHub repositories](https://github.com/eclipse/rdf4j). Maven nightly snapshot builds for the master branch are available from the [Sonatype snapshot repository](https://oss.sonatype.org/content/repositories/snapshots/org/eclipse/rdf4j/).
+You can access the RDF4J source code directly from [our GitHub repositories](https://github.com/eclipse/rdf4j). Maven nightly snapshot builds for the master branch are available from the [Sonatype snapshot repository](https://oss.sonatype.org/content/repositories/snapshots/org/eclipse/rdf4j/).
 
 To include nightly snapshot builds in your project, add this repository to your project’s POM:
 
@@ -90,12 +90,12 @@ To include nightly snapshot builds in your project, add this repository to your 
         </repository>
      </repositories>
 
-Then use rdf4j dependencies as normal, using 3.0-SNAPSHOT as the version number.
+Then use RDF4J dependencies as normal, using 3.0-SNAPSHOT as the version number.
 
 # Archives
 
-Old releases of OpenRDF Sesame (the predecessor of Eclipse rdf4j) can be found on [Sourceforge](http://sourceforge.net/projects/sesame).
+Old releases of OpenRDF Sesame (the predecessor of Eclipse RDF4J) can be found on [Sourceforge](http://sourceforge.net/projects/sesame).
 
 # License
 
-Eclipse rdf4j is licensed to you under the terms of the [Eclipse Distribution License (EDL), v1.0](https://eclipse.org/org/documents/edl-v10.php).
+Eclipse RDF4J is licensed to you under the terms of the [Eclipse Distribution License (EDL), v1.0](https://eclipse.org/org/documents/edl-v10.php).
