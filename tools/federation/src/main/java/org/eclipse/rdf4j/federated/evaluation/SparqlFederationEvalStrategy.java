@@ -17,15 +17,11 @@ import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
-import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.IndependentJoingroupBindingsIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.IndependentJoingroupBindingsIteration3;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
@@ -100,64 +96,6 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		return new GroupedCheckConversionIteration(result, bindings);
-	}
-
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
-			IndependentJoinGroup joinGroup, BindingSet bindings)
-			throws QueryEvaluationException {
-
-		String preparedQuery = QueryStringUtil.selectQueryStringIndependentJoinGroup(joinGroup, bindings);
-
-		try {
-			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources(); // TODO this
-																											// is only
-																											// correct
-																											// for the
-																											// prototype
-																											// (=>
-																											// different
-																											// endpoints)
-			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-					statementSources, joinGroup.getQueryInfo());
-
-			// return only those elements which evaluated positively at the endpoint
-			result = new IndependentJoingroupBindingsIteration(result, bindings);
-
-			return result;
-		} catch (Exception e) {
-			throw new QueryEvaluationException(e);
-		}
-
-	}
-
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateIndependentJoinGroup(
-			IndependentJoinGroup joinGroup, List<BindingSet> bindings)
-			throws QueryEvaluationException {
-
-		String preparedQuery = QueryStringUtil.selectQueryStringIndependentJoinGroup(joinGroup, bindings);
-
-		try {
-			List<StatementSource> statementSources = joinGroup.getMembers().get(0).getStatementSources(); // TODO this
-																											// is only
-																											// correct
-																											// for the
-																											// prototype
-																											// (=>
-																											// different
-																											// endpoints)
-			CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-					statementSources, joinGroup.getQueryInfo());
-
-			// return only those elements which evaluated positively at the endpoint
-//			result = new IndependentJoingroupBindingsIteration2(result, bindings);
-			result = new IndependentJoingroupBindingsIteration3(result, bindings);
-
-			return result;
-		} catch (Exception e) {
-			throw new QueryEvaluationException(e);
-		}
 	}
 
 	@Override

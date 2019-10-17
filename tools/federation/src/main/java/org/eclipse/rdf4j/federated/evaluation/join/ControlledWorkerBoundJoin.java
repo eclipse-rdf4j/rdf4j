@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -82,8 +81,6 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 				}
 			} else if (expr instanceof FedXService) {
 				taskCreator = new FedXServiceJoinTaskCreator(this, strategy, (FedXService) expr);
-			} else if (expr instanceof IndependentJoinGroup) {
-				taskCreator = new IndependentJoinGroupTaskCreator(this, strategy, (IndependentJoinGroup) expr);
 			} else {
 				throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
 						+ ". Please report this problem.");
@@ -210,25 +207,6 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		@Override
 		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings) {
 			return new ParallelServiceJoinTask(_control, _strategy, _expr, bindings);
-		}
-	}
-
-	protected class IndependentJoinGroupTaskCreator implements TaskCreator {
-		protected final ControlledWorkerBoundJoin _control;
-		protected final FederationEvalStrategy _strategy;
-		protected final IndependentJoinGroup _expr;
-
-		public IndependentJoinGroupTaskCreator(ControlledWorkerBoundJoin control,
-				FederationEvalStrategy strategy, IndependentJoinGroup expr) {
-			super();
-			_control = control;
-			_strategy = strategy;
-			_expr = expr;
-		}
-
-		@Override
-		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings) {
-			return new ParallelIndependentGroupJoinTask(_control, _strategy, _expr, bindings);
 		}
 	}
 

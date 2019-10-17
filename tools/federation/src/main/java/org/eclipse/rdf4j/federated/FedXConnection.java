@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.evaluation.iterator.RepositoryExceptionConvertingIteration;
@@ -104,7 +105,8 @@ public class FedXConnection extends AbstractSailConnection {
 			}
 			try {
 				FederationManager.getMonitoringService().monitorQuery(queryInfo);
-				query = Optimizer.optimize(query, dataset, bindings, strategy, queryInfo);
+				FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset);
+				query = strategy.optimize(query, stats, bindings);
 			} catch (Exception e) {
 				log.warn("Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): "
 						+ e.getMessage());
