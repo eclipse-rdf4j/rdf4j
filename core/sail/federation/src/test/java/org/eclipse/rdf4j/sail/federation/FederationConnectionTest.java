@@ -7,19 +7,32 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
+import static org.assertj.core.api.Java6Assertions.fail;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
@@ -144,6 +157,75 @@ public class FederationConnectionTest {
 
 		}
 
+	}
+
+
+	@Test
+	public void testAssertionErrorReproduction() {
+
+		final ValueFactory vf = SimpleValueFactory.getInstance();
+		final BNode address = vf.createBNode();
+		final BNode anotherAddress = vf.createBNode();
+
+		final ModelBuilder builder = new ModelBuilder();
+		builder
+			.setNamespace("ex", "http://example.org/")
+			.subject("ex:Picasso")
+			.add(RDF.TYPE, "ex:Artist")
+			.add(FOAF.FIRST_NAME, "Pablo")
+			.add("ex:homeAddress", address)
+			.subject("ex:AnotherArtist")
+			.add(RDF.TYPE, "ex:Artist")
+			.add(FOAF.FIRST_NAME, "AnotherArtist")
+			.add("ex:homeAddress", anotherAddress)
+			.subject(address)
+			.add("ex:street", "31 Art Gallery")
+			.add("ex:city", "Madrid")
+			.add("ex:country", "Spain")
+			.subject(anotherAddress)
+			.add("ex:street", "32 Art Gallery")
+			.add("ex:city", "London")
+			.add("ex:country", "UK");
+
+		final Model model = builder.build();
+		final Repository repo1 = new SailRepository(new MemoryStore());
+		repo1.initialize();
+		repo1.getConnection().add(model);
+
+		final Repository repo2 = new SailRepository(new MemoryStore());
+		repo2.initialize();
+
+		final Federation fed = new Federation();
+		fed.addMember(repo1);
+		fed.addMember(repo2);
+
+		final String ex = "http://example.org/";
+		final String queryString =
+			"PREFIX rdf: <" + RDF.NAMESPACE + ">\n" +
+				"PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+				"PREFIX ex: <" + ex + ">\n" +
+				"select (count(?persons) as ?count) {\n" +
+				"   ?persons rdf:type ex:Artist ;\n"
+				+ "          ex:homeAddress ?country .\n"
+				+ " ?country ex:country \"Spain\" . }";
+
+		final SailRepository fedRepo = new SailRepository(fed);
+		fedRepo.initialize();
+
+		final SailRepositoryConnection fedRepoConn = fedRepo.getConnection();
+
+		fedRepoConn.begin();
+		final TupleQuery query = fedRepoConn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+		final TupleQueryResult eval = query.evaluate();
+		if (eval.hasNext()) {
+			final Value next = eval.next().getValue("count");
+			assertEquals(1, ((Literal) next).intValue());
+		}
+		else {
+			fail("No result");
+		}
+
+		fedRepoConn.commit();
 	}
 
 }
