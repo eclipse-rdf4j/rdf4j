@@ -15,8 +15,11 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -161,5 +164,24 @@ public class TupleExprs {
 		}
 
 		return "_const_" + uniqueStringForValue;
+	}
+
+	/**
+	 * Verifies if the supplied expression is a FILTER (NOT) EXISTS operation
+	 * 
+	 * @param rightArg a tuple expression
+	 * @return true if the supplied expression is a FILTER (NOT) EXISTS operation, false otherwise.
+	 */
+	public static boolean isFilterExistsFunction(TupleExpr expr) {
+		if (expr instanceof Filter) {
+			Filter filter = (Filter) expr;
+			if (filter.getCondition() instanceof Exists) {
+				return true;
+			} else if (filter.getCondition() instanceof Not) {
+				Not n = (Not) filter.getCondition();
+				return (n.getArg() instanceof Exists);
+			}
+		}
+		return false;
 	}
 }

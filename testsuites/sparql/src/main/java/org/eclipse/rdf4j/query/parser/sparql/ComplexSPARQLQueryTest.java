@@ -2191,6 +2191,24 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1405
+	 */
+	public void testBindScope() throws Exception {
+		String query = "SELECT * {\n" +
+				"  { BIND (\"a\" AS ?a) }\n" +
+				"  { BIND (?a AS ?b) } \n" +
+				"}";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertEquals(1, result.size());
+
+		assertEquals(conn.getValueFactory().createLiteral("a"), result.get(0).getValue("a"));
+		assertNull(result.get(0).getValue("b"));
+	}
+
+	@Test
 	public void testSES2250BindErrors() throws Exception {
 		StringBuilder ub = new StringBuilder();
 		ub.append("insert data { <urn:test:subj> <urn:test:pred> _:blank }");
@@ -2249,11 +2267,11 @@ public abstract class ComplexSPARQLQueryTest {
 		ub.append("}");
 		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
 
-		StringBuilder qb = new StringBuilder();
-		qb.append("select ?s  {\n" + "    ?s a* <http://type> .\n" + "    FILTER EXISTS {?s <http://predicate> ?o}\n"
-				+ "} limit 100 values ?o {<http://obj1>}");
+		String query = "select ?s  {\n" + "    ?s a* <http://type> .\n"
+				+ "    FILTER EXISTS {?s <http://predicate> ?o}\n"
+				+ "} limit 100 values ?o {<http://obj1>}";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		TupleQuery tq = conn.prepareTupleQuery(query);
 
 		List<BindingSet> result = QueryResults.asList(tq.evaluate());
 		assertEquals("single result expected", 1, result.size());
