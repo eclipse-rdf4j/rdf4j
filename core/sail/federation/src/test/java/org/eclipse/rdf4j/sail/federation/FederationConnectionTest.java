@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
-import static org.assertj.core.api.Java6Assertions.fail;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,6 +38,10 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
+
+import static org.assertj.core.api.Java6Assertions.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class FederationConnectionTest {
 
@@ -97,9 +97,9 @@ public class FederationConnectionTest {
 	}
 
 	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
-			SailConnection connection) throws SailException {
+										   SailConnection connection) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-				(IRI) predicate, object, true)) {
+			(IRI) predicate, object, true)) {
 			assertTrue(message, statements.hasNext());
 		}
 	}
@@ -163,69 +163,71 @@ public class FederationConnectionTest {
 	@Test
 	public void testAssertionErrorReproduction() {
 
-		final ValueFactory vf = SimpleValueFactory.getInstance();
-		final BNode address = vf.createBNode();
-		final BNode anotherAddress = vf.createBNode();
+		for (int i = 0; i < 100; i++) {
 
-		final ModelBuilder builder = new ModelBuilder();
-		builder
-			.setNamespace("ex", "http://example.org/")
-			.subject("ex:Picasso")
-			.add(RDF.TYPE, "ex:Artist")
-			.add(FOAF.FIRST_NAME, "Pablo")
-			.add("ex:homeAddress", address)
-			.subject("ex:AnotherArtist")
-			.add(RDF.TYPE, "ex:Artist")
-			.add(FOAF.FIRST_NAME, "AnotherArtist")
-			.add("ex:homeAddress", anotherAddress)
-			.subject(address)
-			.add("ex:street", "31 Art Gallery")
-			.add("ex:city", "Madrid")
-			.add("ex:country", "Spain")
-			.subject(anotherAddress)
-			.add("ex:street", "32 Art Gallery")
-			.add("ex:city", "London")
-			.add("ex:country", "UK");
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			BNode address = vf.createBNode();
+			BNode anotherAddress = vf.createBNode();
 
-		final Model model = builder.build();
-		final Repository repo1 = new SailRepository(new MemoryStore());
-		repo1.initialize();
-		repo1.getConnection().add(model);
+			ModelBuilder builder = new ModelBuilder();
+			builder
+				.setNamespace("ex", "http://example.org/")
+				.subject("ex:Picasso")
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "Pablo")
+				.add("ex:homeAddress", address)
+				.subject("ex:AnotherArtist")
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "AnotherArtist")
+				.add("ex:homeAddress", anotherAddress)
+				.subject(address)
+				.add("ex:street", "31 Art Gallery")
+				.add("ex:city", "Madrid")
+				.add("ex:country", "Spain")
+				.subject(anotherAddress)
+				.add("ex:street", "32 Art Gallery")
+				.add("ex:city", "London")
+				.add("ex:country", "UK");
 
-		final Repository repo2 = new SailRepository(new MemoryStore());
-		repo2.initialize();
+			Model model = builder.build();
+			Repository repo1 = new SailRepository(new MemoryStore());
+			repo1.initialize();
+			repo1.getConnection().add(model);
 
-		final Federation fed = new Federation();
-		fed.addMember(repo1);
-		fed.addMember(repo2);
+			Repository repo2 = new SailRepository(new MemoryStore());
+			repo2.initialize();
 
-		final String ex = "http://example.org/";
-		final String queryString =
-			"PREFIX rdf: <" + RDF.NAMESPACE + ">\n" +
-				"PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
-				"PREFIX ex: <" + ex + ">\n" +
-				"select (count(?persons) as ?count) {\n" +
-				"   ?persons rdf:type ex:Artist ;\n"
-				+ "          ex:homeAddress ?country .\n"
-				+ " ?country ex:country \"Spain\" . }";
+			Federation fed = new Federation();
+			fed.addMember(repo1);
+			fed.addMember(repo2);
 
-		final SailRepository fedRepo = new SailRepository(fed);
-		fedRepo.initialize();
+			String ex = "http://example.org/";
+			String queryString =
+				"PREFIX rdf: <" + RDF.NAMESPACE + ">\n" +
+					"PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+					"PREFIX ex: <" + ex + ">\n" +
+					"select (count(?persons) as ?count) {\n" +
+					"   ?persons rdf:type ex:Artist ;\n"
+					+ "          ex:homeAddress ?country .\n"
+					+ " ?country ex:country \"Spain\" . }";
 
-		final SailRepositoryConnection fedRepoConn = fedRepo.getConnection();
+			SailRepository fedRepo = new SailRepository(fed);
+			fedRepo.initialize();
 
-		fedRepoConn.begin();
-		final TupleQuery query = fedRepoConn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		final TupleQueryResult eval = query.evaluate();
-		if (eval.hasNext()) {
-			final Value next = eval.next().getValue("count");
-			assertEquals(1, ((Literal) next).intValue());
+			SailRepositoryConnection fedRepoConn = fedRepo.getConnection();
+
+			fedRepoConn.begin();
+			TupleQuery query = fedRepoConn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+			TupleQueryResult eval = query.evaluate();
+			if (eval.hasNext()) {
+				Value next = eval.next().getValue("count");
+				assertEquals(1, ((Literal) next).intValue());
+			} else {
+				fail("No result");
+			}
+
+			fedRepoConn.commit();
 		}
-		else {
-			fail("No result");
-		}
-
-		fedRepoConn.commit();
 	}
 
 }
