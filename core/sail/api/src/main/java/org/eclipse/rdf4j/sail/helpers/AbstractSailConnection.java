@@ -343,7 +343,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public void flush() throws SailException {
+	synchronized public void flush() throws SailException {
 		if (isActive()) {
 			endUpdate(null);
 			startUpdate(null);
