@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
@@ -46,8 +47,6 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * @author James Leigh
  */
 public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {
-
-	private static final String END_BLOCK = "}\n";
 
 	private OwnedTupleExpr owner;
 
@@ -238,7 +237,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 				vars.putAll(variables);
 				node.getRightArg().visit(this);
 				if (patternNode != null) {
-					builder.append("OPTIONAL {").append(pattern).append(END_BLOCK);
+					builder.append("OPTIONAL {").append(pattern).append("}\n");
 					vars.putAll(variables);
 					this.variables = vars;
 					this.pattern = builder.toString();
@@ -261,7 +260,14 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 				// no owner
 				builder = null; // NOPMD
 			} else if (builder != null) {
-				builder.append("{").append(pattern).append(END_BLOCK);
+				if (TupleExprs.isGraphPatternGroup(arg)) {
+					builder.append("{");
+				}
+				builder.append(pattern);
+				if (TupleExprs.isGraphPatternGroup(arg)) {
+					builder.append("}");
+				}
+				builder.append("\n");
 				vars.putAll(variables);
 			}
 		}
@@ -276,13 +282,33 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	public void meet(Join node) throws RepositoryException {
 		Map<String, String> vars = new HashMap<>();
 		StringBuilder builder = new StringBuilder();
-		node.getLeftArg().visit(this);
+
+		TupleExpr leftArg = node.getLeftArg();
+		TupleExpr rightArg = node.getRightArg();
+
+		leftArg.visit(this);
 		if (patternNode != null) {
-			builder.append("{").append(pattern).append(END_BLOCK);
+			if (TupleExprs.isGraphPatternGroup(leftArg)) {
+				builder.append("{");
+			}
+			builder.append(pattern);
+			if (TupleExprs.isGraphPatternGroup(leftArg)) {
+				builder.append("}");
+			}
+			builder.append("\n");
+
 			vars.putAll(variables);
-			node.getRightArg().visit(this);
+			rightArg.visit(this);
 			if (patternNode != null) {
-				builder.append("{").append(pattern).append(END_BLOCK);
+				if (TupleExprs.isGraphPatternGroup(rightArg)) {
+					builder.append("{");
+				}
+				builder.append(pattern);
+				if (TupleExprs.isGraphPatternGroup(rightArg)) {
+					builder.append("}");
+				}
+				builder.append("\n");
+
 				vars.putAll(variables);
 				this.variables = vars;
 				this.pattern = builder.toString();
