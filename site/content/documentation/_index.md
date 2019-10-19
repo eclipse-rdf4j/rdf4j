@@ -24,6 +24,7 @@ hide_page_title: "true"
 - <a href="programming/spin/">Reasoning and Validation with SPIN</a>
 - <a href="programming/shacl/">Validation with SHACL</a>
 - <a href="programming/geosparql/">GeoSPARQL</a>
+- <a href="programming/federation/">Federation with FedX</a>
 
 # Rdf4j Server, Workbench and Console
 

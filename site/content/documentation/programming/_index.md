@@ -14,3 +14,4 @@ hide_page_title: "true"
 - <a href="spin/">Reasoning and Validation with SPIN</a>
 - <a href="shacl/">Validation with SHACL</a>
 - <a href="geosparql/">GeoSPARQL</a>
+- <a href="federation/">Federation with FedX</a>
