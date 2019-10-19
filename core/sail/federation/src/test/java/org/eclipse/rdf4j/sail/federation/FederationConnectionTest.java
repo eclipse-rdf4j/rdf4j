@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
+import java.util.stream.IntStream;
+
 import static org.assertj.core.api.Java6Assertions.fail;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -98,9 +100,9 @@ public class FederationConnectionTest {
 	}
 
 	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
-			SailConnection connection) throws SailException {
+										   SailConnection connection) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-				(IRI) predicate, object, true)) {
+			(IRI) predicate, object, true)) {
 			assertTrue(message, statements.hasNext());
 		}
 	}
@@ -163,7 +165,7 @@ public class FederationConnectionTest {
 	@Test
 	public void testAssertionErrorReproduction() {
 
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 1000; i++) {
 
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			BNode address = vf.createBNode();
@@ -171,23 +173,23 @@ public class FederationConnectionTest {
 
 			ModelBuilder builder = new ModelBuilder();
 			builder
-					.setNamespace("ex", "http://example.org/")
-					.subject("ex:Picasso")
-					.add(RDF.TYPE, "ex:Artist")
-					.add(FOAF.FIRST_NAME, "Pablo")
-					.add("ex:homeAddress", address)
-					.subject("ex:AnotherArtist")
-					.add(RDF.TYPE, "ex:Artist")
-					.add(FOAF.FIRST_NAME, "AnotherArtist")
-					.add("ex:homeAddress", anotherAddress)
-					.subject(address)
-					.add("ex:street", "31 Art Gallery")
-					.add("ex:city", "Madrid")
-					.add("ex:country", "Spain")
-					.subject(anotherAddress)
-					.add("ex:street", "32 Art Gallery")
-					.add("ex:city", "London")
-					.add("ex:country", "UK");
+				.setNamespace("ex", "http://example.org/")
+				.subject("ex:Picasso")
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "Pablo")
+				.add("ex:homeAddress", address)
+				.subject("ex:AnotherArtist")
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "AnotherArtist")
+				.add("ex:homeAddress", anotherAddress)
+				.subject(address)
+				.add("ex:street", "31 Art Gallery")
+				.add("ex:city", "Madrid")
+				.add("ex:country", "Spain")
+				.subject(anotherAddress)
+				.add("ex:street", "32 Art Gallery")
+				.add("ex:city", "London")
+				.add("ex:country", "UK");
 
 			Model model = builder.build();
 			Repository repo1 = new SailRepository(new MemoryStore());
@@ -205,31 +207,39 @@ public class FederationConnectionTest {
 
 			String ex = "http://example.org/";
 			String queryString = "PREFIX rdf: <" + RDF.NAMESPACE + ">\n" +
-					"PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
-					"PREFIX ex: <" + ex + ">\n" +
-					"select (count(?persons) as ?count) {\n" +
-					"   ?persons rdf:type ex:Artist ;\n"
-					+ "          ex:homeAddress ?country .\n"
-					+ " ?country ex:country \"Spain\" . }";
+				"PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+				"PREFIX ex: <" + ex + ">\n" +
+				"select (count(?persons) as ?count) {\n" +
+				"   ?persons rdf:type ex:Artist ;\n"
+				+ "          ex:homeAddress ?country .\n"
+				+ " ?country ex:country \"Spain\" . }";
 
 			SailRepository fedRepo = new SailRepository(fed);
 			fedRepo.init();
 
-			try (SailRepositoryConnection fedRepoConn = fedRepo.getConnection()) {
+			IntStream.range(0,100).parallel().forEach(j -> {
 
-				fedRepoConn.begin();
-				TupleQuery query = fedRepoConn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-				try (TupleQueryResult eval = query.evaluate()) {
-					if (eval.hasNext()) {
-						Value next = eval.next().getValue("count");
-						assertEquals(1, ((Literal) next).intValue());
-					} else {
-						fail("No result");
+				try (SailRepositoryConnection fedRepoConn = fedRepo.getConnection()) {
+
+					fedRepoConn.begin();
+					TupleQuery query = fedRepoConn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+					try (TupleQueryResult eval = query.evaluate()) {
+						if (eval.hasNext()) {
+							Value next = eval.next().getValue("count");
+							assertEquals(1, ((Literal) next).intValue());
+						} else {
+							fail("No result");
+						}
 					}
+
+
+					fedRepoConn.commit();
 				}
 
-				fedRepoConn.commit();
-			}
+			});
+
+
+			fedRepo.shutDown();
 		}
 	}
 
