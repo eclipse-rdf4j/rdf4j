@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -69,7 +70,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 				if (leftIter.hasNext()) {
 					TupleExpr rightArg = join.getRightArg();
-					if (TupleExprs.isGraphPatternGroup(rightArg) && !TupleExprs.isFilterExistsFunction(rightArg)) {
+					if (TupleExprs.isGraphPatternGroup(rightArg) && !(rightArg instanceof Filter)) {
 						// leftiter bindings are out of scope for the right arg, so we merge afterward.
 						BindingSet next = leftIter.next();
 						rightIter = new MergeIteration(next, new BindingSetFilterIteration(next,
@@ -116,6 +117,10 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 		 */
 		@Override
 		protected BindingSet getNextElement() throws QueryEvaluationException {
+			if (!iter.hasNext()) {
+				return null;
+			}
+
 			BindingSet bs = iter.next();
 			QueryBindingSet result = new QueryBindingSet(bs);
 			for (Binding b : bindingSet) {
