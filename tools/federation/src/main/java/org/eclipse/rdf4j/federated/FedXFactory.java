@@ -251,11 +251,10 @@ public class FedXFactory {
 	protected void initializeResolvableEndpoints() {
 		for (Endpoint e : members) {
 			if (e instanceof ResolvableEndpoint) {
-				if (repositoryResolver == null) {
-					throw new IllegalStateException(
-							"Repository resolver is required for a resolvable endpoint, but not configured.");
+				if (repositoryResolver != null) {
+					// configure the explicitly set repository resolver, if any
+					((ResolvableEndpoint) e).setRepositoryResolver(repositoryResolver);
 				}
-				((ResolvableEndpoint) e).setRepositoryResolver(repositoryResolver);
 			}
 		}
 	}

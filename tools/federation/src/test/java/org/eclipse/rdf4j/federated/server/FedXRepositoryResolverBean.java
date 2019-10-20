@@ -5,13 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.federated.repository;
+package org.eclipse.rdf4j.federated.server;
 
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 
 /**
- * A resolver bean that provides static access to a {@link RepositoryResolver}. Is used in the initialization process
- * via {@link FedXRepositoryFactory}.
+ * A resolver bean that provides static access to a {@link RepositoryResolver}.
  * 
  * <p>
  * For use in the RDF4J workbench the following Spring bean can be registered:
@@ -20,7 +19,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
  * <pre>
  * &lt;!-- Inject the local repository manager as RepositoryResolver into FedX --&gt;
  * &lt;bean id="fedxRepositoryResolver"
- *  	class="org.eclipse.rdf4j.federated.repository.FedXRepositoryResolverBean"
+ *  	class="org.eclipse.rdf4j.federated.server.FedXRepositoryResolverBean"
  *  	scope="singleton" init-method="init" destroy-method="destroy"&gt;
  *  	&lt;property name="repositoryResolver" ref="rdf4jRepositoryManager" /&gt;
  * &lt;/bean&gt;

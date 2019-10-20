@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepositoryFactory;
-import org.eclipse.rdf4j.federated.repository.FedXRepositoryResolverBean;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
