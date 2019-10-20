@@ -343,7 +343,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	synchronized public void flush() throws SailException {
+	public void flush() throws SailException {
 		if (isActive()) {
 			endUpdate(null);
 			startUpdate(null);
@@ -815,7 +815,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *
 	 * @throws SailException
 	 */
-	private void flushPendingUpdates() throws SailException {
+	synchronized private void flushPendingUpdates() throws SailException {
 		if (!isActiveOperation()
 				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 			flush();

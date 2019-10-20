@@ -52,7 +52,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
  * Union multiple (possibly remote) Repositories into a single RDF store.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -108,7 +108,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	/**
 	 * Returns the members of this federation.
-	 * 
+	 *
 	 * @return unmodifiable list of federation members.
 	 */
 	protected List<Repository> getMembers() {
@@ -118,7 +118,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	/**
 	 * Sets an optional {@link RepositoryBloomFilter} to use with the given {@link Repository}.
-	 * 
+	 *
 	 * @param filter the filter to use or null to not use a filter.
 	 */
 	public void setBloomFilter(Repository member, RepositoryBloomFilter filter) {
@@ -127,7 +127,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	/**
 	 * Returns the configured {@link RepositoryBloomFilter}s (if any).
-	 * 
+	 *
 	 * @return unmodifiable map of repositories to bloom filters.
 	 */
 	protected Map<Repository, RepositoryBloomFilter> getBloomFilters() {
@@ -182,8 +182,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	/**
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
 	 * this instance is.
-	 * 
-	 * @param reslover The SERVICE resolver to set.
+	 *
+	 * @param resolver The SERVICE resolver to set.
 	 */
 	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
