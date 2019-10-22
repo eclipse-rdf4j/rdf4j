@@ -294,33 +294,5 @@
 			<artifactId>rdf4j-util</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-
 	</dependencies>
-					<additionnalDependencies>
-						<additionnalDependency>
-							<groupId>javax.servlet</groupId>
-							<artifactId>javax.servlet-api</artifactId>
-							<version>${servlet.version}</version>
-						</additionnalDependency>
-						<additionnalDependency>
-							<groupId>org.elasticsearch</groupId>
-							<artifactId>elasticsearch</artifactId>
-							<version>${elasticsearch.version}</version>
-						</additionnalDependency>
-						<additionnalDependency>
-							<groupId>org.elasticsearch</groupId>
-							<artifactId>elasticsearch-x-content</artifactId>
-							<version>${elasticsearch.version}</version>
-						</additionnalDependency>
-						<additionnalDependency>
-							<groupId>org.elasticsearch.client</groupId>
-							<artifactId>transport</artifactId>
-							<version>${elasticsearch.version}</version>
-						</additionnalDependency>
-						<additionnalDependency>
-							<groupId>org.apache.solr</groupId>
-							<artifactId>solr-core</artifactId>
-							<version>${solr.version}</version>
-						</additionnalDependency>
-					</additionnalDependencies>
 </project>
