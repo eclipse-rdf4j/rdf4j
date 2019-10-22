@@ -91,6 +91,12 @@
 			<artifactId>jetty-jsp</artifactId>
 			<version>${jetty.version}</version>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>org.glassfish</groupId>
+					<artifactId>javax.el</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 		<dependency>
@@ -109,6 +115,7 @@
 			<version>3.2</version>
 			<scope>test</scope>
 		</dependency>
+
 	</dependencies>
 
 	<build>
