@@ -49,13 +49,34 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		return other instanceof BindingSetAssignment;
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		BindingSetAssignment other = (BindingSetAssignment) obj;
+		if (bindingNames == null) {
+			if (other.bindingNames != null)
+				return false;
+		} else if (!bindingNames.equals(other.bindingNames))
+			return false;
+		if (bindingSets == null) {
+			if (other.bindingSets != null)
+				return false;
+		} else if (!bindingSets.equals(other.bindingSets))
+			return false;
+		return true;
 	}
 
 	@Override
 	public int hashCode() {
-		return "BindingSetAssignment".hashCode();
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((bindingNames == null) ? 0 : bindingNames.hashCode());
+		result = prime * result + ((bindingSets == null) ? 0 : bindingSets.hashCode());
+		return result;
 	}
 
 	@Override
