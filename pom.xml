@@ -221,12 +221,18 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but 
-				in practice is still being released for 2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level,
+				but in practice is still being released for 2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-annotations</artifactId>
 				<version>${jackson.version}</version>
+			</dependency>
+
+			<dependency>
+				<groupId>com.opencsv</groupId>
+				<artifactId>opencsv</artifactId>
+				<version>4.3.2</version>
 			</dependency>
 
 			<!-- Apache Commons -->
