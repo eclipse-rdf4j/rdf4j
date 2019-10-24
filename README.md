@@ -24,3 +24,6 @@ The short version:
 These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md).
 
+## Release
+
+Run `./release.sh` and follow the prompts to create a release.

@@ -1,5 +1,63 @@
 #!/bin/bash
 
+
+increment_version() {
+ local v=$1
+ if [ -z $2 ]; then
+    local rgx='^((?:[0-9]+\.)*)([0-9]+)($)'
+ else
+    local rgx='^((?:[0-9]+\.){'$(($2-1))'})([0-9]+)(\.|$)'
+    for (( p=`grep -o "\."<<<".$v"|wc -l`; p<$2; p++)); do
+       v+=.0; done; fi
+ val=`echo -e "$v" | perl -pe 's/^.*'$rgx'.*$/$2/'`
+ echo "$v" | perl -pe s/$rgx.*$'/${1}'`printf %0${#val}s $(($val+1))`/
+}
+
+
+echo ""
+echo "Part of this script connects to the Eclipse build server over sftp to upload the onejar file."
+echo "You need to provide your username and password for this to work."
+echo "You may need to 'apt-get install expect'."
+printf "Username: "
+read username
+printf "Password: "
+read -s password
+echo ""
+echo ""
+echo "Connecting to SFTP server using terminal automation."
+
+./sftp-test.expect $username $password
+RET=$?
+if [ $RET -eq 91 ]
+then
+  echo "Could not connect to server!"
+  exit 1
+fi
+
+if [ $RET -eq 92 ]
+then
+  echo "Wrong username or password!"
+  exit 1
+fi
+
+if [ $RET -eq 93 ]
+then
+  echo "Expected path was not found on this server!"
+  exit 1
+fi
+
+
+
+if [ $RET -eq 0 ]
+then
+  echo "Username and password are correct"
+else
+  echo "Unknown error connection to sftp server"
+  exit 1
+fi
+
+
+echo ""
 echo "This script will stop if an unhandled error occurs";
 echo "Do not change any files in this directory while the script is running!"
 set -e -o pipefail
@@ -49,18 +107,32 @@ if  ! [[ `git status --porcelain` == "" ]]; then
     exit 1;
 fi
 
-# set maven version, user will be prompted
-mvn versions:set
+echo "Running mvn clean";
+mvn clean;
 
-# find the maven version of the project from the root pom.xml
-MVN_VERSION_RELEASE=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
+MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
+
+MVN_VERSION_RELEASE="${MVN_CURRENT_SNAPSHOT_VERSION/-SNAPSHOT/}"
+
+MVN_NEXT_SNAPSHOT_VERSION="$(increment_version $MVN_VERSION_RELEASE 3)-SNAPSHOT"
 
 echo "";
-echo "Your maven version is: ${MVN_VERSION_RELEASE}"
+echo "Your current maven snapshot version is: ${MVN_CURRENT_SNAPSHOT_VERSION}"
+echo "Your maven release version will be: ${MVN_VERSION_RELEASE}"
+echo "Your next maven snapshot version will be: ${MVN_NEXT_SNAPSHOT_VERSION}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+
+# set maven version
+mvn versions:set -DnewVersion=${MVN_VERSION_RELEASE}
+
+# set the MVN_VERSION_RELEASE version again just to be on the safe side
+MVN_VERSION_RELEASE=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
+
+# find out a way to test that we set the correct version!
 
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
+mvn -P compliance versions:commit
 
 
 BRANCH="releases/${MVN_VERSION_RELEASE}"
@@ -76,7 +148,7 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-read -p "Push tag (y/n)?" choice
+read -p "Push tag to github - this will start the Jenkins release (y/n)?" choice
 case "${choice}" in
   y|Y ) echo "";;
   n|N ) exit;;
@@ -93,10 +165,13 @@ read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel
 # build one jar
 mvn -Passembly clean install -DskipTests
 
-# todo upload to SFTP (also check sftp credentials at beginning of this script)
+echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
+
+./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
 
 echo "";
-read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+echo "Upload complete";
+echo "";
 
 # Cleanup
 git checkout master
@@ -106,28 +181,20 @@ git branch --delete --force "${BRANCH}" &>/dev/null
 
 # Set a new SNAPSHOT version
 echo "";
-echo "You will now be prompted to set the new maven SNAPSHOT version. If you set a version of say 3.2.4 then the next version should be 3.2.5-SNAPSHOT. If it was 5.0.0 then the next should be 5.0.1-SNAPSHOT."
-echo "You released: ${MVN_VERSION_RELEASE}"
-echo "Type in the next version number followed by '-SNAPSHOT' when prompted."
+echo "Setting the next snapshot version to: ${MVN_NEXT_SNAPSHOT_VERSION}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 
-# set maven version, user will be prompted
-mvn versions:set
-
-# find the maven version of the project from the root pom.xml
-MVN_VERSION_NEW_SNAPSHOT=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
-
-echo "";
-echo "Your maven version is: ${MVN_VERSION_NEW_SNAPSHOT}"
-read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+# set maven version
+mvn versions:set -DnewVersion=${MVN_NEXT_SNAPSHOT_VERSION}
 
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
+mvn -P compliance versions:commit
 
 echo "";
 echo "Committing the new version to git"
-git commit -s -a -m "next development iteration: ${MVN_VERSION_NEW_SNAPSHOT}"
+git commit -s -a -m "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}"
 echo "Pushing the new version to github"
 git push
 
@@ -146,19 +213,22 @@ git checkout master
 git checkout -b "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 mvn versions:set -DnewVersion=${MVN_VERSION_DEVELOP}
 mvn versions:commit
+mvn -P compliance versions:commit
 git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
-git checkout master
 
-mvn clean install -DskipTests
-
-echo "";
-echo "Go to github and create a new PR to merge merge_master_into_develop_after_release_${MVN_VERSION_RELEASE} into develop";
+echo "Go got Github and create a new PR"
+echo "You want to merge 'merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}' into develop"
+echo "When you have created the PR you can press any key to continue. It's ok to merge the PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
+git checkout master
+mvn clean install -DskipTests
 
 
+
+echo "DONE!"
 
 
 
