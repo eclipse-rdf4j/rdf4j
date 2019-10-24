@@ -53,22 +53,11 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	public boolean equals(Object obj) {
 		if (this == obj)
 			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
+		if (obj == null || getClass() != obj.getClass())
 			return false;
 		BindingSetAssignment other = (BindingSetAssignment) obj;
-		if (bindingNames == null) {
-			if (other.bindingNames != null)
-				return false;
-		} else if (!bindingNames.equals(other.bindingNames))
-			return false;
-		if (bindingSets == null) {
-			if (other.bindingSets != null)
-				return false;
-		} else if (!bindingSets.equals(other.bindingSets))
-			return false;
-		return true;
+		return Objects.equals(this.bindingNames, other.bindingNames)
+				&& Objects.equals(this.bindingSets, other.bindingSets);
 	}
 
 	@Override
