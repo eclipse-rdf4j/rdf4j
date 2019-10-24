@@ -4,7 +4,7 @@
     <parent>
         <artifactId>rdf4j-sail</artifactId>
         <groupId>org.eclipse.rdf4j</groupId>
-        <version>3.0.2-SNAPSHOT</version>
+        <version>3.0.3-SNAPSHOT</version>
     </parent>
     <artifactId>rdf4j-lucene-spin</artifactId>
     <name>RDF4J Lucene Sail Spin</name>
