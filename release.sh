@@ -148,7 +148,7 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-read -p "Push tag to github - this will start the Jenkins release (y/n)?" choice
+read -p "Push tag to github (y/n)?" choice
 case "${choice}" in
   y|Y ) echo "";;
   n|N ) exit;;
@@ -159,19 +159,10 @@ esac
 git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "One-jar build takes several minutes"
-read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel)"; printf "\n\n";
-
-# build one jar
-mvn -Passembly clean install -DskipTests
-
-echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
-
-./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
-
-echo "";
-echo "Upload complete";
-echo "";
+echo "You need to tell jenkins to start the release process."
+echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ (if you are on linux or windows, remember to use CTRL+SHIFT+C)."
+echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # Cleanup
 git checkout master
@@ -199,7 +190,7 @@ echo "Pushing the new version to github"
 git push
 
 echo "";
-echo "Preparing a merge branch to merge into develop"
+echo "Preparing a merge-branch to merge into develop"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 
@@ -222,6 +213,24 @@ echo "Go got Github and create a new PR"
 echo "You want to merge 'merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}' into develop"
 echo "When you have created the PR you can press any key to continue. It's ok to merge the PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+
+git checkout $MVN_VERSION_RELEASE
+
+echo "";
+echo "One-jar build takes several minutes, this is the last step and the script will complete by itself when you continue."
+read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel)"; printf "\n\n";
+
+# build one jar
+mvn -Passembly clean install -DskipTests
+
+echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
+
+./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
+
+echo "";
+echo "Upload complete";
+echo "";
+
 
 git checkout master
 mvn clean install -DskipTests
