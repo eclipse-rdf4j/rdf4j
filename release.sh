@@ -112,6 +112,7 @@ mvn clean;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
+# replace "SNAPSHOT" with ""
 MVN_VERSION_RELEASE="${MVN_CURRENT_SNAPSHOT_VERSION/-SNAPSHOT/}"
 
 MVN_NEXT_SNAPSHOT_VERSION="$(increment_version $MVN_VERSION_RELEASE 3)-SNAPSHOT"
@@ -238,5 +239,16 @@ mvn clean install -DskipTests
 
 echo "DONE!"
 
+# the news file on github should be 302 if the release is 3.0.2, so replace "." twice
+NEWS_FILE_NAME=$MVN_VERSION_RELEASE
+NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
+NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
 
+echo ""
+echo "You will now want to inform the community about the new release!"
+echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
+echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/release-notes/index.md"
+echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/download/_index.md"
+echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
+echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
 
