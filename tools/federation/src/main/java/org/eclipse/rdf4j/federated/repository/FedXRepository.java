@@ -7,9 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
+import org.eclipse.rdf4j.federated.EndpointManager;
+import org.eclipse.rdf4j.federated.FedX;
+import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -19,8 +21,11 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class FedXRepository extends SailRepository {
 
-	public FedXRepository(Sail sail) {
-		super(sail);
+	private final FedX federation;
+
+	public FedXRepository(FedX federation) {
+		super(federation);
+		this.federation = federation;
 	}
 
 	@Override
@@ -30,6 +35,18 @@ public class FedXRepository extends SailRepository {
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	@Override
+	protected void initializeInternal() throws RepositoryException {
+
+		FederationManager instance = FederationManager.getInstance();
+		instance.updateStrategy();
+		instance.reset();
+
+		EndpointManager.initialize(federation.getMembers());
+
+		super.initializeInternal();
 	}
 
 }

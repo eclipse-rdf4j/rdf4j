@@ -44,54 +44,52 @@ public class FedXFactory {
 	protected static final Logger log = LoggerFactory.getLogger(FedXFactory.class);
 
 	/**
-	 * Initialize the federation with the provided sparql endpoints.
+	 * Create a federation with the provided sparql endpoints.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param sparqlEndpoints the list of SPARQL endpoints
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeSparqlFederation(
+	public static FedXRepository createSparqlFederation(
 			List<String> sparqlEndpoints) throws Exception {
-
 		return newFederation().withSparqlEndpoints(sparqlEndpoints).create();
 	}
 
 	/**
-	 * Initialize the federation with a specified data source configuration file (*.ttl). Federation members are
-	 * constructed from the data source configuration. Sample data source configuration files can be found in the
-	 * documentation.
+	 * Create the federation with a specified data source configuration file (*.ttl). Federation members are constructed
+	 * from the data source configuration. Sample data source configuration files can be found in the documentation.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param dataConfig the location of the data source configuration
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeFederation(File dataConfig)
+	public static FedXRepository createFederation(File dataConfig)
 			throws Exception {
 		return newFederation().withMembers(dataConfig).create();
 	}
 
 	/**
-	 * Initialize the federation by providing the endpoints to add. The fedx configuration can provide information about
-	 * the dataConfig to be used which may contain the default federation members.
+	 * Create the federation by providing the endpoints to add. The fedx configuration can provide information about the
+	 * dataConfig to be used which may contain the default federation members.
 	 * <p>
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param endpoints additional endpoints to be added, may be null or empty
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeFederation(
+	public static FedXRepository createFederation(
 			List<Endpoint> endpoints) throws FedXException {
 
 		return newFederation().withMembers(endpoints).create();

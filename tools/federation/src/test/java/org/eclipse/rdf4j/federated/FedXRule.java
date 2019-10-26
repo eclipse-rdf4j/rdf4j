@@ -14,9 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.eclipse.rdf4j.federated.Config;
-import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.repository.Repository;
@@ -57,7 +54,8 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 			endpoints = EndpointFactory.loadFederationMembers(configurationPreset);
 		else
 			endpoints = Collections.<Endpoint>emptyList();
-		repository = FedXFactory.initializeFederation(endpoints);
+		repository = FedXFactory.createFederation(endpoints);
+		repository.init();
 		FederationManager.getInstance().getCache().clear();
 	}
 

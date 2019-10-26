@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.federated;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -35,6 +34,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 				.withResolvableEndpoint("endpoint2")
 				.create();
 
+		repo.init();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
 		}
@@ -60,6 +60,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 				.withMembers(dataConfig)
 				.create();
 
+		repo.init();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
 		}

@@ -24,7 +24,8 @@ public class Demo6 {
 		// the fedx config implicitly defines a dataConfig
 		String fedxConfig = "examples/fedxConfig-withPrefixDecl.prop";
 		Config.initialize(fedxConfig);
-		Repository repo = FedXFactory.initializeFederation(Collections.<Endpoint>emptyList());
+		Repository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
+		repo.init();
 
 		String q = "SELECT ?President ?Party WHERE {\n"
 				+ "?President rdf:type dbpedia:President .\n"

@@ -25,7 +25,8 @@ public class Demo7 {
 		// the fedx config implicitly defines a dataConfig
 		String fedxConfig = "examples/fedxConfig-dataCfg.prop";
 		Config.initialize(fedxConfig);
-		Repository repo = FedXFactory.initializeFederation(Collections.<Endpoint>emptyList());
+		Repository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
+		repo.init();
 
 		QueryManager qm = FederationManager.getInstance().getQueryManager();
 		qm.addPrefixDeclaration("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");

@@ -74,6 +74,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 				.create();
 		try {
 
+			repo.init();
 			try (RepositoryConnection conn = repo.getConnection()) {
 
 				List<Statement> sts = Iterations.asList(conn.getStatements(null, RDF.TYPE, FOAF.PERSON));

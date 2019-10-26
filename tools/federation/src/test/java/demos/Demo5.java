@@ -21,9 +21,10 @@ public class Demo5 {
 	public static void main(String[] args) throws Exception {
 
 		Config.initialize();
-		Repository repo = FedXFactory.initializeSparqlFederation(Arrays.asList(
+		Repository repo = FedXFactory.createSparqlFederation(Arrays.asList(
 				"http://dbpedia.org/sparql",
 				"http://data.semanticweb.org/sparql"));
+		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"

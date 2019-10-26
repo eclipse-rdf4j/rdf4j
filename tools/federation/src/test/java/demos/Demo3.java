@@ -28,7 +28,8 @@ public class Demo3 {
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://dbpedia", "http://dbpedia.org/sparql"));
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://swdf", "http://data.semanticweb.org/sparql"));
 
-		Repository repo = FedXFactory.initializeFederation(endpoints);
+		Repository repo = FedXFactory.createFederation(endpoints);
+		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"

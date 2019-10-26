@@ -119,6 +119,8 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 			}
 
 			fedxRepo = factory.create();
+
+			fedxRepo.init();
 		} catch (Exception e) {
 			throw new RepositoryException(e);
 		}

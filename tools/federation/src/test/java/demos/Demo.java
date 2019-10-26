@@ -23,7 +23,8 @@ public class Demo {
 
 		File dataConfig = new File("local/dataSourceConfig.ttl");
 		Config.initialize();
-		SailRepository repo = FedXFactory.initializeFederation(dataConfig);
+		SailRepository repo = FedXFactory.createFederation(dataConfig);
+		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"

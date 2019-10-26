@@ -116,17 +116,6 @@ public class FederationManager {
 		FedXRepository repo = new FedXRepository(federation);
 
 		instance = new FederationManager(federation, cache, ex, repo);
-		instance.updateStrategy();
-		instance.reset();
-
-		try {
-			repo.init();
-		} catch (RepositoryException e) {
-			// should never occur
-			throw new FedXRuntimeException(e);
-		}
-
-		EndpointManager.initialize(members);
 
 		if (Config.getConfig().isEnableJMX()) {
 			try {
@@ -469,7 +458,7 @@ public class FederationManager {
 	 * </ul>
 	 * 
 	 */
-	protected void updateStrategy() {
+	public void updateStrategy() {
 
 		int localCount = 0, remoteCount = 0;
 		for (Endpoint e : federation.getMembers()) {

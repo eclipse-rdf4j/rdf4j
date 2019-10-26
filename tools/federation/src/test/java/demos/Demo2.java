@@ -23,7 +23,8 @@ public class Demo2 {
 			System.setProperty("log4j.configuration", "file:local/log4j.properties");
 
 		File dataConfig = new File("local/LifeScience-FedX-SPARQL.ttl");
-		Repository repo = FedXFactory.initializeFederation(dataConfig);
+		Repository repo = FedXFactory.createFederation(dataConfig);
+		repo.init();
 
 		String q = "SELECT ?Drug ?IntDrug ?IntEffect WHERE { "
 				+ "?Drug <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Drug> . "

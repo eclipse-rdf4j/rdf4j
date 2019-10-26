@@ -21,7 +21,7 @@ public class Demo4 {
 	public static void main(String[] args) throws Exception {
 
 		Config.initialize();
-		Repository repo = FedXFactory.initializeSparqlFederation(Arrays.asList(
+		Repository repo = FedXFactory.createSparqlFederation(Arrays.asList(
 				"http://dbpedia.org/sparql",
 				"http://data.semanticweb.org/sparql"));
 
