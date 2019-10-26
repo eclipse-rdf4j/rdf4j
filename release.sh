@@ -246,9 +246,15 @@ NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
 
 echo ""
 echo "You will now want to inform the community about the new release!"
-echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
+echo " - Check if all recently closed issues have the correct milestone: https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+is%3Aclosed+"
+echo " - Create a new milestone for ${MVN_NEXT_SNAPSHOT_VERSION/-SNAPSHOT/} : https://github.com/eclipse/rdf4j/milestones/new"
+echo " - Close the ${MVN_VERSION_RELEASE} milestone: https://github.com/eclipse/rdf4j/milestones"
+echo "     - Make sure that all issues in the milestone are closed, or move them to the next milestone"
+echo "     - Go to the milestone, click the 'closed' tab and copy the link for later"
 echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/release-notes/index.md"
 echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/download/_index.md"
+echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
 echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
 echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
+echo " - Upload the javadocs " #TODO Where should they be uploaded and how?
 
