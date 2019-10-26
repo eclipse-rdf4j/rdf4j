@@ -111,11 +111,14 @@ public class FederationManager {
 		DelegateFederatedServiceResolver.initialize();
 
 		ExecutorService ex = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
-		FedX federation = new FedX(members);
 
-		FedXRepository repo = new FedXRepository(federation);
+		FederationContext federationContext = new FederationContext(null); // TODO
+		FedX federation = new FedX(members, federationContext);
+
+		FedXRepository repo = new FedXRepository(federation, federationContext);
 
 		instance = new FederationManager(federation, cache, ex, repo);
+		federationContext.setManager(instance);
 
 		if (Config.getConfig().isEnableJMX()) {
 			try {
@@ -436,7 +439,7 @@ public class FederationManager {
 	 * @see SynchronousWorkerUnion
 	 */
 	public WorkerUnionBase<BindingSet> createWorkerUnion(QueryInfo queryInfo) {
-		FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
+		FederationEvalStrategy strategy = getStrategy();
 		if (type == FederationType.LOCAL)
 			return new SynchronousWorkerUnion<BindingSet>(strategy, queryInfo);
 		return new ControlledWorkerUnion<BindingSet>(strategy, unionScheduler, queryInfo);

@@ -47,11 +47,10 @@ public class FedX implements Sail {
 	protected final List<Endpoint> members = new ArrayList<Endpoint>();
 	protected boolean open = false;
 
-	protected FedX() {
-		this(null);
-	}
+	protected final FederationContext federationContext;
 
-	protected FedX(List<Endpoint> endpoints) {
+	protected FedX(List<Endpoint> endpoints, FederationContext federationContext) {
+		this.federationContext = federationContext;
 		if (endpoints != null)
 			for (Endpoint e : endpoints)
 				addMember(e);
@@ -96,7 +95,7 @@ public class FedX implements Sail {
 
 	@Override
 	public SailConnection getConnection() throws SailException {
-		return new FedXConnection(this);
+		return new FedXConnection(this, federationContext);
 	}
 
 	@Override
@@ -137,7 +136,7 @@ public class FedX implements Sail {
 	@Override
 	public void shutDown() throws SailException {
 		try {
-			FederationManager.getInstance().shutDown();
+			federationContext.getManager().shutDown();
 		} catch (FedXException e) {
 			throw new SailException(e);
 		}

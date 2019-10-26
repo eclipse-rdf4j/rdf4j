@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.repository;
 
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -22,10 +23,12 @@ import org.eclipse.rdf4j.sail.SailException;
 public class FedXRepository extends SailRepository {
 
 	private final FedX federation;
+	private final FederationContext federationContext;
 
-	public FedXRepository(FedX federation) {
+	public FedXRepository(FedX federation, FederationContext federationContext) {
 		super(federation);
 		this.federation = federation;
+		this.federationContext = federationContext;
 	}
 
 	@Override
@@ -40,7 +43,7 @@ public class FedXRepository extends SailRepository {
 	@Override
 	protected void initializeInternal() throws RepositoryException {
 
-		FederationManager instance = FederationManager.getInstance();
+		FederationManager instance = federationContext.getManager();
 		instance.updateStrategy();
 		instance.reset();
 

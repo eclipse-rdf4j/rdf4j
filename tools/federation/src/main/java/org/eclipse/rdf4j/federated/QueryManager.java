@@ -277,7 +277,7 @@ public class QueryManager {
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			tupleExpr = Optimizer.optimize(tupleExpr, new SimpleDataset(), EmptyBindingSet.getInstance(),
-					FederationManager.getInstance().getStrategy(), qInfo);
+					qm.federationManager.getStrategy(), qInfo);
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());
