@@ -52,7 +52,7 @@ if [ $RET -eq 0 ]
 then
   echo "Username and password are correct"
 else
-  echo "Unknown error connection to sftp server"
+  echo "Unknown error connecting to sftp server"
   exit 1
 fi
 
@@ -148,19 +148,15 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-read -p "Push tag to github (y/n)?" choice
-case "${choice}" in
-  y|Y ) echo "";;
-  n|N ) exit;;
-  * ) echo "unknown response, exiting"; exit;;
-esac
+echo "Pushing tag to github"
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # push tag (only tag, not branch)
 git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
 echo "You need to tell jenkins to start the release process."
-echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ (if you are on linux or windows, remember to use CTRL+SHIFT+C)."
+echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
 echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -217,11 +213,14 @@ read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n"
 git checkout $MVN_VERSION_RELEASE
 
 echo "";
-echo "One-jar build takes several minutes, this is the last step and the script will complete by itself when you continue."
-read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel)"; printf "\n\n";
+echo "SDK and onejar build takes several minutes, this is the last step and the script will complete by itself when you continue."
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # build one jar
 mvn -Passembly clean install -DskipTests
+cd assembly
+mvn -Passembly install -DskipTests
+cd ..
 
 echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
 
