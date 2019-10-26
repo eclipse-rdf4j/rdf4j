@@ -1383,7 +1383,9 @@ public class SpinParser {
 						while (nameIter.hasNext() && valueIter.hasNext()) {
 							String name = nameIter.next();
 							Value value = valueIter.next();
-							bs.addBinding(name, value);
+							if (!SP.UNDEF.equals(value)) {
+								bs.addBinding(name, value);
+							}
 						}
 						bindingSets.add(bs);
 					}
