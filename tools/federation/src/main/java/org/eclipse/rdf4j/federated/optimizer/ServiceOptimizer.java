@@ -126,7 +126,7 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 	 * @return
 	 */
 	private Endpoint getFedXEndpoint(String serviceUri) {
-		EndpointManager em = EndpointManager.getEndpointManager();
+		EndpointManager em = queryInfo.getFederationContext().getEndpointManager();
 		Endpoint e = em.getEndpointByUrl(serviceUri);
 		if (e != null)
 			return e;

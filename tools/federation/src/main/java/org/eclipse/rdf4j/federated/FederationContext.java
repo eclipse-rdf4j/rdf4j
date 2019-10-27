@@ -20,9 +20,12 @@ public class FederationContext {
 
 	private FederationManager manager;
 
-	public FederationContext(FederationManager manager) {
+	private final EndpointManager endpointManager;
+
+	public FederationContext(FederationManager manager, EndpointManager endpointManager) {
 		super();
 		this.manager = manager;
+		this.endpointManager = endpointManager;
 	}
 
 	// TODO adjust lifecycle to have this available in the constructor
@@ -32,6 +35,10 @@ public class FederationContext {
 
 	public FederationManager getManager() {
 		return this.manager;
+	}
+
+	public EndpointManager getEndpointManager() {
+		return this.endpointManager;
 	}
 
 	public FederationEvalStrategy getStrategy() {

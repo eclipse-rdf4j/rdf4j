@@ -108,11 +108,11 @@ public class FederationManager {
 
 		monitoring = MonitoringFactory.createMonitoring();
 
-		DelegateFederatedServiceResolver.initialize();
-
 		ExecutorService ex = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
 
-		FederationContext federationContext = new FederationContext(null); // TODO
+		EndpointManager endpointManager = EndpointManager.initialize(members);
+		FederationContext federationContext = new FederationContext(null, endpointManager); // TODO
+
 		FedX federation = new FedX(members, federationContext);
 
 		FedXRepository repo = new FedXRepository(federation, federationContext);
@@ -120,6 +120,8 @@ public class FederationManager {
 		instance = new FederationManager(federation, cache, ex, repo);
 		instance.federationContext = federationContext;
 		federationContext.setManager(instance);
+
+		DelegateFederatedServiceResolver.initialize(federationContext);
 
 		if (Config.getConfig().isEnableJMX()) {
 			try {
@@ -147,7 +149,6 @@ public class FederationManager {
 
 		return repo;
 	}
-
 
 	/**
 	 * Returns true if the {@link FederationManager} is initialized.
@@ -285,7 +286,7 @@ public class FederationManager {
 						+ e.getEndpoint() + " (eid=" + member.getId() + ")");
 
 		federation.addMember(e);
-		EndpointManager.getEndpointManager().addEndpoint(e);
+		federationContext.getEndpointManager().addEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true))
@@ -321,7 +322,7 @@ public class FederationManager {
 			throw new FedXRuntimeException("Endpoint " + e.getId() + " is not a member of the current federation.");
 
 		federation.removeMember(e);
-		EndpointManager.getEndpointManager().removeEndpoint(e);
+		federationContext.getEndpointManager().removeEndpoint(e);
 		e.shutDown();
 
 		if (updateStrategy == null || updateStrategy.length == 0
@@ -416,7 +417,6 @@ public class FederationManager {
 		federation.shutDownInternal();
 		cache.persist();
 		Config.reset();
-		EndpointManager.getEndpointManager().shutDown();
 		instance = null;
 		monitoring = null;
 	}

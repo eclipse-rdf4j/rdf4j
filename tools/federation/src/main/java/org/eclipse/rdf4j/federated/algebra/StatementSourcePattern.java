@@ -11,7 +11,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
@@ -64,7 +63,9 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 			for (StatementSource source : statementSources) {
 
-				Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+				Endpoint ownedEndpoint = queryInfo.getFederationContext()
+						.getEndpointManager()
+						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
 
 				/*
@@ -124,7 +125,9 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 		// XXX do this in parallel for the number of endpoints ?
 		for (StatementSource source : statementSources) {
-			Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+			Endpoint ownedEndpoint = queryInfo.getFederationContext()
+					.getEndpointManager()
+					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
 			if (t.hasStatements(this, bindings))
 				return new SingleBindingSetIteration(bindings);

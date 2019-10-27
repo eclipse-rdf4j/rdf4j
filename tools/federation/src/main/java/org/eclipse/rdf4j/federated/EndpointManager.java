@@ -15,7 +15,6 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,34 +34,13 @@ public class EndpointManager {
 	 * TODO we probably need to make this class thread safe! => synchronized access
 	 */
 
-	protected static EndpointManager instance = null;
-
-	/**
-	 * @return return the singleton instance of the EndpointManager
-	 */
-	public static EndpointManager getEndpointManager() {
-		if (instance == null)
-			throw new FedXRuntimeException(
-					"EndpointManager not yet initialized, initialize() must be invoked before use.");
-		return instance;
-	}
-
-	/**
-	 * Initialize the singleton endpoint manager without any endpoints
-	 */
-	public static void initialize() {
-		initialize(null);
-	}
-
 	/**
 	 * Initialize the singleton endpoint manager with the provided endpoints
 	 * 
 	 * @param endpoints
 	 */
-	public static synchronized void initialize(List<Endpoint> endpoints) {
-		if (instance != null)
-			throw new FedXRuntimeException("Endpoint Manager already initialized.");
-		instance = new EndpointManager(endpoints);
+	public static synchronized EndpointManager initialize(List<Endpoint> endpoints) {
+		return new EndpointManager(endpoints);
 	}
 
 	// map enpoint ids and connections to the corresponding endpoint
@@ -173,12 +151,5 @@ public class EndpointManager {
 			res.add(e);
 		}
 		return res;
-	}
-
-	/**
-	 * Shutdown the endpoint manager, called from {@link FederationManager#shutDown()}
-	 */
-	protected synchronized void shutDown() {
-		instance = null;
 	}
 }

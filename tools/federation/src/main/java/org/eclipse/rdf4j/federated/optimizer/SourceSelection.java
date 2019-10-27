@@ -18,7 +18,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
@@ -159,7 +158,8 @@ public class SourceSelection {
 		Set<Endpoint> endpoints = new HashSet<Endpoint>();
 		for (List<StatementSource> sourceList : stmtToSources.values())
 			for (StatementSource source : sourceList)
-				endpoints.add(EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID()));
+				endpoints
+						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
 		return endpoints;
 	}
 

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.optimizer;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
@@ -40,7 +39,7 @@ public class Optimizer {
 		if (dataset instanceof FedXDataset) {
 			// run the query against a selected set of endpoints
 			FedXDataset ds = (FedXDataset) dataset;
-			members = EndpointManager.getEndpointManager().getEndpoints(ds.getEndpoints());
+			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
 		} else {
 			// evaluate against entire federation
 			FedX fed = federationContext.getManager().getFederation();

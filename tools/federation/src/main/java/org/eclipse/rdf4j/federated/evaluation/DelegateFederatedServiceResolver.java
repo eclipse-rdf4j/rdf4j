@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.federated.EndpointManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
@@ -34,8 +35,8 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 		return instance;
 	}
 
-	public static void initialize() {
-		instance = new DelegateFederatedServiceResolver();
+	public static void initialize(FederationContext federationContext) {
+		instance = new DelegateFederatedServiceResolver(federationContext);
 	}
 
 	public static void shutdown() {
@@ -46,7 +47,13 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	}
 
 	private final SPARQLServiceResolver defaultImpl = new SPARQLServiceResolver();
+	private final FederationContext federationContext;
 	private FederatedServiceResolver delegate = defaultImpl;
+
+	private DelegateFederatedServiceResolver(FederationContext federationContext) {
+		super();
+		this.federationContext = federationContext;
+	}
 
 	@Override
 	protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
@@ -68,7 +75,7 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	 * @return
 	 */
 	private Endpoint getFedXEndpoint(String serviceUri) {
-		EndpointManager em = EndpointManager.getEndpointManager();
+		EndpointManager em = federationContext.getEndpointManager();
 		Endpoint e = em.getEndpointByUrl(serviceUri);
 		if (e != null)
 			return e;

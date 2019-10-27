@@ -65,7 +65,7 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			totalBindings++;
 			hasFreeVars = stmt.hasFreeVarsFor(b);
 			if (!hasFreeVars)
-				stmt = new CheckStatementPattern(stmt);
+				stmt = new CheckStatementPattern(stmt, queryInfo);
 			rightQueue.put(strategy.evaluate(stmt, b));
 		}
 

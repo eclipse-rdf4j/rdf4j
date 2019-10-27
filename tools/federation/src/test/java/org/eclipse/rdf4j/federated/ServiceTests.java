@@ -78,7 +78,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		Endpoint endpoint1 = EndpointManager.getEndpointManager().getEndpointByName("http://endpoint1");
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
 	}

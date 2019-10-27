@@ -76,7 +76,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 				if (stmt.hasFreeVarsFor(b)) {
 					taskCreator = new BoundJoinTaskCreator(this, strategy, stmt);
 				} else {
-					expr = new CheckStatementPattern(stmt);
+					expr = new CheckStatementPattern(stmt, queryInfo);
 					taskCreator = new CheckJoinTaskCreator(this, strategy, (CheckStatementPattern) expr);
 				}
 			} else if (expr instanceof FedXService) {

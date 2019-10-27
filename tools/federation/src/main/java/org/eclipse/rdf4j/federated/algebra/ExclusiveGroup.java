@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -53,7 +52,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
-		ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(owner.getEndpointID());
+		ownedEndpoint = queryInfo.getFederationContext().getEndpointManager().getEndpoint(owner.getEndpointID());
 
 		strategy = queryInfo.getFederationContext().getStrategy();
 	}

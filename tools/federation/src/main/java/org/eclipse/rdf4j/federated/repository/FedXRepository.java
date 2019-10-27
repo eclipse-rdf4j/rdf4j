@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
@@ -46,8 +45,6 @@ public class FedXRepository extends SailRepository {
 		FederationManager instance = federationContext.getManager();
 		instance.updateStrategy();
 		instance.reset();
-
-		EndpointManager.initialize(federation.getMembers());
 
 		super.initializeInternal();
 	}
