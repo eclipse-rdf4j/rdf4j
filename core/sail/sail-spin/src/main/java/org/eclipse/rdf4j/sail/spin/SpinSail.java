@@ -32,8 +32,8 @@ import java.util.List;
 /**
  * <p>
  * The SpinSail is currently deprecated. If you are using SPIN to validate your data then it is recommended to move to
- * SHACL with the ShaclSail. SHACL does not support any of the SPARQL inference features of SPIN, however some were
- * proposed in "SHACL Advanced Features" but were not made a part of the W3C Recommendation in 2017.
+ * SHACL with the ShaclSail. Currently, the SHACL W3C Recommendation only supports validation, and has no
+ * equivalent to SPIN's inference features.
  * </p>
  * <p>
  * Deprecating the SpinSail has been discussed at https://github.com/eclipse/rdf4j/issues/1262 and can be summarized
