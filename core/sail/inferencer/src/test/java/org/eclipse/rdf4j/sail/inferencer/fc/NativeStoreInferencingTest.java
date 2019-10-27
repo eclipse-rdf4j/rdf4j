@@ -5,15 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.nativerdf;
+package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -23,11 +23,11 @@ public class NativeStoreInferencingTest extends InferencingTest {
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	@Override
-	protected Repository createRepository() {
+	protected Sail createSail() {
 		try {
 			NotifyingSail sailStack = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
 			sailStack = new SchemaCachingRDFSInferencer(sailStack);
-			return new SailRepository(sailStack);
+			return sailStack;
 		} catch (IOException e) {
 			throw new AssertionError(e);
 		}

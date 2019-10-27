@@ -20,10 +20,8 @@ import java.util.HashSet;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.util.RepositoryUtil;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
@@ -58,10 +56,8 @@ public abstract class InferencingTest {
 
 		Collection<? extends Statement> entailedStatements = new HashSet<>();
 
-		Repository repository = createRepository();
-		repository.initialize();
-
-		try (RepositoryConnection con = repository.getConnection();) {
+		Sail sail = createSail();
+		try (SailConnection con = sail.getConnection();) {
 			con.begin();
 
 			// clear the input store
@@ -69,10 +65,12 @@ public abstract class InferencingTest {
 			con.commit();
 
 			// Upload input data
-
 			try (InputStream stream = getClass().getResourceAsStream(inputData);) {
 				con.begin();
-				con.add(stream, inputData, RDFFormat.NTRIPLES);
+				Model m = Rio.parse(stream, inputData, RDFFormat.NTRIPLES);
+				for (Statement st : m) {
+					con.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				}
 				con.commit();
 
 				entailedStatements = Iterations.addAll(con.getStatements(null, null, null, true), new HashSet<>());
@@ -83,7 +81,7 @@ public abstract class InferencingTest {
 				logger.error("exception while uploading input data", e);
 			}
 		} finally {
-			repository.shutDown();
+			sail.shutDown();
 		}
 
 		Model expectedStatements;
@@ -99,13 +97,15 @@ public abstract class InferencingTest {
 		boolean outputEntailed = Models.isSubset(expectedStatements, entailedStatements);
 
 		if (isPositiveTest && !outputEntailed) {
-			Collection<? extends Statement> difference = RepositoryUtil.difference(expectedStatements,
-					entailedStatements);
-			difference.forEach(System.out::println);
+			Model diff = new LinkedHashModelFactory().createEmptyModel();
+			for (Statement st : entailedStatements) {
+				if (!expectedStatements.contains(st)) {
+					diff.add(st);
+				}
+			}
 
-			File dumpFile = dumpStatements(name, difference);
-
-			fail("Incomplete entailment, difference between expected and entailed dumped to file " + dumpFile);
+			File dumpFile = dumpStatements(name, diff);
+			fail("Incomplete entailment, diff dumped to file " + dumpFile);
 		} else if (!isPositiveTest && outputEntailed) {
 			File dumpFile = dumpStatements(name, expectedStatements);
 			fail("Erroneous entailment, unexpected statements dumped to file " + dumpFile);
@@ -242,10 +242,10 @@ public abstract class InferencingTest {
 	}
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned repository must not be initialized.
+	 * Gets an instance of the Sail that should be tested.
 	 * 
-	 * @return an uninitialized Sail.
+	 * @return a SailRepo.
 	 */
-	protected abstract Repository createRepository();
+	protected abstract Sail createSail();
 
 }
