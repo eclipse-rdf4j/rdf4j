@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.junit.jupiter.api.Test;
 
@@ -81,7 +79,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = EndpointManager.getEndpointManager().getEndpointByName("http://endpoint1");
-		FederationManager.getInstance().removeEndpoint(endpoint1);
+		fedxRule.removeEndpoint(endpoint1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
 	}
 

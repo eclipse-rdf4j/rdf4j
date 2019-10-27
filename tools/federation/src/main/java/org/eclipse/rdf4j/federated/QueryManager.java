@@ -273,7 +273,9 @@ public class QueryManager {
 		if (!(query instanceof ParsedQuery))
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		// we use a dummy query info object here
-		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT);
+		// TODO better way to get to the FederationContext is required
+		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
+				qm.federationManager.federation.federationContext);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			tupleExpr = Optimizer.optimize(tupleExpr, new SimpleDataset(), EmptyBindingSet.getInstance(),

@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
@@ -45,8 +46,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  */
 public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
-	public SparqlFederationEvalStrategy() {
-
+	public SparqlFederationEvalStrategy(FederationContext federationContext) {
+		super(federationContext);
 	}
 
 	@Override
@@ -72,7 +73,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		// apply filter and/or convert to original bindings
 		if (filterExpr != null && !isEvaluated) {
 			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
-			result = new FilteringIteration(filterExpr, result); // apply filter
+			result = new FilteringIteration(filterExpr, result, this); // apply filter
 			if (!result.hasNext())
 				return new EmptyIteration<BindingSet, QueryEvaluationException>();
 		} else {

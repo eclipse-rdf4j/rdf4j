@@ -12,6 +12,7 @@ import java.lang.management.ManagementFactory;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformation;
@@ -47,12 +48,12 @@ public class MonitoringUtil {
 	 * 
 	 * @throws Exception
 	 */
-	public static void initializeJMXMonitoring() throws Exception {
+	public static void initializeJMXMonitoring(FederationContext federationContext) throws Exception {
 		if (JMX_initialized)
 			return;
 		MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
 		ObjectName monitoring = new ObjectName("org.eclipse.rdf4j.federated:type=FederationStatus");
-		mbs.registerMBean(new FederationStatus(), monitoring);
+		mbs.registerMBean(new FederationStatus(federationContext), monitoring);
 		JMX_initialized = true;
 	}
 }

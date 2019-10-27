@@ -71,4 +71,9 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 	protected File toFile(String resource) throws Exception {
 		return new File(FedXFactoryTest.class.getResource(resource).toURI());
 	}
+
+	@Override
+	protected FederationContext federationContext() {
+		throw new UnsupportedOperationException("Not available in this test context");
+	}
 }

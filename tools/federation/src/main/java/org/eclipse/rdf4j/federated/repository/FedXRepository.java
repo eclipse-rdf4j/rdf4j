@@ -52,4 +52,12 @@ public class FedXRepository extends SailRepository {
 		super.initializeInternal();
 	}
 
+	/**
+	 * 
+	 * @return the {@link FederationContext}
+	 */
+	public FederationContext getFederationContext() {
+		return this.federationContext;
+	}
+
 }

@@ -118,11 +118,12 @@ public class FederationManager {
 		FedXRepository repo = new FedXRepository(federation, federationContext);
 
 		instance = new FederationManager(federation, cache, ex, repo);
+		instance.federationContext = federationContext;
 		federationContext.setManager(instance);
 
 		if (Config.getConfig().isEnableJMX()) {
 			try {
-				MonitoringUtil.initializeJMXMonitoring();
+				MonitoringUtil.initializeJMXMonitoring(federationContext);
 			} catch (Exception e1) {
 				log.error("JMX monitoring could not be initialized: " + e1.getMessage());
 			}
@@ -147,16 +148,6 @@ public class FederationManager {
 		return repo;
 	}
 
-	/**
-	 * Return the initialized {@link FederationManager} instance.
-	 * 
-	 * @return the federation manager
-	 */
-	public static FederationManager getInstance() {
-		if (instance == null)
-			throw new FedXRuntimeException("FederationManager has not been initialized yet, call #initialize() first.");
-		return instance;
-	}
 
 	/**
 	 * Returns true if the {@link FederationManager} is initialized.
@@ -176,6 +167,7 @@ public class FederationManager {
 	}
 
 	/* Instance variables */
+	protected FederationContext federationContext;
 	protected FedX federation;
 	protected Cache cache;
 	protected ExecutorService executor;
@@ -279,7 +271,7 @@ public class FederationManager {
 		/* check if endpoint is initialized */
 		if (!e.isInitialized()) {
 			try {
-				e.initialize();
+				e.initialize(federationContext);
 			} catch (RepositoryException e1) {
 				throw new FedXRuntimeException(
 						"Provided endpoint was not initialized and could not be initialized: " + e1.getMessage(), e1);
@@ -490,7 +482,7 @@ public class FederationManager {
 		}
 
 		if (updated) {
-			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type);
+			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type, federationContext);
 			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
 					+ instance.strategy.getClass().getSimpleName());
 		}

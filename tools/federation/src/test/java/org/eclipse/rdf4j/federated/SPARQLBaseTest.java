@@ -56,4 +56,9 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 		stmts.close();
 		return res;
 	}
+
+	@Override
+	protected FederationContext federationContext() {
+		return fedxRule.getFederationContext();
+	}
 }

@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
@@ -41,9 +41,11 @@ public class StatementSourcePattern extends FedXStatementPattern {
 	private static final long serialVersionUID = 7548505818766482715L;
 
 	protected boolean usePreparedQuery = false;
+	protected final FederationContext federationContext;
 
 	public StatementSourcePattern(StatementPattern node, QueryInfo queryInfo) {
 		super(node, queryInfo);
+		this.federationContext = queryInfo.getFederationContext();
 	}
 
 	public void addStatementSource(StatementSource statementSource) {
@@ -58,7 +60,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 			AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated in prepared query
 			String preparedQuery = null; // used for some triple sources
-			WorkerUnionBase<BindingSet> union = FederationManager.getInstance().createWorkerUnion(queryInfo);
+			WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 			for (StatementSource source : statementSources) {
 

@@ -113,7 +113,7 @@ public class FedX implements Sail {
 		log.debug("Initializing federation....");
 		for (Endpoint member : members) {
 			try {
-				member.initialize();
+				member.initialize(federationContext);
 			} catch (RepositoryException e) {
 				log.error("Initialization of endpoint " + member.getId() + " failed: " + e.getMessage());
 				throw new SailException(e);

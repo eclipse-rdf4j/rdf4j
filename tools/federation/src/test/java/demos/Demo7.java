@@ -11,12 +11,11 @@ import java.util.Collections;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
 
 public class Demo7 {
 
@@ -25,10 +24,10 @@ public class Demo7 {
 		// the fedx config implicitly defines a dataConfig
 		String fedxConfig = "examples/fedxConfig-dataCfg.prop";
 		Config.initialize(fedxConfig);
-		Repository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
+		FedXRepository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
 		repo.init();
 
-		QueryManager qm = FederationManager.getInstance().getQueryManager();
+		QueryManager qm = repo.getFederationContext().getManager().getQueryManager();
 		qm.addPrefixDeclaration("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
 		qm.addPrefixDeclaration("dbpedia", "http://dbpedia.org/ontology/");
 

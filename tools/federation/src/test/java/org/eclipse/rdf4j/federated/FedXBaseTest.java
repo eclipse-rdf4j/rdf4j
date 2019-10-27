@@ -17,8 +17,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.FederationManager;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -135,11 +133,6 @@ public class FedXBaseTest {
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
 
-	}
-
-	protected void prepareTest() throws RepositoryException {
-		// reset fedx
-		FederationManager.getInstance().getCache().clear();
 	}
 
 	/**
