@@ -35,7 +35,7 @@ public class Demo7 {
 				+ "?President rdf:type dbpedia:President .\n"
 				+ "?President dbpedia:party ?Party . }";
 
-		TupleQuery query = QueryManager.prepareTupleQuery(q);
+		TupleQuery query = repo.getQueryManager().prepareTupleQuery(q);
 		try (TupleQueryResult res = query.evaluate()) {
 
 			while (res.hasNext()) {

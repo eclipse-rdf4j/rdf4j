@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated.repository;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
@@ -55,6 +56,14 @@ public class FedXRepository extends SailRepository {
 	 */
 	public FederationContext getFederationContext() {
 		return this.federationContext;
+	}
+
+	/**
+	 * 
+	 * @return the {@link QueryManager} from the {@link FederationContext}
+	 */
+	public QueryManager getQueryManager() {
+		return federationContext.getQueryManager();
 	}
 
 }

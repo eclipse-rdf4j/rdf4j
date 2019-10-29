@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Lists;
 
-public class FedXBaseTest {
+public abstract class FedXBaseTest {
 
 	public static Logger log;
 
@@ -79,7 +79,7 @@ public class FedXBaseTest {
 
 		String queryString = readQueryString(queryFile);
 
-		Query query = QueryManager.prepareQuery(queryString);
+		Query query = queryManager().prepareQuery(queryString);
 
 		if (query instanceof TupleQuery) {
 			try (TupleQueryResult queryResult = ((TupleQuery) query).evaluate()) {
@@ -111,7 +111,7 @@ public class FedXBaseTest {
 	protected TupleQueryResult runSelectQueryFile(String queryFile) throws Exception {
 		String queryString = readQueryString(queryFile);
 
-		Query query = QueryManager.prepareQuery(queryString);
+		Query query = queryManager().prepareQuery(queryString);
 
 		if (query instanceof TupleQuery) {
 			return ((TupleQuery) query).evaluate();
@@ -122,7 +122,7 @@ public class FedXBaseTest {
 
 	protected void evaluateQueryPlan(String queryFile, String expectedPlanFile) throws Exception {
 
-		String actualQueryPlan = QueryManager.getQueryPlan(readQueryString(queryFile));
+		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(readQueryString(queryFile));
 		String expectedQueryPlan = readResourceAsString(expectedPlanFile);
 
 		// make sure the comparison works cross operating system
@@ -248,6 +248,18 @@ public class FedXBaseTest {
 
 	protected SimpleTupleQueryResultBuilder tupleQueryResultBuilder(List<String> bindingNames) {
 		return new SimpleTupleQueryResultBuilder(bindingNames);
+	}
+
+	/**
+	 * 
+	 * Note: metod can only be used after initialization phase
+	 * 
+	 * @return the current {@link FederationContext}
+	 */
+	protected abstract FederationContext federationContext();
+
+	protected QueryManager queryManager() {
+		return federationContext().getQueryManager();
 	}
 
 	/**

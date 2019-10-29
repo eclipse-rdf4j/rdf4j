@@ -131,6 +131,8 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void testQueryBinding() throws Exception {
 
+		final QueryManager qm = federationContext().getQueryManager();
+
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
@@ -139,7 +141,7 @@ public class BasicTests extends SPARQLBaseTest {
 				" ?person a foaf:Person .\r\n" +
 				" ?person foaf:name ?name .\r\n" +
 				"}";
-		TupleQuery query = QueryManager.prepareTupleQuery(queryString);
+		TupleQuery query = qm.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
 		TupleQueryResult actual = query.evaluate();
@@ -154,6 +156,8 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void testQueryWithLimit() throws Exception {
 
+		final QueryManager qm = federationContext().getQueryManager();
+
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
@@ -161,7 +165,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		evaluateQueryPlan("/tests/basic/query_limit01.rq", "/tests/basic/query_limit01.qp");
 
-		TupleQuery query = QueryManager.prepareTupleQuery(queryString);
+		TupleQuery query = qm.prepareTupleQuery(queryString);
 
 		try (TupleQueryResult actual = query.evaluate()) {
 			if (actual.hasNext()) {

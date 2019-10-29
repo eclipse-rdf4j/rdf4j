@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfig;
 import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
 import org.eclipse.rdf4j.model.Model;
@@ -67,7 +68,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		addData("repo2", Lists.newArrayList(
 				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
 
-		Repository repo = FedXFactory.newFederation()
+		FedXRepository repo = FedXFactory.newFederation()
 				.withResolvableEndpoint("repo1")
 				.withResolvableEndpoint("repo2")
 				.withRepositoryResolver(repoManager)
@@ -134,6 +135,11 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(model);
 		}
+	}
+
+	@Override
+	protected FederationContext federationContext() {
+		throw new UnsupportedOperationException("Not available in this context.");
 	}
 
 }

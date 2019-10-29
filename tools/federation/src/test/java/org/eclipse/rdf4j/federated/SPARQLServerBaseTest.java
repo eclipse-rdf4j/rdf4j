@@ -230,12 +230,4 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		return server.getRepository(endpoint);
 	}
 
-	/**
-	 * 
-	 * Note: metod can only be used after initialization phase
-	 * 
-	 * @return the current {@link FederationContext}
-	 */
-	protected abstract FederationContext federationContext();
-
 }

@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FederationContext;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -65,7 +64,7 @@ public class QueryInfo {
 	 */
 	public QueryInfo(String query, QueryType queryType, int maxExecutionTime, FederationContext federationContext) {
 		super();
-		this.queryID = QueryManager.getNextQueryId();
+		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
 		this.federationContext = federationContext;
 

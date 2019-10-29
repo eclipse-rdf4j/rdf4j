@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -52,19 +53,13 @@ public class QueryManager {
 
 	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);
 
-	// singleton behavior: initialized in constructor of FederationManager
-	protected static QueryManager instance = null;
-
-	protected static QueryManager getInstance() {
-		return instance;
-	}
 
 	protected final FederationManager federationManager;
 	protected final Repository repo;
 	protected final RepositoryConnection conn;
 	protected final AtomicBigInteger nextQueryID;
 	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<QueryInfo>();
-	protected HashMap<String, String> prefixDeclarations = new HashMap<String, String>();
+	protected Map<String, String> prefixDeclarations = new HashMap<String, String>();
 
 	protected QueryManager(FederationManager federationManager, Repository repo) {
 		this.federationManager = federationManager;
@@ -154,7 +149,7 @@ public class QueryManager {
 	 * @return the prepared tuple query
 	 * @throws MalformedQueryException
 	 */
-	public static TupleQuery prepareTupleQuery(String queryString) throws MalformedQueryException {
+	public TupleQuery prepareTupleQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
 		if (!(q instanceof TupleQuery))
@@ -173,7 +168,7 @@ public class QueryManager {
 	 * @return the prepared graph query
 	 * @throws MalformedQueryException
 	 */
-	public static GraphQuery prepareGraphQuery(String queryString) throws MalformedQueryException {
+	public GraphQuery prepareGraphQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
 		if (!(q instanceof GraphQuery))
@@ -192,7 +187,7 @@ public class QueryManager {
 	 * @return the prepared {@link BooleanQuery}
 	 * @throws MalformedQueryException
 	 */
-	public static BooleanQuery prepareBooleanQuery(String queryString) throws MalformedQueryException {
+	public BooleanQuery prepareBooleanQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
 		if (!(q instanceof BooleanQuery))
@@ -215,27 +210,23 @@ public class QueryManager {
 	 * @return the prepared {@link Query}
 	 * @throws MalformedQueryException
 	 */
-	public static Query prepareQuery(String queryString) throws MalformedQueryException {
-		QueryManager qm = getInstance();
-		if (qm == null)
-			throw new FedXRuntimeException(
-					"QueryManager not initialized, used FedXFactory methods to initialize FedX correctly.");
+	public Query prepareQuery(String queryString) throws MalformedQueryException {
 
-		if (qm.prefixDeclarations.size() > 0) {
+		if (prefixDeclarations.size() > 0) {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
 			 * Sesame throws a MalformedQueryException
 			 */
 			if (prefixCheck.matcher(queryString).matches())
-				queryString = qm.getPrefixDeclarationsCheck(queryString) + queryString;
+				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
 			else
-				queryString = qm.getPrefixDeclarations() + queryString;
+				queryString = getPrefixDeclarations() + queryString;
 		}
 
 		Query q;
 		try {
-			q = qm.conn.prepareQuery(QueryLanguage.SPARQL, queryString);
+			q = conn.prepareQuery(QueryLanguage.SPARQL, queryString);
 		} catch (RepositoryException e) {
 			throw new FedXRuntimeException(e); // cannot occur
 		}
@@ -250,23 +241,18 @@ public class QueryManager {
 	 * 
 	 * @return the query plan
 	 */
-	public static String getQueryPlan(String queryString) throws MalformedQueryException, FedXException {
+	public String getQueryPlan(String queryString) throws MalformedQueryException, FedXException {
 
-		QueryManager qm = getInstance();
-		if (qm == null)
-			throw new FedXRuntimeException(
-					"QueryManager not initialized, used FedXFactory methods to initialize FedX correctly.");
-
-		if (qm.prefixDeclarations.size() > 0) {
+		if (prefixDeclarations.size() > 0) {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
 			 * Sesame throws a MalformedQueryException
 			 */
 			if (prefixCheck.matcher(queryString).matches())
-				queryString = qm.getPrefixDeclarationsCheck(queryString) + queryString;
+				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
 			else
-				queryString = qm.getPrefixDeclarations() + queryString;
+				queryString = getPrefixDeclarations() + queryString;
 		}
 
 		ParsedOperation query = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null);
@@ -275,11 +261,11 @@ public class QueryManager {
 		// we use a dummy query info object here
 		// TODO better way to get to the FederationContext is required
 		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				qm.federationManager.federation.federationContext);
+				federationManager.federationContext);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			tupleExpr = Optimizer.optimize(tupleExpr, new SimpleDataset(), EmptyBindingSet.getInstance(),
-					qm.federationManager.getStrategy(), qInfo);
+					federationManager.getStrategy(), qInfo);
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());
@@ -291,8 +277,8 @@ public class QueryManager {
 	 * 
 	 * @return the next query identifier
 	 */
-	public static BigInteger getNextQueryId() {
-		return getInstance().nextQueryID.incrementAndGet();
+	public BigInteger getNextQueryId() {
+		return nextQueryID.incrementAndGet();
 	}
 
 	/**

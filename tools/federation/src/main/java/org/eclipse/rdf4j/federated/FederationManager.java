@@ -111,6 +111,7 @@ public class FederationManager {
 		ExecutorService ex = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
 
 		EndpointManager endpointManager = EndpointManager.initialize(members);
+
 		FederationContext federationContext = new FederationContext(null, endpointManager); // TODO
 
 		FedX federation = new FedX(members, federationContext);
@@ -119,7 +120,10 @@ public class FederationManager {
 
 		instance = new FederationManager(federation, cache, ex, repo);
 		instance.federationContext = federationContext;
+		QueryManager queryManager = new QueryManager(instance, repo);
+
 		federationContext.setManager(instance);
+		federationContext.setQueryManager(queryManager);
 
 		DelegateFederatedServiceResolver.initialize(federationContext);
 
@@ -183,7 +187,6 @@ public class FederationManager {
 		this.federation = federation;
 		this.cache = cache;
 		this.executor = executor;
-		QueryManager.instance = new QueryManager(this, repo); // initialize the singleton query manager
 	}
 
 	public FedX getFederation() {
@@ -252,8 +255,7 @@ public class FederationManager {
 	 * @return the singleton query manager
 	 */
 	public QueryManager getQueryManager() {
-		// the singleton querymanager
-		return QueryManager.getInstance();
+		return federationContext.getQueryManager();
 	}
 
 	/**
@@ -387,7 +389,7 @@ public class FederationManager {
 		}
 		log.info("Shutting down federation and all underlying repositories ...");
 		// Abort all running queries
-		QueryManager.instance.shutdown();
+		federationContext.getQueryManager().shutdown();
 		executor.shutdown();
 		try {
 			executor.awaitTermination(30, TimeUnit.SECONDS);

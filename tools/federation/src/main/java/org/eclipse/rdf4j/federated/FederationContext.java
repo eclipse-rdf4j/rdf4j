@@ -22,6 +22,8 @@ public class FederationContext {
 
 	private final EndpointManager endpointManager;
 
+	private QueryManager queryManager;
+
 	public FederationContext(FederationManager manager, EndpointManager endpointManager) {
 		super();
 		this.manager = manager;
@@ -33,8 +35,16 @@ public class FederationContext {
 		this.manager = manager;
 	}
 
+	void setQueryManager(QueryManager queryManager) {
+		this.queryManager = queryManager;
+	}
+
 	public FederationManager getManager() {
 		return this.manager;
+	}
+
+	public QueryManager getQueryManager() {
+		return this.queryManager;
 	}
 
 	public EndpointManager getEndpointManager() {

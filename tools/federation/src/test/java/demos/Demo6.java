@@ -11,11 +11,10 @@ import java.util.Collections;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
 
 public class Demo6 {
 
@@ -24,14 +23,14 @@ public class Demo6 {
 		// the fedx config implicitly defines a dataConfig
 		String fedxConfig = "examples/fedxConfig-withPrefixDecl.prop";
 		Config.initialize(fedxConfig);
-		Repository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
+		FedXRepository repo = FedXFactory.createFederation(Collections.<Endpoint>emptyList());
 		repo.init();
 
 		String q = "SELECT ?President ?Party WHERE {\n"
 				+ "?President rdf:type dbpedia:President .\n"
 				+ "?President dbpedia:party ?Party . }";
 
-		TupleQuery query = QueryManager.prepareTupleQuery(q);
+		TupleQuery query = repo.getQueryManager().prepareTupleQuery(q);
 		try (TupleQueryResult res = query.evaluate()) {
 
 			while (res.hasNext()) {
