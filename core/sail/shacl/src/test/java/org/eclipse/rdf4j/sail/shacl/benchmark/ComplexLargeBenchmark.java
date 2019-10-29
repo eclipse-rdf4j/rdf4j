@@ -83,7 +83,7 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-	SailRepository repository;
+	private SailRepository repository;
 
 	@Setup(Level.Invocation)
 	public void setUp() {

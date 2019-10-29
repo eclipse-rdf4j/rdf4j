@@ -287,6 +287,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepoConnection.commit();
 		}
 
+		assert executorService == null;
+
 	}
 
 	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
@@ -344,7 +346,15 @@ public class ShaclSail extends NotifyingSailWrapper {
 			throw new IllegalStateException("ShaclSail not initialized!");
 		}
 		if (executorService == null) {
-			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
+					r -> {
+						Thread t = Executors.defaultThreadFactory().newThread(r);
+						// this thread pool does not need to stick around if the all other threads are done, because it
+						// is only used for SHACL validation and if all other threads have ended then there would be no
+						// thread to receive the validation results.
+						t.setDaemon(true);
+						return t;
+					});
 		}
 		return executorService.submit(runnable);
 	}
@@ -691,4 +701,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 				StandardCharsets.UTF_8);
 	}
 
+	@Override
+	protected void finalize() throws Throwable {
+		super.finalize();
+		if (initialized.get()) {
+			logger.error("ShaclSail was finalized (garbage collected) without shutdown() having been called first.");
+		}
+		if (executorService != null) {
+			executorService.shutdownNow();
+		}
+	}
 }
