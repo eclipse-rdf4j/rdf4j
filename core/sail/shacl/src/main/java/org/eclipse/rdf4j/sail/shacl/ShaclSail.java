@@ -189,7 +189,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	private volatile ExecutorService[] executorService = new ExecutorService[1];
+	private final ExecutorService[] executorService = new ExecutorService[1];
 
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
