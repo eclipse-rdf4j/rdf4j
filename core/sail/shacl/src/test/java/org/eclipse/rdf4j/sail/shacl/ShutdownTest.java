@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 
 public class ShutdownTest {
 
@@ -91,6 +92,44 @@ public class ShutdownTest {
 			return null;
 		});
 
+	}
+
+	@Test
+	public void testThatGarbadgeCollectionWillShutdownTheThreadPool() throws InterruptedException {
+
+		int activeThreads = Thread.activeCount();
+
+		startShaclSailAndTask();
+
+		assertNotEquals(activeThreads, Thread.activeCount());
+
+		for (int i = 0; i < 100; i++) {
+			System.gc();
+			if (activeThreads == Thread.activeCount())
+				break;
+			Thread.sleep(100);
+		}
+
+		assertEquals(activeThreads, Thread.activeCount());
+	}
+
+	private void startShaclSailAndTask() throws InterruptedException {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.initialize();
+
+		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(() -> {
+
+			for (int i = 0; i < Integer.MAX_VALUE; i++) {
+				Thread.sleep(i);
+			}
+
+			return null;
+		});
+
+		try {
+			objectFuture.get(100, TimeUnit.MILLISECONDS);
+		} catch (ExecutionException | TimeoutException ignored) {
+		}
 	}
 
 }
