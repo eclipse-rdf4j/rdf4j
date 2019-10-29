@@ -729,8 +729,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			}
 
 			if (initialized.get()) {
-				logger.error(
-						"ShaclSail was finalized (garbage collected) without shutdown() having been called first.");
+				logger.error("ShaclSail was garbage collected without shutdown() having been called first.");
 			}
 			if (executorService[0] != null) {
 				executorService[0].shutdownNow();
