@@ -113,7 +113,7 @@ public class ComplexLargeBenchmark {
 		System.gc();
 	}
 
-	@TearDown
+	@TearDown(Level.Invocation)
 	public void teardown() {
 		if (repository != null) {
 			repository.shutDown();

@@ -43,6 +43,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -185,7 +186,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	private ExecutorService executorService;
+	private volatile ExecutorService executorService;
 
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
@@ -311,7 +312,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public synchronized void shutDown() throws SailException {
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
 			shapesRepo = null;
@@ -319,14 +320,29 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		if (executorService != null) {
 			executorService.shutdown();
+			boolean terminated = false;
+			try {
+				terminated = executorService.awaitTermination(200, TimeUnit.MILLISECONDS);
+			} catch (InterruptedException ignored) {
+			}
+
+			if (!terminated) {
+				executorService.shutdownNow();
+				logger.error("Shutdown ShaclSail while validation is still running.");
+			}
+
 		}
 
 		initialized.set(false);
+		executorService = null;
 		nodeShapes = Collections.emptyList();
 		super.shutDown();
 	}
 
-	public synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+		if (!initialized.get()) {
+			throw new IllegalStateException("ShaclSail not initialized!");
+		}
 		if (executorService == null) {
 			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 		}
