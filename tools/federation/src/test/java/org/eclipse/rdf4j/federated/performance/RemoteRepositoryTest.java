@@ -64,7 +64,7 @@ public class RemoteRepositoryTest {
 					runQuery(_conn, instance);
 				} catch (Exception e) {
 					System.err.println("Error while performing query evaluation for instance "
-						+ instance.stringValue() + ": " + e.getMessage());
+							+ instance.stringValue() + ": " + e.getMessage());
 				}
 			});
 			tasks.add(task);

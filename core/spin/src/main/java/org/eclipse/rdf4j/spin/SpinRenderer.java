@@ -136,7 +136,8 @@ public class SpinRenderer {
 	}
 
 	public SpinRenderer(Output output) {
-		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI, ValueFactoryImpl.getInstance());
+		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI,
+				ValueFactoryImpl.getInstance());
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,

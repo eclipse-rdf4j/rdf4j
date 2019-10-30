@@ -243,10 +243,10 @@ public class SailIsolationLevelTest {
 				write.begin(level);
 				write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 				write.commit();
-				
+
 				begin.countDown();
 				observed.await();
-				
+
 				write.begin(level);
 				write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
 				write.commit();
@@ -342,10 +342,10 @@ public class SailIsolationLevelTest {
 					write.begin(level);
 					insertTestStatement(write, 1);
 					write.commit();
-					
+
 					begin.countDown();
 					observed.await(1, TimeUnit.SECONDS);
-					
+
 					write.begin(level);
 					insertTestStatement(write, 2);
 					write.commit();

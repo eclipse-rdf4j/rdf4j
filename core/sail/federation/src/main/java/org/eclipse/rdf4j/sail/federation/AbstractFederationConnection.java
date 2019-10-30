@@ -305,7 +305,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public CloseableIteration<? extends Statement, SailException> getStatementsInternal(final Resource subj,
 			final IRI pred, final Value obj, final boolean includeInferred, final Resource... contexts)
 			throws SailException {
-		CloseableIteration<? extends Statement, SailException> cursor = union((RepositoryConnection member) -> member.getStatements(subj, pred, obj, includeInferred, contexts));
+		CloseableIteration<? extends Statement, SailException> cursor = union(
+				(RepositoryConnection member) -> member.getStatements(subj, pred, obj, includeInferred, contexts));
 
 		if (!federation.isDistinct() && !isLocal(pred)) {
 			// Filter any duplicates

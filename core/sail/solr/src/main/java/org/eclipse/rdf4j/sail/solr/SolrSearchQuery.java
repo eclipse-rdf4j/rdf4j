@@ -63,7 +63,7 @@ public class SolrSearchQuery implements SearchQuery {
 		return Iterables.transform(results, (SolrDocument document) -> {
 			SolrSearchDocument doc = new SolrSearchDocument(document);
 			Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
-				: null;
+					: null;
 			return new SolrDocumentScore(doc, docHighlighting);
 		});
 	}

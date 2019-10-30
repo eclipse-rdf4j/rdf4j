@@ -79,31 +79,36 @@ public enum ActiveTransactionRegistry {
 			}
 		}
 
-		primaryCache = CacheBuilder.newBuilder().removalListener((RemovalNotification<UUID, Transaction> notification) -> {
-			Transaction entry = notification.getValue();
-			try {
-				entry.close();
-			} catch (RepositoryException | InterruptedException | ExecutionException e) {
-				// fall through
-			}
-		}).build();
-
-		secondaryCache = CacheBuilder.newBuilder().removalListener((RemovalNotification<UUID, Transaction> notification) -> {
-			if (RemovalCause.EXPIRED.equals(notification.getCause())) {
-				final UUID transactionId = notification.getKey();
-				final Transaction entry = notification.getValue();
-				synchronized (primaryCache) {
-					if (!entry.hasActiveOperations()) {
-						// no operation active, we can decommission this entry
-						primaryCache.invalidate(transactionId);
-						logger.warn("deregistered expired transaction {}", transactionId);
-					} else {
-						// operation still active. Reinsert in secondary cache.
-						secondaryCache.put(transactionId, entry);
+		primaryCache = CacheBuilder.newBuilder()
+				.removalListener((RemovalNotification<UUID, Transaction> notification) -> {
+					Transaction entry = notification.getValue();
+					try {
+						entry.close();
+					} catch (RepositoryException | InterruptedException | ExecutionException e) {
+						// fall through
 					}
-				}
-			}
-		}).expireAfterAccess(timeout, TimeUnit.SECONDS).build();
+				})
+				.build();
+
+		secondaryCache = CacheBuilder.newBuilder()
+				.removalListener((RemovalNotification<UUID, Transaction> notification) -> {
+					if (RemovalCause.EXPIRED.equals(notification.getCause())) {
+						final UUID transactionId = notification.getKey();
+						final Transaction entry = notification.getValue();
+						synchronized (primaryCache) {
+							if (!entry.hasActiveOperations()) {
+								// no operation active, we can decommission this entry
+								primaryCache.invalidate(transactionId);
+								logger.warn("deregistered expired transaction {}", transactionId);
+							} else {
+								// operation still active. Reinsert in secondary cache.
+								secondaryCache.put(transactionId, entry);
+							}
+						}
+					}
+				})
+				.expireAfterAccess(timeout, TimeUnit.SECONDS)
+				.build();
 
 	}
 

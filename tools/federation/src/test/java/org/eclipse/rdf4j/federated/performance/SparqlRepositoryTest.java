@@ -49,8 +49,8 @@ public class SparqlRepositoryTest {
 					try {
 						Thread.sleep(new Random().nextInt(300));
 						BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <"
-							+ instance.stringValue()
-							+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
+								+ instance.stringValue()
+								+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
 						bq.evaluate();
 					} catch (Exception e) {
 						e.printStackTrace();

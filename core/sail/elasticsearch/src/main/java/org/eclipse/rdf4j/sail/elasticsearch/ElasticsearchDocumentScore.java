@@ -42,6 +42,7 @@ public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult impl
 		if (highlightField == null) {
 			return null;
 		}
-		return Iterables.transform(Arrays.asList(highlightField.getFragments()), (Text fragment) -> SearchFields.getSnippet(fragment.string()));
+		return Iterables.transform(Arrays.asList(highlightField.getFragments()),
+				(Text fragment) -> SearchFields.getSnippet(fragment.string()));
 	}
 }
