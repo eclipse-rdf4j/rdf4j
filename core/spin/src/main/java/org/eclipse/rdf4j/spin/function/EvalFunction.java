@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -116,7 +117,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	}
 
 	private boolean isQuery(Resource r, TripleSource store) throws RDF4JException {
-		try (CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r,
+		try (CloseableIteration<? extends URI, QueryEvaluationException> typeIter = TripleSources.getObjectURIs(r,
 				RDF.TYPE,
 				store)) {
 			while (typeIter.hasNext()) {

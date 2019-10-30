@@ -342,8 +342,6 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		} catch (JsonProcessingException e) {
 			throw new QueryResultParseException("Could not parse SPARQL/JSON", e, e.getLocation().getLineNr(),
 					e.getLocation().getLineNr());
-		} finally {
-			jp.close();
 		}
 
 		return result;

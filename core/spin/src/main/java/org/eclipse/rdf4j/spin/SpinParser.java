@@ -262,7 +262,7 @@ public class SpinParser {
 
 	public Map<IRI, RuleProperty> parseRuleProperties(TripleSource store) throws RDF4JException {
 		Map<IRI, RuleProperty> rules = new HashMap<>();
-		try (CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources
+		try (CloseableIteration<? extends IRI, QueryEvaluationException> rulePropIter = TripleSources
 				.getSubjectURIs(RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store)) {
 
 			while (rulePropIter.hasNext()) {
@@ -365,7 +365,7 @@ public class SpinParser {
 		Boolean isQueryElseTemplate = null;
 		Set<IRI> possibleQueryTypes = new HashSet<>();
 		Set<IRI> possibleTemplates = new HashSet<>();
-		try (CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources
+		try (CloseableIteration<? extends IRI, QueryEvaluationException> typeIter = TripleSources
 				.getObjectURIs(queryResource, RDF.TYPE, store)) {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
@@ -563,14 +563,10 @@ public class SpinParser {
 
 	public Map<IRI, Argument> parseArguments(final IRI moduleUri, final TripleSource store) throws RDF4JException {
 		try {
-			return argumentCache.get(moduleUri, new Callable<Map<IRI, Argument>>() {
-
-				@Override
-				public Map<IRI, Argument> call() throws RDF4JException {
-					Map<IRI, Argument> args = new HashMap<>();
-					parseArguments(moduleUri, store, args);
-					return Collections.unmodifiableMap(args);
-				}
+			return argumentCache.get(moduleUri, () -> {
+				Map<IRI, Argument> args = new HashMap<>();
+				parseArguments(moduleUri, store, args);
+				return Collections.unmodifiableMap(args);
 			});
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof RDF4JException) {
@@ -584,7 +580,7 @@ public class SpinParser {
 	}
 
 	private void parseArguments(IRI moduleUri, TripleSource store, Map<IRI, Argument> args) throws RDF4JException {
-		try (CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources
+		try (CloseableIteration<? extends Resource, QueryEvaluationException> argIter = TripleSources
 				.getObjectResources(moduleUri, SPIN.CONSTRAINT_PROPERTY, store)) {
 
 			while (argIter.hasNext()) {

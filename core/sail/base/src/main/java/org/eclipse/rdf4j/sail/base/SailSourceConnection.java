@@ -350,17 +350,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	protected void commitInternal() throws SailException {
-		SailSource toCloseInferredBranch = includeInferredBranch;
-		explicitOnlyBranch = null;
-		inferredOnlyBranch = null;
-		includeInferredBranch = null;
-		try {
+		try (SailSource toCloseInferredBranch = includeInferredBranch) {
+			explicitOnlyBranch = null;
+			inferredOnlyBranch = null;
+			includeInferredBranch = null;
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
-			}
-		} finally {
-			if (toCloseInferredBranch != null) {
-				toCloseInferredBranch.close();
 			}
 		}
 	}
@@ -376,7 +371,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			inferredDataset = null;
 			SailSink toCloseInferredSink = inferredSink;
 			inferredSink = null;
-			SailSource toCloseIncludeInferredBranch = includeInferredBranch;
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
@@ -410,13 +404,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 										toCloseInferredDataset.close();
 									}
 								} finally {
-									try {
+									try (SailSource toCloseIncludeInferredBranch = includeInferredBranch) {
 										if (toCloseInferredSink != null) {
 											toCloseInferredSink.close();
-										}
-									} finally {
-										if (toCloseIncludeInferredBranch != null) {
-											toCloseIncludeInferredBranch.close();
 										}
 									}
 								}
