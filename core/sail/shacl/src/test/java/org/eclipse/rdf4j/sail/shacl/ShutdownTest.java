@@ -79,22 +79,6 @@ public class ShutdownTest {
 
 	}
 
-	@Test(expected = IllegalStateException.class)
-	public void threadPoolUninitialized() throws InterruptedException {
-
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-
-		shaclSail.submitRunnableToExecutorService(() -> {
-
-			for (int i = 0; i < Integer.MAX_VALUE; i++) {
-				Thread.sleep(i);
-			}
-
-			return null;
-		});
-
-	}
-
 	@Test
 	public void testThatGarbadgeCollectionWillShutdownTheThreadPool()
 			throws InterruptedException, NoSuchFieldException, IllegalAccessException {
