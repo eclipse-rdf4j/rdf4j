@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
