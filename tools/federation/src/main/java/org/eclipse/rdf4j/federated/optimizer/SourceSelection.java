@@ -208,7 +208,7 @@ public class SourceSelection {
 		 * @param tasks
 		 */
 		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, Cache cache) {
-			if (tasks.size() == 0)
+			if (tasks.isEmpty())
 				return;
 
 			latch = new CountDownLatch(tasks.size());

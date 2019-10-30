@@ -89,7 +89,7 @@ public class SPARQLParser implements QueryParser {
 				// try and use
 				// prefix declarations from a previous operation in this sequence.
 				List<ASTPrefixDecl> prefixDeclList = uc.getPrefixDeclList();
-				if (prefixDeclList == null || prefixDeclList.size() == 0) {
+				if (prefixDeclList == null || prefixDeclList.isEmpty()) {
 					if (sharedPrefixDeclarations != null) {
 						for (ASTPrefixDecl prefixDecl : sharedPrefixDeclarations) {
 							uc.jjtAppendChild(prefixDecl);

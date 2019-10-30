@@ -100,7 +100,7 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 		}
 
-		if (remainingExpr.size() == 0) {
+		if (remainingExpr.isEmpty()) {
 			filter.replaceWith(filter.getArg()); // remove the filter
 		}
 

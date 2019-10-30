@@ -125,7 +125,7 @@ public class QueryAlgebraUtil {
 		Set<String> varNames = new HashSet<String>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		if (filterExpr != null) {

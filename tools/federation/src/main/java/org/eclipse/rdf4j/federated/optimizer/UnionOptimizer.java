@@ -56,7 +56,7 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 
 		// create a NUnion having the arguments in one layer
 		// however, check if we only have zero or one argument first
-		if (filtered.size() == 0) {
+		if (filtered.isEmpty()) {
 			union.replaceWith(new EmptyNUnion(args, queryInfo));
 		}
 

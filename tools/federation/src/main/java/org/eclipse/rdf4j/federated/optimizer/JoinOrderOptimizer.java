@@ -247,7 +247,7 @@ public class JoinOrderOptimizer {
 
 		// special heuristic: if exclusive statement with one free variable, more selective than owned group
 		// with more than 3 free variable
-		if (owned.getFreeVarCount() <= 1 && joinVars.size() == 0)
+		if (owned.getFreeVarCount() <= 1 && joinVars.isEmpty())
 			count = 3;
 
 		for (String var : owned.getFreeVars())
@@ -268,7 +268,7 @@ public class JoinOrderOptimizer {
 		}
 
 		if (service.getNumberOfTriplePatterns() <= 1) {
-			if (joinVars.size() == 0 && service.getFreeVarCount() <= 1)
+			if (joinVars.isEmpty() && service.getFreeVarCount() <= 1)
 				additionalCost = 3; // compare exclusive statement
 			else
 				additionalCost += 100; // compare all statements

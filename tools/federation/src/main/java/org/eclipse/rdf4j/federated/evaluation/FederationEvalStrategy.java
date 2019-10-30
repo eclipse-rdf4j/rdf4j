@@ -211,7 +211,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
 				obj);
 
-		if (sources.size() == 0)
+		if (sources.isEmpty())
 			return new EmptyIteration<Statement, QueryEvaluationException>();
 
 		if (sources.size() == 1) {

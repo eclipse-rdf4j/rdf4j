@@ -200,7 +200,7 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 
 		// in rare cases the join args can be reduced to 0, e.g. if all statements are
 		// TrueStatementPatterns. We can safely replace the join node in such case
-		if (newArgs.size() == 0) {
+		if (newArgs.isEmpty()) {
 			log.debug("Join could be pruned as all join statements evaluate to true, replacing join with true node.");
 			node.replaceWith(new TrueStatementPattern(new StatementPattern()));
 			return;

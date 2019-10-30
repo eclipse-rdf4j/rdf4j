@@ -447,7 +447,7 @@ public abstract class AbstractLuceneSailTest {
 							}
 
 							// check if expected results were existing
-							if (expectedResult.size() != 0) {
+							if (!expectedResult.isEmpty()) {
 								matches = false;
 							}
 

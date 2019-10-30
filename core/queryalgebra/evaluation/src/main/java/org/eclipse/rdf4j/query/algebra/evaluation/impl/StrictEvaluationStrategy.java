@@ -370,7 +370,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			String baseUri = service.getBaseURI();
 
 			// special case: no free variables => perform ASK query
-			if (freeVars.size() == 0) {
+			if (freeVars.isEmpty()) {
 				boolean exists = fs.ask(service, bindings, baseUri);
 
 				// check if triples are available (with inserted bindings)
