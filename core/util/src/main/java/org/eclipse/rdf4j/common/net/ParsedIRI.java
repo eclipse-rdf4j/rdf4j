@@ -820,7 +820,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private String buildIRI(String scheme, String userInfo, String host, int port, String path, String query,
 			String fragment) {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		if (scheme != null) {
 			sb.append(scheme).append(':');
 		}

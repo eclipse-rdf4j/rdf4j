@@ -686,7 +686,7 @@ public abstract class RDFWriterTest {
 
 			Value obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
 			if (obj == litBigPlaceholder) {
-				StringBuffer big = new StringBuffer();
+				StringBuilder big = new StringBuilder();
 				int len = 25000 + prng.nextInt(5000);
 				for (int j = 0; j < len; j++) {
 					big.append(((char) (32 + prng.nextInt(90))));

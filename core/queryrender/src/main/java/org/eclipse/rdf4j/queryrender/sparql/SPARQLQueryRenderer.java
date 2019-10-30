@@ -51,7 +51,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 
 		boolean aFirst = true;
 
-		StringBuffer aQuery = new StringBuffer();
+		StringBuilder aQuery = new StringBuilder();
 
 		if (theQuery instanceof ParsedTupleQuery) {
 			aQuery.append("select ");

@@ -266,7 +266,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongURIRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -279,7 +279,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongLiteralRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -292,7 +292,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testReallyLongLiteralRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 1024000; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -305,7 +305,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongLangRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
