@@ -128,6 +128,6 @@ public class StatementSourcePattern extends FedXStatementPattern {
 				return new SingleBindingSetIteration(bindings);
 		}
 
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 }

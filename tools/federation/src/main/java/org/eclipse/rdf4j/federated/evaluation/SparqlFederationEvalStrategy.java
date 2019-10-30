@@ -74,7 +74,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
 			result = new FilteringIteration(filterExpr, result); // apply filter
 			if (!result.hasNext())
-				return new EmptyIteration<BindingSet, QueryEvaluationException>();
+				return new EmptyIteration<>();
 		} else {
 			result = new BoundJoinConversionIteration(result, bindings);
 		}
@@ -129,7 +129,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			/* no projection vars, e.g. local vars only, can occur in joins */
 			if (tripleSource.hasStatements(group, bindings))
 				return new SingleBindingSetIteration(bindings);
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 	}

@@ -42,7 +42,7 @@ public class MemoryCache implements Cache {
 
 	private static final Logger log = LoggerFactory.getLogger(MemoryCache.class);
 
-	protected HashMap<SubQuery, CacheEntry> cache = new HashMap<SubQuery, CacheEntry>();
+	protected HashMap<SubQuery, CacheEntry> cache = new HashMap<>();
 	protected File cacheLocation;
 
 	public MemoryCache(File cacheLocation) {
@@ -110,14 +110,14 @@ public class MemoryCache implements Cache {
 	public CloseableIteration<? extends Statement, Exception> getStatements(
 			SubQuery subQuery) {
 		CacheEntry entry = cache.get(subQuery);
-		return entry == null ? new EmptyIteration<Statement, Exception>() : entry.getStatements();
+		return entry == null ? new EmptyIteration<>() : entry.getStatements();
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement, Exception> getStatements(
 			SubQuery subQuery, Endpoint endpoint) {
 		CacheEntry entry = cache.get(subQuery);
-		return entry == null ? new EmptyIteration<Statement, Exception>() : entry.getStatements(endpoint);
+		return entry == null ? new EmptyIteration<>() : entry.getStatements(endpoint);
 	}
 
 	@Override
@@ -167,7 +167,7 @@ public class MemoryCache implements Cache {
 	@Override
 	public void clear() {
 		log.debug("Clearing the cache.");
-		cache = new HashMap<SubQuery, CacheEntry>();
+		cache = new HashMap<>();
 
 	}
 }

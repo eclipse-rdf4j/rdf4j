@@ -49,7 +49,7 @@ public class ContextStoreTest {
 		NativeSailStore sailStore = mock(NativeSailStore.class);
 
 		when(sailStore.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
-		when(sailStore.getContexts()).thenReturn(new EmptyIteration<Resource, SailException>());
+		when(sailStore.getContexts()).thenReturn(new EmptyIteration<>());
 
 		subject = new ContextStore(sailStore, dir);
 	}

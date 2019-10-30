@@ -589,7 +589,7 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-			return new CloseableIteratorIteration<Resource, SailException>(contextStore.iterator());
+			return new CloseableIteratorIteration<>(contextStore.iterator());
 		}
 
 		@Override

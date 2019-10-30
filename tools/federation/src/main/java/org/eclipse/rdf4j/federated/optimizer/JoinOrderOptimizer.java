@@ -49,9 +49,9 @@ public class JoinOrderOptimizer {
 
 	public static List<TupleExpr> optimizeJoinOrder(List<TupleExpr> joinArgs) {
 
-		List<TupleExpr> optimized = new ArrayList<TupleExpr>(joinArgs.size());
-		List<TupleExpr> left = new LinkedList<TupleExpr>(joinArgs);
-		Set<String> joinVars = new HashSet<String>();
+		List<TupleExpr> optimized = new ArrayList<>(joinArgs.size());
+		List<TupleExpr> left = new LinkedList<>(joinArgs);
+		Set<String> joinVars = new HashSet<>();
 
 		while (!left.isEmpty()) {
 
@@ -83,9 +83,9 @@ public class JoinOrderOptimizer {
 		if (groupStmts.size() == 1)
 			return groupStmts;
 
-		List<ExclusiveStatement> optimized = new ArrayList<ExclusiveStatement>(groupStmts.size());
-		List<ExclusiveStatement> left = new LinkedList<ExclusiveStatement>(groupStmts);
-		Set<String> joinVars = new HashSet<String>();
+		List<ExclusiveStatement> optimized = new ArrayList<>(groupStmts.size());
+		List<ExclusiveStatement> left = new LinkedList<>(groupStmts);
+		Set<String> joinVars = new HashSet<>();
 
 		while (!left.isEmpty()) {
 
@@ -115,7 +115,7 @@ public class JoinOrderOptimizer {
 
 		// determine the number of free variables in a UNION or Join
 		if (tupleExpr instanceof NTuple) {
-			HashSet<String> freeVars = new HashSet<String>();
+			HashSet<String> freeVars = new HashSet<>();
 			NTuple ntuple = (NTuple) tupleExpr;
 			for (TupleExpr t : ntuple.getArgs())
 				freeVars.addAll(getFreeVars(t));
@@ -132,7 +132,7 @@ public class JoinOrderOptimizer {
 
 		// can happen in SERVICE nodes, if they cannot be optimized
 		if (tupleExpr instanceof StatementPattern) {
-			List<String> freeVars = new ArrayList<String>();
+			List<String> freeVars = new ArrayList<>();
 			StatementPattern st = (StatementPattern) tupleExpr;
 			if (st.getSubjectVar().getValue() == null)
 				freeVars.add(st.getSubjectVar().getName());
@@ -145,7 +145,7 @@ public class JoinOrderOptimizer {
 
 		if (tupleExpr instanceof Projection) {
 			Projection p = (Projection) tupleExpr;
-			return new ArrayList<String>(p.getBindingNames());
+			return new ArrayList<>(p.getBindingNames());
 		}
 
 		if (tupleExpr instanceof BindingSetAssignment) {

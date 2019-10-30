@@ -70,9 +70,9 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 
 	protected void meetNJoin(NJoin node) {
 
-		LinkedList<TupleExpr> newArgs = new LinkedList<TupleExpr>();
+		LinkedList<TupleExpr> newArgs = new LinkedList<>();
 
-		LinkedList<TupleExpr> argsCopy = new LinkedList<TupleExpr>(node.getArgs());
+		LinkedList<TupleExpr> argsCopy = new LinkedList<>(node.getArgs());
 		while (!argsCopy.isEmpty()) {
 
 			TupleExpr t = argsCopy.removeFirst();
@@ -103,7 +103,7 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 						ExclusiveStatement check = (ExclusiveStatement) te;
 						if (check.getOwner().equals(current.getOwner())) {
 							if (l == null) {
-								l = new ArrayList<ExclusiveStatement>();
+								l = new ArrayList<>();
 								l.add(current);
 							}
 							l.add(check);
@@ -116,7 +116,7 @@ public class StatementGroupOptimizer extends AbstractQueryModelVisitor<Optimizat
 						ExclusiveGroup check = (ExclusiveGroup) te;
 						if (check.getOwner().equals(current.getOwner())) {
 							if (l == null) {
-								l = new ArrayList<ExclusiveStatement>();
+								l = new ArrayList<>();
 								l.add(current);
 							}
 							if (toRemoveFromArgs == null) {

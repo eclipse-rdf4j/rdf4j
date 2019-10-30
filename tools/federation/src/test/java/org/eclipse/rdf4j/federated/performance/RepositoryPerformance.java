@@ -77,7 +77,7 @@ public class RepositoryPerformance {
 
 				System.out
 						.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
-				List<Future<?>> tasks = new ArrayList<Future<?>>();
+				List<Future<?>> tasks = new ArrayList<>();
 				start = System.currentTimeMillis();
 				int count = 0;
 				for (final IRI instance : instances) {
@@ -121,7 +121,7 @@ public class RepositoryPerformance {
 
 		private List<IRI> retrieveInstances(RepositoryConnection conn) throws Exception {
 
-			List<IRI> res = new ArrayList<IRI>();
+			List<IRI> res = new ArrayList<>();
 			RepositoryResult<Statement> qres = null;
 			try {
 				qres = conn.getStatements(null, RDF.TYPE, type, false);

@@ -29,7 +29,7 @@ public class CacheEntryImpl implements CacheEntry {
 	private static final long serialVersionUID = -2078321733800349639L;
 
 	/* map endpoint.id to the corresponding entry */
-	protected Map<String, EndpointEntry> entries = new HashMap<String, EndpointEntry>();
+	protected Map<String, EndpointEntry> entries = new HashMap<>();
 
 	@Override
 	public StatementSourceAssurance canProvideStatements(Endpoint endpoint) {

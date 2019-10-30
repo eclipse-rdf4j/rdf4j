@@ -150,7 +150,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 		}
 
 		// XXX return NULL instead and add an additional check?
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 
 	@Override

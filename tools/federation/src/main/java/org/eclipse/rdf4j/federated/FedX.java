@@ -44,7 +44,7 @@ public class FedX implements Sail {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
 
-	protected final List<Endpoint> members = new ArrayList<Endpoint>();
+	protected final List<Endpoint> members = new ArrayList<>();
 	protected boolean open = false;
 
 	protected FedX() {
@@ -167,7 +167,7 @@ public class FedX implements Sail {
 	}
 
 	public List<Endpoint> getMembers() {
-		return new ArrayList<Endpoint>(members);
+		return new ArrayList<>(members);
 	}
 
 	public boolean isOpen() {

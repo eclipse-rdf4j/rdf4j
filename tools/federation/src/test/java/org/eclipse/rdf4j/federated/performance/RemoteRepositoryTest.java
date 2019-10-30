@@ -50,7 +50,7 @@ public class RemoteRepositoryTest {
 		System.out.println("Retrieved " + instances.size() + " instances");
 
 		System.out.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
-		List<Future<?>> tasks = new ArrayList<Future<?>>();
+		List<Future<?>> tasks = new ArrayList<>();
 		long start = System.currentTimeMillis();
 		int count = 0;
 		for (final IRI instance : instances) {
@@ -86,7 +86,7 @@ public class RemoteRepositoryTest {
 
 	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) throws Exception {
 
-		List<IRI> res = new ArrayList<IRI>();
+		List<IRI> res = new ArrayList<>();
 		RepositoryResult<Statement> qres = null;
 		try {
 			qres = conn.getStatements(null, RDF.TYPE, type, false);

@@ -42,7 +42,7 @@ public class SparqlRepositoryTest {
 		res.close();
 
 		System.out.println("Retrieved " + list.size() + " instances");
-		List<Future<?>> tasks = new ArrayList<Future<?>>();
+		List<Future<?>> tasks = new ArrayList<>();
 		for (int i = 0; i < 10; i++) {
 			for (final IRI instance : list) {
 				tasks.add(executor.submit(new Runnable() {

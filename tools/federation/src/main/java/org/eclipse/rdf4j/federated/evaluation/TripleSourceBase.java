@@ -120,7 +120,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	private CloseableIteration<BindingSet, QueryEvaluationException> booleanToBindingSetIteration(boolean hasResult) {
 		if (hasResult)
 			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 
 	/**
@@ -149,7 +149,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	private <T> CloseableIteration<T, QueryEvaluationException> closeConn(RepositoryConnection dependentConn,
 			CloseableIteration<T, QueryEvaluationException> inner) {
-		return new CloseDependentConnectionIteration<T>(inner, dependentConn);
+		return new CloseDependentConnectionIteration<>(inner, dependentConn);
 	}
 
 	/**

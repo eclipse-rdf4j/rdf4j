@@ -65,7 +65,7 @@ public class MonitoringImpl implements MonitoringService {
 
 	@Override
 	public List<MonitoringInformation> getAllMonitoringInformation() {
-		return new ArrayList<MonitoringInformation>(requestMap.values());
+		return new ArrayList<>(requestMap.values());
 	}
 
 	@Override

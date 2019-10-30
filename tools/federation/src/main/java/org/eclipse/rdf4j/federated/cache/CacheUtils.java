@@ -99,7 +99,7 @@ public class CacheUtils {
 			Resource subj, IRI pred, Value obj) {
 
 		SubQuery q = new SubQuery(subj, pred, obj);
-		List<StatementSource> sources = new ArrayList<StatementSource>(endpoints.size());
+		List<StatementSource> sources = new ArrayList<>(endpoints.size());
 
 		for (Endpoint e : endpoints) {
 			StatementSourceAssurance a = cache.canProvideStatements(q, e);

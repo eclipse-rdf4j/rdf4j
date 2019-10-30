@@ -78,7 +78,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 						}
 						return res;
 					}
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 				}
 
 				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr));
