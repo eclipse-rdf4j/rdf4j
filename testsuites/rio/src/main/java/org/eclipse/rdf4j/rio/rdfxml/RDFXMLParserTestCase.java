@@ -277,11 +277,11 @@ public abstract class RDFXMLParserTestCase {
 					// ignore
 				} catch (ParserConfigurationException e) {
 					throw new RuntimeException(e);
-				}catch (IOException e) {
+				} catch (IOException e) {
 					throw new RuntimeException(e);
 				}
 				// ignore
-				
+
 			}
 
 			return super.createLiteral(value, datatype);

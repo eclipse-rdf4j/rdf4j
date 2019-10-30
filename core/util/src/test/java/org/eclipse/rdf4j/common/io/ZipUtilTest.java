@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.io;
 
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;

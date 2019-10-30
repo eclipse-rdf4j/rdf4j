@@ -644,7 +644,7 @@ public class TransactionController extends AbstractController {
 		}
 		// custom signal from the backend, throw as HTTPException directly
 		// (see SES-1016).
-		 catch (MalformedQueryException e) {
+		catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
 		}

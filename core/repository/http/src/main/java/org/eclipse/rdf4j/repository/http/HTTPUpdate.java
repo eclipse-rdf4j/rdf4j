@@ -45,7 +45,8 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 					try {
 						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
 								getMaxExecutionTime(), getBindingsArray());
-					} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException | IOException e) {
+					} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException
+							| IOException e) {
 						throw new HTTPUpdateExecutionException(e.getMessage(), e);
 					}
 				} else {
