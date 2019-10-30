@@ -63,7 +63,7 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
-	implements InferencerConnection, FederatedServiceResolverClient {
+		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 
@@ -166,8 +166,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
 		this.evalStratFactory = evalStratFactory;
 		this.federatedServiceResolver = (evalStratFactory instanceof StrictEvaluationStrategyFactory)
-			? ((StrictEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
-			: null;
+				? ((StrictEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
+				: null;
 	}
 
 	/*---------*
@@ -194,7 +194,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
-			store.getEvaluationStatistics());
+				store.getEvaluationStatistics());
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
@@ -203,7 +203,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
-																								  Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
@@ -281,7 +281,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
-																						   Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		flush();
 		SailSource branch = branch(includeInferred);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
@@ -293,7 +293,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		flush();
 		try (Stream<? extends Statement> stream = Iterations
-			.stream(getStatementsInternal(null, null, null, false, contexts))) {
+				.stream(getStatementsInternal(null, null, null, false, contexts))) {
 			return stream.count();
 		}
 	}
@@ -454,7 +454,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -472,7 +472,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -591,7 +591,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		if (contexts.length == 0) {
 			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
@@ -609,7 +609,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
@@ -626,10 +626,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		boolean statementsRemoved = false;
 		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
-			contexts)) {
+				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
 				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
@@ -790,7 +790,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
-		CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
+			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
 		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
 
 			@Override
@@ -801,9 +801,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
-			contexts)) {
+				contexts)) {
 			return iter.hasNext();
 		}
 	}
