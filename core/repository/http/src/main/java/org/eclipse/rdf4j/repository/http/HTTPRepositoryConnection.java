@@ -160,11 +160,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			active = true;
 		} catch (RepositoryException e) {
 			throw e;
-		} catch (RDF4JException e) {
-			throw new RepositoryException(e);
-		} catch (IllegalStateException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -237,9 +233,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			}
 
 			return createRepositoryResult(contextList);
-		} catch (QueryEvaluationException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (QueryEvaluationException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -263,9 +257,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		flushTransactionState(Action.GET);
 		try {
 			client.getStatements(subj, pred, obj, includeInferred, handler, contexts);
-		} catch (IOException e) {
-			throw new RepositoryException(e);
-		} catch (QueryInterruptedException e) {
+		} catch (IOException | QueryInterruptedException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -302,11 +294,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			client.commitTransaction();
 			active = false;
-		} catch (RDF4JException e) {
-			throw new RepositoryException(e);
-		} catch (IllegalStateException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -323,11 +311,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			client.rollbackTransaction();
 			active = false;
-		} catch (RDF4JException e) {
-			throw new RepositoryException(e);
-		} catch (IllegalStateException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -540,9 +524,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 		} catch (RDFHandlerException e) {
 			throw new RepositoryException("error while writing statement", e);
-		} catch (RDFParseException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDFParseException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -557,9 +539,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 		} catch (RDFHandlerException e) {
 			throw new RepositoryException("error while writing statement", e);
-		} catch (RDFParseException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDFParseException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -738,9 +718,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			}
 
 			return createRepositoryResult(namespaceList);
-		} catch (QueryEvaluationException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (QueryEvaluationException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}

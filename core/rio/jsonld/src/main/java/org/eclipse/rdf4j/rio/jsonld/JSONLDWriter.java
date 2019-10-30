@@ -148,13 +148,11 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 				JsonUtils.write(writer, output);
 			}
 
-		} catch (final JsonLdError e) {
+		} catch (final JsonLdError | IOException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		} catch (final JsonGenerationException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		} catch (final JsonMappingException e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final IOException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		}
 	}

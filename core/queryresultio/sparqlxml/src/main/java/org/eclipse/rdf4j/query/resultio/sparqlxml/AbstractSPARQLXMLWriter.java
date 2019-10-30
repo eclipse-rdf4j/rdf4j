@@ -289,12 +289,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				xmlWriter.setAttribute(VAR_NAME_ATT, name);
 				xmlWriter.emptyElement(VAR_TAG);
 			}
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
@@ -319,12 +317,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 			xmlWriter.endTag(RESULT_SET_TAG);
 			endDocument();
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
@@ -359,12 +355,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			}
 
 			xmlWriter.endTag(RESULT_TAG);
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 

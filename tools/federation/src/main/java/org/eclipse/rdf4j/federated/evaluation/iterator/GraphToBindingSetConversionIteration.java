@@ -41,9 +41,7 @@ public class GraphToBindingSetConversionIteration
 
 		try {
 			return convert(graph.next());
-		} catch (NoSuchElementException e) {
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (NoSuchElementException | IllegalStateException e) {
 			throw e;
 		}
 	}
@@ -53,9 +51,7 @@ public class GraphToBindingSetConversionIteration
 
 		try {
 			graph.remove();
-		} catch (UnsupportedOperationException e) {
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (UnsupportedOperationException | IllegalStateException e) {
 			throw e;
 		}
 	}

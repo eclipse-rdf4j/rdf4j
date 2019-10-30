@@ -316,10 +316,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 					}
 					logger.debug("Data file initialized");
-				} catch (IOException e) {
-					logger.debug("Failed to initialize data file", e);
-					throw new SailException("Failed to initialize data file " + dataFile, e);
-				} catch (SailException e) {
+				} catch (IOException | SailException e) {
 					logger.debug("Failed to initialize data file", e);
 					throw new SailException("Failed to initialize data file " + dataFile, e);
 				}

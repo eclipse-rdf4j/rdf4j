@@ -1296,9 +1296,7 @@ public class SpinRenderer {
 			});
 			try {
 				parser.parse(new StringReader(data), "");
-			} catch (RDFParseException e) {
-				throw new RDFHandlerException(e);
-			} catch (IOException e) {
+			} catch (RDFParseException | IOException e) {
 				throw new RDFHandlerException(e);
 			}
 		}

@@ -345,9 +345,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				} else if (tagName.equals(CONTEXT_TAG)) {
 					currentContext = null;
 				}
-			} catch (RDFParseException e) {
-				throw new SAXException(e);
-			} catch (RDFHandlerException e) {
+			} catch (RDFParseException | RDFHandlerException e) {
 				throw new SAXException(e);
 			}
 		}

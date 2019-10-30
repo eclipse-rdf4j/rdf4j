@@ -90,9 +90,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 					sailImplConfig.parse(model, sailImplNode.get());
 				});
 			}
-		} catch (ModelException e) {
-			throw new RepositoryConfigException(e.getMessage(), e);
-		} catch (SailConfigException e) {
+		} catch (ModelException | SailConfigException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}
 	}

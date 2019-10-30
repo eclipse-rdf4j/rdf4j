@@ -164,9 +164,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		try {
 			// use the particular evaluation strategy for evaluation
 			return FederationManager.getInstance().getStrategy().evaluateExclusiveGroup(this, bindings);
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 

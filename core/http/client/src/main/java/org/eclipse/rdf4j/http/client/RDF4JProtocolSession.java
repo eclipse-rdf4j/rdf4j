@@ -1032,9 +1032,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				// Send request
 				try {
 					executeNoContent((HttpUriRequest) method);
-				} catch (RepositoryException e) {
-					throw e;
-				} catch (RDFParseException e) {
+				} catch (RepositoryException | RDFParseException e) {
 					throw e;
 				} catch (RDF4JException e) {
 					throw new RepositoryException(e);

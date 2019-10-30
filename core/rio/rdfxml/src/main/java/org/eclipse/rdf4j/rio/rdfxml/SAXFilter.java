@@ -176,9 +176,7 @@ class SAXFilter implements ContentHandler {
 	public void startDocument() throws SAXException {
 		try {
 			rdfParser.startDocument();
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -187,9 +185,7 @@ class SAXFilter implements ContentHandler {
 	public void endDocument() throws SAXException {
 		try {
 			rdfParser.endDocument();
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -212,9 +208,7 @@ class SAXFilter implements ContentHandler {
 			if (rdfParser.getRDFHandler() != null) {
 				rdfParser.getRDFHandler().handleNamespace(prefix, uri);
 			}
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -281,9 +275,7 @@ class SAXFilter implements ContentHandler {
 
 				charBuf.setLength(0);
 			}
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -389,9 +381,7 @@ class SAXFilter implements ContentHandler {
 
 				rdfParser.endElement(namespaceURI, localName, qName);
 			}
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}
@@ -428,9 +418,7 @@ class SAXFilter implements ContentHandler {
 					}
 				}
 			}
-		} catch (RDFParseException e) {
-			throw new SAXException(e);
-		} catch (RDFHandlerException e) {
+		} catch (RDFParseException | RDFHandlerException e) {
 			throw new SAXException(e);
 		}
 	}

@@ -40,13 +40,7 @@ public class SPARQLUpdate extends AbstractHTTPUpdate {
 			try {
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
 						getMaxExecutionTime(), getBindingsArray());
-			} catch (UnauthorizedException e) {
-				throw new UpdateExecutionException(e.getMessage(), e);
-			} catch (QueryInterruptedException e) {
-				throw new UpdateExecutionException(e.getMessage(), e);
-			} catch (MalformedQueryException e) {
-				throw new UpdateExecutionException(e.getMessage(), e);
-			} catch (IOException e) {
+			} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException | IOException e) {
 				throw new UpdateExecutionException(e.getMessage(), e);
 			}
 		} catch (RepositoryException e) {

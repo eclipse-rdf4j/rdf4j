@@ -81,9 +81,7 @@ public class DocumentUtil {
 			String message = "Parsing error" + ", line " + e.getLineNumber() + ", uri " + e.getSystemId() + ", "
 					+ e.getMessage();
 			throw toIOE(message, e);
-		} catch (SAXException e) {
-			throw toIOE(e);
-		} catch (ParserConfigurationException e) {
+		} catch (SAXException | ParserConfigurationException e) {
 			throw toIOE(e);
 		}
 

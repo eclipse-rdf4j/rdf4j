@@ -40,9 +40,7 @@ public class NavigationXmlParser {
 			Document document = DocumentUtil.getDocument(navigationXml);
 			Node rootNode = (Node) xpath.evaluate("/navigation", document, XPathConstants.NODE);
 			fillModel(result, rootNode);
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (XPathExpressionException e) {
+		} catch (IOException | XPathExpressionException e) {
 			e.printStackTrace();
 		}
 	}

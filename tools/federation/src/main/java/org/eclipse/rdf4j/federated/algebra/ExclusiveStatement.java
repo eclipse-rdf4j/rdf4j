@@ -95,9 +95,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 
 			return res;
 
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}

@@ -122,12 +122,10 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeString(nextColumn);
 			}
 			jg.writeEndArray();
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
@@ -162,12 +160,10 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			}
 
 			jg.writeEndObject();
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
@@ -195,12 +191,10 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			// results braces
 			jg.writeEndObject();
 			endDocument();
-		} catch (IOException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		} catch (TupleQueryResultHandlerException e) {
 			throw e;
-		} catch (QueryResultHandlerException e) {
-			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
