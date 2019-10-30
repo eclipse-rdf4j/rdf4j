@@ -350,9 +350,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
-		if (!initialized.get()) {
-			throw new IllegalStateException("ShaclSail not initialized!");
-		}
 		if (executorService[0] == null) {
 			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
 					r -> {
