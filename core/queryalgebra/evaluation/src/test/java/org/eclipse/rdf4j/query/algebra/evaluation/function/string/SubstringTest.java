@@ -105,7 +105,7 @@ public class SubstringTest {
 		try {
 			Literal result = substrFunc.evaluate(f, pattern, startIndex, length);
 
-			assertTrue(result.getLabel().equals(""));
+			assertTrue(result.getLabel().isEmpty());
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}

@@ -134,7 +134,7 @@ public class StringUtil {
 		for (int i = 0; i < items.length; i++) {
 			String item = items[i];
 			item = gsub("__", "_", item);
-			if (!item.equals("")) {
+			if (!item.isEmpty()) {
 				list.add(item);
 			}
 		}

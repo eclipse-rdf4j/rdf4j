@@ -350,7 +350,7 @@ public class HttpServerUtil {
 	 */
 	public static boolean isEmpty(String string) {
 		boolean result = false;
-		if (string == null || string.trim().equals("")) {
+		if (string == null || string.trim().isEmpty()) {
 			result = true;
 		}
 		return result;

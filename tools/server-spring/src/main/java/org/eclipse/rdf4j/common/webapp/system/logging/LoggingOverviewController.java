@@ -161,7 +161,7 @@ public class LoggingOverviewController implements Controller {
 		int result = 0;
 
 		String offsetString = request.getParameter("offset");
-		if (offsetString != null && !offsetString.equals("")) {
+		if (offsetString != null && !offsetString.isEmpty()) {
 			try {
 				result = Integer.parseInt(offsetString);
 			} catch (NumberFormatException nfe) {
@@ -176,7 +176,7 @@ public class LoggingOverviewController implements Controller {
 		int result = 50; // Default entries count
 
 		String countString = request.getParameter("count");
-		if (countString != null && !countString.equals("")) {
+		if (countString != null && !countString.isEmpty()) {
 			try {
 				result = Integer.parseInt(countString);
 			} catch (NumberFormatException nfe) {

@@ -142,7 +142,7 @@ public class NavigationXmlParser {
 
 	private boolean getBooleanAttribute(String attrValue, boolean defaultValue) {
 		boolean result = defaultValue;
-		if (attrValue != null && !attrValue.trim().equals("")) {
+		if (attrValue != null && !attrValue.trim().isEmpty()) {
 			result = attrValue.equalsIgnoreCase("true") || attrValue.equalsIgnoreCase("yes")
 					|| attrValue.equalsIgnoreCase("on");
 		}

@@ -541,7 +541,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		 */
 
 		if (query != null) {
-			if (baseURI != null && !baseURI.equals("")) {
+			if (baseURI != null && !baseURI.isEmpty()) {
 				// prepend query string with base URI declaration
 				query = "BASE <" + baseURI + "> \n" + query;
 			}
@@ -572,7 +572,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		List<NameValuePair> queryParams = new ArrayList<>();
 
 		if (update != null) {
-			if (baseURI != null && !baseURI.equals("")) {
+			if (baseURI != null && !baseURI.isEmpty()) {
 				// prepend update string with base URI declaration
 				update = "BASE <" + baseURI + "> \n" + update;
 			}

@@ -564,7 +564,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		// Get the URI of the property
 		IRI propURI = null;
-		if (namespaceURI.equals("")) {
+		if (namespaceURI.isEmpty()) {
 			// no namespace URI
 			reportError("unqualified property element <" + qName + "> not allowed",
 					XMLParserSettings.FAIL_ON_INVALID_QNAME);

@@ -702,15 +702,15 @@ public class QueryStringUtil {
 			String tmp;
 			String tmpQuery = "";
 			while ((tmp = in.readLine()) != null) {
-				if (tmp.equals("")) {
-					if (!tmpQuery.equals(""))
+				if (tmp.isEmpty()) {
+					if (!tmpQuery.isEmpty())
 						res.add(tmpQuery);
 					tmpQuery = "";
 				} else {
 					tmpQuery = tmpQuery + tmp;
 				}
 			}
-			if (!tmpQuery.equals(""))
+			if (!tmpQuery.isEmpty())
 				res.add(tmpQuery);
 			return res;
 		}
