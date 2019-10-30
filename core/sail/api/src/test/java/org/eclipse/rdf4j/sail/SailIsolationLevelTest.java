@@ -209,6 +209,7 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch uncommitted = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection write = store.getConnection();) {
 					start.countDown();
@@ -225,6 +226,7 @@ public abstract class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection read = store.getConnection();) {
 					start.countDown();
@@ -267,6 +269,7 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection write = store.getConnection();) {
 					start.countDown();
@@ -289,6 +292,7 @@ public abstract class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection read = store.getConnection();) {
 					start.countDown();
@@ -370,6 +374,7 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection write = store.getConnection();) {
 					start.countDown();
@@ -392,6 +397,7 @@ public abstract class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection read = store.getConnection();) {
 					start.countDown();
@@ -463,6 +469,7 @@ public abstract class SailIsolationLevelTest {
 			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
 		return new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (SailConnection con = store.getConnection();) {
 					start.countDown();

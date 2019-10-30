@@ -126,6 +126,7 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 			this.value = value;
 		}
 
+		@Override
 		public String toString() {
 			return name + ":" + value.stringValue();
 		}

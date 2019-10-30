@@ -243,6 +243,7 @@ public abstract class SailConcurrencyTest {
 
 		Runnable writer = new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					SailConnection connection = store.getConnection();
@@ -270,6 +271,7 @@ public abstract class SailConcurrencyTest {
 		// connection.
 		Runnable reader = new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					SailConnection connection = store.getConnection();

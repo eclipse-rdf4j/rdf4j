@@ -678,6 +678,7 @@ public abstract class RDFStoreTest {
 
 			SailConnection sharedCon = con;
 
+			@Override
 			public void run() {
 				assertTrue(sharedCon != null);
 
@@ -922,6 +923,7 @@ public abstract class RDFStoreTest {
 					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));
 			Runnable clearer = new Runnable() {
 
+				@Override
 				public void run() {
 					try {
 						con.begin();

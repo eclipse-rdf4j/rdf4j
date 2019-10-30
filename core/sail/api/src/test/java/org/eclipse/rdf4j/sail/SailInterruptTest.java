@@ -70,6 +70,7 @@ public abstract class SailInterruptTest {
 
 		Runnable queryJob = new Runnable() {
 
+			@Override
 			public void run() {
 				while (!Thread.currentThread().isInterrupted()) {
 					try {

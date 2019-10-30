@@ -1028,6 +1028,7 @@ public abstract class AbstractLuceneSailTest {
 
 				private long iterationCount = 10 + Math.round(Math.random() * 100);
 
+				@Override
 				public void run() {
 					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();

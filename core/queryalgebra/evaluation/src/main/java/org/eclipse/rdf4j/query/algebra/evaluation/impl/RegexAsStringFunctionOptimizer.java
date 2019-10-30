@@ -36,6 +36,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 	/**
 	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new RegexAsStringFunctionVisitor());
 	}

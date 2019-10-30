@@ -187,6 +187,7 @@ public class SailIsolationLevelTest {
 		final CountDownLatch uncommitted = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection write = store.getConnection();) {
 					start.countDown();
@@ -203,6 +204,7 @@ public class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection read = store.getConnection();) {
 					start.countDown();
@@ -244,6 +246,7 @@ public class SailIsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection write = store.getConnection();) {
 					start.countDown();
@@ -266,6 +269,7 @@ public class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection read = store.getConnection();) {
 					start.countDown();
@@ -347,6 +351,7 @@ public class SailIsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					RepositoryConnection write = store.getConnection();
@@ -374,6 +379,7 @@ public class SailIsolationLevelTest {
 		});
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection read = store.getConnection();) {
 					start.countDown();
@@ -445,6 +451,7 @@ public class SailIsolationLevelTest {
 			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
 		return new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try (RepositoryConnection con = store.getConnection();) {
 					start.countDown();

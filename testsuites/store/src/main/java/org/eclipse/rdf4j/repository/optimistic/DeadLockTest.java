@@ -79,6 +79,7 @@ public class DeadLockTest {
 		final Exception e1 = new Exception();
 		new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					start.countDown();
@@ -97,6 +98,7 @@ public class DeadLockTest {
 		final Exception e2 = new Exception();
 		new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					start.countDown();

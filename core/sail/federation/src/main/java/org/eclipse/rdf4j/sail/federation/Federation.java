@@ -249,6 +249,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Deprecated
+	@Override
 	public void initialize() throws SailException {
 		init();
 	}

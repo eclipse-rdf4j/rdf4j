@@ -44,34 +44,41 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 	}
 
 	@Deprecated
+	@Override
 	public PropertyDescriptor findDescriptor(int col) {
 		return null;
 	}
 
 	@Deprecated
+	@Override
 	public BeanField<BindingSet> findField(int col) {
 		return null;
 	}
 
 	@Deprecated
+	@Override
 	public int findMaxFieldIndex() {
 		return 0;
 	}
 
 	@Deprecated
+	@Override
 	public BindingSet createBean() {
 		return null;
 	}
 
+	@Override
 	public String[] generateHeader(BindingSet bean) {
 		throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
 	}
 
 	@Deprecated
+	@Override
 	public Integer getColumnIndex(String name) {
 		return null;
 	}
 
+	@Override
 	public boolean isAnnotationDriven() {
 		// This is a bald-faced lie, but it determines whether populateNewBean()
 		// or populateNewBeanWithIntrospection() is used.
@@ -104,11 +111,13 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 	}
 
 	@Deprecated
+	@Override
 	public BindingSet populateNewBeanWithIntrospection(String[] line) {
 		throw new UnsupportedOperationException("Please use populateNewBean() instead.");
 	}
 
 	@Deprecated
+	@Override
 	public void verifyLineLength(int numberOfFields) {
 	}
 

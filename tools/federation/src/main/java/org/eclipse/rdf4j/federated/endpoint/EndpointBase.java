@@ -133,6 +133,7 @@ public abstract class EndpointBase implements Endpoint {
 		return repoInfo.getType();
 	}
 
+	@Override
 	public boolean isInitialized() {
 		return initialized;
 	}
