@@ -124,8 +124,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			jg.writeEndArray();
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
@@ -162,8 +160,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			jg.writeEndObject();
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
@@ -193,8 +189,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			endDocument();
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
