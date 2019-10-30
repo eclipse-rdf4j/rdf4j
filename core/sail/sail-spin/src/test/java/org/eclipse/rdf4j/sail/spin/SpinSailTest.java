@@ -7,15 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.Assert.assertTrue;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.concurrent.Callable;
-
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -28,12 +26,22 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.concurrent.Callable;
+import java.util.stream.Stream;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class SpinSailTest {
 
@@ -141,31 +149,78 @@ public class SpinSailTest {
 		assertStatements("testSpinxRule-expected.ttl");
 	}
 
+	@Ignore("This test shows how the SpinSail fails on transactional workloads.")
+	@Test
+	public void testDeepConstructRule() throws Exception {
+		loadStatements("testDeepConstructRule.ttl");
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		String ns = "http://example.org/";
+
+		IRI ex1 = vf.createIRI(ns, "ex1");
+		IRI TestClass = vf.createIRI(ns, "TestClass");
+		IRI prop = vf.createIRI(ns, "prop");
+		IRI ex2 = vf.createIRI(ns, "ex2");
+		IRI ex3 = vf.createIRI(ns, "ex3");
+		IRI ex4 = vf.createIRI(ns, "ex4");
+
+		conn.begin();
+		conn.add(ex1, RDF.TYPE, TestClass);
+		conn.add(ex1, prop, ex2);
+
+		// comment out these two lines, so that all statements are added in the same transaction. This will make the
+		// test pass.
+		conn.commit();
+		conn.begin();
+
+		conn.add(ex2, FOAF.KNOWS, ex3);
+		conn.add(ex3, FOAF.KNOWS, ex4);
+		conn.commit();
+
+		assertStatements("testDeepConstructRule-expected.ttl");
+
+	}
+
+	@Ignore("This test shows that using negation will lead to incorrect inference.")
+	@Test
+	public void testNegationConstructRule() throws Exception {
+		loadStatements("testNegationConstructRule.ttl");
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		String ns = "http://example.org/";
+
+		IRI sibling = vf.createIRI(ns, "sibling");
+		IRI parent1 = vf.createIRI(ns, "parent1");
+		IRI parentOf = vf.createIRI(ns, "parentOf");
+
+		// parent1 is already parentOf onlyChild1, so adding the following statement should stop onlyChild1 from being
+		// an only child
+		conn.add(parent1, parentOf, sibling);
+
+		IRI OnlyChild = vf.createIRI(ns, "OnlyChild");
+
+		try (Stream<Statement> stream = Iterations.stream(conn.getStatements(null, RDF.TYPE, OnlyChild))) {
+			long count = stream.peek(System.out::println).count();
+			assertEquals(0, count);
+		}
+
+	}
+
 	@Test
 	public void testTransactions() throws Exception {
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				loadStatements("testTransactions-rule.ttl");
-				return null;
-			}
+		tx((Callable<Void>) () -> {
+			loadStatements("testTransactions-rule.ttl");
+			return null;
 		});
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				loadStatements("testTransactions-data.ttl");
-				return null;
-			}
+		tx((Callable<Void>) () -> {
+			loadStatements("testTransactions-data.ttl");
+			return null;
 		});
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				assertStatements("testTransactions-expected.ttl");
-				return null;
-			}
+		tx((Callable<Void>) () -> {
+			assertStatements("testTransactions-expected.ttl");
+			return null;
 		});
 	}
 
