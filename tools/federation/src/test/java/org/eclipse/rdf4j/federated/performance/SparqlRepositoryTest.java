@@ -45,19 +45,15 @@ public class SparqlRepositoryTest {
 		List<Future<?>> tasks = new ArrayList<>();
 		for (int i = 0; i < 10; i++) {
 			for (final IRI instance : list) {
-				tasks.add(executor.submit(new Runnable() {
-
-					@Override
-					public void run() {
-						try {
-							Thread.sleep(new Random().nextInt(300));
-							BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <"
-									+ instance.stringValue()
-									+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
-							bq.evaluate();
-						} catch (Exception e) {
-							e.printStackTrace();
-						}
+				tasks.add(executor.submit(() -> {
+					try {
+						Thread.sleep(new Random().nextInt(300));
+						BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <"
+							+ instance.stringValue()
+							+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");
+						bq.evaluate();
+					} catch (Exception e) {
+						e.printStackTrace();
 					}
 				}));
 

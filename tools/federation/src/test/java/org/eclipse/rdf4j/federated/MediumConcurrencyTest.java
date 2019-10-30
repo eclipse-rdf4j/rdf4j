@@ -86,19 +86,15 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 
 		for (int i = 0; i < 10; i++) {
 			final int tid = i;
-			executor.submit(new Runnable() {
-
-				@Override
-				public void run() {
-					p1.register();
-					try {
-						Thread.sleep(rand.nextInt(10) * 1000);
-					} catch (InterruptedException e) {
-						throw new RuntimeException(e);
-					}
-					System.out.println("Task " + tid + " done");
-					p1.arriveAndDeregister();
+			executor.submit(() -> {
+				p1.register();
+				try {
+					Thread.sleep(rand.nextInt(10) * 1000);
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
 				}
+				System.out.println("Task " + tid + " done");
+				p1.arriveAndDeregister();
 			});
 		}
 		System.out.println("Waiting for tasks to finish");
@@ -107,14 +103,10 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	}
 
 	protected Future<String> submit(final String query, final int queryId) {
-		return executor.submit(new Callable<String>() {
-
-			@Override
-			public String call() throws Exception {
-				log.info("Executing query " + queryId + ": " + query);
-				execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
-				return "Ok";
-			}
+		return executor.submit(() -> {
+			log.info("Executing query " + queryId + ": " + query);
+			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
+			return "Ok";
 		});
 	}
 }

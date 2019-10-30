@@ -262,18 +262,12 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			}
 			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
-			this.store = new SnapshotSailStore(master, new ModelFactory() {
-
+			this.store = new SnapshotSailStore(master, () -> new MemoryOverflowModel() {
+				
 				@Override
-				public Model createEmptyModel() {
-					return new MemoryOverflowModel() {
-
-						@Override
-						protected SailStore createSailStore(File dataDir) throws IOException, SailException {
-							// Model can't fit into memory, use another NativeSailStore to store delta
-							return new NativeSailStore(dataDir, getTripleIndexes());
-						}
-					};
+				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+					// Model can't fit into memory, use another NativeSailStore to store delta
+					return new NativeSailStore(dataDir, getTripleIndexes());
 				}
 			}) {
 

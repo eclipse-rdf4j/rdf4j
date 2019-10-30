@@ -207,19 +207,7 @@ public class SpinParser {
 	}
 
 	public SpinParser(Input input) {
-		this(input, new Function<IRI, String>() {
-
-			@Override
-			public String apply(IRI IRI) {
-				return SpinWellKnownVars.INSTANCE.getName(IRI);
-			}
-		}, new Function<IRI, String>() {
-
-			@Override
-			public String apply(IRI IRI) {
-				return SpinWellKnownFunctions.INSTANCE.getName(IRI);
-			}
-		});
+		this(input, SpinWellKnownVars.INSTANCE::getName, SpinWellKnownFunctions.INSTANCE::getName);
 	}
 
 	public SpinParser(Input input, Function<IRI, String> wellKnownVarsMapper,
@@ -461,13 +449,7 @@ public class SpinParser {
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
 			final TripleSource store) throws RDF4JException {
 		try {
-			return templateCache.get(tmplUri, new Callable<Template>() {
-
-				@Override
-				public Template call() throws RDF4JException {
-					return parseTemplateInternal(tmplUri, queryType, abstractTmpls, store);
-				}
-			});
+			return templateCache.get(tmplUri, () -> parseTemplateInternal(tmplUri, queryType, abstractTmpls, store));
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof RDF4JException) {
 				throw (RDF4JException) e.getCause();
@@ -581,14 +563,10 @@ public class SpinParser {
 
 	public Map<IRI, Argument> parseArguments(final IRI moduleUri, final TripleSource store) throws RDF4JException {
 		try {
-			return argumentCache.get(moduleUri, new Callable<Map<IRI, Argument>>() {
-
-				@Override
-				public Map<IRI, Argument> call() throws RDF4JException {
-					Map<IRI, Argument> args = new HashMap<>();
-					parseArguments(moduleUri, store, args);
-					return Collections.unmodifiableMap(args);
-				}
+			return argumentCache.get(moduleUri, () -> {
+				Map<IRI, Argument> args = new HashMap<>();
+				parseArguments(moduleUri, store, args);
+				return Collections.unmodifiableMap(args);
 			});
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof RDF4JException) {
@@ -723,13 +701,7 @@ public class SpinParser {
 	}
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
-		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(new Comparator<IRI>() {
-
-			@Override
-			public int compare(IRI uri1, IRI uri2) {
-				return uri1.getLocalName().compareTo(uri2.getLocalName());
-			}
-		});
+		SortedSet<IRI> sortedArgs = new TreeSet<IRI>((IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 
 		int numArgs = sortedArgs.size();

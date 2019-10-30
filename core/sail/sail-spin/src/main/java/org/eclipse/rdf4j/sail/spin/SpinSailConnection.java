@@ -623,21 +623,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 							comments.put(rule, comment);
 						}
 					}
-					Collections.sort(rules, new Comparator<Resource>() {
-
-						@Override
-						public int compare(Resource rule1, Resource rule2) {
-							String comment1 = comments.get(rule1);
-							String comment2 = comments.get(rule2);
-							if (comment1 != null && comment2 != null) {
-								return comment1.compareTo(comment2);
-							} else if (comment1 != null && comment2 == null) {
-								return 1;
-							} else if (comment1 == null && comment2 != null) {
-								return -1;
-							} else {
-								return 0;
-							}
+					Collections.sort(rules, (Resource rule1, Resource rule2) -> {
+						String comment1 = comments.get(rule1);
+						String comment2 = comments.get(rule2);
+						if (comment1 != null && comment2 != null) {
+							return comment1.compareTo(comment2);
+						} else if (comment1 != null && comment2 == null) {
+							return 1;
+						} else if (comment1 == null && comment2 != null) {
+							return -1;
+						} else {
+							return 0;
 						}
 					});
 				}

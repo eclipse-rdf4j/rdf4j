@@ -241,60 +241,52 @@ public abstract class SailConcurrencyTest {
 		final Random insertRandomizer = new Random(12345L);
 		final Random removeRandomizer = new Random(System.currentTimeMillis());
 
-		Runnable writer = new Runnable() {
-
-			@Override
-			public void run() {
+		Runnable writer = () -> {
+			try {
+				SailConnection connection = store.getConnection();
 				try {
-					SailConnection connection = store.getConnection();
-					try {
-						while (continueRunning) {
-							connection.begin();
-							for (int i = 0; i < 10; i++) {
-								insertTestStatement(connection, insertRandomizer.nextInt() % MAX_STATEMENT_IDX);
-								removeTestStatement(connection, removeRandomizer.nextInt() % MAX_STATEMENT_IDX);
-							}
-							// System.out.print("*");
-							connection.commit();
+					while (continueRunning) {
+						connection.begin();
+						for (int i = 0; i < 10; i++) {
+							insertTestStatement(connection, insertRandomizer.nextInt() % MAX_STATEMENT_IDX);
+							removeTestStatement(connection, removeRandomizer.nextInt() % MAX_STATEMENT_IDX);
 						}
-					} finally {
-						connection.close();
+						// System.out.print("*");
+						connection.commit();
 					}
-				} catch (Throwable t) {
-					continueRunning = false;
-					fail("Writer failed", t);
+				} finally {
+					connection.close();
 				}
+			} catch (Throwable t) {
+				continueRunning = false;
+				fail("Writer failed", t);
 			}
 		};
 
 		// Create another which constantly calls getContextIDs() on the
 		// connection.
-		Runnable reader = new Runnable() {
-
-			@Override
-			public void run() {
+		Runnable reader = () -> {
+			try {
+				SailConnection connection = store.getConnection();
 				try {
-					SailConnection connection = store.getConnection();
-					try {
-						while (continueRunning) {
-							CloseableIteration<? extends Resource, SailException> contextIter = connection
-									.getContextIDs();
-							try {
-								while (contextIter.hasNext()) {
-									Resource context = contextIter.next();
-									assertNotNull(context);
-								}
-							} finally {
-								contextIter.close();
+					while (continueRunning) {
+						CloseableIteration<? extends Resource, SailException> contextIter = connection
+							.getContextIDs();
+						try {
+							while (contextIter.hasNext()) {
+								Resource context = contextIter.next();
+								assertNotNull(context);
 							}
+						} finally {
+							contextIter.close();
 						}
-					} finally {
-						connection.close();
 					}
-				} catch (Throwable t) {
-					continueRunning = false;
-					fail("Reader failed", t);
+				} finally {
+					connection.close();
 				}
+			} catch (Throwable t) {
+				continueRunning = false;
+				fail("Reader failed", t);
 			}
 		};
 

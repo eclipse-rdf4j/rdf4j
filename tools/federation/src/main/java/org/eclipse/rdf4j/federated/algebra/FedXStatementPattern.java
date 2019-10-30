@@ -197,12 +197,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	private List<StatementSource> sort(List<StatementSource> stmtSources) {
 		List<StatementSource> res = new ArrayList<>(stmtSources);
-		Collections.sort(res, new Comparator<StatementSource>() {
-			@Override
-			public int compare(StatementSource o1, StatementSource o2) {
-				return o1.id.compareTo(o2.id);
-			}
-		});
+		Collections.sort(res, (StatementSource o1, StatementSource o2) -> o1.id.compareTo(o2.id));
 		return res;
 	}
 

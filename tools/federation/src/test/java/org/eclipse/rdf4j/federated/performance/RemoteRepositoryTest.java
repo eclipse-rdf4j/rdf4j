@@ -59,15 +59,12 @@ public class RemoteRepositoryTest {
 
 			// b) multithreaded
 			final RepositoryConnection _conn = conn;
-			Future<?> task = executor.submit(new Runnable() {
-				@Override
-				public void run() {
-					try {
-						runQuery(_conn, instance);
-					} catch (Exception e) {
-						System.err.println("Error while performing query evaluation for instance "
-								+ instance.stringValue() + ": " + e.getMessage());
-					}
+			Future<?> task = executor.submit(() -> {
+				try {
+					runQuery(_conn, instance);
+				} catch (Exception e) {
+					System.err.println("Error while performing query evaluation for instance "
+						+ instance.stringValue() + ": " + e.getMessage());
 				}
 			});
 			tasks.add(task);

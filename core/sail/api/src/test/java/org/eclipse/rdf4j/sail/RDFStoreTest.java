@@ -921,17 +921,13 @@ public abstract class RDFStoreTest {
 			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, query, null);
 			assertEquals(5, countElements(
 					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));
-			Runnable clearer = new Runnable() {
-
-				@Override
-				public void run() {
-					try {
-						con.begin();
-						con.clear();
-						con.commit();
-					} catch (SailException e) {
-						throw new RuntimeException(e);
-					}
+			Runnable clearer = () -> {
+				try {
+					con.begin();
+					con.clear();
+					con.commit();
+				} catch (SailException e) {
+					throw new RuntimeException(e);
 				}
 			};
 			Thread thread = new Thread(clearer);
