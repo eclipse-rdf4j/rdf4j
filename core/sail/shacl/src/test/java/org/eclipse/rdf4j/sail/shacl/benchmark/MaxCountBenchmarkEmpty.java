@@ -85,6 +85,7 @@ public class MaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -106,6 +107,7 @@ public class MaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -131,6 +133,7 @@ public class MaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -158,6 +161,7 @@ public class MaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 

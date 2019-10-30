@@ -83,7 +83,7 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-	SailRepository repository;
+	private SailRepository repository;
 
 	@Setup(Level.Invocation)
 	public void setUp() {
@@ -113,7 +113,7 @@ public class ComplexLargeBenchmark {
 		System.gc();
 	}
 
-	@TearDown
+	@TearDown(Level.Invocation)
 	public void teardown() {
 		if (repository != null) {
 			repository.shutDown();
