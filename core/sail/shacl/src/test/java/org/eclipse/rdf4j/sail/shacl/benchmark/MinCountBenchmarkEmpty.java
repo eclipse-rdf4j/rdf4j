@@ -85,6 +85,7 @@ public class MinCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -106,6 +107,7 @@ public class MinCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -133,6 +135,7 @@ public class MinCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 

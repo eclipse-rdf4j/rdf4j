@@ -82,6 +82,7 @@ public class NotMaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -103,6 +104,7 @@ public class NotMaxCountBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 

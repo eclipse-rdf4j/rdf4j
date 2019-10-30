@@ -108,6 +108,8 @@ public class NotClassBenchmarkEmpty {
 			}
 		}
 
+		repository.shutDown();
+
 	}
 
 	@Benchmark
@@ -127,6 +129,7 @@ public class NotClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -148,6 +151,7 @@ public class NotClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -174,6 +178,7 @@ public class NotClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -200,6 +205,8 @@ public class NotClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+
+		repository.shutDown();
 
 	}
 
