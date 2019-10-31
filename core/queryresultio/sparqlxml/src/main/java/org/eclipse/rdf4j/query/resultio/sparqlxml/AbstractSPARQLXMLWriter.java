@@ -317,8 +317,6 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			endDocument();
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
