@@ -715,7 +715,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			t.setDaemon(true);
 			return t;
 		});
-		
+
 		ex.execute(() -> {
 			while (referenceQueue.poll() != ref) {
 				// don't hang forever
