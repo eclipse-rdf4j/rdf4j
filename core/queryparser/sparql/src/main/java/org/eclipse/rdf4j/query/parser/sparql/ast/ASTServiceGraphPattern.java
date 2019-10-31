@@ -64,7 +64,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 			// snip away line until begin token line position
 			String substring = sourceString;
 			for (int i = 1; i < getBeginTokenLinePos(); i++) {
-				substring = substring.substring(substring.indexOf("\n") + 1);
+				substring = substring.substring(substring.indexOf('\n') + 1);
 			}
 
 			// snip away until begin token column pos
@@ -73,7 +73,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 			// determine part of the query behind the service pattern closing bracket.
 			String toTrimSuffix = sourceString;
 			for (int i = 1; i < getEndTokenLinePos(); i++) {
-				toTrimSuffix = toTrimSuffix.substring(toTrimSuffix.indexOf("\n") + 1);
+				toTrimSuffix = toTrimSuffix.substring(toTrimSuffix.indexOf('\n') + 1);
 			}
 			toTrimSuffix = toTrimSuffix.substring(getEndTokenColumnPos() - 1);
 

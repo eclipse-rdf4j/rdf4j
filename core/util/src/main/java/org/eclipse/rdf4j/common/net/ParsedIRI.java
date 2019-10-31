@@ -1125,7 +1125,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		}
 		List<String> list = new ArrayList<>();
 		int pct = -1;
-		while ((pct = path.indexOf("%", pct + 1)) > 0) {
+		while ((pct = path.indexOf('%', pct + 1)) > 0) {
 			int start = pct;
 			// optimize common encoded members by grouping separately
 			if (Arrays.binarySearch(common_pct, path.substring(pct, pct + 3)) < 0) {

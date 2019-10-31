@@ -239,7 +239,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}
@@ -311,7 +311,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}
@@ -349,7 +349,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}

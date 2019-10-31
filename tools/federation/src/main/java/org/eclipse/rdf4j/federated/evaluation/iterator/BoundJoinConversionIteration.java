@@ -41,8 +41,8 @@ public class BoundJoinConversionIteration
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
 			String name = b.getName();
-			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_") + 1));
-			res.addBinding(name.substring(0, name.lastIndexOf("_")), b.getValue());
+			bIndex = Integer.parseInt(name.substring(name.lastIndexOf('_') + 1));
+			res.addBinding(name.substring(0, name.lastIndexOf('_')), b.getValue());
 		}
 		res.addAll(bindings.get(bIndex));
 		return res;

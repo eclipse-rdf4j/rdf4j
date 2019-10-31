@@ -281,7 +281,7 @@ public class Service extends UnaryTupleOperator {
 	private String parseServiceExpression(String serviceExpression) {
 
 		if (serviceExpression.toLowerCase().startsWith("service")) {
-			return serviceExpression.substring(serviceExpression.indexOf("{") + 1, serviceExpression.lastIndexOf("}"))
+			return serviceExpression.substring(serviceExpression.indexOf('{') + 1, serviceExpression.lastIndexOf('}'))
 					.trim();
 		}
 		return serviceExpression;
