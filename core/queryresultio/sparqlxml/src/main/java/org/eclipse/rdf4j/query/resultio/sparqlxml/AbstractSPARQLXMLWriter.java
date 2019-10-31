@@ -291,8 +291,6 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			}
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
@@ -357,8 +355,6 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 			xmlWriter.endTag(RESULT_TAG);
 		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
 		}
 	}
 
