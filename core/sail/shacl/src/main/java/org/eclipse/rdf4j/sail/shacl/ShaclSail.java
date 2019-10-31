@@ -708,7 +708,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,
 			AtomicBoolean initialized, ExecutorService[] executorService) {
-		ExecutorService ex = Executors.newSingleThreadExecutor();
+
+		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
+			Thread t = Executors.defaultThreadFactory().newThread(r);
+			// this thread pool does not need to stick around if the all other threads are done
+			t.setDaemon(true);
+			return t;
+		});
+		
 		ex.execute(() -> {
 			while (referenceQueue.poll() != ref) {
 				// don't hang forever
