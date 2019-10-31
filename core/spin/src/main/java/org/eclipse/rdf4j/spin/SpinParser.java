@@ -208,19 +208,7 @@ public class SpinParser {
 	}
 
 	public SpinParser(Input input) {
-		this(input, new Function<IRI, String>() {
-
-			@Override
-			public String apply(IRI IRI) {
-				return SpinWellKnownVars.INSTANCE.getName(IRI);
-			}
-		}, new Function<IRI, String>() {
-
-			@Override
-			public String apply(IRI IRI) {
-				return SpinWellKnownFunctions.INSTANCE.getName(IRI);
-			}
-		});
+		this(input, SpinWellKnownVars.INSTANCE::getName, SpinWellKnownFunctions.INSTANCE::getName);
 	}
 
 	public SpinParser(Input input, Function<IRI, String> wellKnownVarsMapper,
@@ -451,13 +439,7 @@ public class SpinParser {
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
 			final TripleSource store) throws RDF4JException {
 		try {
-			return templateCache.get(tmplUri, new Callable<Template>() {
-
-				@Override
-				public Template call() throws RDF4JException {
-					return parseTemplateInternal(tmplUri, queryType, abstractTmpls, store);
-				}
-			});
+			return templateCache.get(tmplUri, () -> parseTemplateInternal(tmplUri, queryType, abstractTmpls, store));
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof RDF4JException) {
 				throw (RDF4JException) e.getCause();
@@ -474,7 +456,9 @@ public class SpinParser {
 		Set<IRI> possibleTmplTypes;
 		try (Stream<? extends IRI> stream = Iterations.stream(TripleSources.getObjectURIs(tmplUri,
 				RDF.TYPE, store))) {
-			possibleTmplTypes = stream.collect(Collectors.toSet());
+			possibleTmplTypes = stream
+					.filter(TEMPLATE_TYPES::contains)
+					.collect(Collectors.toSet());
 		}
 
 		if (possibleTmplTypes.isEmpty()) {
