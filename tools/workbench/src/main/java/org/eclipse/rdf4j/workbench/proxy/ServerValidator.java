@@ -107,8 +107,6 @@ class ServerValidator {
 			}
 		} catch (NumberFormatException | IOException e) {
 			LOGGER.warn(e.toString(), e);
-		} catch (MalformedURLException e) {
-			LOGGER.warn(e.toString(), e);
 		}
 		return success;
 	}

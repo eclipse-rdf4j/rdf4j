@@ -124,10 +124,10 @@ public class WorkbenchServlet extends AbstractServlet {
 		final String repoID = pathInfo.substring(1, idx);
 		try {
 			service(repoID, req, resp);
-		} catch (RepositoryConfigException | RepositoryException e) {
-			throw new ServletException(e);
 		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
+		} catch (RepositoryConfigException | RepositoryException e) {
+			throw new ServletException(e);
 		} catch (ServletException e) {
 			if (e.getCause() instanceof UnauthorizedException) {
 				handleUnauthorizedException(req, resp);
