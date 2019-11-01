@@ -31,14 +31,11 @@ public class Iterations {
 	 * @return a List containing all elements obtained from the specified Iteration.
 	 */
 	public static <E, X extends Exception> List<E> asList(Iteration<? extends E, X> iter) throws X {
-		try (Stream<? extends E> stream = Iterations.stream(iter)) {
+		// stream.collect is slightly slower than addAll for lists
+		List<E> list = new ArrayList<>();
 
-			// stream.collect is slightly slower than addAll for lists
-			// return stream.collect(Collectors.toList());
-
-			List<E> list = new ArrayList<>();
-			return addAll(iter, list);
-		}
+		// addAll closes the iteration
+		return addAll(iter, list);
 	}
 
 	/**
