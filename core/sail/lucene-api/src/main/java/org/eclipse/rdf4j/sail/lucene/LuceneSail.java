@@ -51,52 +51,52 @@ import org.slf4j.LoggerFactory;
  * A LuceneSail wraps an arbitrary existing Sail and extends it with support for full-text search on all Literals.
  * <h2>Setting up a LuceneSail</h2> LuceneSail works in two modes: storing its data into a directory on the harddisk or
  * into a RAMDirectory in RAM (which is discarded when the program ends). Example with storage in a folder:
- * 
+ *
  * <pre>
  * // create a sesame memory sail
  * MemoryStore memoryStore = new MemoryStore();
- * 
+ *
  * // create a lucenesail to wrap the memorystore
  * LuceneSail lucenesail = new LuceneSail();
  * // set this parameter to store the lucene index on disk
  * lucenesail.setParameter(LuceneSail.LUCENE_DIR_KEY, "./data/mydirectory");
- * 
+ *
  * // wrap memorystore in a lucenesail
  * lucenesail.setBaseSail(memoryStore);
- * 
+ *
  * // create a Repository to access the sails
  * SailRepository repository = new SailRepository(lucenesail);
  * repository.initialize();
  * </pre>
- * 
+ *
  * Example with storage in a RAM directory:
- * 
+ *
  * <pre>
  * // create a sesame memory sail
  * MemoryStore memoryStore = new MemoryStore();
- * 
+ *
  * // create a lucenesail to wrap the memorystore
  * LuceneSail lucenesail = new LuceneSail();
  * // set this parameter to let the lucene index store its data in ram
  * lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
- * 
+ *
  * // wrap memorystore in a lucenesail
  * lucenesail.setBaseSail(memoryStore);
- * 
+ *
  * // create a Repository to access the sails
  * SailRepository repository = new SailRepository(lucenesail);
  * repository.initialize();
  * </pre>
- * 
+ *
  * <h2>Asking full-text queries</h2> Text queries are expressed using the virtual properties of the LuceneSail. An
  * example query looks like this (SERQL): <code>
- * SELECT Subject, Score, Snippet 
- * FROM {Subject} <http://www.openrdf.org/contrib/lucenesail#matches> {} 
- * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>}; 
- * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"}; 
- * <http://www.openrdf.org/contrib/lucenesail#score> {Score}; 
+ * SELECT Subject, Score, Snippet
+ * FROM {Subject} <http://www.openrdf.org/contrib/lucenesail#matches> {}
+ * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>};
+ * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"};
+ * <http://www.openrdf.org/contrib/lucenesail#score> {Score};
  * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
- * 
+ *
  * In SPARQL: <code>
  * SELECT ?subject ?score ?snippet ?resource WHERE {
  * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
@@ -104,7 +104,7 @@ import org.slf4j.LoggerFactory;
  *      <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
  *      <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
  *      <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
- *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource 
+ *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
  *   ]
  * }
  * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
@@ -137,7 +137,7 @@ import org.slf4j.LoggerFactory;
  * D' as new document This will probably be both fast in the common case and capable enough in the multiple-C case.
  * <h2 name="indexedfieldssyntax">Defining the indexed Fields</h2> The property {@link #INDEXEDFIELDS} is to configure
  * which fields to index and to project a property to another. Syntax:
- * 
+ *
  * <pre>
  * # only index label and comment
  * index.1=http://www.w3.org/2000/01/rdf-schema#label
@@ -145,7 +145,7 @@ import org.slf4j.LoggerFactory;
  * # project http://xmlns.com/foaf/0.1/name to rdfs:label
  * http\://xmlns.com/foaf/0.1/name=http\://www.w3.org/2000/01/rdf-schema#label
  * </pre>
- * 
+ *
  * <h2>Datatypes</h2> Datatypes are ignored in the LuceneSail.
  */
 public class LuceneSail extends NotifyingSailWrapper {
@@ -396,7 +396,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/**
 	 * The method is relocated to {@link SearchIndexUtils#createSearchIndex(java.util.Properties) }.
-	 * 
+	 *
 	 * @param parameters
 	 * @return
 	 * @throws Exception
@@ -442,7 +442,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * When this is true, incomplete queries will trigger a SailException. You can set this value either using
 	 * {@link #setIncompleteQueryFails(boolean)} or using the parameter "incompletequeryfail"
-	 * 
+	 *
 	 * @return Returns the incompleteQueryFails.
 	 */
 	public boolean isIncompleteQueryFails() {
@@ -452,7 +452,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * Set this to true, so that incomplete queries will trigger a SailException. Otherwise, incomplete queries will be
 	 * logged with level WARN. Default is true. You can set this value also using the parameter "incompletequeryfail".
-	 * 
+	 *
 	 * @param incompleteQueryFails true or false
 	 */
 	public void setIncompleteQueryFails(boolean incompleteQueryFails) {
@@ -497,7 +497,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * Starts a reindexation process of the whole sail. Basically, this will delete and add all data again, a
 	 * long-lasting process.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void reindex() throws Exception {
@@ -524,29 +524,31 @@ public class LuceneSail extends NotifyingSailWrapper {
 			});
 			try (SailRepositoryConnection connection = repo.getConnection()) {
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, reindexQuery);
-				TupleQueryResult res = query.evaluate();
-				Resource current = null;
-				ValueFactory vf = getValueFactory();
-				List<Statement> statements = new ArrayList<>();
-				while (res.hasNext()) {
-					BindingSet set = res.next();
-					Resource r = (Resource) set.getValue("s");
-					IRI p = (IRI) set.getValue("p");
-					Value o = set.getValue("o");
-					Resource c = (Resource) set.getValue("c");
-					if (current == null) {
-						current = r;
-					} else if (!current.equals(r)) {
-						if (logger.isDebugEnabled())
-							logger.debug("reindexing resource " + current);
-						// commit
-						luceneIndex.addDocuments(current, statements);
+				try (TupleQueryResult res = query.evaluate()) {
+					Resource current = null;
+					ValueFactory vf = getValueFactory();
+					List<Statement> statements = new ArrayList<>();
+					while (res.hasNext()) {
+						BindingSet set = res.next();
+						Resource r = (Resource) set.getValue("s");
+						IRI p = (IRI) set.getValue("p");
+						Value o = set.getValue("o");
+						Resource c = (Resource) set.getValue("c");
+						if (current == null) {
+							current = r;
+						} else if (!current.equals(r)) {
+							if (logger.isDebugEnabled()) {
+								logger.debug("reindexing resource " + current);
+							}
+							// commit
+							luceneIndex.addDocuments(current, statements);
 
-						// re-init
-						current = r;
-						statements.clear();
+							// re-init
+							current = r;
+							statements.clear();
+						}
+						statements.add(vf.createStatement(r, p, o, c));
 					}
-					statements.add(vf.createStatement(r, p, o, c));
 				}
 			} finally {
 				repo.shutDown();

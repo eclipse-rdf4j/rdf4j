@@ -39,7 +39,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
 	 * argument. By default, duplicates are <em>not</em> filtered from the results.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
@@ -50,7 +50,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
 	 * argument.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
@@ -76,7 +76,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 			synchronized (this) {
 				if (!initialized) {
 					// Build set of elements-to-exclude from right argument
-					excludeSet = Iterations.addAll(rightArg, new HashSet<>());
+					excludeSet = Iterations.asSet(rightArg);
 					initialized = true;
 				}
 			}

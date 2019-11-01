@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.sail.SailReadOnlyException;
 
 /**
  * An implementation of the {@link RepositoryConnection} interface that wraps a {@link SailConnection}.
- * 
+ *
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
@@ -281,15 +281,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		}
 
 		// Export statements
-		CloseableIteration<? extends Statement, RepositoryException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts);
 
-		try {
+		try (CloseableIteration<? extends Statement, RepositoryException> stIter = getStatements(subj, pred, obj,
+				includeInferred, contexts)) {
 			while (stIter.hasNext()) {
 				handler.handleStatement(stIter.next());
 			}
-		} finally {
-			stIter.close();
 		}
 
 		handler.endRDF();

@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * <p>
@@ -224,11 +225,12 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 				try (RepositoryConnection schemaConnection = schema.getConnection()) {
 					schemaConnection.begin();
-					RepositoryResult<Statement> statements = schemaConnection.getStatements(null, null, null);
-					tboxStatments = Iterations.stream(statements)
-							.peek(conn::processForSchemaCache)
-							.collect(
-									Collectors.toList());
+					try (Stream<Statement> stream = Iterations
+							.stream(schemaConnection.getStatements(null, null, null))) {
+						tboxStatments = stream
+								.peek(conn::processForSchemaCache)
+								.collect(Collectors.toList());
+					}
 					schemaConnection.commit();
 				}
 			}
@@ -631,7 +633,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * <p>
 	 * Before 3.0 default value for addInferredStatementsToDefaultContext was true. From 3.0 the default value is false.
 	 * </p>
-	 * 
+	 *
 	 * @param addInferredStatementsToDefaultContext
 	 */
 	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
