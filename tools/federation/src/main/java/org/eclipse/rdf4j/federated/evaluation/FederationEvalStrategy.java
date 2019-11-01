@@ -114,7 +114,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}, DelegateFederatedServiceResolver.getInstance());
 		this.federationContext = federationContext;
 		this.executor = federationContext.getManager().getExecutor();
-		this.cache = federationContext.getManager().getCache();
+		this.cache = federationContext.getCache();
 	}
 
 	@Override
@@ -197,7 +197,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		if (contexts.length != 0)
 			log.warn("Context queries are not yet supported by FedX.");
 
-		List<Endpoint> members = federationContext.getManager().getFederation().getMembers();
+		List<Endpoint> members = federationContext.getFederation().getMembers();
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result

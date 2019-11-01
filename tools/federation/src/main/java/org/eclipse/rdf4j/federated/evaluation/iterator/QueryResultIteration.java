@@ -41,7 +41,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;
-		this.qm = queryInfo.getFederationContext().getManager().getQueryManager();
+		this.qm = queryInfo.getFederationContext().getQueryManager();
 	}
 
 	@Override

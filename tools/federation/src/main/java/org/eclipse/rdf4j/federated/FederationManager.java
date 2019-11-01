@@ -7,12 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
-import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
@@ -60,7 +55,7 @@ import org.slf4j.LoggerFactory;
  * <pre>
  * Config.initialize(fedxConfig);
  * List&ltEndpoint&gt members = ...			// e.g. use EndpointFactory methods
- * Repository repo = FedXFactory.initializeFederation(endpoints);
+ * FedXRepository repo = FedXFactory.initializeFederation(endpoints);
  * ReositoryConnection conn = repo.getConnection();
  * 
  * // Do something with the connection, e.g. query evaluation
@@ -86,11 +81,6 @@ public class FederationManager {
 	}
 
 	/**
-	 * The singleton instance of the federation manager
-	 */
-	private static FederationManager instance = null;
-
-	/**
 	 * Initialize the Singleton {@link FederationManager} instance with the provided information. The
 	 * {@link FederationManager} remains initialized until {@link #shutDown()} is invoked, usually this is done by
 	 * invoking {@link Repository#shutDown()}:
@@ -100,27 +90,23 @@ public class FederationManager {
 	 * @return the initialized {@link Repository} representing the federation. Needs to be shut down by the caller
 	 */
 	static synchronized FedXRepository initialize(List<Endpoint> members, Cache cache) {
-		if (instance != null)
-			throw new FedXRuntimeException("FederationManager already initialized.");
 
 		log.info("Initializing federation manager ...");
 		log.info("FedX Version Information: " + Version.getVersionInfo().getVersionString());
 
-		monitoring = MonitoringFactory.createMonitoring();
-
-		ExecutorService ex = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
+		Monitoring monitoring = MonitoringFactory.createMonitoring();
 
 		EndpointManager endpointManager = EndpointManager.initialize(members);
 
-		FederationContext federationContext = new FederationContext(null, endpointManager); // TODO
+		FederationContext federationContext = new FederationContext(null, endpointManager, cache, monitoring); // TODO
 
 		FedX federation = new FedX(members, federationContext);
 
 		FedXRepository repo = new FedXRepository(federation, federationContext);
 
-		instance = new FederationManager(federation, cache, ex, repo);
-		instance.federationContext = federationContext;
+		FederationManager instance = new FederationManager(federation, federationContext);
 		QueryManager queryManager = new QueryManager(instance, repo);
+		queryManager.initialize();
 
 		federationContext.setManager(instance);
 		federationContext.setQueryManager(queryManager);
@@ -135,62 +121,23 @@ public class FederationManager {
 			}
 		}
 
-		// initialize prefix declarations, if any
-		String prefixFile = Config.getConfig().getPrefixDeclarations();
-		if (prefixFile != null) {
-			QueryManager qm = instance.getQueryManager();
-			Properties props = new Properties();
-			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {
-				props.load(fin);
-			} catch (IOException e) {
-				throw new FedXRuntimeException("Error loading prefix properties: " + e.getMessage());
-			}
-
-			for (String ns : props.stringPropertyNames()) {
-				qm.addPrefixDeclaration(ns, props.getProperty(ns)); // register namespace/prefix pair
-			}
-		}
-
 		return repo;
 	}
 
-	/**
-	 * Returns true if the {@link FederationManager} is initialized.
-	 * 
-	 * @return true or false;
-	 */
-	public static boolean isInitialized() {
-		return instance != null;
-	}
-
-	static Monitoring monitoring;
-
-	public static Monitoring getMonitoringService() {
-		if (!isInitialized())
-			throw new IllegalStateException("Monitoring service can only be used if FedX is initialized.");
-		return monitoring;
-	}
-
 	/* Instance variables */
-	protected FederationContext federationContext;
-	protected FedX federation;
-	protected Cache cache;
-	protected ExecutorService executor;
+	protected final FederationContext federationContext;
+	protected final FedX federation;
+	protected final ExecutorService executor;
 	protected FederationEvalStrategy strategy;
 	protected FederationType type;
 	protected ControlledWorkerScheduler<BindingSet> joinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
 
-	private FederationManager(FedX federation, Cache cache, ExecutorService executor,
-			Repository repo) {
+	private FederationManager(FedX federation, FederationContext federationContext) {
 		this.federation = federation;
-		this.cache = cache;
-		this.executor = executor;
-	}
-
-	public FedX getFederation() {
-		return federation;
+		this.federationContext = federationContext;
+		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
 	}
 
 	/**
@@ -218,16 +165,8 @@ public class FederationManager {
 
 	}
 
-	public Cache getCache() {
-		return cache;
-	}
-
 	public Executor getExecutor() {
 		return executor;
-	}
-
-	public Monitoring getMonitoring() {
-		return monitoring;
 	}
 
 	public FederationEvalStrategy getStrategy() {
@@ -248,14 +187,6 @@ public class FederationManager {
 
 	public FederationType getFederationType() {
 		return type;
-	}
-
-	/**
-	 * 
-	 * @return the singleton query manager
-	 */
-	public QueryManager getQueryManager() {
-		return federationContext.getQueryManager();
 	}
 
 	/**
@@ -349,27 +280,6 @@ public class FederationManager {
 	}
 
 	/**
-	 * return the number of triples in the federation as string. Retrieving the size is only supported
-	 * {@link EndpointType#NativeStore} and {@link EndpointType#RemoteRepository}.
-	 * 
-	 * If the federation contains other types of endpoints, the size is indicated as a lower bound, i.e. the string
-	 * starts with a larger sign.
-	 * 
-	 * @return the number of triples in the federation
-	 */
-	public String getFederationSize() {
-		long size = 0;
-		boolean isLowerBound = false;
-		for (Endpoint e : getFederation().getMembers())
-			try {
-				size += e.size();
-			} catch (RepositoryException e1) {
-				isLowerBound = true;
-			}
-		return isLowerBound ? ">" + size : Long.toString(size);
-	}
-
-	/**
 	 * Shutdown the federation including the following operations:
 	 * <p>
 	 * 
@@ -382,11 +292,7 @@ public class FederationManager {
 	 * @throws FedXException if an error occurs while shutting down the federation
 	 */
 	public synchronized void shutDown() throws FedXException {
-		if (instance == null) {
-			log.warn("Federation is already shut down. Ignoring.");
-			log.debug("Details:", new Exception("Trace"));
-			return;
-		}
+
 		log.info("Shutting down federation and all underlying repositories ...");
 		// Abort all running queries
 		federationContext.getQueryManager().shutdown();
@@ -417,10 +323,8 @@ public class FederationManager {
 		}
 		DelegateFederatedServiceResolver.shutdown(); // shutdown any federated service resolver
 		federation.shutDownInternal();
-		cache.persist();
+		federationContext.getCache().persist();
 		Config.reset();
-		instance = null;
-		monitoring = null;
 	}
 
 	/**
@@ -486,7 +390,7 @@ public class FederationManager {
 		if (updated) {
 			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type, federationContext);
 			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
-					+ instance.strategy.getClass().getSimpleName());
+					+ strategy.getClass().getSimpleName());
 		}
 
 	}

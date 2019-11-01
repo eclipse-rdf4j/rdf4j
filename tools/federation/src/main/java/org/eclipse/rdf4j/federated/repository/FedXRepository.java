@@ -11,6 +11,8 @@ import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
+import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
@@ -48,6 +50,27 @@ public class FedXRepository extends SailRepository {
 		instance.reset();
 
 		super.initializeInternal();
+	}
+
+	/**
+	 * return the number of triples in the federation as string. Retrieving the size is only supported
+	 * {@link EndpointType#NativeStore} and {@link EndpointType#RemoteRepository}.
+	 * 
+	 * If the federation contains other types of endpoints, the size is indicated as a lower bound, i.e. the string
+	 * starts with a larger sign.
+	 * 
+	 * @return the number of triples in the federation
+	 */
+	public String getFederationSize() {
+		long size = 0;
+		boolean isLowerBound = false;
+		for (Endpoint e : federation.getMembers())
+			try {
+				size += e.size();
+			} catch (RepositoryException e1) {
+				isLowerBound = true;
+			}
+		return isLowerBound ? ">" + size : Long.toString(size);
 	}
 
 	/**

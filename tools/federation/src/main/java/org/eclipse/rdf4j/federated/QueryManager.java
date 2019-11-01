@@ -7,10 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -53,10 +57,9 @@ public class QueryManager {
 
 	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);
 
-
 	protected final FederationManager federationManager;
 	protected final Repository repo;
-	protected final RepositoryConnection conn;
+	protected RepositoryConnection conn;
 	protected final AtomicBigInteger nextQueryID;
 	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<QueryInfo>();
 	protected Map<String, String> prefixDeclarations = new HashMap<String, String>();
@@ -64,13 +67,33 @@ public class QueryManager {
 	protected QueryManager(FederationManager federationManager, Repository repo) {
 		this.federationManager = federationManager;
 		this.repo = repo;
+
+		BigInteger lastQueryId = new BigInteger("0");
+		this.nextQueryID = new AtomicBigInteger(lastQueryId);
+	}
+
+	public void initialize() {
+
+		// initialize prefix declarations, if any
+		String prefixFile = Config.getConfig().getPrefixDeclarations();
+		if (prefixFile != null) {
+			Properties props = new Properties();
+			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {
+				props.load(fin);
+			} catch (IOException e) {
+				throw new FedXRuntimeException("Error loading prefix properties: " + e.getMessage());
+			}
+
+			for (String ns : props.stringPropertyNames()) {
+				addPrefixDeclaration(ns, props.getProperty(ns)); // register namespace/prefix pair
+			}
+		}
+
 		try {
 			this.conn = repo.getConnection();
 		} catch (RepositoryException e) {
 			throw new FedXRuntimeException(e); // should never occur
 		}
-		BigInteger lastQueryId = new BigInteger("0");
-		this.nextQueryID = new AtomicBigInteger(lastQueryId);
 	}
 
 	public void shutdown() {

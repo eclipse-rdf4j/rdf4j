@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 
@@ -22,12 +23,19 @@ public class FederationContext {
 
 	private final EndpointManager endpointManager;
 
+	private final Monitoring monitoring;
+
 	private QueryManager queryManager;
 
-	public FederationContext(FederationManager manager, EndpointManager endpointManager) {
+	private final Cache cache;
+
+	public FederationContext(FederationManager manager, EndpointManager endpointManager, Cache cache,
+			Monitoring monitoring) {
 		super();
 		this.manager = manager;
 		this.endpointManager = endpointManager;
+		this.cache = cache;
+		this.monitoring = monitoring;
 	}
 
 	// TODO adjust lifecycle to have this available in the constructor
@@ -37,6 +45,14 @@ public class FederationContext {
 
 	void setQueryManager(QueryManager queryManager) {
 		this.queryManager = queryManager;
+	}
+
+	public FedX getFederation() {
+		return this.getManager().federation;
+	}
+
+	public Cache getCache() {
+		return this.cache;
 	}
 
 	public FederationManager getManager() {
@@ -56,6 +72,6 @@ public class FederationContext {
 	}
 
 	public Monitoring getMonitoringService() {
-		return manager.getMonitoring();
+		return this.monitoring;
 	}
 }

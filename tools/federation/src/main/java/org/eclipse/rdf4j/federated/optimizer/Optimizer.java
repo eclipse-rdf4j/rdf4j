@@ -42,7 +42,7 @@ public class Optimizer {
 			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
 		} else {
 			// evaluate against entire federation
-			FedX fed = federationContext.getManager().getFederation();
+			FedX fed = federationContext.getFederation();
 			members = fed.getMembers();
 		}
 
@@ -53,7 +53,7 @@ public class Optimizer {
 		// Clone the tuple expression to allow for more aggressive optimizations
 		TupleExpr query = new QueryRoot(parsed.clone());
 
-		Cache cache = federationContext.getManager().getCache();
+		Cache cache = federationContext.getCache();
 
 		if (logger.isTraceEnabled())
 			logger.trace("Query before Optimization: " + query);

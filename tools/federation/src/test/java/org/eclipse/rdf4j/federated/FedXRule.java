@@ -57,7 +57,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 			endpoints = Collections.<Endpoint>emptyList();
 		repository = FedXFactory.createFederation(endpoints);
 		repository.init();
-		getFederationContext().getManager().getCache().clear();
+		getFederationContext().getCache().clear();
 	}
 
 	@Override

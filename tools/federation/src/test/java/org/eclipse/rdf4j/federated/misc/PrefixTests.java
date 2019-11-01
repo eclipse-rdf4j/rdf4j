@@ -23,7 +23,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
 
-		QueryManager qm = federationContext().getManager().getQueryManager();
+		QueryManager qm = federationContext().getQueryManager();
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");
 		qm.addPrefixDeclaration("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
 
@@ -55,7 +55,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
 
-		QueryManager qm = federationContext().getManager().getQueryManager();
+		QueryManager qm = federationContext().getQueryManager();
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");
 
 		execute("/tests/prefix/query2.rq", "/tests/prefix/query2.srx", false);

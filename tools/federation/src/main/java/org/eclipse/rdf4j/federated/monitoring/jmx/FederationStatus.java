@@ -26,7 +26,7 @@ public class FederationStatus implements FederationStatusMBean {
 
 	@Override
 	public List<String> getFederationMembersDescription() {
-		List<Endpoint> members = federationContext.getManager().getFederation().getMembers();
+		List<Endpoint> members = federationContext.getFederation().getMembers();
 		List<String> res = new ArrayList<String>();
 		for (Endpoint e : members)
 			res.add(e.toString());
