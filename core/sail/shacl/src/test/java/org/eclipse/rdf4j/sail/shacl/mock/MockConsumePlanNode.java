@@ -32,17 +32,17 @@ public class MockConsumePlanNode {
 
 	public List<Tuple> asList() {
 
-		CloseableIteration<Tuple, SailException> iterator = innerNode.iterator();
+		try (CloseableIteration<Tuple, SailException> iterator = innerNode.iterator()) {
 
-		List<Tuple> ret = new ArrayList<>();
+			List<Tuple> ret = new ArrayList<>();
 
-		while (iterator.hasNext()) {
-			ret.add(iterator.next());
+			while (iterator.hasNext()) {
+				ret.add(iterator.next());
+			}
+
+			VALIDATION_EXECUTION_LOGGER.flush();
+
+			return ret;
 		}
-
-		VALIDATION_EXECUTION_LOGGER.flush();
-
-		return ret;
-
 	}
 }

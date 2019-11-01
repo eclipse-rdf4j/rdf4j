@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function;
 
-import java.util.Set;
-
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
@@ -22,6 +20,7 @@ import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -38,6 +37,8 @@ import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
+
+import java.util.Set;
 
 public class EvalFunction extends AbstractSpinFunction implements Function {
 
@@ -86,17 +87,18 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 				ParsedTupleQuery tupleQuery = (ParsedTupleQuery) parsedQuery;
 				TupleQuery queryOp = qp.prepare(tupleQuery);
 				addArguments(queryOp, args);
-				TupleQueryResult queryResult = queryOp.evaluate();
-				if (queryResult.hasNext()) {
-					BindingSet bs = queryResult.next();
-					Set<String> bindingNames = tupleQuery.getTupleExpr().getBindingNames();
-					if (!bindingNames.isEmpty()) {
-						result = bs.getValue(bindingNames.iterator().next());
+				try (TupleQueryResult queryResult = queryOp.evaluate()) {
+					if (queryResult.hasNext()) {
+						BindingSet bs = queryResult.next();
+						Set<String> bindingNames = tupleQuery.getTupleExpr().getBindingNames();
+						if (!bindingNames.isEmpty()) {
+							result = bs.getValue(bindingNames.iterator().next());
+						} else {
+							throw new ValueExprEvaluationException("No value");
+						}
 					} else {
 						throw new ValueExprEvaluationException("No value");
 					}
-				} else {
-					throw new ValueExprEvaluationException("No value");
 				}
 			} else if (parsedQuery instanceof ParsedBooleanQuery) {
 				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery) parsedQuery;
@@ -115,17 +117,15 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	}
 
 	private boolean isQuery(Resource r, TripleSource store) throws RDF4JException {
-		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r, RDF.TYPE,
-				store);
-		try {
+		try (CloseableIteration<? extends URI, QueryEvaluationException> typeIter = TripleSources.getObjectURIs(r,
+				RDF.TYPE,
+				store)) {
 			while (typeIter.hasNext()) {
 				URI type = typeIter.next();
 				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type) || SPIN.TEMPLATES_CLASS.equals(type)) {
 					return true;
 				}
 			}
-		} finally {
-			typeIter.close();
 		}
 
 		return false;

@@ -43,13 +43,10 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 
-		InputStream in = this.getClass().getResourceAsStream(NTRIPLES_TEST_FILE);
-		try {
+		try (InputStream in = this.getClass().getResourceAsStream(NTRIPLES_TEST_FILE)) {
 			ntriplesParser.parse(in, NTRIPLES_TEST_URL);
 		} catch (RDFParseException e) {
 			fail("Failed to parse N-Triples test document: " + e.getMessage());
-		} finally {
-			in.close();
 		}
 
 		assertEquals(30, model.size());
