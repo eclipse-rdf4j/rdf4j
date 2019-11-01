@@ -65,6 +65,10 @@ public enum ActiveTransactionRegistry {
 	 */
 	private final Cache<UUID, Transaction> secondaryCache;
 
+	private Cache<UUID, Transaction> getSecondaryCache() {
+		return secondaryCache;
+	}
+
 	/**
 	 * private constructor.
 	 */
@@ -102,7 +106,7 @@ public enum ActiveTransactionRegistry {
 								logger.warn("deregistered expired transaction {}", transactionId);
 							} else {
 								// operation still active. Reinsert in secondary cache.
-								secondaryCache.put(transactionId, entry);
+								getSecondaryCache().put(transactionId, entry);
 							}
 						}
 					}
