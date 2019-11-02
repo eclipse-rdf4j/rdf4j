@@ -146,27 +146,16 @@ public class FederationManager {
 	}
 
 	/**
-	 * Add the specified endpoint to the federation. The endpoint must be initialized and the federation must not
-	 * contain a member with the same endpoint location.
+	 * Add the specified endpoint to the federation. The federation must not contain a member with the same endpoint
+	 * location.
 	 * 
-	 * @param e              the initialized endpoint
+	 * @param e              the endpoint
 	 * @param updateStrategy optional parameter, to determine if strategy is to be updated, default=true
 	 * 
-	 * @throws FedXRuntimeException if the endpoint is not initialized, or if the federation has already a member with
-	 *                              the same location
+	 * @throws FedXRuntimeException if the federation has already a member with the same location
 	 */
 	public void addEndpoint(Endpoint e, boolean... updateStrategy) throws FedXRuntimeException {
 		log.info("Adding endpoint " + e.getId() + " to federation ...");
-
-		/* check if endpoint is initialized */
-		if (!e.isInitialized()) {
-			try {
-				e.initialize(federationContext);
-			} catch (RepositoryException e1) {
-				throw new FedXRuntimeException(
-						"Provided endpoint was not initialized and could not be initialized: " + e1.getMessage(), e1);
-			}
-		}
 
 		/* check for duplicate before adding: heuristic => same location */
 		for (Endpoint member : federation.getMembers())
@@ -185,7 +174,7 @@ public class FederationManager {
 	/**
 	 * Add the specified endpoints to the federation and take care for updating all structures.
 	 * 
-	 * @param endpoints a list of initialized endpoints to add
+	 * @param endpoints a list of endpoints to add
 	 */
 	public void addAll(List<Endpoint> endpoints) {
 		log.info("Adding " + endpoints.size() + " endpoints to the federation.");
@@ -212,7 +201,6 @@ public class FederationManager {
 
 		federation.removeMember(e);
 		federationContext.getEndpointManager().removeEndpoint(e);
-		e.shutDown();
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true))

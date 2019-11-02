@@ -13,7 +13,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
-import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
@@ -214,14 +213,16 @@ public class FedXFactory {
 
 		initializeMembersFromConfig();
 
-		initializeResolvableEndpoints();
-
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}
 
 		FedX federation = new FedX(members);
-		return new FedXRepository(federation);
+		FedXRepository repo = new FedXRepository(federation);
+		if (this.repositoryResolver != null) {
+			repo.setRepositoryResolver(repositoryResolver);
+		}
+		return repo;
 	}
 
 	protected void initializeMembersFromConfig() {
@@ -233,16 +234,5 @@ public class FedXFactory {
 
 		File dataConfigFile = FileUtil.getFileLocation(dataConfig);
 		withMembers(dataConfigFile);
-	}
-
-	protected void initializeResolvableEndpoints() {
-		for (Endpoint e : members) {
-			if (e instanceof ResolvableEndpoint) {
-				if (repositoryResolver != null) {
-					// configure the explicitly set repository resolver, if any
-					((ResolvableEndpoint) e).setRepositoryResolver(repositoryResolver);
-				}
-			}
-		}
 	}
 }
