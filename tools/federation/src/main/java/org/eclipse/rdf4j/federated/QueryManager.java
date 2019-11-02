@@ -64,7 +64,7 @@ public class QueryManager {
 	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<QueryInfo>();
 	protected Map<String, String> prefixDeclarations = new HashMap<String, String>();
 
-	protected QueryManager(FederationManager federationManager, Repository repo) {
+	public QueryManager(FederationManager federationManager, Repository repo) {
 		this.federationManager = federationManager;
 		this.repo = repo;
 

@@ -7,15 +7,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
+import java.io.File;
+
+import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
+import org.eclipse.rdf4j.federated.cache.Cache;
+import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
+import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
+import org.eclipse.rdf4j.federated.monitoring.Monitoring;
+import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
+import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
+import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A special {@link SailRepository} which performs the actions as defined in {@link FedXRepositoryConnection}.
@@ -24,13 +37,15 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class FedXRepository extends SailRepository {
 
-	private final FedX federation;
-	private final FederationContext federationContext;
+	private static final Logger log = LoggerFactory.getLogger(FedXRepository.class);
 
-	public FedXRepository(FedX federation, FederationContext federationContext) {
+	private final FedX federation;
+
+	private FederationContext federationContext;
+
+	public FedXRepository(FedX federation) {
 		super(federation);
 		this.federation = federation;
-		this.federationContext = federationContext;
 	}
 
 	@Override
@@ -45,9 +60,36 @@ public class FedXRepository extends SailRepository {
 	@Override
 	protected void initializeInternal() throws RepositoryException {
 
-		FederationManager instance = federationContext.getManager();
-		instance.updateStrategy();
-		instance.reset();
+		log.info("Initializing federation ...");
+
+		Monitoring monitoring = MonitoringFactory.createMonitoring();
+
+		EndpointManager endpointManager = EndpointManager.initialize(federation.getMembers());
+
+		String location = Config.getConfig().getCacheLocation();
+		File cacheLocation = FileUtil.getFileLocation(location);
+		Cache cache = new MemoryCache(cacheLocation);
+		cache.initialize();
+
+		FederationManager federationManager = new FederationManager();
+
+		QueryManager queryManager = new QueryManager(federationManager, this);
+
+		federationContext = new FederationContext(federationManager, endpointManager, queryManager, cache, monitoring);
+		federation.setFederationContext(federationContext);
+
+		DelegateFederatedServiceResolver.initialize(federationContext);
+
+		queryManager.initialize();
+		federationManager.initialize(federation, federationContext);
+
+		if (Config.getConfig().isEnableJMX()) {
+			try {
+				MonitoringUtil.initializeJMXMonitoring(federationContext);
+			} catch (Exception e1) {
+				log.error("JMX monitoring could not be initialized: " + e1.getMessage());
+			}
+		}
 
 		super.initializeInternal();
 	}

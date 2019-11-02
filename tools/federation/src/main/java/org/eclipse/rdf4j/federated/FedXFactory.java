@@ -11,8 +11,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.cache.Cache;
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
@@ -214,9 +212,6 @@ public class FedXFactory {
 			}
 		}
 
-		// initialize defaults
-		Cache cache = initializeCache();
-
 		initializeMembersFromConfig();
 
 		initializeResolvableEndpoints();
@@ -224,15 +219,9 @@ public class FedXFactory {
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}
-		return FederationManager.initialize(members, cache);
-	}
 
-	protected Cache initializeCache() {
-		String location = Config.getConfig().getCacheLocation();
-		File cacheLocation = FileUtil.getFileLocation(location);
-		Cache cache = new MemoryCache(cacheLocation);
-		cache.initialize();
-		return cache;
+		FedX federation = new FedX(members);
+		return new FedXRepository(federation);
 	}
 
 	protected void initializeMembersFromConfig() {

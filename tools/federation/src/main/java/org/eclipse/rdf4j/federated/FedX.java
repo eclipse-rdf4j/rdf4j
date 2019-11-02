@@ -47,14 +47,18 @@ public class FedX implements Sail {
 	protected final List<Endpoint> members = new ArrayList<Endpoint>();
 	protected boolean open = false;
 
-	protected final FederationContext federationContext;
+	protected FederationContext federationContext;
 
-	protected FedX(List<Endpoint> endpoints, FederationContext federationContext) {
-		this.federationContext = federationContext;
-		if (endpoints != null)
-			for (Endpoint e : endpoints)
+	public FedX(List<Endpoint> endpoints) {
+		if (endpoints != null) {
+			for (Endpoint e : endpoints) {
 				addMember(e);
-		open = true;
+			}
+		}
+	}
+
+	public void setFederationContext(FederationContext federationContext) {
+		this.federationContext = federationContext;
 	}
 
 	/**

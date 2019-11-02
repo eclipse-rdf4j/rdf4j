@@ -19,32 +19,25 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
  */
 public class FederationContext {
 
-	private FederationManager manager;
+	private final FederationManager manager;
 
 	private final EndpointManager endpointManager;
 
 	private final Monitoring monitoring;
 
-	private QueryManager queryManager;
+	private final QueryManager queryManager;
 
 	private final Cache cache;
 
-	public FederationContext(FederationManager manager, EndpointManager endpointManager, Cache cache,
+	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
+			Cache cache,
 			Monitoring monitoring) {
 		super();
 		this.manager = manager;
 		this.endpointManager = endpointManager;
+		this.queryManager = queryManager;
 		this.cache = cache;
 		this.monitoring = monitoring;
-	}
-
-	// TODO adjust lifecycle to have this available in the constructor
-	void setManager(FederationManager manager) {
-		this.manager = manager;
-	}
-
-	void setQueryManager(QueryManager queryManager) {
-		this.queryManager = queryManager;
 	}
 
 	public FedX getFederation() {

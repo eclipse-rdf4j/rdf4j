@@ -14,7 +14,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
@@ -30,14 +29,8 @@ import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.monitoring.Monitoring;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
-import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
-import org.eclipse.rdf4j.federated.util.Version;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,64 +73,27 @@ public class FederationManager {
 		HYBRID;
 	}
 
-	/**
-	 * Initialize the Singleton {@link FederationManager} instance with the provided information. The
-	 * {@link FederationManager} remains initialized until {@link #shutDown()} is invoked, usually this is done by
-	 * invoking {@link Repository#shutDown()}:
-	 * 
-	 * @param members initialize the federation with a list of repository members, null and empty lists are allowed
-	 * @param cache   the cache instance to be used
-	 * @return the initialized {@link Repository} representing the federation. Needs to be shut down by the caller
-	 */
-	static synchronized FedXRepository initialize(List<Endpoint> members, Cache cache) {
-
-		log.info("Initializing federation manager ...");
-		log.info("FedX Version Information: " + Version.getVersionInfo().getVersionString());
-
-		Monitoring monitoring = MonitoringFactory.createMonitoring();
-
-		EndpointManager endpointManager = EndpointManager.initialize(members);
-
-		FederationContext federationContext = new FederationContext(null, endpointManager, cache, monitoring); // TODO
-
-		FedX federation = new FedX(members, federationContext);
-
-		FedXRepository repo = new FedXRepository(federation, federationContext);
-
-		FederationManager instance = new FederationManager(federation, federationContext);
-		QueryManager queryManager = new QueryManager(instance, repo);
-		queryManager.initialize();
-
-		federationContext.setManager(instance);
-		federationContext.setQueryManager(queryManager);
-
-		DelegateFederatedServiceResolver.initialize(federationContext);
-
-		if (Config.getConfig().isEnableJMX()) {
-			try {
-				MonitoringUtil.initializeJMXMonitoring(federationContext);
-			} catch (Exception e1) {
-				log.error("JMX monitoring could not be initialized: " + e1.getMessage());
-			}
-		}
-
-		return repo;
-	}
-
 	/* Instance variables */
-	protected final FederationContext federationContext;
-	protected final FedX federation;
-	protected final ExecutorService executor;
+	protected FederationContext federationContext;
+	protected FedX federation;
+	protected ExecutorService executor;
 	protected FederationEvalStrategy strategy;
 	protected FederationType type;
 	protected ControlledWorkerScheduler<BindingSet> joinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
 
-	private FederationManager(FedX federation, FederationContext federationContext) {
+	public FederationManager() {
+
+	}
+
+	public void initialize(FedX federation, FederationContext federationContext) {
 		this.federation = federation;
 		this.federationContext = federationContext;
 		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
+
+		updateStrategy();
+		reset();
 	}
 
 	/**
