@@ -60,8 +60,8 @@ public class UpdateServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			try {
 				con
-					.prepareUpdate(QueryLanguage.SPARQL, updateString)
-					.execute();
+						.prepareUpdate(QueryLanguage.SPARQL, updateString)
+						.execute();
 			} catch (RepositoryException | MalformedQueryException | UpdateExecutionException e) {
 				throw new BadRequestException(e.getMessage());
 			}
