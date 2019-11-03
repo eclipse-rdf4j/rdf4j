@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.QueryResults;
  * An Iteration that returns the results of an Iteration (the left argument) MINUS any results that are compatible with
  * results of another Iteration (the right argument) or that have no shared variables. This iteration uses the formal
  * definition of the SPARQL 1.1 MINUS operator to determine which BindingSets to return.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  * @author Jeen
  */
@@ -46,7 +46,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
 	 * argument. By default, duplicates are <em>not</em> filtered from the results.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
@@ -57,7 +57,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
 	 * argument.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
@@ -125,7 +125,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	}
 
 	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2) throws X {
-		return Iterations.addAll(rightArg, makeSet());
+		return Iterations.asSet(rightArg);
 	}
 
 	@Override

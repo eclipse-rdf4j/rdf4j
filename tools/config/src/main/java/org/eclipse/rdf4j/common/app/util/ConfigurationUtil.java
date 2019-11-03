@@ -23,7 +23,7 @@ public class ConfigurationUtil {
 
 	/**
 	 * Load configuration settings from the specified file.
-	 * 
+	 *
 	 * @param file the file to load from
 	 * @return the contents of the file as a String, or null if the file did not exist
 	 * @throws IOException if the contents of the file could not be read due to an I/O problem
@@ -38,26 +38,32 @@ public class ConfigurationUtil {
 
 	/**
 	 * Load configuration settings from a resource on the classpath.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return the contents of the resources as a String, or null if the resource, nor its default, could be found
 	 * @throws IOException if the resource could not be read due to an I/O problem
 	 */
 	public static String loadConfigurationContents(String resourceName) throws IOException {
-		String result = null;
-		InputStream in = ResourceUtil.getInputStream(getResourceName(resourceName));
-		if (in == null) {
-			in = ResourceUtil.getInputStream(getDefaultResourceName(resourceName));
+		InputStream in = null;
+		try {
+			in = ResourceUtil.getInputStream(getResourceName(resourceName));
+			if (in == null) {
+				in = ResourceUtil.getInputStream(getDefaultResourceName(resourceName));
+			}
+			if (in != null) {
+				return IOUtil.readString(in);
+			}
+			return null;
+		} finally {
+			if (in != null) {
+				in.close();
+			}
 		}
-		if (in != null) {
-			result = IOUtil.readString(in);
-		}
-		return result;
 	}
 
 	/**
 	 * Load configuration properties from the specified file.
-	 * 
+	 *
 	 * @param file     the file to load from
 	 * @param defaults default properties
 	 * @return the contents of the file as Properties, or null if the file did not exist
@@ -75,7 +81,7 @@ public class ConfigurationUtil {
 
 	/**
 	 * Load configuration properties from a resource on the classpath.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @param defaults     default properties
 	 * @return the contents of the resource as Properties
@@ -122,7 +128,7 @@ public class ConfigurationUtil {
 
 	/**
 	 * Get full resource name from default location
-	 * 
+	 *
 	 * @param resourceName relative resource name
 	 * @return full default resource location
 	 */
@@ -137,7 +143,7 @@ public class ConfigurationUtil {
 
 	/**
 	 * Save configuration settings to a file.
-	 * 
+	 *
 	 * @param contents the configuration settings
 	 * @param file     the file to write to
 	 * @throws IOException if the settings could not be saved because of an I/O problem
@@ -150,7 +156,7 @@ public class ConfigurationUtil {
 
 	/**
 	 * Save configuration properties to a file.
-	 * 
+	 *
 	 * @param props           the configuration properties
 	 * @param file            the file to write to
 	 * @param includeDefaults

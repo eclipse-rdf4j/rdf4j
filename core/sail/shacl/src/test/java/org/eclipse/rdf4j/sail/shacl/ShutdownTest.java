@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -30,14 +31,7 @@ public class ShutdownTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.initialize();
 
-		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(() -> {
-
-			for (int i = 0; i < Integer.MAX_VALUE; i++) {
-				Thread.sleep(i);
-			}
-
-			return null;
-		});
+		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 
 		try {
 			objectFuture.get(100, TimeUnit.MILLISECONDS);
@@ -46,7 +40,8 @@ public class ShutdownTest {
 
 		assertFalse(objectFuture.isDone());
 		shaclSail.shutDown();
-		assertTrue(objectFuture.isDone());
+		Thread.sleep(100);
+		assertTrue("The thread should have be stopped after calling shutdown()", objectFuture.isDone());
 
 	}
 
@@ -57,14 +52,7 @@ public class ShutdownTest {
 		for (int j = 0; j < 3; j++) {
 			shaclSail.initialize();
 
-			Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(() -> {
-
-				for (int i = 0; i < Integer.MAX_VALUE; i++) {
-					Thread.sleep(i);
-				}
-
-				return null;
-			});
+			Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 
 			try {
 				objectFuture.get(100, TimeUnit.MILLISECONDS);
@@ -73,7 +61,8 @@ public class ShutdownTest {
 
 			assertFalse(objectFuture.isDone());
 			shaclSail.shutDown();
-			assertTrue(objectFuture.isDone());
+			Thread.sleep(100);
+			assertTrue("The thread should have be stopped after calling shutdown()", objectFuture.isDone());
 
 		}
 
@@ -84,6 +73,8 @@ public class ShutdownTest {
 			throws InterruptedException, NoSuchFieldException, IllegalAccessException {
 
 		ExecutorService[] executorServices = startShaclSailAndTask();
+
+		assertFalse(executorServices[0].isShutdown());
 
 		for (int i = 0; i < 100; i++) {
 			System.gc();
@@ -102,14 +93,7 @@ public class ShutdownTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.initialize();
 
-		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(() -> {
-
-			for (int i = 0; i < Integer.MAX_VALUE; i++) {
-				Thread.sleep(i);
-			}
-
-			return null;
-		});
+		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 
 		try {
 			objectFuture.get(100, TimeUnit.MILLISECONDS);
@@ -122,6 +106,17 @@ public class ShutdownTest {
 
 		return (ExecutorService[]) field.get(shaclSail);
 
+	}
+
+	private Callable<Object> getSleepingCallable() {
+		return () -> {
+
+			for (int i = 0; i < Integer.MAX_VALUE; i++) {
+				Thread.sleep(10);
+			}
+
+			return null;
+		};
 	}
 
 }

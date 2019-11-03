@@ -213,7 +213,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				}
 			};
 
-			try (CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources
+			try (CloseableIteration<Resource, QueryEvaluationException> iter = TripleSources
 					.getObjectResources(func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();

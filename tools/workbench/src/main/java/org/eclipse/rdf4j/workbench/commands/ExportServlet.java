@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.eclipse.rdf4j.rio.RDFWriterRegistry.getInstance;
-
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -20,6 +16,10 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TupleServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+
+import javax.servlet.http.HttpServletResponse;
+
+import static org.eclipse.rdf4j.rio.RDFWriterRegistry.getInstance;
 
 public class ExportServlet extends TupleServlet {
 
@@ -41,16 +41,13 @@ public class ExportServlet extends TupleServlet {
 			String ext = format.getDefaultFileExtension();
 			String attachment = "attachment; filename=export." + ext;
 			resp.setHeader("Content-disposition", attachment);
-			RepositoryConnection con = repository.getConnection();
-			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
+				con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 				RDFWriterFactory factory = getInstance().get(format).orElseThrow(Rio.unsupportedFormat(format));
 				if (format.getCharset() != null) {
 					resp.setCharacterEncoding(format.getCharset().name());
 				}
 				con.export(factory.getWriter(resp.getOutputStream()));
-			} finally {
-				con.close();
 			}
 		} else {
 			super.service(req, resp, xslPath);
