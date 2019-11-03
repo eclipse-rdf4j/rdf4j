@@ -77,15 +77,17 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 			TupleQuery queryOp = qp.prepare(selectQuery);
 			addBindings(queryOp, arguments, args);
 			try {
-				TupleQueryResult queryResult = queryOp.evaluate();
-				if (queryResult.hasNext()) {
-					BindingSet bs = queryResult.next();
-					if (bs.size() != 1) {
-						throw new ValueExprEvaluationException("Only a single result variables is supported: " + bs);
+				try (TupleQueryResult queryResult = queryOp.evaluate()) {
+					if (queryResult.hasNext()) {
+						BindingSet bs = queryResult.next();
+						if (bs.size() != 1) {
+							throw new ValueExprEvaluationException(
+									"Only a single result variables is supported: " + bs);
+						}
+						result = bs.iterator().next().getValue();
+					} else {
+						throw new ValueExprEvaluationException("No value");
 					}
-					result = bs.iterator().next().getValue();
-				} else {
-					throw new ValueExprEvaluationException("No value");
 				}
 			} catch (QueryEvaluationException e) {
 				throw new ValueExprEvaluationException(e);

@@ -7,22 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-
+import com.google.common.base.Strings;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -34,7 +21,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
@@ -92,9 +78,18 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 
-import com.google.common.base.Strings;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
@@ -464,7 +459,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	 * update spin:rules modify existing (non-inferred) statements directly. spin:constructors should be run after
 	 * spin:rules for each subject of an RDF.TYPE statement.
 	 */
-	private int applyRulesInternal(Iterable<? extends Resource> resources)
+	private int applyRulesInternal(Iterable<Resource> resources)
 			throws RDF4JException {
 		int nofInferred = 0;
 		for (Resource res : resources) {
@@ -514,20 +509,14 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private Collection<IRI> getClasses(Resource subj)
 			throws QueryEvaluationException {
-		List<IRI> classes = new ArrayList<>();
-		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(
-				subj, RDF.TYPE, tripleSource);
-		Iterations.addAll(classIter, classes);
-		return classes;
+		return Iterations.asList(TripleSources.getObjectURIs(subj, RDF.TYPE, tripleSource));
 	}
 
 	private int executeConstructors(Resource subj, List<IRI> classHierarchy)
 			throws RDF4JException {
 		int nofInferred = 0;
-		Set<Resource> constructed = new HashSet<>(classHierarchy.size() * 3);
-		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = TripleSources.getObjectResources(
-				subj, EXECUTED, tripleSource);
-		Iterations.addAll(classIter, constructed);
+		Set<Resource> constructed = Iterations.asSet(TripleSources.getObjectResources(
+				subj, EXECUTED, tripleSource));
 
 		for (IRI cls : classHierarchy) {
 			List<Resource> constructors = getConstructorsForClass(cls);
@@ -549,12 +538,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private List<Resource> getConstructorsForClass(IRI cls)
 			throws RDF4JException {
-		List<Resource> constructors = new ArrayList<>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = TripleSources
-				.getObjectResources(
-						cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource);
-		Iterations.addAll(constructorIter, constructors);
-		return constructors;
+
+		return Iterations.asList(TripleSources.getObjectResources(cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource));
 	}
 
 	private int executeRules(Resource subj, List<IRI> classHierarchy)
@@ -610,11 +595,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		// NB: preserve ruleProp order!
 		Map<IRI, List<Resource>> classRulesByProperty = new HashMap<>(ruleProps.size() * 3);
 		for (IRI ruleProp : ruleProps) {
-			List<Resource> rules = new ArrayList<>(2);
-			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources
-					.getObjectResources(
-							cls, ruleProp, tripleSource);
-			Iterations.addAll(ruleIter, rules);
+			List<Resource> rules = Iterations.asList(TripleSources.getObjectResources(cls, ruleProp, tripleSource));
+
 			if (!rules.isEmpty()) {
 				if (rules.size() > 1) {
 					// sort by comments
@@ -625,21 +607,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 							comments.put(rule, comment);
 						}
 					}
-					Collections.sort(rules, new Comparator<Resource>() {
-
-						@Override
-						public int compare(Resource rule1, Resource rule2) {
-							String comment1 = comments.get(rule1);
-							String comment2 = comments.get(rule2);
-							if (comment1 != null && comment2 != null) {
-								return comment1.compareTo(comment2);
-							} else if (comment1 != null && comment2 == null) {
-								return 1;
-							} else if (comment1 == null && comment2 != null) {
-								return -1;
-							} else {
-								return 0;
-							}
+					rules.sort((rule1, rule2) -> {
+						String comment1 = comments.get(rule1);
+						String comment2 = comments.get(rule2);
+						if (comment1 != null && comment2 != null) {
+							return comment1.compareTo(comment2);
+						} else if (comment1 != null && comment2 == null) {
+							return 1;
+						} else if (comment1 == null && comment2 != null) {
+							return -1;
+						} else {
+							return 0;
 						}
 					});
 				}
@@ -743,12 +721,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private List<Resource> getConstraintsForClass(Resource cls)
 			throws QueryEvaluationException {
-		List<Resource> constraints = new ArrayList<>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = TripleSources
-				.getObjectResources(
-						cls, SPIN.CONSTRAINT_PROPERTY, tripleSource);
-		Iterations.addAll(constraintIter, constraints);
-		return constraints;
+		return Iterations.asList(TripleSources.getObjectResources(cls, SPIN.CONSTRAINT_PROPERTY, tripleSource));
+
 	}
 
 	private class SubclassListener implements SailConnectionListener {

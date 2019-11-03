@@ -32,6 +32,7 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
@@ -111,6 +112,19 @@ public class MinCountBenchmarkPrefilled {
 			connection.add(allStatements2);
 		}
 		System.gc();
+	}
+
+	@TearDown(Level.Invocation)
+	public void tearDown() {
+		if (shaclRepo != null) {
+			shaclRepo.shutDown();
+		}
+		if (memoryStoreRepo != null) {
+			memoryStoreRepo.shutDown();
+		}
+		if (sparqlQueryMemoryStoreRepo != null) {
+			sparqlQueryMemoryStoreRepo.shutDown();
+		}
 	}
 
 	@Benchmark
