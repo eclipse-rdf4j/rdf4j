@@ -20,7 +20,6 @@
 		<module>rio</module>
 		<module>sparql</module>
 		<module>serql</module>
-		<module>store</module>
 		<module>shacl</module>
 		<module>lucene</module>
 		<module>geosparql</module>
