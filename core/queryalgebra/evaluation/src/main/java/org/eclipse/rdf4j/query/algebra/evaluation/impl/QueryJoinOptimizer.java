@@ -252,7 +252,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			List<TupleExpr> result = new ArrayList<>();
-			if (subselects == null || subselects.size() == 0) {
+			if (subselects == null || subselects.isEmpty()) {
 				return result;
 			}
 

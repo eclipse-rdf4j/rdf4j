@@ -14,7 +14,6 @@ import java.io.StringReader;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
-import org.assertj.core.api.AbstractBooleanAssert;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;

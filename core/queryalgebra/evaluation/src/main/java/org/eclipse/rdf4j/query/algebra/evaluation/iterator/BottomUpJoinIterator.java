@@ -120,7 +120,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 			}
 		}
 
-		if (hashTableValues.size() == 0) {
+		if (hashTableValues.isEmpty()) {
 			// we've exhausted the current scanlist entry
 			currentScanElem = null;
 			hashTableValues = null;

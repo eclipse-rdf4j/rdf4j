@@ -26,7 +26,7 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 	protected List<FilterExpr> expressions;
 
 	public ConjunctiveFilterExpr(FilterExpr expr1, FilterExpr expr2) {
-		this.expressions = new ArrayList<FilterExpr>(3);
+		this.expressions = new ArrayList<>(3);
 		addExpression(expr1);
 		addExpression(expr2);
 	}
@@ -34,7 +34,7 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 	public ConjunctiveFilterExpr(Collection<FilterExpr> expressions) {
 		if (expressions.size() < 2)
 			throw new IllegalArgumentException("Conjunctive Expression must have at least two arguments.");
-		this.expressions = new ArrayList<FilterExpr>(expressions.size());
+		this.expressions = new ArrayList<>(expressions.size());
 		for (FilterExpr expr : expressions)
 			addExpression(expr);
 	}

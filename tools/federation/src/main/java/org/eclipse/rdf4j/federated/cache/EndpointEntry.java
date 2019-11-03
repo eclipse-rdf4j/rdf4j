@@ -46,6 +46,7 @@ public class EndpointEntry implements Serializable {
 		return endpointID;
 	}
 
+	@Override
 	public String toString() {
 		return getClass().getSimpleName() + " {endpointID=" + endpointID + ", doesProvideStatements="
 				+ doesProvideStatements + ", hasLocalStatements=" + hasLocalStatements + "}";

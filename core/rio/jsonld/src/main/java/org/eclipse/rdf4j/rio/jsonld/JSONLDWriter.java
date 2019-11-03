@@ -31,9 +31,6 @@ import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-
 import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
@@ -148,13 +145,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 				JsonUtils.write(writer, output);
 			}
 
-		} catch (final JsonLdError e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final JsonGenerationException e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final JsonMappingException e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final IOException e) {
+		} catch (JsonLdError | IOException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		}
 	}

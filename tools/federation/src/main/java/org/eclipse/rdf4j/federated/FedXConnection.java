@@ -192,7 +192,7 @@ public class FedXConnection extends AbstractSailConnection {
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 
 		FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
-		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<Resource>(strategy,
+		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(strategy,
 				new QueryInfo("getContextIDsInternal", QueryType.UNKNOWN, 0));
 
 		for (final Endpoint e : federation.getMembers()) {
@@ -200,7 +200,7 @@ public class FedXConnection extends AbstractSailConnection {
 				@Override
 				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
 					try (RepositoryConnection conn = e.getConnection()) {
-						return new RepositoryExceptionConvertingIteration<Resource>(conn.getContextIDs());
+						return new RepositoryExceptionConvertingIteration<>(conn.getContextIDs());
 					}
 				}
 
@@ -310,7 +310,7 @@ public class FedXConnection extends AbstractSailConnection {
 		if (contexts != null && contexts.length > 0)
 			throw new UnsupportedOperationException("Context handling for size() not supported");
 		long size = 0;
-		List<String> errorEndpoints = new ArrayList<String>();
+		List<String> errorEndpoints = new ArrayList<>();
 		for (Endpoint e : federation.getMembers()) {
 			try {
 				size += e.size();

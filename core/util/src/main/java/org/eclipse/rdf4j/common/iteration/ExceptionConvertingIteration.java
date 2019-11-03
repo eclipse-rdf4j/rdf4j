@@ -109,9 +109,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 		}
 		try {
 			iter.remove();
-		} catch (UnsupportedOperationException e) {
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (UnsupportedOperationException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
 			throw convert(e);

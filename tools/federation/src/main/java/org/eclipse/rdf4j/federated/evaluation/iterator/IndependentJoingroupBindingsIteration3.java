@@ -60,14 +60,14 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 		// underlying arraylist serves as map, index corresponds to bindings index (i.e. at most bindings.size() - 1)
 		// a_res[0] = { v_0#0-1; v_0#0-2; ... }
 		// a_res[1] = { v_0#1-1; v_0#1-2; ... }
-		ArrayList<LinkedList<BindingInfo>> a_res = new ArrayList<LinkedList<BindingInfo>>(bindings.size());
-		ArrayList<LinkedList<BindingInfo>> b_res = new ArrayList<LinkedList<BindingInfo>>(bindings.size());
+		ArrayList<LinkedList<BindingInfo>> a_res = new ArrayList<>(bindings.size());
+		ArrayList<LinkedList<BindingInfo>> b_res = new ArrayList<>(bindings.size());
 
 		// we assume that each binding returns at least one result for each statement
 		// => create lists in advance to avoid checking later on
 		for (int i = 0; i < bindings.size(); i++) {
-			a_res.add(new LinkedList<BindingInfo>());
-			b_res.add(new LinkedList<BindingInfo>());
+			a_res.add(new LinkedList<>());
+			b_res.add(new LinkedList<>());
 		}
 
 		// assumes that bindingset of iteration has exactly one binding
@@ -108,7 +108,7 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 		}
 
 		// TODO think about a better upper bound or use linked list
-		ArrayList<BindingSet> res = new ArrayList<BindingSet>(2 * bindings.size());
+		ArrayList<BindingSet> res = new ArrayList<>(2 * bindings.size());
 
 		for (int a_idx = 0; a_idx < a_res.size(); a_idx++) {
 			LinkedList<BindingInfo> a_list = a_res.get(a_idx);
@@ -138,6 +138,7 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 			this.value = value;
 		}
 
+		@Override
 		public String toString() {
 			return name + ":" + value.stringValue();
 		}

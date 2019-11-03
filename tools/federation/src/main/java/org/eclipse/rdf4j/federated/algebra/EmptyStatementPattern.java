@@ -24,6 +24,7 @@ public class EmptyStatementPattern extends StatementPattern implements EmptyResu
 		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meetOther(this);
 	}

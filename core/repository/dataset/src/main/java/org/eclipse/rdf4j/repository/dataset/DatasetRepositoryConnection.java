@@ -74,9 +74,7 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 			for (IRI dataset : datasets.getNamedGraphs()) {
 				repository.loadDataset(new URL(dataset.toString()), dataset, getParserConfig());
 			}
-		} catch (MalformedURLException e) {
-			throw new QueryEvaluationException(e);
-		} catch (RepositoryException e) {
+		} catch (MalformedURLException | RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}

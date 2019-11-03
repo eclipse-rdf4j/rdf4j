@@ -63,12 +63,7 @@ public class SailUpdate extends AbstractParserUpdate {
 				try {
 					executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
 							getMaxExecutionTime());
-				} catch (RDF4JException e) {
-					logger.warn("exception during update execution: ", e);
-					if (!updateExpr.isSilent()) {
-						throw new UpdateExecutionException(e);
-					}
-				} catch (IOException e) {
+				} catch (RDF4JException | IOException e) {
 					logger.warn("exception during update execution: ", e);
 					if (!updateExpr.isSilent()) {
 						throw new UpdateExecutionException(e);

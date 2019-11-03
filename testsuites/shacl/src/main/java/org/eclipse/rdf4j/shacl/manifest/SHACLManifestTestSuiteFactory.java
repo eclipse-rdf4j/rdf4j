@@ -216,9 +216,9 @@ public class SHACLManifestTestSuiteFactory {
 		boolean result = true;
 
 		if (excludedSubdirs != null && excludedSubdirs.length > 0) {
-			int index = subManifestFile.lastIndexOf("/");
+			int index = subManifestFile.lastIndexOf('/');
 			String path = subManifestFile.substring(0, index);
-			String sd = path.substring(path.lastIndexOf("/") + 1);
+			String sd = path.substring(path.lastIndexOf('/') + 1);
 
 			for (String subdir : excludedSubdirs) {
 				if (sd.equals(subdir)) {

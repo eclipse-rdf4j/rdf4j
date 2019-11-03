@@ -271,12 +271,9 @@ public class RemoteRepositoryManager extends RepositoryManager {
 					result.add(repInfo);
 				}
 			}
-		} catch (IOException ioe) {
+		} catch (IOException | QueryEvaluationException ioe) {
 			logger.warn("Unable to retrieve list of repositories", ioe);
 			throw new RepositoryException(ioe);
-		} catch (QueryEvaluationException qee) {
-			logger.warn("Unable to retrieve list of repositories", qee);
-			throw new RepositoryException(qee);
 		} catch (UnauthorizedException ue) {
 			logger.warn("Not authorized to retrieve list of repositories", ue);
 			throw new RepositoryException(ue);

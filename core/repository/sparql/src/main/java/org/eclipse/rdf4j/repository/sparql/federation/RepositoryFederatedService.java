@@ -210,7 +210,7 @@ public class RepositoryFederatedService implements FederatedService {
 			allBindings.add(bindings.next());
 		}
 
-		if (allBindings.size() == 0) {
+		if (allBindings.isEmpty()) {
 			return new EmptyIteration<>();
 		}
 
@@ -240,7 +240,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 			List<String> relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());
 
-			if (relevantBindingNames.size() != 0) {
+			if (!relevantBindingNames.isEmpty()) {
 				// append the VALUES clause to the query
 				queryString += buildVALUESClause(allBindings, relevantBindingNames);
 			}
@@ -251,7 +251,7 @@ public class RepositoryFederatedService implements FederatedService {
 										// from actual setting?
 			res = query.evaluate();
 
-			if (relevantBindingNames.size() == 0)
+			if (relevantBindingNames.isEmpty())
 				result = new SPARQLCrossProductIteration(res, allBindings); // cross
 			// product
 			else

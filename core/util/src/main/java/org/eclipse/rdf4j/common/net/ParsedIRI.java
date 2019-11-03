@@ -82,13 +82,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static final long serialVersionUID = -5681843777254402303L;
 
-	private static final Comparator<int[]> CMP = new Comparator<int[]>() {
-
-		@Override
-		public int compare(int[] o1, int[] o2) {
-			return o1[0] - o2[0];
-		}
-	};
+	private static final Comparator<int[]> CMP = (int[] o1, int[] o2) -> o1[0] - o2[0];
 
 	private static int EOF = 0;
 
@@ -826,7 +820,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private String buildIRI(String scheme, String userInfo, String host, int port, String path, String query,
 			String fragment) {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		if (scheme != null) {
 			sb.append(scheme).append(':');
 		}
@@ -1131,7 +1125,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		}
 		List<String> list = new ArrayList<>();
 		int pct = -1;
-		while ((pct = path.indexOf("%", pct + 1)) > 0) {
+		while ((pct = path.indexOf('%', pct + 1)) > 0) {
 			int start = pct;
 			// optimize common encoded members by grouping separately
 			if (Arrays.binarySearch(common_pct, path.substring(pct, pct + 3)) < 0) {

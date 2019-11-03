@@ -122,10 +122,10 @@ public class QueryAlgebraUtil {
 	public static TupleExpr selectQuery(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		if (filterExpr != null) {
@@ -162,7 +162,7 @@ public class QueryAlgebraUtil {
 	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		List<ExclusiveStatement> stmts = group.getStatements();
 
 		Join join = null;
@@ -227,7 +227,7 @@ public class QueryAlgebraUtil {
 
 		// TODO add FILTER expressions
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		Union union = new Union();
 		union.setLeftArg(constructStatementId(stmt, Integer.toString(0), varNames, unionBindings.get(0)));
@@ -263,7 +263,7 @@ public class QueryAlgebraUtil {
 	 */
 	public static TupleExpr selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		Union union = new Union();
 		union.setLeftArg(constructStatementCheckId(stmt, 0, varNames, unionBindings.get(0)));

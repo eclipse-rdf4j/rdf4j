@@ -64,15 +64,11 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newScheduledThreadPool(cores, new ThreadFactory() {
-
-			@Override
-			public Thread newThread(Runnable runnable) {
-				Thread thread = backingThreadFactory.newThread(runnable);
-				thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
-				thread.setDaemon(true);
-				return thread;
-			}
+		this.executor = Executors.newScheduledThreadPool(cores, (Runnable runnable) -> {
+			Thread thread = backingThreadFactory.newThread(runnable);
+			thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
+			thread.setDaemon(true);
+			return thread;
 		});
 	}
 

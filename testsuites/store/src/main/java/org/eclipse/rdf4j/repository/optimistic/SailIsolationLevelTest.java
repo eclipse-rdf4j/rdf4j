@@ -185,45 +185,39 @@ public class SailIsolationLevelTest {
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch uncommitted = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
-
-			public void run() {
-				try (RepositoryConnection write = store.getConnection();) {
-					start.countDown();
-					start.await();
-					write.begin(level);
-					write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
-					begin.countDown();
-					uncommitted.await(1, TimeUnit.SECONDS);
-					write.rollback();
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
+		Thread writer = new Thread(() -> {
+			try (RepositoryConnection write = store.getConnection();) {
+				start.countDown();
+				start.await();
+				write.begin(level);
+				write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
+				begin.countDown();
+				uncommitted.await(1, TimeUnit.SECONDS);
+				write.rollback();
+			} catch (Throwable e) {
+				fail("Writer failed", e);
 			}
 		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (RepositoryConnection read = store.getConnection();) {
-					start.countDown();
-					start.await();
-					begin.await();
-					read.begin(level);
-					// must not read uncommitted changes
-					long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					uncommitted.countDown();
-					try {
-						read.commit();
-					} catch (RepositoryException e) {
-						// it is okay to abort after a dirty read
-						// e.printStackTrace();
-						return;
-					}
-					// not read if transaction is consistent
-					assertEquals(0, counted);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+		Thread reader = new Thread(() -> {
+			try (RepositoryConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				// must not read uncommitted changes
+				long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				uncommitted.countDown();
+				try {
+					read.commit();
+				} catch (RepositoryException e) {
+					// it is okay to abort after a dirty read
+					// e.printStackTrace();
+					return;
 				}
+				// not read if transaction is consistent
+				assertEquals(0, counted);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -242,55 +236,49 @@ public class SailIsolationLevelTest {
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch observed = new CountDownLatch(1);
 		final CountDownLatch changed = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
+		Thread writer = new Thread(() -> {
+			try (RepositoryConnection write = store.getConnection();) {
+				start.countDown();
+				start.await();
+				write.begin(level);
+				write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
+				write.commit();
 
-			public void run() {
-				try (RepositoryConnection write = store.getConnection();) {
-					start.countDown();
-					start.await();
-					write.begin(level);
-					write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
-					write.commit();
+				begin.countDown();
+				observed.await();
 
-					begin.countDown();
-					observed.await();
-
-					write.begin(level);
-					write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
-					write.commit();
-					changed.countDown();
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
+				write.begin(level);
+				write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
+				write.commit();
+				changed.countDown();
+			} catch (Throwable e) {
+				fail("Writer failed", e);
 			}
 		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (RepositoryConnection read = store.getConnection();) {
-					start.countDown();
-					start.await();
-					begin.await();
-					read.begin(level);
-					long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					assertEquals(1, first);
-					observed.countDown();
-					changed.await(1, TimeUnit.SECONDS);
-					// observed statements must continue to exist
-					long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					try {
-						read.commit();
-					} catch (RepositoryException e) {
-						// it is okay to abort on inconsistency
-						// e.printStackTrace();
-						read.rollback();
-						return;
-					}
-					// statement must continue to exist if transaction consistent
-					assertEquals(first, second);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+		Thread reader = new Thread(() -> {
+			try (RepositoryConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				assertEquals(1, first);
+				observed.countDown();
+				changed.await(1, TimeUnit.SECONDS);
+				// observed statements must continue to exist
+				long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				try {
+					read.commit();
+				} catch (RepositoryException e) {
+					// it is okay to abort on inconsistency
+					// e.printStackTrace();
+					read.rollback();
+					return;
 				}
+				// statement must continue to exist if transaction consistent
+				assertEquals(first, second);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -345,59 +333,53 @@ public class SailIsolationLevelTest {
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch observed = new CountDownLatch(1);
 		final CountDownLatch changed = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
-
-			public void run() {
+		Thread writer = new Thread(() -> {
+			try {
+				RepositoryConnection write = store.getConnection();
 				try {
-					RepositoryConnection write = store.getConnection();
-					try {
-						start.countDown();
-						start.await();
-						write.begin(level);
-						insertTestStatement(write, 1);
-						write.commit();
-
-						begin.countDown();
-						observed.await(1, TimeUnit.SECONDS);
-
-						write.begin(level);
-						insertTestStatement(write, 2);
-						write.commit();
-						changed.countDown();
-					} finally {
-						write.close();
-					}
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
-			}
-		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (RepositoryConnection read = store.getConnection();) {
 					start.countDown();
 					start.await();
-					begin.await();
-					read.begin(level);
-					long first = count(read, null, null, null, false);
-					observed.countDown();
-					changed.await(1, TimeUnit.SECONDS);
-					// new statements must not be observed
-					long second = count(read, null, null, null, false);
-					try {
-						read.commit();
-					} catch (RepositoryException e) {
-						// it is okay to abort on inconsistency
-						// e.printStackTrace();
-						read.rollback();
-						return;
-					}
-					// store must not change if transaction consistent
-					assertEquals(first, second);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+					write.begin(level);
+					insertTestStatement(write, 1);
+					write.commit();
+
+					begin.countDown();
+					observed.await(1, TimeUnit.SECONDS);
+
+					write.begin(level);
+					insertTestStatement(write, 2);
+					write.commit();
+					changed.countDown();
+				} finally {
+					write.close();
 				}
+			} catch (Throwable e) {
+				fail("Writer failed", e);
+			}
+		});
+		Thread reader = new Thread(() -> {
+			try (RepositoryConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				long first = count(read, null, null, null, false);
+				observed.countDown();
+				changed.await(1, TimeUnit.SECONDS);
+				// new statements must not be observed
+				long second = count(read, null, null, null, false);
+				try {
+					read.commit();
+				} catch (RepositoryException e) {
+					// it is okay to abort on inconsistency
+					// e.printStackTrace();
+					read.rollback();
+					return;
+				}
+				// store must not change if transaction consistent
+				assertEquals(first, second);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -443,28 +425,25 @@ public class SailIsolationLevelTest {
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
 			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
-		return new Thread(new Runnable() {
-
-			public void run() {
-				try (RepositoryConnection con = store.getConnection();) {
-					start.countDown();
-					start.await();
-					con.begin(level);
-					Literal o1 = readLiteral(con, subj, pred);
-					observed.countDown();
-					observed.await(1, TimeUnit.SECONDS);
-					con.remove(subj, pred, o1);
-					con.add(subj, pred, vf.createLiteral(o1.intValue() + by));
-					try {
-						con.commit();
-					} catch (RepositoryException e) {
-						// it is okay to abort on conflict
-						// e.printStackTrace();
-						con.rollback();
-					}
-				} catch (Throwable e) {
-					fail("Increment " + by + " failed", e);
+		return new Thread(() -> {
+			try (RepositoryConnection con = store.getConnection();) {
+				start.countDown();
+				start.await();
+				con.begin(level);
+				Literal o1 = readLiteral(con, subj, pred);
+				observed.countDown();
+				observed.await(1, TimeUnit.SECONDS);
+				con.remove(subj, pred, o1);
+				con.add(subj, pred, vf.createLiteral(o1.intValue() + by));
+				try {
+					con.commit();
+				} catch (RepositoryException e) {
+					// it is okay to abort on conflict
+					// e.printStackTrace();
+					con.rollback();
 				}
+			} catch (Throwable e) {
+				fail("Increment " + by + " failed", e);
 			}
 		});
 	}

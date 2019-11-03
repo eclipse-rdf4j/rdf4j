@@ -135,9 +135,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			GraphQuery query = prepareGraphQuery(SPARQL, EVERYTHING, "");
 			setBindings(query, subj, pred, obj, contexts);
 			query.evaluate(handler);
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -167,9 +165,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			});
 			allGood = true;
 			return result;
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		} finally {
 			if (!allGood) {
@@ -206,9 +202,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				query = prepareBooleanQuery(SPARQL, SOMETHING);
 			}
 			return !query.evaluate();
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -236,9 +230,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			} else {
 				return getStatementGeneral(subj, pred, obj, includeInferred, contexts);
 			}
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -335,9 +327,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			BooleanQuery query = prepareBooleanQuery(SPARQL, SOMETHING, "");
 			setBindings(query, subj, pred, obj, contexts);
 			return query.evaluate();
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -459,10 +449,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -491,10 +478,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -524,10 +508,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -558,10 +539,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}

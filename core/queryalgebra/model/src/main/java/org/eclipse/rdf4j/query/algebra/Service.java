@@ -134,7 +134,7 @@ public class Service extends UnaryTupleOperator {
 	 * @return SELECT query string, utilizing the given projection variables
 	 */
 	public String getSelectQueryString(Set<String> projectionVars) {
-		if (projectionVars.size() == 0)
+		if (projectionVars.isEmpty())
 			return preparedSelectQueryString.replace("%PROJECTION_VARS%", "*");
 		StringBuilder sb = new StringBuilder();
 		for (String var : projectionVars)
@@ -281,7 +281,7 @@ public class Service extends UnaryTupleOperator {
 	private String parseServiceExpression(String serviceExpression) {
 
 		if (serviceExpression.toLowerCase().startsWith("service")) {
-			return serviceExpression.substring(serviceExpression.indexOf("{") + 1, serviceExpression.lastIndexOf("}"))
+			return serviceExpression.substring(serviceExpression.indexOf('{') + 1, serviceExpression.lastIndexOf('}'))
 					.trim();
 		}
 		return serviceExpression;

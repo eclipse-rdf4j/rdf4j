@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public class PrintingIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
-	protected LinkedList<BindingSet> copyQueue = new LinkedList<BindingSet>();
+	protected LinkedList<BindingSet> copyQueue = new LinkedList<>();
 	protected boolean done = false;
 
 	public PrintingIteration(

@@ -65,9 +65,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 		try {
 			return convert(repoResult.next());
-		} catch (NoSuchElementException e) {
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (NoSuchElementException | IllegalStateException e) {
 			throw e;
 		} catch (RepositoryException e) {
 			throw convertException(e);
@@ -79,9 +77,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 		try {
 			repoResult.remove();
-		} catch (UnsupportedOperationException e) {
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (UnsupportedOperationException | IllegalStateException e) {
 			throw e;
 		} catch (RepositoryException e) {
 			throw convertException(e);

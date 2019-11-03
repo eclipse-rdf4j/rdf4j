@@ -25,7 +25,7 @@ public class OptimizerUtil {
 	 * @return the flattened {@link NJoin}
 	 */
 	public static NJoin flattenJoin(Join join, QueryInfo queryInfo) {
-		List<TupleExpr> joinArgs = new ArrayList<TupleExpr>();
+		List<TupleExpr> joinArgs = new ArrayList<>();
 		collectJoinArgs(join, joinArgs);
 		return new NJoin(joinArgs, queryInfo);
 	}

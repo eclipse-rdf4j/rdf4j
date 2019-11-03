@@ -36,10 +36,10 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	private static final long serialVersionUID = 6588020780262348806L;
 
-	protected final List<StatementSource> statementSources = new ArrayList<StatementSource>();
+	protected final List<StatementSource> statementSources = new ArrayList<>();
 	protected final String id;
 	protected final QueryInfo queryInfo;
-	protected final List<String> freeVars = new ArrayList<String>(3);
+	protected final List<String> freeVars = new ArrayList<>(3);
 	protected FilterValueExpr filterExpr = null;
 	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
 													// additional bindings
@@ -196,13 +196,8 @@ public abstract class FedXStatementPattern extends StatementPattern
 	}
 
 	private List<StatementSource> sort(List<StatementSource> stmtSources) {
-		List<StatementSource> res = new ArrayList<StatementSource>(stmtSources);
-		Collections.sort(res, new Comparator<StatementSource>() {
-			@Override
-			public int compare(StatementSource o1, StatementSource o2) {
-				return o1.id.compareTo(o2.id);
-			}
-		});
+		List<StatementSource> res = new ArrayList<>(stmtSources);
+		Collections.sort(res, (StatementSource o1, StatementSource o2) -> o1.id.compareTo(o2.id));
 		return res;
 	}
 

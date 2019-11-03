@@ -228,9 +228,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 					}
 				}
 			}
-		} catch (QueryEvaluationException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (QueryEvaluationException | IOException e) {
 			throw new RepositoryException(e);
 		}
 
@@ -368,9 +366,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 						// handling. If the server is older, we need to run in
 						// backward-compatible mode.
 						result = compatibleMode = (Integer.parseInt(serverProtocolVersion) < 7);
-					} catch (NumberFormatException e) {
-						throw new RepositoryException("could not read protocol version from server: ", e);
-					} catch (IOException e) {
+					} catch (NumberFormatException | IOException e) {
 						throw new RepositoryException("could not read protocol version from server: ", e);
 					}
 				}

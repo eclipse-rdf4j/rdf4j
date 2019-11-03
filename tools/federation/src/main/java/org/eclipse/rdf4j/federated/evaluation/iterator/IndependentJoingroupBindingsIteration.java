@@ -50,8 +50,8 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 
 	protected ArrayList<BindingSet> computeResult() throws QueryEvaluationException {
 
-		List<Binding> a_res = new ArrayList<Binding>();
-		List<Binding> b_res = new ArrayList<Binding>();
+		List<Binding> a_res = new ArrayList<>();
+		List<Binding> b_res = new ArrayList<>();
 
 		// collect results XXX later asynchronously
 		// assumes that bindingset of iteration has exactly one binding
@@ -65,7 +65,7 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 								+ ": " + bIn);
 
 			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());
-			int bIndex = Integer.parseInt(b.getName().substring(b.getName().lastIndexOf("_") + 1));
+			int bIndex = Integer.parseInt(b.getName().substring(b.getName().lastIndexOf('_') + 1));
 
 			if (bIndex == 0)
 				a_res.add(b);
@@ -75,14 +75,14 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 				throw new RuntimeException("Unexpected binding value.");
 		}
 
-		ArrayList<BindingSet> res = new ArrayList<BindingSet>(a_res.size() * b_res.size());
+		ArrayList<BindingSet> res = new ArrayList<>(a_res.size() * b_res.size());
 
 		for (Binding a : a_res) {
 			for (Binding b : b_res) {
 				QueryBindingSet newB = new QueryBindingSet(bindings.size() + 2);
 				newB.addAll(bindings);
-				newB.addBinding(a.getName().substring(0, a.getName().lastIndexOf("_")), a.getValue());
-				newB.addBinding(b.getName().substring(0, b.getName().lastIndexOf("_")), b.getValue());
+				newB.addBinding(a.getName().substring(0, a.getName().lastIndexOf('_')), a.getValue());
+				newB.addBinding(b.getName().substring(0, b.getName().lastIndexOf('_')), b.getValue());
 				res.add(newB);
 			}
 		}
