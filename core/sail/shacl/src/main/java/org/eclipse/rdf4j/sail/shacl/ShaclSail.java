@@ -34,6 +34,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
@@ -43,6 +46,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -185,15 +189,20 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	private ExecutorService executorService;
+	private final ExecutorService[] executorService = new ExecutorService[1];
 
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
-
+		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
+		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
+				executorService);
 	}
 
 	public ShaclSail() {
 		super();
+		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
+		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
+				executorService);
 	}
 
 	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.
@@ -286,6 +295,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepoConnection.commit();
 		}
 
+		assert executorService[0] == null;
+
 	}
 
 	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
@@ -311,26 +322,46 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void shutDown() throws SailException {
+	public synchronized void shutDown() throws SailException {
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
 			shapesRepo = null;
 		}
 
-		if (executorService != null) {
-			executorService.shutdown();
+		if (executorService[0] != null) {
+			executorService[0].shutdown();
+			boolean terminated = false;
+			try {
+				terminated = executorService[0].awaitTermination(200, TimeUnit.MILLISECONDS);
+			} catch (InterruptedException ignored) {
+			}
+
+			if (!terminated) {
+				executorService[0].shutdownNow();
+				logger.error("Shutdown ShaclSail while validation is still running.");
+			}
+
 		}
 
 		initialized.set(false);
+		executorService[0] = null;
 		nodeShapes = Collections.emptyList();
 		super.shutDown();
 	}
 
-	public synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
-		if (executorService == null) {
-			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+		if (executorService[0] == null) {
+			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
+					r -> {
+						Thread t = Executors.defaultThreadFactory().newThread(r);
+						// this thread pool does not need to stick around if the all other threads are done, because it
+						// is only used for SHACL validation and if all other threads have ended then there would be no
+						// thread to receive the validation results.
+						t.setDaemon(true);
+						return t;
+					});
 		}
-		return executorService.submit(runnable);
+		return executorService[0].submit(runnable);
 	}
 
 	@Override
@@ -675,4 +706,41 @@ public class ShaclSail extends NotifyingSailWrapper {
 				StandardCharsets.UTF_8);
 	}
 
+	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,
+			AtomicBoolean initialized, ExecutorService[] executorService) {
+
+		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
+			Thread t = Executors.defaultThreadFactory().newThread(r);
+			// this thread pool does not need to stick around if the all other threads are done
+			t.setDaemon(true);
+			return t;
+		});
+
+		ex.execute(() -> {
+			while (referenceQueue.poll() != ref) {
+				// don't hang forever
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+					// should never be interrupted
+					break;
+				}
+			}
+
+			if (ref.get() != null) {
+				// we were apparently interrupted before the object was set to be finalized
+				return;
+			}
+
+			if (initialized.get()) {
+				logger.error("ShaclSail was garbage collected without shutdown() having been called first.");
+			}
+			if (executorService[0] != null) {
+				executorService[0].shutdownNow();
+			}
+
+		});
+		// this is a soft operation, the thread pool will actually wait until the task above has completed
+		ex.shutdown();
+	}
 }

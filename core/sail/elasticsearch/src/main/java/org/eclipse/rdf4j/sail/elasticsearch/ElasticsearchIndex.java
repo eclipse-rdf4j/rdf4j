@@ -84,7 +84,7 @@ import com.google.common.collect.Iterables;
 
 /**
  * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
- * 
+ *
  * @see LuceneSail
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {
@@ -127,7 +127,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	/**
 	 * Set the parameter "waitForRelocatingShards=" to configure if {@link #initialize(java.util.Properties)
 	 * initialization} should wait until the specified number of nodes are relocating. Does not wait by default.
-	 * 
+	 *
 	 * @deprecated use {@link #WAIT_FOR_NO_RELOCATING_SHARDS_KEY} in elastic search >= 5.x
 	 */
 	@Deprecated
@@ -320,36 +320,37 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		// use _source instead of explicit stored = true
-		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
-		typeMapping.startObject().startObject(documentType).startObject("properties");
-		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
-				.field("type", "keyword")
-				.field("index", true)
-				.field("copy_to", "_all")
-				.endObject();
-		typeMapping.startObject(SearchFields.URI_FIELD_NAME)
-				.field("type", "keyword")
-				.field("index", true)
-				.field("copy_to", "_all")
-				.endObject();
-		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
-				.field("type", "text")
-				.field("index", true)
-				.field("copy_to", "_all")
-				.endObject();
-		for (String wktField : wktFields) {
-			typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
-			if (supportsShapes(wktField)) {
-				typeMapping.startObject(toGeoShapeFieldName(wktField))
-						.field("type", "geo_shape")
-						.field("copy_to", "_all")
-						.endObject();
+		try (XContentBuilder typeMapping = XContentFactory.jsonBuilder()) {
+			typeMapping.startObject().startObject(documentType).startObject("properties");
+			typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
+					.field("type", "keyword")
+					.field("index", true)
+					.field("copy_to", "_all")
+					.endObject();
+			typeMapping.startObject(SearchFields.URI_FIELD_NAME)
+					.field("type", "keyword")
+					.field("index", true)
+					.field("copy_to", "_all")
+					.endObject();
+			typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
+					.field("type", "text")
+					.field("index", true)
+					.field("copy_to", "_all")
+					.endObject();
+			for (String wktField : wktFields) {
+				typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
+				if (supportsShapes(wktField)) {
+					typeMapping.startObject(toGeoShapeFieldName(wktField))
+							.field("type", "geo_shape")
+							.field("copy_to", "_all")
+							.endObject();
+				}
 			}
-		}
-		typeMapping.endObject().endObject().endObject();
+			typeMapping.endObject().endObject().endObject();
 
-		doAcknowledgedRequest(
-				client.admin().indices().preparePutMapping(indexName).setType(documentType).setSource(typeMapping));
+			doAcknowledgedRequest(
+					client.admin().indices().preparePutMapping(indexName).setType(documentType).setSource(typeMapping));
+		}
 	}
 
 	private boolean supportsShapes(String field) {
@@ -515,7 +516,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query. To be removed, no longer used.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -529,7 +530,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -827,7 +828,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public synchronized void clear() throws IOException {

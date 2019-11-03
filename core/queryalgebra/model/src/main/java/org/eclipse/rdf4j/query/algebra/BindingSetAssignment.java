@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
@@ -49,13 +50,21 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		return other instanceof BindingSetAssignment;
+	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null || !(obj instanceof BindingSetAssignment)) {
+			return false;
+		}
+		BindingSetAssignment other = (BindingSetAssignment) obj;
+		return Objects.equals(this.bindingNames, other.bindingNames)
+				&& Objects.equals(this.bindingSets, other.bindingSets);
 	}
 
 	@Override
 	public int hashCode() {
-		return "BindingSetAssignment".hashCode();
+		return Objects.hash(bindingNames, bindingSets);
 	}
 
 	@Override

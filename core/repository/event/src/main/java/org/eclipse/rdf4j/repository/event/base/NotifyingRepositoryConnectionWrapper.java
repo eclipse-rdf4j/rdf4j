@@ -11,7 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -34,7 +37,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
 /**
  * This broadcaster is used by the RepositoryBroadcaster to wrap the delegate repository connection. Listeners are
  * notified of changes after they have occurred.
- * 
+ *
  * @author James Leigh
  * @author Herko ter Horst
  */
@@ -164,16 +167,13 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	@Override
 	public void removeWithoutCommit(Resource subj, IRI pred, Value obj, Resource... ctx) throws RepositoryException {
 		if (activated && reportDeltas()) {
-			RepositoryResult<Statement> stmts;
-			stmts = getDelegate().getStatements(subj, pred, obj, false, ctx);
-			List<Statement> list = new ArrayList<>();
-			try {
-				while (stmts.hasNext()) {
-					list.add(stmts.next());
-				}
-			} finally {
-				stmts.close();
+
+			List<Statement> list;
+			try (Stream<Statement> stream = Iterations
+					.stream(getDelegate().getStatements(subj, pred, obj, false, ctx))) {
+				list = stream.collect(Collectors.toList());
 			}
+
 			getDelegate().remove(subj, pred, obj, ctx);
 			for (RepositoryConnectionListener listener : listeners) {
 				for (Statement stmt : list) {
@@ -208,17 +208,12 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	@Override
 	public void clearNamespaces() throws RepositoryException {
 		if (activated && reportDeltas()) {
-			RepositoryResult<Namespace> namespaces;
-			namespaces = getDelegate().getNamespaces();
-			List<String> prefix = new ArrayList<>();
-			try {
-				while (namespaces.hasNext()) {
-					Namespace ns = namespaces.next();
-					prefix.add(ns.getPrefix());
-				}
-			} finally {
-				namespaces.close();
+
+			List<String> prefix;
+			try (Stream<Namespace> stream = Iterations.stream(getDelegate().getNamespaces())) {
+				prefix = stream.map(Namespace::getPrefix).collect(Collectors.toList());
 			}
+
 			getDelegate().clearNamespaces();
 			for (String p : prefix) {
 				removeNamespace(p);

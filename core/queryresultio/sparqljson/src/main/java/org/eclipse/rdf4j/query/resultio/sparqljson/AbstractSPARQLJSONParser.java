@@ -36,7 +36,7 @@ import com.fasterxml.jackson.core.JsonToken;
 /**
  * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and tuple
  * parsing.
- * 
+ *
  * @author Peter Ansell
  * @author Sebastian Schaffert
  */
@@ -83,14 +83,14 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	private static final String ORDERED = "ordered";
 
 	/**
-	 * 
+	 *
 	 */
 	protected AbstractSPARQLJSONParser() {
 		super();
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	protected AbstractSPARQLJSONParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -348,7 +348,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	/**
 	 * Parse a value out of the elements for a binding.
-	 * 
+	 *
 	 * @param type     {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or {@link #URI}
 	 * @param value    actual value text
 	 * @param language language tag, if applicable
@@ -403,7 +403,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	/**
 	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
-	 * 
+	 *
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {

@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
@@ -99,24 +100,26 @@ public class Create extends ConsoleCommand {
 
 	/**
 	 * Return a concatenated list of ordered configuration templates files, without file type extension.
-	 * 
+	 *
 	 * @param path path with templates
 	 * @return string concatenated string
 	 * @throws IOException
 	 */
 	private String getOrderedTemplates(Path path) throws IOException {
-		return Files.walk(path)
-				.filter(Files::isRegularFile)
-				.map(f -> f.getFileName().toString())
-				.filter(s -> s.endsWith(FILE_EXT))
-				.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-				.sorted()
-				.collect(Collectors.joining(", "));
+		try (Stream<Path> walk = Files.walk(path)) {
+			return walk
+					.filter(Files::isRegularFile)
+					.map(f -> f.getFileName().toString())
+					.filter(s -> s.endsWith(FILE_EXT))
+					.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+					.sorted()
+					.collect(Collectors.joining(", "));
+		}
 	}
 
 	/**
 	 * Get the names of the user-defined repository templates, located in the templates directory.
-	 * 
+	 *
 	 * @return ordered array of names
 	 */
 	private String getUserTemplates() {
@@ -133,7 +136,7 @@ public class Create extends ConsoleCommand {
 
 	/**
 	 * Get the names of the built-in repository templates, located in the JAR containing RepositoryConfig.
-	 * 
+	 *
 	 * @return concatenated list of names
 	 */
 	private String getBuiltinTemplates() {
@@ -157,7 +160,7 @@ public class Create extends ConsoleCommand {
 
 	/**
 	 * Create a new repository based on a template
-	 * 
+	 *
 	 * @param templateName name of the template
 	 * @throws IOException
 	 */
@@ -234,7 +237,7 @@ public class Create extends ConsoleCommand {
 
 	/**
 	 * Ask user to specify values for the template variables
-	 * 
+	 *
 	 * @param valueMap
 	 * @param variableMap
 	 * @param multilineInput
@@ -288,7 +291,7 @@ public class Create extends ConsoleCommand {
 	/**
 	 * Create input stream from a template file in the specified file directory. If the file cannot be found, try to
 	 * read it from the embedded java resources instead.
-	 * 
+	 *
 	 * @param templateName     name of the template
 	 * @param templateFileName template file name
 	 * @param templatesDir     template directory

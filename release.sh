@@ -52,7 +52,7 @@ if [ $RET -eq 0 ]
 then
   echo "Username and password are correct"
 else
-  echo "Unknown error connection to sftp server"
+  echo "Unknown error connecting to sftp server"
   exit 1
 fi
 
@@ -112,6 +112,7 @@ mvn clean;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
+# replace "SNAPSHOT" with ""
 MVN_VERSION_RELEASE="${MVN_CURRENT_SNAPSHOT_VERSION/-SNAPSHOT/}"
 
 MVN_NEXT_SNAPSHOT_VERSION="$(increment_version $MVN_VERSION_RELEASE 3)-SNAPSHOT"
@@ -148,30 +149,17 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-read -p "Push tag to github - this will start the Jenkins release (y/n)?" choice
-case "${choice}" in
-  y|Y ) echo "";;
-  n|N ) exit;;
-  * ) echo "unknown response, exiting"; exit;;
-esac
+echo "Pushing tag to github"
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # push tag (only tag, not branch)
 git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "One-jar build takes several minutes"
-read -n 1 -s -r -p "Press any key to continue to one-jar build (ctrl+c to cancel)"; printf "\n\n";
-
-# build one jar
-mvn -Passembly clean install -DskipTests
-
-echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
-
-./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
-
-echo "";
-echo "Upload complete";
-echo "";
+echo "You need to tell jenkins to start the release process."
+echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
+echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # Cleanup
 git checkout master
@@ -199,7 +187,7 @@ echo "Pushing the new version to github"
 git push
 
 echo "";
-echo "Preparing a merge branch to merge into develop"
+echo "Preparing a merge-branch to merge into develop"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 
@@ -223,6 +211,27 @@ echo "You want to merge 'merge_master_into_develop_after_release_${MVN_VERSION_R
 echo "When you have created the PR you can press any key to continue. It's ok to merge the PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
+git checkout $MVN_VERSION_RELEASE
+
+echo "";
+echo "SDK and onejar build takes several minutes, this is the last step and the script will complete by itself when you continue."
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+
+# build one jar
+mvn -Passembly clean install -DskipTests
+cd assembly
+mvn -Passembly install -DskipTests
+cd ..
+
+echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
+
+./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
+
+echo "";
+echo "Upload complete";
+echo "";
+
+
 git checkout master
 mvn clean install -DskipTests
 
@@ -230,5 +239,22 @@ mvn clean install -DskipTests
 
 echo "DONE!"
 
+# the news file on github should be 302 if the release is 3.0.2, so replace "." twice
+NEWS_FILE_NAME=$MVN_VERSION_RELEASE
+NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
+NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
 
+echo ""
+echo "You will now want to inform the community about the new release!"
+echo " - Check if all recently closed issues have the correct milestone: https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+is%3Aclosed+"
+echo " - Create a new milestone for ${MVN_NEXT_SNAPSHOT_VERSION/-SNAPSHOT/} : https://github.com/eclipse/rdf4j/milestones/new"
+echo " - Close the ${MVN_VERSION_RELEASE} milestone: https://github.com/eclipse/rdf4j/milestones"
+echo "     - Make sure that all issues in the milestone are closed, or move them to the next milestone"
+echo "     - Go to the milestone, click the 'closed' tab and copy the link for later"
+echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/release-notes/index.md"
+echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/download/_index.md"
+echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
+echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
+echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
+echo " - Upload the javadocs " #TODO Where should they be uploaded and how?
 

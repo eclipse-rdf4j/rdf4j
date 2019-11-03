@@ -80,13 +80,10 @@ public abstract class AbstractNQuadsParserUnitTest {
 		nquadsParser.setRDFHandler(new AbstractRDFHandler() {
 		});
 
-		InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NQUADS_TEST_FILE);
-		try {
+		try (InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NQUADS_TEST_FILE)) {
 			nquadsParser.parse(in, NQUADS_TEST_URL);
 		} catch (RDFParseException e) {
 			fail("NQuadsParser failed to parse N-Quads test document: " + e.getMessage());
-		} finally {
-			in.close();
 		}
 	}
 
@@ -98,13 +95,10 @@ public abstract class AbstractNQuadsParserUnitTest {
 		nquadsParser.setRDFHandler(new AbstractRDFHandler() {
 		});
 
-		InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NTRIPLES_TEST_FILE);
-		try {
+		try (InputStream in = AbstractNQuadsParserUnitTest.class.getResourceAsStream(NTRIPLES_TEST_FILE)) {
 			nquadsParser.parse(in, NTRIPLES_TEST_URL);
 		} catch (RDFParseException e) {
 			fail("NQuadsParser failed to parse N-Triples test document: " + e.getMessage());
-		} finally {
-			in.close();
 		}
 	}
 

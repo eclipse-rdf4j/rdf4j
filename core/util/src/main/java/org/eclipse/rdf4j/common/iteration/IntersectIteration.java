@@ -39,7 +39,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	/**
 	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By default,
 	 * duplicates are <em>not</em> filtered from the results.
-	 * 
+	 *
 	 * @param arg1 An Iteration containing the first set of elements.
 	 * @param arg2 An Iteration containing the second set of elements.
 	 */
@@ -49,7 +49,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	/**
 	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
-	 * 
+	 *
 	 * @param arg1     An Iteration containing the first set of elements.
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
@@ -78,7 +78,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 			synchronized (this) {
 				if (!initialized) {
 					// Build set of elements-to-include from second argument
-					includeSet = addSecondSet(arg2, makeSet());
+					includeSet = Iterations.asSet(arg2);
 					initialized = true;
 				}
 			}
@@ -99,6 +99,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		return false;
 	}
 
+	// this method does not seem to "addSecondSet" since the second set seems to be ignored
 	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
 		return Iterations.addAll(arg2, makeSet());
 	}

@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import java.util.Arrays;
-
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -19,6 +15,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+
+import javax.servlet.http.HttpServletResponse;
+import java.util.Arrays;
 
 public class NamespacesServlet extends TransformationServlet {
 
@@ -41,17 +40,14 @@ public class NamespacesServlet extends TransformationServlet {
 			throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = new TupleResultBuilder(out);
 		builder.transform(xslPath, "namespaces.xsl");
-		RepositoryConnection con = repository.getConnection();
-		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			builder.start("prefix", "namespace");
 			builder.link(Arrays.asList(INFO));
 			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
 				builder.result(ns.getPrefix(), ns.getName());
 			}
 			builder.end();
-		} finally {
-			con.close();
 		}
 	}
 

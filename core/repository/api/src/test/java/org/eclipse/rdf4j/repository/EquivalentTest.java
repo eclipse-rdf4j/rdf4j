@@ -181,15 +181,12 @@ public abstract class EquivalentTest {
 	@Before
 	public void setUp() throws Exception {
 		repository = createRepository();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.begin();
 			con.clear();
 			con.add(t1, RDF.VALUE, term1);
 			con.add(t2, RDF.VALUE, term2);
 			con.commit();
-		} finally {
-			con.close();
 		}
 	}
 
@@ -207,14 +204,11 @@ public abstract class EquivalentTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.begin();
 			con.clear();
 			con.clearNamespaces();
 			con.commit();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -278,19 +272,14 @@ public abstract class EquivalentTest {
 
 	private boolean evaluateSparql(String qry)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.begin();
 			TupleQuery query = con.prepareTupleQuery(QueryLanguage.SPARQL, qry);
-			TupleQueryResult evaluate = query.evaluate();
-			try {
+			try (TupleQueryResult evaluate = query.evaluate()) {
 				return evaluate.hasNext();
 			} finally {
-				evaluate.close();
 				con.commit();
 			}
-		} finally {
-			con.close();
 		}
 	}
 }

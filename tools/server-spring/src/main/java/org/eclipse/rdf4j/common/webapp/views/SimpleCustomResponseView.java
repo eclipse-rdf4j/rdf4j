@@ -52,9 +52,8 @@ public class SimpleCustomResponseView implements View {
 		}
 		String contentType = (String) model.get(CONTENT_TYPE_KEY);
 		Integer contentLength = (Integer) model.get(CONTENT_LENGTH_KEY);
-		InputStream content = (InputStream) model.get(CONTENT_KEY);
 
-		try {
+		try (InputStream content = (InputStream) model.get(CONTENT_KEY)) {
 			response.setStatus(sc);
 
 			try (ServletOutputStream out = response.getOutputStream()) {
@@ -69,10 +68,6 @@ public class SimpleCustomResponseView implements View {
 				} else {
 					response.setContentLength(0);
 				}
-			}
-		} finally {
-			if (content != null) {
-				content.close();
 			}
 		}
 	}

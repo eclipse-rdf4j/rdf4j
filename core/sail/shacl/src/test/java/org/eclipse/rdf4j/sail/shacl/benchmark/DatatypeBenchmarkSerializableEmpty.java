@@ -144,6 +144,8 @@ public class DatatypeBenchmarkSerializableEmpty {
 			}
 		}
 
+		repository.shutDown();
+
 	}
 
 }

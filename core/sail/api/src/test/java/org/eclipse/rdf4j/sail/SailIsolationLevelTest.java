@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -29,9 +26,12 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 /**
  * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
- * 
+ *
  * @author James Leigh
  */
 public abstract class SailIsolationLevelTest {
@@ -490,11 +490,13 @@ public abstract class SailIsolationLevelTest {
 	protected Literal readLiteral(SailConnection con, final IRI subj, final IRI pred) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, null,
 				false);) {
-			if (!stmts.hasNext())
+			if (!stmts.hasNext()) {
 				return null;
+			}
 			Value obj = stmts.next().getObject();
-			if (stmts.hasNext())
+			if (stmts.hasNext()) {
 				Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+			}
 			return (Literal) obj;
 		}
 	}
