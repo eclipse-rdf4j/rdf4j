@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
 import org.eclipse.rdf4j.federated.util.FileUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
@@ -42,6 +43,11 @@ public class FedXRepository extends SailRepository {
 	private final FedX federation;
 
 	private FederationContext federationContext;
+
+	/**
+	 * The external {@link FederatedServiceResolver}, if any
+	 */
+	private FederatedServiceResolver serviceResolver = null;
 
 	public FedXRepository(FedX federation) {
 		super(federation);
@@ -75,13 +81,19 @@ public class FedXRepository extends SailRepository {
 
 		QueryManager queryManager = new QueryManager(federationManager, this);
 
-		federationContext = new FederationContext(federationManager, endpointManager, queryManager, cache, monitoring);
-		federation.setFederationContext(federationContext);
+		DelegateFederatedServiceResolver fedxServiceResolver = new DelegateFederatedServiceResolver(
+				endpointManager);
+		if (serviceResolver != null) {
+			fedxServiceResolver.setDelegate(serviceResolver);
+		}
 
-		DelegateFederatedServiceResolver.initialize(federationContext);
+		federationContext = new FederationContext(federationManager, endpointManager, queryManager, cache,
+				fedxServiceResolver, monitoring);
+		federation.setFederationContext(federationContext);
 
 		queryManager.initialize();
 		federationManager.initialize(federation, federationContext);
+		fedxServiceResolver.initialize();
 
 		if (Config.getConfig().isEnableJMX()) {
 			try {
@@ -92,6 +104,13 @@ public class FedXRepository extends SailRepository {
 		}
 
 		super.initializeInternal();
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		this.serviceResolver = resolver;
+		super.setFederatedServiceResolver(resolver);
+
 	}
 
 	/**

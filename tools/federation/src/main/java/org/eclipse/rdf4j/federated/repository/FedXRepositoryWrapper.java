@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
@@ -35,13 +37,16 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  * @see FedXFactory
  *
  */
-/* package */ class FedXRepositoryWrapper extends RepositoryWrapper implements RepositoryResolverClient {
+/* package */ class FedXRepositoryWrapper extends RepositoryWrapper
+		implements RepositoryResolverClient, FederatedServiceResolverClient {
 
 	private final FedXRepositoryConfig fedXConfig;
 
 	private File dataDir;
 
 	private RepositoryResolver repositoryResolver;
+
+	private FederatedServiceResolver serviceResolver;
 
 	/* package */ FedXRepositoryWrapper(FedXRepositoryConfig fedXConfig) {
 		super();
@@ -108,6 +113,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 			// apply a repository resolver (if any) set from RepositoryManager
 			FedXFactory factory = FedXFactory.newFederation()
 					.withRepositoryResolver(repositoryResolver)
+					.withFederatedServiceResolver(serviceResolver)
 					.withFedXBaseDir(baseDir);
 
 			if (dataConfigFile != null) {
@@ -139,5 +145,10 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 	@Override
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		this.repositoryResolver = resolver;
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		this.serviceResolver = resolver;
 	}
 }

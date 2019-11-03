@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
-import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
@@ -265,7 +264,7 @@ public class FederationManager {
 			log.warn("Failed to shutdown left join scheduler: " + e.getMessage());
 			log.debug("Details: ", e);
 		}
-		DelegateFederatedServiceResolver.shutdown(); // shutdown any federated service resolver
+		federationContext.getFederatedServiceResolver().shutDown();
 		federation.shutDownInternal();
 		federationContext.getCache().persist();
 		Config.reset();

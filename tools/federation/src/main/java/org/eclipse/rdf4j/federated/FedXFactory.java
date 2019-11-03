@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.sail.Sail;
 import org.slf4j.Logger;
@@ -103,6 +104,7 @@ public class FedXFactory {
 	}
 
 	protected RepositoryResolver repositoryResolver;
+	protected FederatedServiceResolver federatedServiceResolver;
 	protected List<Endpoint> members = new ArrayList<>();
 	protected File fedxConfig;
 	protected File fedxBaseDir;
@@ -113,6 +115,11 @@ public class FedXFactory {
 
 	public FedXFactory withRepositoryResolver(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
+		return this;
+	}
+
+	public FedXFactory withFederatedServiceResolver(FederatedServiceResolver federatedServiceResolver) {
+		this.federatedServiceResolver = federatedServiceResolver;
 		return this;
 	}
 
@@ -221,6 +228,9 @@ public class FedXFactory {
 		FedXRepository repo = new FedXRepository(federation);
 		if (this.repositoryResolver != null) {
 			repo.setRepositoryResolver(repositoryResolver);
+		}
+		if (this.federatedServiceResolver != null) {
+			repo.setFederatedServiceResolver(federatedServiceResolver);
 		}
 		return repo;
 	}

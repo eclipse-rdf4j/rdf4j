@@ -17,7 +17,6 @@ import java.util.Map.Entry;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
-import org.eclipse.rdf4j.repository.Repository;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -81,7 +80,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 		Config.getConfig().set(key, value);
 	}
 
-	public Repository getRepository() {
+	public FedXRepository getRepository() {
 		return repository;
 	}
 

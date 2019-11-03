@@ -22,12 +22,20 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -42,12 +50,12 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	@TempDir
 	Path tempDir;
 
-	private LocalRepositoryManager repoManager;
+	private TestLocalRepositoryManager repoManager;
 
 	@BeforeEach
 	public void before() throws Exception {
 		File baseDir = new File(tempDir.toFile(), "data");
-		repoManager = new LocalRepositoryManager(baseDir);
+		repoManager = new TestLocalRepositoryManager(baseDir);
 		repoManager.init();
 	}
 
@@ -121,6 +129,82 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 	}
 
+	@Test
+	public void testWithLocalRepositoryManager_CustomFederatedServiceResolver() throws Exception {
+
+		addMemoryStore("repo1");
+		addMemoryStore("repo2");
+		addMemoryStore("serviceRepo");
+
+		// register custom federated service resolver
+		AbstractFederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
+			@Override
+			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+				if (serviceUrl.equals("http://serviceRepo")) {
+					Repository serviceRepo = repoManager.getRepository("serviceRepo");
+					return new RepositoryFederatedService(serviceRepo, false) {
+						@Override
+						protected synchronized RepositoryConnection getConnection()
+								throws org.eclipse.rdf4j.repository.RepositoryException {
+							// explicitly make this method synchronized to avoid dangling
+							// connections due to parallel access
+							return super.getConnection();
+						};
+					};
+				}
+				throw new IllegalArgumentException("Service url cannot be resolved: " + serviceUrl);
+			}
+		};
+		repoManager.externalResolver = serviceResolver;
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		addData("repo1", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+		addData("repo2", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+
+		addData("serviceRepo", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p1"), FOAF.NAME, vf.createLiteral("Person 1")),
+				vf.createStatement(vf.createIRI("http://ex.org/p2"), FOAF.NAME, vf.createLiteral("Person 2"))));
+
+		Model members = new TreeModel();
+		members.add(vf.createIRI("http://ex.org/repo1"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		members.add(vf.createIRI("http://ex.org/repo1"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo1"));
+		members.add(vf.createIRI("http://ex.org/repo2"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		members.add(vf.createIRI("http://ex.org/repo2"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo2"));
+
+		FedXRepositoryConfig fedXRepoConfig = new FedXRepositoryConfig();
+		fedXRepoConfig.setMembers(members);
+
+		repoManager.addRepositoryConfig(new RepositoryConfig("federation", fedXRepoConfig));
+
+		Repository repo = repoManager.getRepository("federation");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+
+			TupleQuery tq = conn.prepareTupleQuery(
+					"SELECT * WHERE { ?person a ?PERSON . { SERVICE <http://serviceRepo> { ?person ?NAME ?name} } }");
+			tq.setBinding("PERSON", FOAF.PERSON);
+			tq.setBinding("NAME", FOAF.NAME);
+
+			List<BindingSet> bindings = Iterations.asList(tq.evaluate());
+			Assertions.assertEquals(2, bindings.size()); // two persons
+
+			BindingSet b1 = bindings.get(0);
+			BindingSet b2 = bindings.get(1);
+
+			if (b1.getValue("person").equals(vf.createIRI("http://ex.org/p1"))) {
+				Assertions.assertEquals(vf.createLiteral("Person 1"), b1.getValue("name"));
+				Assertions.assertEquals(vf.createLiteral("Person 2"), b2.getValue("name"));
+			} else {
+				Assertions.assertEquals(vf.createLiteral("Person 2"), b1.getValue("name"));
+				Assertions.assertEquals(vf.createLiteral("Person 1"), b2.getValue("name"));
+			}
+
+		}
+
+	}
+
 	protected void addMemoryStore(String repoId) throws Exception {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(new MemoryStoreConfig());
@@ -140,6 +224,31 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 	@Override
 	protected FederationContext federationContext() {
 		throw new UnsupportedOperationException("Not available in this context.");
+	}
+
+	static class TestLocalRepositoryManager extends LocalRepositoryManager {
+
+		protected AbstractFederatedServiceResolver externalResolver;
+
+		public TestLocalRepositoryManager(File baseDir) {
+			super(baseDir);
+		}
+
+		@Override
+		protected FederatedServiceResolver getFederatedServiceResolver() {
+			if (externalResolver != null) {
+				return externalResolver;
+			}
+			return super.getFederatedServiceResolver();
+		}
+
+		@Override
+		public void shutDown() {
+			if (externalResolver != null) {
+				externalResolver.shutDown();
+			}
+			super.shutDown();
+		}
 	}
 
 }

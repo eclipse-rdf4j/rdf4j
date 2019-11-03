@@ -111,7 +111,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			public ValueFactory getValueFactory() {
 				return SimpleValueFactory.getInstance();
 			}
-		}, DelegateFederatedServiceResolver.getInstance());
+		}, federationContext.getFederatedServiceResolver());
 		this.federationContext = federationContext;
 		this.executor = federationContext.getManager().getExecutor();
 		this.cache = federationContext.getCache();
