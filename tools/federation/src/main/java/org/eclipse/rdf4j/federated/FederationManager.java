@@ -265,7 +265,6 @@ public class FederationManager {
 			log.debug("Details: ", e);
 		}
 		federationContext.getFederatedServiceResolver().shutDown();
-		federation.shutDownInternal();
 		federationContext.getCache().persist();
 		Config.reset();
 	}

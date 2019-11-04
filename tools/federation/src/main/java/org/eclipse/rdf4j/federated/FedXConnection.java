@@ -80,7 +80,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	public FedXConnection(FedX federation, FederationContext federationContext)
 			throws SailException {
-		super(new SailBaseDefaultImpl());
+		super(federation);
 		this.federation = federation;
 		this.federationContext = federationContext;
 	}

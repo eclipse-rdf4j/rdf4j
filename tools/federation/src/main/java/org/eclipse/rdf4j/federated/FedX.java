@@ -9,11 +9,9 @@ package org.eclipse.rdf4j.federated;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
@@ -27,9 +25,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,12 +42,11 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  * 
  */
-public class FedX implements Sail, RepositoryResolverClient {
+public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
 
 	protected final List<Endpoint> members = new ArrayList<Endpoint>();
-	protected boolean open = false;
 
 	protected FederationContext federationContext;
 
@@ -59,6 +56,7 @@ public class FedX implements Sail, RepositoryResolverClient {
 		if (endpoints != null) {
 			members.addAll(endpoints);
 		}
+		setDefaultIsolationLevel(IsolationLevels.NONE);
 	}
 
 	public void setFederationContext(FederationContext federationContext) {
@@ -74,7 +72,7 @@ public class FedX implements Sail, RepositoryResolverClient {
 	 * @param endpoint
 	 */
 	protected void addMember(Endpoint endpoint) {
-		if (isOpen()) {
+		if (isInitialized()) {
 			initializeMember(endpoint);
 		}
 		members.add(endpoint);
@@ -109,7 +107,7 @@ public class FedX implements Sail, RepositoryResolverClient {
 	}
 
 	@Override
-	public SailConnection getConnection() throws SailException {
+	protected SailConnection getConnectionInternal() throws SailException {
 		return new FedXConnection(this, federationContext);
 	}
 
@@ -124,12 +122,11 @@ public class FedX implements Sail, RepositoryResolverClient {
 	}
 
 	@Override
-	public void initialize() throws SailException {
+	protected void initializeInternal() throws SailException {
 		log.debug("Initializing federation....");
 		for (Endpoint member : members) {
 			initializeMember(member);
 		}
-		open = true;
 	}
 
 	protected void initializeMember(Endpoint member) throws SailException {
@@ -161,21 +158,13 @@ public class FedX implements Sail, RepositoryResolverClient {
 		throw new UnsupportedOperationException("Operation not supported yet.");
 	}
 
-	@Override
-	public void shutDown() throws SailException {
-		try {
-			federationContext.getManager().shutDown();
-		} catch (FedXException e) {
-			throw new SailException(e);
-		}
-	}
-
 	/**
 	 * Try to shut down all federation members.
 	 * 
 	 * @throws FedXException if not all members could be shut down
 	 */
-	protected void shutDownInternal() throws FedXException {
+	@Override
+	protected void shutDownInternal() throws SailException {
 
 		List<Exception> errors = new ArrayList<>();
 		for (Endpoint member : members) {
@@ -189,8 +178,6 @@ public class FedX implements Sail, RepositoryResolverClient {
 
 		if (errors.size() > 0)
 			throw new SailException("Federation could not be shut down. See logs for details.");
-
-		open = false;
 	}
 
 	/**
@@ -199,23 +186,6 @@ public class FedX implements Sail, RepositoryResolverClient {
 	 */
 	public List<Endpoint> getMembers() {
 		return Collections.unmodifiableList(members);
-	}
-
-	public boolean isOpen() {
-		return open;
-	}
-
-	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.NONE;
-	}
-
-	protected static final List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>(
-			Arrays.asList(IsolationLevels.NONE));
-
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return supportedIsolationLevels;
 	}
 
 	@Override
