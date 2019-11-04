@@ -18,7 +18,7 @@
 	<description>Server, Workbench, Console and other end-user tools for RDF4J.</description>
 
 	<properties>
-		<spring.version>5.1.7.RELEASE</spring.version>
+		<spring.version>5.2.1.RELEASE</spring.version>
 	</properties>
 
 	<modules>
