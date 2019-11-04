@@ -120,7 +120,7 @@ public interface Endpoint {
 	 * @oaram {@link FederationContext}
 	 * @throws RepositoryException
 	 */
-	public void initialize(FederationContext federationContext) throws RepositoryException;
+	public void init(FederationContext federationContext) throws RepositoryException;
 
 	/**
 	 * Shutdown this {@link Endpoint}

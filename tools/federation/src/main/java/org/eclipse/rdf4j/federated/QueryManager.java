@@ -72,7 +72,7 @@ public class QueryManager {
 		this.nextQueryID = new AtomicBigInteger(lastQueryId);
 	}
 
-	public void initialize() {
+	public void init() {
 
 		// initialize prefix declarations, if any
 		String prefixFile = Config.getConfig().getPrefixDeclarations();

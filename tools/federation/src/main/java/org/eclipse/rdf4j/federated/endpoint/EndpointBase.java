@@ -146,7 +146,7 @@ public abstract class EndpointBase implements Endpoint {
 	}
 
 	@Override
-	public void initialize(FederationContext federationContext) throws RepositoryException {
+	public void init(FederationContext federationContext) throws RepositoryException {
 		if (isInitialized())
 			return;
 		Repository repo = getRepository();

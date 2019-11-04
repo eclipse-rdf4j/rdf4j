@@ -27,12 +27,12 @@ public class ManagedRepositoryEndpoint extends RepositoryEndpoint {
 	}
 
 	@Override
-	public void initialize(FederationContext federationContext) throws RepositoryException {
+	public void init(FederationContext federationContext) throws RepositoryException {
 		if (isInitialized()) {
 			return;
 		}
 		repository.init();
-		super.initialize(federationContext);
+		super.init(federationContext);
 	}
 
 	@Override

@@ -94,8 +94,8 @@ public class FedXRepository extends SailRepository {
 
 		super.initializeInternal();
 
-		queryManager.initialize();
-		federationManager.initialize(federation, federationContext);
+		queryManager.init();
+		federationManager.init(federation, federationContext);
 		fedxServiceResolver.initialize();
 
 		if (Config.getConfig().isEnableJMX()) {

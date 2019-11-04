@@ -140,7 +140,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 			}
 		}
 		try {
-			member.initialize(federationContext);
+			member.init(federationContext);
 		} catch (RepositoryException e) {
 			log.error("Initialization of endpoint " + member.getId() + " failed: " + e.getMessage());
 			throw new SailException(e);

@@ -86,7 +86,7 @@ public class FederationManager {
 
 	}
 
-	public void initialize(FedX federation, FederationContext federationContext) {
+	public void init(FedX federation, FederationContext federationContext) {
 		this.federation = federation;
 		this.federationContext = federationContext;
 		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
