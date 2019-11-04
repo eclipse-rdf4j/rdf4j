@@ -77,7 +77,7 @@ public class RepositoryPerformance {
 
 				System.out
 						.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
-				List<Future<?>> tasks = new ArrayList<Future<?>>();
+				List<Future<?>> tasks = new ArrayList<>();
 				start = System.currentTimeMillis();
 				int count = 0;
 				for (final IRI instance : instances) {
@@ -89,15 +89,12 @@ public class RepositoryPerformance {
 
 					// b) multithreaded
 					final RepositoryConnection _conn = conn;
-					Future<?> task = executor.submit(new Runnable() {
-						@Override
-						public void run() {
-							try {
-								runQuery(_conn, instance);
-							} catch (Exception e) {
-								System.err.println("Error while performing query evaluation for instance "
-										+ instance.stringValue() + ": " + e.getMessage());
-							}
+					Future<?> task = executor.submit(() -> {
+						try {
+							runQuery(_conn, instance);
+						} catch (Exception e) {
+							System.err.println("Error while performing query evaluation for instance "
+									+ instance.stringValue() + ": " + e.getMessage());
 						}
 					});
 					tasks.add(task);
@@ -121,7 +118,7 @@ public class RepositoryPerformance {
 
 		private List<IRI> retrieveInstances(RepositoryConnection conn) throws Exception {
 
-			List<IRI> res = new ArrayList<IRI>();
+			List<IRI> res = new ArrayList<>();
 			RepositoryResult<Statement> qres = null;
 			try {
 				qres = conn.getStatements(null, RDF.TYPE, type, false);

@@ -46,7 +46,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
 
-	protected final List<Endpoint> members = new ArrayList<Endpoint>();
+	protected final List<Endpoint> members = new ArrayList<>();
 
 	protected FederationContext federationContext;
 

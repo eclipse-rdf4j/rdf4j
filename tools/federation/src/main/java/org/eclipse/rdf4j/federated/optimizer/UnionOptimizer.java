@@ -43,11 +43,11 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 	public void meet(Union union) {
 
 		// retrieve the union arguments, also those of nested unions
-		List<TupleExpr> args = new ArrayList<TupleExpr>();
+		List<TupleExpr> args = new ArrayList<>();
 		handleUnionArgs(union, args);
 
 		// remove any tuple expressions that do not produce any result
-		List<TupleExpr> filtered = new ArrayList<TupleExpr>(args.size());
+		List<TupleExpr> filtered = new ArrayList<>(args.size());
 		for (TupleExpr arg : args) {
 			if (arg instanceof EmptyResult)
 				continue;
@@ -56,7 +56,7 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 
 		// create a NUnion having the arguments in one layer
 		// however, check if we only have zero or one argument first
-		if (filtered.size() == 0) {
+		if (filtered.isEmpty()) {
 			union.replaceWith(new EmptyNUnion(args, queryInfo));
 		}
 

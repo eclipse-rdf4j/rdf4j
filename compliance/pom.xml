@@ -15,7 +15,6 @@
     <module>repository</module>
     <module>rio</module>
     <module>model</module>
-    <module>store</module>
     <module>serql</module>
     <module>sparql</module>
     <module>shacl</module>

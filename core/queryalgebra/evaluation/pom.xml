@@ -31,8 +31,8 @@
 			<artifactId>rdf4j-query</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<!-- FIXME: Move SPARQLFederatedService out to another module to avoid 
-			the following dependency -->
+		<!-- FIXME: Move SPARQLFederatedService out to another module to avoid the following 
+			dependency -->
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-sparql</artifactId>
@@ -53,6 +53,7 @@
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
+	
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>

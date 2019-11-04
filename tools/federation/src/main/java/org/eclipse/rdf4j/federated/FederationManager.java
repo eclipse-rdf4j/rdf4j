@@ -105,17 +105,17 @@ public class FederationManager {
 
 		if (joinScheduler != null)
 			joinScheduler.abort();
-		joinScheduler = new ControlledWorkerScheduler<BindingSet>(Config.getConfig().getJoinWorkerThreads(),
+		joinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getJoinWorkerThreads(),
 				"Join Scheduler");
 
 		if (unionScheduler != null)
 			unionScheduler.abort();
-		unionScheduler = new ControlledWorkerScheduler<BindingSet>(Config.getConfig().getUnionWorkerThreads(),
+		unionScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getUnionWorkerThreads(),
 				"Union Scheduler");
 
 		if (leftJoinScheduler != null)
 			leftJoinScheduler.abort();
-		leftJoinScheduler = new ControlledWorkerScheduler<BindingSet>(Config.getConfig().getLeftJoinWorkerThreads(),
+		leftJoinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getLeftJoinWorkerThreads(),
 				"Left Join Scheduler");
 
 	}
@@ -215,7 +215,7 @@ public class FederationManager {
 	public void removeAll() throws RepositoryException {
 		log.info("Removing all endpoints from federation.");
 
-		for (Endpoint e : new ArrayList<Endpoint>(federation.getMembers())) {
+		for (Endpoint e : new ArrayList<>(federation.getMembers())) {
 			removeEndpoint(e, false);
 		}
 
@@ -281,8 +281,8 @@ public class FederationManager {
 	public WorkerUnionBase<BindingSet> createWorkerUnion(QueryInfo queryInfo) {
 		FederationEvalStrategy strategy = getStrategy();
 		if (type == FederationType.LOCAL)
-			return new SynchronousWorkerUnion<BindingSet>(strategy, queryInfo);
-		return new ControlledWorkerUnion<BindingSet>(strategy, unionScheduler, queryInfo);
+			return new SynchronousWorkerUnion<>(strategy, queryInfo);
+		return new ControlledWorkerUnion<>(strategy, unionScheduler, queryInfo);
 
 	}
 

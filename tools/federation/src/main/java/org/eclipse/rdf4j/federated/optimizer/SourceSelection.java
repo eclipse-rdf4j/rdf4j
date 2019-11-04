@@ -67,7 +67,7 @@ public class SourceSelection {
 	/**
 	 * Map statements to their sources. Use synchronized access!
 	 */
-	protected Map<StatementPattern, List<StatementSource>> stmtToSources = new ConcurrentHashMap<StatementPattern, List<StatementSource>>();
+	protected Map<StatementPattern, List<StatementSource>> stmtToSources = new ConcurrentHashMap<>();
 
 	/**
 	 * Perform source selection for the provided statements using cache or remote ASK queries.
@@ -81,7 +81,7 @@ public class SourceSelection {
 	 */
 	public void doSourceSelection(List<StatementPattern> stmts) {
 
-		List<CheckTaskPair> remoteCheckTasks = new ArrayList<CheckTaskPair>();
+		List<CheckTaskPair> remoteCheckTasks = new ArrayList<>();
 
 		// for each statement determine the relevant sources
 		for (StatementPattern stmt : stmts) {
@@ -91,7 +91,7 @@ public class SourceSelection {
 				continue;
 			}
 
-			stmtToSources.put(stmt, new ArrayList<StatementSource>());
+			stmtToSources.put(stmt, new ArrayList<>());
 
 			SubQuery q = new SubQuery(stmt);
 
@@ -155,7 +155,7 @@ public class SourceSelection {
 	 * @return the relevant sources
 	 */
 	public Set<Endpoint> getRelevantSources() {
-		Set<Endpoint> endpoints = new HashSet<Endpoint>();
+		Set<Endpoint> endpoints = new HashSet<>();
 		for (List<StatementSource> sourceList : stmtToSources.values())
 			for (StatementSource source : sourceList)
 				endpoints
@@ -209,7 +209,7 @@ public class SourceSelection {
 		 * @param tasks
 		 */
 		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, Cache cache) {
-			if (tasks.size() == 0)
+			if (tasks.isEmpty())
 				return;
 
 			latch = new CountDownLatch(tasks.size());

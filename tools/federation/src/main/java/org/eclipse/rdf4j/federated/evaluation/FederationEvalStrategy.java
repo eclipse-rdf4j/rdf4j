@@ -164,7 +164,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		if (expr instanceof EmptyResult)
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 
 		return super.evaluate(expr, bindings);
 	}
@@ -203,18 +203,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// return the statement, otherwise empty result
 		if (subj != null && pred != null && obj != null) {
 			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj)) {
-				return new SingletonIteration<Statement, QueryEvaluationException>(
+				return new SingletonIteration<>(
 						FedXUtil.valueFactory().createStatement(subj, pred, obj));
 			}
-			return new EmptyIteration<Statement, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		// form the union of results from relevant endpoints
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
 				obj);
 
-		if (sources.size() == 0)
-			return new EmptyIteration<Statement, QueryEvaluationException>();
+		if (sources.isEmpty())
+			return new EmptyIteration<>();
 
 		if (sources.size() == 1) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
@@ -222,7 +222,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		// TODO why not collect in parallel?
-		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<Statement>(this, queryInfo);
+		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(this, queryInfo);
 
 		for (StatementSource source : sources) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
@@ -252,9 +252,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		try {
 			Endpoint source = query.getSource();
 			return source.getTripleSource().getStatements(query.getQueryString(), query.getQueryInfo().getQueryType());
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 
@@ -330,7 +328,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			throws QueryEvaluationException {
 
 		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
-		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<BindingSet>(this, unionScheduler,
+		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(this, unionScheduler,
 				union.getQueryInfo());
 
 		for (int i = 0; i < union.getNumberOfArguments(); i++) {
@@ -407,7 +405,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
 			final List<BindingSet> bindings) throws QueryEvaluationException {
 
-		return new ServiceJoinIterator(new CollectionIteration<BindingSet, QueryEvaluationException>(bindings),
+		return new ServiceJoinIterator(new CollectionIteration<>(bindings),
 				service.getService(), EmptyBindingSet.getInstance(), this);
 	}
 

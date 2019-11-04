@@ -81,11 +81,11 @@ public class QueryStringUtil {
 	public static String toString(StatementPattern stmt) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("{");
-		appendVar(sb, stmt.getSubjectVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getSubjectVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("; ");
-		appendVar(sb, stmt.getPredicateVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getPredicateVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("; ");
-		appendVar(sb, stmt.getObjectVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getObjectVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("}");
 		return sb.toString();
 	}
@@ -126,14 +126,14 @@ public class QueryStringUtil {
 	public static String selectQueryString(FedXStatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
 		res.append("SELECT ");
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		for (String var : varNames)
@@ -179,12 +179,12 @@ public class QueryStringUtil {
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
 		StringBuilder sb = new StringBuilder();
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		for (ExclusiveStatement s : group.getStatements())
 			sb.append(constructStatement(s, varNames, bindings));
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		StringBuilder res = new StringBuilder();
@@ -222,7 +222,7 @@ public class QueryStringUtil {
 	public static String askQueryString(ExclusiveGroup group, BindingSet bindings) {
 
 		StringBuilder sb = new StringBuilder();
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		for (ExclusiveStatement s : group.getStatements())
 			sb.append(constructStatement(s, varNames, bindings));
@@ -252,7 +252,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, Boolean evaluated) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
@@ -304,7 +304,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, AtomicBoolean evaluated) {
 
-		Set<String> varNames = new LinkedHashSet<String>();
+		Set<String> varNames = new LinkedHashSet<>();
 		StringBuilder res = new StringBuilder();
 
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
@@ -363,7 +363,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
@@ -410,7 +410,7 @@ public class QueryStringUtil {
 	 */
 	public static String askQueryString(StatementPattern stmt, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -431,7 +431,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -452,7 +452,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		StringBuilder res = new StringBuilder();
 
 		res.append("SELECT * WHERE { ");
@@ -697,20 +697,20 @@ public class QueryStringUtil {
 	 * @throws IOException
 	 */
 	public static List<String> loadQueries(String queryFile) throws FileNotFoundException, IOException {
-		ArrayList<String> res = new ArrayList<String>();
+		ArrayList<String> res = new ArrayList<>();
 		try (BufferedReader in = new BufferedReader(new FileReader(queryFile));) {
 			String tmp;
 			String tmpQuery = "";
 			while ((tmp = in.readLine()) != null) {
-				if (tmp.equals("")) {
-					if (!tmpQuery.equals(""))
+				if (tmp.isEmpty()) {
+					if (!tmpQuery.isEmpty())
 						res.add(tmpQuery);
 					tmpQuery = "";
 				} else {
 					tmpQuery = tmpQuery + tmp;
 				}
 			}
-			if (!tmpQuery.equals(""))
+			if (!tmpQuery.isEmpty())
 				res.add(tmpQuery);
 			return res;
 		}

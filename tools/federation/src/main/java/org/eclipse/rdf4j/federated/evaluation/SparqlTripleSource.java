@@ -93,7 +93,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 				if (!res.hasNext()) {
 					Iterations.closeCloseable(res);
 					conn.close();
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 			} else if (bindings.size() > 0) {

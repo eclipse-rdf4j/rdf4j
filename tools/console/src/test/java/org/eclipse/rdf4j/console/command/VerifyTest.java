@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 
 import org.eclipse.rdf4j.RDF4JException;
 import static org.junit.Assert.assertFalse;

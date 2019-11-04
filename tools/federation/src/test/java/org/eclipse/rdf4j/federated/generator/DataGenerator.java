@@ -173,7 +173,7 @@ public class DataGenerator {
 
 		// create up to 4 authors (randomly select) for each publication
 		int hasAuthors = rand(4);
-		Set<Integer> authors = new HashSet<Integer>();
+		Set<Integer> authors = new HashSet<>();
 		for (int i = 0; i < hasAuthors; i++) {
 			int authorId = rand(AUTHORS);
 			if (authors.contains(authorId))

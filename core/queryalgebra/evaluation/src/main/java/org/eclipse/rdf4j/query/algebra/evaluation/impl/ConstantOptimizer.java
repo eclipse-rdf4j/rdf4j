@@ -213,7 +213,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			List<ValueExpr> args = functionCall.getArgs();
 
-			if (args.size() == 0) {
+			if (args.isEmpty()) {
 				/*
 				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW() which
 				 * generate a single value for the entire query and which can be safely optimized to a constant. Other

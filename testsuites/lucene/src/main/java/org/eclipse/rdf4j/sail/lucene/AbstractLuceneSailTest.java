@@ -447,7 +447,7 @@ public abstract class AbstractLuceneSailTest {
 							}
 
 							// check if expected results were existing
-							if (expectedResult.size() != 0) {
+							if (!expectedResult.isEmpty()) {
 								matches = false;
 							}
 
@@ -1028,6 +1028,7 @@ public abstract class AbstractLuceneSailTest {
 
 				private long iterationCount = 10 + Math.round(Math.random() * 100);
 
+				@Override
 				public void run() {
 					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();

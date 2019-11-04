@@ -146,14 +146,12 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 				if (t.hasStatements(st, bindings))
 					return new SingleBindingSetIteration(bindings);
 			}
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 
 		// XXX return NULL instead and add an additional check?
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 
 	@Override

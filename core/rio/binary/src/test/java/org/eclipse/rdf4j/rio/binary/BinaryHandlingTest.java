@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.rio.binary;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.StringWriter;
-import java.nio.charset.Charset;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;

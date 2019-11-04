@@ -112,7 +112,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	private static void initializeServer() throws Exception {
 
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
+		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++)
 			repositoryIds.add("endpoint" + i);
 		File dataDir = new File(tempDir.toFile(), "datadir");

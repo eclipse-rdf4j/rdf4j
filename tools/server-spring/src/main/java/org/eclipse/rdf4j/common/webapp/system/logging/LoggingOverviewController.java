@@ -43,8 +43,7 @@ public class LoggingOverviewController implements Controller {
 		model.put("logreader", logReader);
 		model.put("offset", new Integer(offset));
 		model.put("count", new Integer(count));
-		model.put("countsAvailable", Arrays.asList(new Integer[] { Integer.valueOf(50), Integer.valueOf(100),
-				Integer.valueOf(200), Integer.valueOf(500) }));
+		model.put("countsAvailable", Arrays.asList(new Integer[] { 50, 100, 200, 500 }));
 		if (logReader.supportsLevelFilter()) {
 			LogLevel level = logReader.getLevel();
 			model.put("level", (level == null) ? "ALL" : level.toString());
@@ -161,7 +160,7 @@ public class LoggingOverviewController implements Controller {
 		int result = 0;
 
 		String offsetString = request.getParameter("offset");
-		if (offsetString != null && !offsetString.equals("")) {
+		if (offsetString != null && !offsetString.isEmpty()) {
 			try {
 				result = Integer.parseInt(offsetString);
 			} catch (NumberFormatException nfe) {
@@ -176,7 +175,7 @@ public class LoggingOverviewController implements Controller {
 		int result = 50; // Default entries count
 
 		String countString = request.getParameter("count");
-		if (countString != null && !countString.equals("")) {
+		if (countString != null && !countString.isEmpty()) {
 			try {
 				result = Integer.parseInt(countString);
 			} catch (NumberFormatException nfe) {

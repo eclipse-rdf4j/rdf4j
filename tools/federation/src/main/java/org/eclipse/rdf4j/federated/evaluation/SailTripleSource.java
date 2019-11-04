@@ -79,7 +79,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 					res = new FilteringIteration(filterExpr, res, SailTripleSource.this.strategy);
 				if (!res.hasNext()) {
 					Iterations.closeCloseable(res);
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 			} else if (bindings.size() > 0) {
@@ -119,7 +119,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 						SailTripleSource.this.strategy);
 				if (!filteredRes.hasNext()) {
 					Iterations.closeCloseable(filteredRes);
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 				resultHolder.set(filteredRes);

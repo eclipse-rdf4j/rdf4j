@@ -44,7 +44,7 @@ public class EndpointManager {
 	}
 
 	// map enpoint ids and connections to the corresponding endpoint
-	protected HashMap<String, Endpoint> endpoints = new HashMap<String, Endpoint>();
+	protected HashMap<String, Endpoint> endpoints = new HashMap<>();
 
 	protected boolean inRepair = false;
 	protected Long lastRepaired = -1L;
@@ -143,7 +143,7 @@ public class EndpointManager {
 	 * @throws NoSuchElementException if there is no mapping for some endpoint id
 	 */
 	public List<Endpoint> getEndpoints(Set<String> endpointIDs) throws NoSuchElementException {
-		List<Endpoint> res = new ArrayList<Endpoint>();
+		List<Endpoint> res = new ArrayList<>();
 		for (String endpointID : endpointIDs) {
 			Endpoint e = endpoints.get(endpointID);
 			if (e == null)

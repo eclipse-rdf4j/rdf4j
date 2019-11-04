@@ -211,7 +211,7 @@ public abstract class FedXBaseTest {
 			parser.setPreserveBNodeIDs(true);
 			parser.setValueFactory(SimpleValueFactory.getInstance());
 
-			Set<Statement> result = new LinkedHashSet<Statement>();
+			Set<Statement> result = new LinkedHashSet<>();
 			parser.setRDFHandler(new StatementCollector(result));
 
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
@@ -306,10 +306,10 @@ public abstract class FedXBaseTest {
 
 			List<BindingSet> expectedBindings = Iterations.asList(expectedResultTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
 
-			List<BindingSet> unexpectedBindings = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
 			StringBuilder message = new StringBuilder(128);

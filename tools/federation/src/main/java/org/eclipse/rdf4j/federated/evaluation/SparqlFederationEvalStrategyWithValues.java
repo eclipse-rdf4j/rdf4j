@@ -67,7 +67,7 @@ public class SparqlFederationEvalStrategyWithValues extends SparqlFederationEval
 				result = new BoundJoinVALUESConversionIteration(result, bindings); // apply conversion
 				result = new FilteringIteration(filterExpr, result, this); // apply filter
 				if (!result.hasNext())
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 			} else {
 				result = new BoundJoinVALUESConversionIteration(result, bindings);
 			}

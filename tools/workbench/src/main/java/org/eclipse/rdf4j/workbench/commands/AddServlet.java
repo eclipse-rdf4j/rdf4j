@@ -89,9 +89,7 @@ public class AddServlet extends TransformationServlet {
 
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.add(stream, baseURI, format, context);
-		} catch (RDFParseException exc) {
-			throw new BadRequestException(exc.getMessage(), exc);
-		} catch (IllegalArgumentException exc) {
+		} catch (RDFParseException | IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
 	}
@@ -116,11 +114,7 @@ public class AddServlet extends TransformationServlet {
 			try (RepositoryConnection con = repository.getConnection()) {
 				con.add(url, baseURI, format, context);
 			}
-		} catch (RDFParseException exc) {
-			throw new BadRequestException(exc.getMessage(), exc);
-		} catch (MalformedURLException exc) {
-			throw new BadRequestException(exc.getMessage(), exc);
-		} catch (IllegalArgumentException exc) {
+		} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
 	}

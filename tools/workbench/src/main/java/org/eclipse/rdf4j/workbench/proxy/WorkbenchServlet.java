@@ -66,9 +66,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 		try {
 			manager = createRepositoryManager(param);
-		} catch (IOException e) {
-			throw new ServletException(e);
-		} catch (RepositoryException e) {
+		} catch (IOException | RepositoryException e) {
 			throw new ServletException(e);
 		}
 	}
@@ -126,18 +124,16 @@ public class WorkbenchServlet extends AbstractServlet {
 		final String repoID = pathInfo.substring(1, idx);
 		try {
 			service(repoID, req, resp);
-		} catch (RepositoryConfigException e) {
-			throw new ServletException(e);
 		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
+		} catch (RepositoryConfigException | RepositoryException e) {
+			throw new ServletException(e);
 		} catch (ServletException e) {
 			if (e.getCause() instanceof UnauthorizedException) {
 				handleUnauthorizedException(req, resp);
 			} else {
 				throw e;
 			}
-		} catch (RepositoryException e) {
-			throw new ServletException(e);
 		}
 	}
 

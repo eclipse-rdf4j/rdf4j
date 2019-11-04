@@ -108,7 +108,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			else
 				nBindings = 3;
 
-			bindings = new ArrayList<BindingSet>(nBindings);
+			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
 			while (count < nBindings && leftIter.hasNext()) {

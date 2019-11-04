@@ -56,8 +56,8 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 
 	protected ArrayList<BindingSet> computeResult() throws QueryEvaluationException {
 
-		List<BindingInfo> a_res = new ArrayList<BindingInfo>();
-		List<BindingInfo> b_res = new ArrayList<BindingInfo>();
+		List<BindingInfo> a_res = new ArrayList<>();
+		List<BindingInfo> b_res = new ArrayList<>();
 
 		// collect results XXX later asynchronously
 		// assumes that bindingset of iteration has exactly one binding
@@ -97,7 +97,7 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 				throw new RuntimeException("Unexpected binding value.");
 		}
 
-		ArrayList<BindingSet> res = new ArrayList<BindingSet>(a_res.size() * b_res.size());
+		ArrayList<BindingSet> res = new ArrayList<>(a_res.size() * b_res.size());
 
 		for (BindingInfo a : a_res) {
 			for (BindingInfo b : b_res) {
@@ -126,6 +126,7 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 			this.value = value;
 		}
 
+		@Override
 		public String toString() {
 			return name + ":" + value.stringValue();
 		}

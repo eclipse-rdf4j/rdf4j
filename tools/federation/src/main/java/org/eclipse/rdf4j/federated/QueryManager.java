@@ -61,8 +61,8 @@ public class QueryManager {
 	protected final Repository repo;
 	protected RepositoryConnection conn;
 	protected final AtomicBigInteger nextQueryID;
-	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<QueryInfo>();
-	protected Map<String, String> prefixDeclarations = new HashMap<String, String>();
+	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
+	protected Map<String, String> prefixDeclarations = new HashMap<>();
 
 	public QueryManager(FederationManager federationManager, Repository repo) {
 		this.federationManager = federationManager;
@@ -118,7 +118,7 @@ public class QueryManager {
 	}
 
 	public Set<QueryInfo> getRunningQueries() {
-		return new HashSet<QueryInfo>(runningQueries);
+		return new HashSet<>(runningQueries);
 	}
 
 	public int getNumberOfRunningQueries() {
@@ -353,7 +353,7 @@ public class QueryManager {
 	 */
 	protected static Set<String> findQueryPrefixes(String queryString) {
 
-		HashSet<String> res = new HashSet<String>();
+		HashSet<String> res = new HashSet<>();
 
 		Scanner sc = new Scanner(queryString);
 		while (true) {

@@ -68,11 +68,11 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		 */
 
 		// determine conjunctive expressions
-		List<ValueExpr> conjunctiveExpressions = new ArrayList<ValueExpr>();
+		List<ValueExpr> conjunctiveExpressions = new ArrayList<>();
 		getConjunctiveExpressions(valueExpr, conjunctiveExpressions);
 
 		FilterExprInsertVisitor filterExprVst = new FilterExprInsertVisitor();
-		List<ValueExpr> remainingExpr = new ArrayList<ValueExpr>(conjunctiveExpressions.size());
+		List<ValueExpr> remainingExpr = new ArrayList<>(conjunctiveExpressions.size());
 
 		for (ValueExpr cond : conjunctiveExpressions) {
 
@@ -100,7 +100,7 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 		}
 
-		if (remainingExpr.size() == 0) {
+		if (remainingExpr.isEmpty()) {
 			filter.replaceWith(filter.getArg()); // remove the filter
 		}
 
@@ -172,7 +172,7 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		protected HashSet<String> vars;
 
 		public HashSet<String> findVars(ValueExpr expr) {
-			vars = new HashSet<String>();
+			vars = new HashSet<>();
 			expr.visit(this);
 			return vars;
 		}
