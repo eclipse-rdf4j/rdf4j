@@ -67,7 +67,7 @@ public class UnknownShapesTest {
 
 		Set<String> relevantLog = newAppender.logged.stream()
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
-				.map(s -> s.replace("\n", " "))
+				.map(s -> s.replaceAll("\r\n|\r|\n", " "))
 				.map(String::trim)
 				.collect(Collectors.toSet());
 
@@ -77,7 +77,6 @@ public class UnknownShapesTest {
 				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape3> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathList> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first>     \"one\";   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .  <http://example.com/ns#PersonPropertyShape3> sh:path <http://example.com/ns#pathList> ."));
 
 		assertEquals(expected, relevantLog);
-
 	}
 
 	class MyAppender extends AppenderBase<ILoggingEvent> {
