@@ -35,3 +35,4 @@ dependency-reduced-pom.xml
 *.jfr
 compliance/repository/overlays
 **/webapp/META-INF/context.xml
+/core/sail/elasticsearch-store/tempElasticsearchDownload/*

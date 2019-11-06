@@ -60,6 +60,19 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>pl.allegro.tech</groupId>
+            <artifactId>embedded-elasticsearch</artifactId>
+            <version>2.10.0</version>
+            <scope>test</scope>
+        </dependency>
+
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
 
