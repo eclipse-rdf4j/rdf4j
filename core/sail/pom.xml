@@ -29,6 +29,7 @@
 		<module>lucene-spin</module>
 		<module>solr</module>
 		<module>elasticsearch</module>
+		<module>elasticsearch-store</module>
 	</modules>
 
 </project>
