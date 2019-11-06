@@ -741,7 +741,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
 		if (isActive()) {
-			return super.getTransactionIsolation();
+			return getTransactionIsolation();
 		} else {
 			return defaultIsolationLevel;
 		}

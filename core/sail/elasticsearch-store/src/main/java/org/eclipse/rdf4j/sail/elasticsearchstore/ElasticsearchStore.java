@@ -27,6 +27,10 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	private ElasticsearchSailStore sailStore;
 
+	public ElasticsearchStore() {
+		sailStore = new ElasticsearchSailStore();
+	}
+
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
 		return Collections.singletonList(IsolationLevels.NONE);

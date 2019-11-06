@@ -27,14 +27,9 @@ public class ElasticsearchSailStore implements SailStore {
 	private ElasticsearchSailSource sailSource;
 	private ElasticsearchSailSource sailSourceInferred;
 
-	public ElasticsearchSailStore(List<Statement> statements, List<Statement> inferredStatements) {
-		sailSource = new ElasticsearchSailSource(null);
-		sailSourceInferred = new ElasticsearchSailSource(null);
-	}
-
-	public ElasticsearchSailStore(List<Statement> statements) {
-		sailSource = new ElasticsearchSailSource(null);
-		sailSourceInferred = new ElasticsearchSailSource(null);
+	public ElasticsearchSailStore() {
+		sailSource = new ElasticsearchSailSource(new DummyDataStruct());
+		sailSourceInferred = new ElasticsearchSailSource(new DummyDataStruct());
 	}
 
 	@Override

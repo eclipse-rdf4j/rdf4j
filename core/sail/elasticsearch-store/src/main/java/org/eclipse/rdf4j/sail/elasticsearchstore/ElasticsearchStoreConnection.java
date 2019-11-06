@@ -50,13 +50,12 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
-	protected void addStatementInternal(Resource resource, IRI iri, Value value, Resource... resources) throws SailException {
-		throw new IllegalStateException("Can not add statements to ElasticsearchStoreConnection");
+	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		//post statement added
 	}
 
 	@Override
-	protected void removeStatementsInternal(Resource resource, IRI iri, Value value, Resource... resources) throws SailException {
-		throw new IllegalStateException("Can not remove statements from ElasticsearchStoreConnection");
+	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 
 	}
 
@@ -65,14 +64,6 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 		return IsolationLevels.NONE;
 	}
 
-	@Override
-	public void begin() throws SailException {
-		super.begin(IsolationLevels.NONE);
-	}
 
-	@Override
-	public void begin(IsolationLevel level) throws SailException {
-		super.begin(IsolationLevels.NONE);
-	}
 
 }
