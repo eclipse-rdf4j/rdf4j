@@ -7,19 +7,35 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 
+import java.util.Collections;
+import java.util.List;
+
 public class ElasticsearchStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
+	private ElasticsearchSailStore sailStore;
 
-	private EvaluationStrategyFactory evalStratFactory;
+	@Override
+	public List<IsolationLevel> getSupportedIsolationLevels() {
+		return Collections.singletonList(IsolationLevels.NONE);
+	}
+
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return IsolationLevels.NONE;
+	}
 
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
@@ -33,7 +49,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		return null;
+		return new ElasticsearchStoreConnection(this, sailStore, getEvaluationStrategyFactory());
 	}
 
 	@Override
@@ -43,14 +59,41 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	public ValueFactory getValueFactory() {
-		return null;
+		return SimpleValueFactory.getInstance();
 	}
 
+	private EvaluationStrategyFactory evalStratFactory;
+
+	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+		if (evalStratFactory == null) {
+			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+		}
+		evalStratFactory.setQuerySolutionCacheThreshold(0);
+		return evalStratFactory;
+	}
 
 	/**
-	 * Sets the {@link EvaluationStrategy} to use.
+	 * independent life cycle
 	 */
-	public synchronized void setEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
-		evalStratFactory = factory;
+	private FederatedServiceResolver serviceResolver;
+
+	/**
+	 * dependent life cycle
+	 */
+	private SPARQLServiceResolver dependentServiceResolver;
+
+	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
+		if (serviceResolver == null) {
+			if (dependentServiceResolver == null) {
+				dependentServiceResolver = new SPARQLServiceResolver();
+			}
+			setFederatedServiceResolver(dependentServiceResolver);
+		}
+		return serviceResolver;
+	}
+
+	public void setEvaluationStrategyFactory(EvaluationStrategyFactory evalStratFactory) {
+		this.evalStratFactory = evalStratFactory;
+
 	}
 }
