@@ -2,6 +2,9 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -25,8 +28,11 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertEquals;
 
 public class ElasticsearchStoreTest {
 
@@ -60,7 +66,6 @@ public class ElasticsearchStoreTest {
 				.build();
 
 		embeddedElastic.start();
-		Thread.sleep(10000);
 	}
 
 	@AfterClass
@@ -147,6 +152,23 @@ public class ElasticsearchStoreTest {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+
+	}
+
+	@Test
+	public void testGetData() {
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.flush();
+			List<? extends Statement> statements = Iterations.asList(connection.getStatements(null, null, null, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
+					statements.get(0));
 		}
 
 	}
