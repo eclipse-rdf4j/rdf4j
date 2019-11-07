@@ -91,13 +91,19 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 		try {
 			builder = jsonBuilder()
 					.startObject()
-					.field("subject", statement.getSubject().toString())
+					.field("subject", statement.getSubject().stringValue())
 					.field("predicate", statement.getPredicate().toString())
 					.field("object", statement.getObject().toString());
 			Resource context = statement.getContext();
 
 			if (context != null) {
 				builder.field("context", context.toString());
+			}
+
+			if (statement.getSubject() instanceof IRI) {
+				builder.field("subject_IRI", true);
+			} else {
+				builder.field("subject_BNODE", true);
 			}
 
 			builder.endObject();
@@ -136,7 +142,12 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 			if (subject != null) {
 				matchAll = false;
-				boolQueryBuilder.must(QueryBuilders.termQuery("subject", subject.toString()));
+				boolQueryBuilder.must(QueryBuilders.termQuery("subject", subject.stringValue()));
+				if (subject instanceof IRI) {
+					boolQueryBuilder.must(QueryBuilders.termQuery("subject_IRI", true));
+				} else {
+					boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNODE", true));
+				}
 			}
 
 			if (predicate != null) {
@@ -146,7 +157,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 			if (object != null) {
 				matchAll = false;
-				boolQueryBuilder.must(QueryBuilders.termQuery("object", predicate.toString()));
+				boolQueryBuilder.must(QueryBuilders.termQuery("object", object.toString()));
 			}
 
 			if (context != null && context.length > 0) {
@@ -164,6 +175,8 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			} else {
 				searchRequestBuilder.setQuery(boolQueryBuilder);
 			}
+
+			logger.info(searchRequestBuilder.toString());
 
 			SearchResponse response = searchRequestBuilder
 					.get();
@@ -190,8 +203,13 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 					Map<String, Object> sourceAsMap = next.getSourceAsMap();
 
 					ValueFactory vf = SimpleValueFactory.getInstance();
+					Resource subjectRes;
+					if (sourceAsMap.containsKey("subject_IRI")) {
+						subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
+					} else {
+						subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
+					}
 
-					IRI subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
 					IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
 					IRI objectRes = vf.createIRI(sourceAsMap.get("object").toString());
 

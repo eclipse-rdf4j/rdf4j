@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -38,6 +39,7 @@ import static org.junit.Assert.assertEquals;
 public class ElasticsearchStoreTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTest.class);
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -87,7 +89,6 @@ public class ElasticsearchStoreTest {
 
 	}
 
-
 	@Before
 	public void before() throws UnknownHostException {
 //		embeddedElastic.refreshIndices();
@@ -116,14 +117,14 @@ public class ElasticsearchStoreTest {
 		}
 	}
 
-
 	private void deleteAllIndexes() {
 		for (String index : getIndexes()) {
-			System.out.println("deleting: "+index);
+			System.out.println("deleting: " + index);
 			embeddedElastic.deleteIndex(index);
 
 		}
 	}
+
 	private String[] getIndexes() {
 
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
@@ -188,6 +189,62 @@ public class ElasticsearchStoreTest {
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepository() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+
+			List<? extends Statement> statements = Iterations.asList(connection.getStatements(null, null, null, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
+					statements.get(0));
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositorySpecificStatement() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
+					statements.get(0));
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryBlankNode() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			BNode bNode = vf.createBNode();
+			connection.add(bNode, RDF.TYPE, RDFS.RESOURCE);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(bNode, statements.get(0).getSubject());
+
 		}
 
 	}

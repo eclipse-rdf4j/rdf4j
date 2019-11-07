@@ -4,6 +4,12 @@
         "subject": {
           "type": "keyword"
         },
+        "subject_IRI": {
+          "type": "boolean"
+        },
+        "subject_BNODE": {
+          "type": "boolean"
+        },
         "predicate": {
           "type": "keyword"
         },
