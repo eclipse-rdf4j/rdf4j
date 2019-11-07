@@ -2,7 +2,9 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -39,6 +41,7 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.Map;
 
@@ -54,7 +57,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 	private final String hostname;
 	private final int port;
 
-	public ElasticsearchDataStructure(String hostname, int port, String index) {
+	ElasticsearchDataStructure(String hostname, int port, String index) {
 		super();
 		this.hostname = hostname;
 		this.port = port;
@@ -92,18 +95,31 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			builder = jsonBuilder()
 					.startObject()
 					.field("subject", statement.getSubject().stringValue())
-					.field("predicate", statement.getPredicate().toString())
-					.field("object", statement.getObject().toString());
+					.field("predicate", statement.getPredicate().stringValue())
+					.field("object", Base64.getEncoder()
+							.encodeToString(statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
 			Resource context = statement.getContext();
 
 			if (context != null) {
-				builder.field("context", context.toString());
+				builder.field("context", context.stringValue());
 			}
 
 			if (statement.getSubject() instanceof IRI) {
 				builder.field("subject_IRI", true);
 			} else {
-				builder.field("subject_BNODE", true);
+				builder.field("subject_BNode", true);
+			}
+
+			if (statement.getObject() instanceof IRI) {
+				builder.field("object_IRI", true);
+			} else if (statement.getObject() instanceof BNode) {
+				builder.field("object_BNode", true);
+			} else {
+				builder.field("object_Datatype", ((Literal) statement.getObject()).getDatatype().stringValue());
+				if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+					builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+				}
 			}
 
 			builder.endObject();
@@ -146,18 +162,31 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				if (subject instanceof IRI) {
 					boolQueryBuilder.must(QueryBuilders.termQuery("subject_IRI", true));
 				} else {
-					boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNODE", true));
+					boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNode", true));
 				}
 			}
 
 			if (predicate != null) {
 				matchAll = false;
-				boolQueryBuilder.must(QueryBuilders.termQuery("predicate", predicate.toString()));
+				boolQueryBuilder.must(QueryBuilders.termQuery("predicate", predicate.stringValue()));
 			}
 
 			if (object != null) {
 				matchAll = false;
-				boolQueryBuilder.must(QueryBuilders.termQuery("object", object.toString()));
+				boolQueryBuilder.must(QueryBuilders.termQuery("object",
+						Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
+				if (object instanceof IRI) {
+					boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
+				} else if (object instanceof BNode) {
+					boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
+				} else {
+					boolQueryBuilder.must(
+							QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
+					if (((Literal) object).getLanguage().isPresent()) {
+						boolQueryBuilder
+								.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
+					}
+				}
 			}
 
 			if (context != null && context.length > 0) {
@@ -211,7 +240,27 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 					}
 
 					IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
-					IRI objectRes = vf.createIRI(sourceAsMap.get("object").toString());
+
+					Value objectRes;
+
+					String objectString = new String(Base64.getDecoder().decode(sourceAsMap.get("object").toString()),
+							StandardCharsets.UTF_8);
+
+					if (sourceAsMap.containsKey("object_IRI")) {
+						objectRes = vf.createIRI(objectString);
+					} else if (sourceAsMap.containsKey("object_BNode")) {
+						objectRes = vf.createBNode(objectString);
+					} else {
+						if (sourceAsMap.containsKey("object_Lang")) {
+							objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
+
+						} else {
+							objectRes = vf.createLiteral(objectString,
+									vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
+
+						}
+
+					}
 
 					return vf.createStatement(subjectRes, predicateRes, objectRes);
 				}

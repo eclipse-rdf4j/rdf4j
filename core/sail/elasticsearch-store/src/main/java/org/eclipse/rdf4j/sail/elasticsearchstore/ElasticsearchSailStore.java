@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ElasticsearchSailStore implements SailStore {
+class ElasticsearchSailStore implements SailStore {
 
 
 	private ElasticsearchSailSource sailSource;

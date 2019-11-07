@@ -28,7 +28,7 @@ import java.util.Set;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ElasticsearchSailSource implements SailSource {
+class ElasticsearchSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
 

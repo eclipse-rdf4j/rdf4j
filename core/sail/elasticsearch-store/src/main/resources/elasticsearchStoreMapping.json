@@ -7,13 +7,25 @@
         "subject_IRI": {
           "type": "boolean"
         },
-        "subject_BNODE": {
+        "subject_BNode": {
           "type": "boolean"
         },
         "predicate": {
           "type": "keyword"
         },
         "object": {
+          "type": "keyword"
+        },
+        "object_IRI": {
+          "type": "boolean"
+        },
+        "object_BNode": {
+          "type": "boolean"
+        },
+        "object_Datatype": {
+          "type": "keyword"
+        },
+        "object_Lang": {
           "type": "keyword"
         },
         "context": {

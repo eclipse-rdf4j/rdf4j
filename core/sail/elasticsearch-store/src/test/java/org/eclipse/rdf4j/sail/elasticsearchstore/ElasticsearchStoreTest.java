@@ -4,6 +4,8 @@ import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -31,6 +33,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -229,7 +232,7 @@ public class ElasticsearchStoreTest {
 	}
 
 	@Test
-	public void testGetDataSailRepositoryBlankNode() {
+	public void testGetDataSailRepositoryBNodeSubject() {
 		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -244,6 +247,133 @@ public class ElasticsearchStoreTest {
 			assertEquals(1, statements.size());
 
 			assertEquals(bNode, statements.get(0).getSubject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryBNodeObject() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			BNode bNode = vf.createBNode();
+			connection.add(bNode, RDF.TYPE, bNode);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(bNode, RDF.TYPE, bNode, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(bNode, statements.get(0).getSubject());
+			assertEquals(bNode, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryStringObject() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			Literal label = vf.createLiteral("label1");
+			connection.add(RDF.TYPE, RDFS.LABEL, label);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(null, null, label, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(label, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryStringObjectWhitespace() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			Literal label = vf.createLiteral("rdf:type label");
+			connection.add(RDF.TYPE, RDFS.LABEL, label);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(null, null, label, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(label, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryDate() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			Literal label = vf.createLiteral(new Date());
+			connection.add(RDF.TYPE, RDFS.LABEL, label);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(null, null, label, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(label, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryLang() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			Literal label = vf.createLiteral("norsk bokmål", "nb");
+			connection.add(RDF.TYPE, RDFS.LABEL, label);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(null, null, label, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(label, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryIRISubjectWhitespace() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			IRI iri = vf.createIRI("http://example.com/ space /test");
+			connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
+
+			List<? extends Statement> statements = Iterations
+				.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(iri, statements.get(0).getSubject());
 
 		}
 
