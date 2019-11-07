@@ -17,6 +17,7 @@ import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -80,8 +81,18 @@ public class ElasticsearchStoreTest {
 	public void after() throws UnknownHostException {
 
 		printAllDocs();
+		embeddedElastic.refreshIndices();
 
-		embeddedElastic.deleteIndices();
+		deleteAllIndexes();
+
+	}
+
+
+	@Before
+	public void before() throws UnknownHostException {
+//		embeddedElastic.refreshIndices();
+//
+//		embeddedElastic.deleteIndices();
 
 	}
 
@@ -105,6 +116,14 @@ public class ElasticsearchStoreTest {
 		}
 	}
 
+
+	private void deleteAllIndexes() {
+		for (String index : getIndexes()) {
+			System.out.println("deleting: "+index);
+			embeddedElastic.deleteIndex(index);
+
+		}
+	}
 	private String[] getIndexes() {
 
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
