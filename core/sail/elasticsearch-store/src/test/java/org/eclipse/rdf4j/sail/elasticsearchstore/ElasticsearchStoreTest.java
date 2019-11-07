@@ -367,7 +367,7 @@ public class ElasticsearchStoreTest {
 			connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
