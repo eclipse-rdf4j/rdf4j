@@ -27,8 +27,9 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	private ElasticsearchSailStore sailStore;
 
-	public ElasticsearchStore() {
-		sailStore = new ElasticsearchSailStore();
+	public ElasticsearchStore(String hostname, int port, String index) {
+
+		sailStore = new ElasticsearchSailStore(hostname, port, index);
 	}
 
 	@Override

@@ -47,17 +47,19 @@ public class ElasticsearchStoreFactory implements SailFactory {
 			throw new SailConfigException("Invalid Sail type: " + sailImplConfig.getType());
 		}
 
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore();
+//		ElasticsearchStore elasticsearchStore = new ElasticsearchStore();
+//
+//		if (sailImplConfig instanceof ElasticsearchStoreConfig) {
+//			ElasticsearchStoreConfig config = (ElasticsearchStoreConfig) sailImplConfig;
+//
+//			EvaluationStrategyFactory evalStratFactory = config.getEvaluationStrategyFactory();
+//			if (evalStratFactory != null) {
+//				elasticsearchStore.setEvaluationStrategyFactory(evalStratFactory);
+//			}
+//		}
+//
+//		return elasticsearchStore;
 
-		if (sailImplConfig instanceof ElasticsearchStoreConfig) {
-			ElasticsearchStoreConfig config = (ElasticsearchStoreConfig) sailImplConfig;
-
-			EvaluationStrategyFactory evalStratFactory = config.getEvaluationStrategyFactory();
-			if (evalStratFactory != null) {
-				elasticsearchStore.setEvaluationStrategyFactory(evalStratFactory);
-			}
-		}
-
-		return elasticsearchStore;
+		return null;
 	}
 }
