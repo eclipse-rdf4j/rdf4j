@@ -379,4 +379,36 @@ public class ElasticsearchStoreTest {
 
 	}
 
+	@Test
+	public void testShutdownAndRecreate() {
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		elasticsearchStore.shutDown();
+		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		elasticsearchStore.shutDown();
+
+	}
+
+	@Test
+	public void testShutdownAndReinit() {
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		elasticsearchStore.shutDown();
+
+		elasticsearchStore.init();
+
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		elasticsearchStore.shutDown();
+
+	}
+
 }

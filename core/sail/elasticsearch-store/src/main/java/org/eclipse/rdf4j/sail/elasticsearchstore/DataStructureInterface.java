@@ -14,23 +14,24 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.elasticsearch.client.Client;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 public abstract class DataStructureInterface {
 
-	public abstract void addStatement(Statement statement);
+	public abstract void addStatement(Client client, Statement statement);
 
-	public abstract void removeStatement(Statement statement);
+	public abstract void removeStatement(Client client, Statement statement);
 
-	public abstract CloseableIteration<? extends Statement, SailException> getStatements(
-			Resource subject,
-			IRI predicate,
-			Value object,
-			Resource... context);
+	public abstract CloseableIteration<? extends Statement, SailException> getStatements(Client client,
+																						 Resource subject,
+																						 IRI predicate,
+																						 Value object,
+																						 Resource... context);
 
-	public abstract void flush();
+	public abstract void flush(Client client);
 
 	protected boolean containsContext(Resource[] context, Resource context1) {
 		for (Resource resource : context) {
@@ -43,5 +44,13 @@ public abstract class DataStructureInterface {
 		}
 		return false;
 	}
+
+	abstract String getHostname();
+
+	abstract int getPort();
+
+	abstract String getClustername();
+
+	abstract void init();
 
 }

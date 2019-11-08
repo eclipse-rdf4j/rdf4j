@@ -8,15 +8,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
-
-import java.util.List;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -29,12 +26,14 @@ class ElasticsearchSailStore implements SailStore {
 
 	ElasticsearchSailStore(String hostname, int port, String index) {
 		sailSource = new ElasticsearchSailSource(new ElasticsearchDataStructure(hostname, port, index));
-		sailSourceInferred = new ElasticsearchSailSource(new ElasticsearchDataStructure(hostname, port, index+"_inferred"));
+		sailSourceInferred = new ElasticsearchSailSource(new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
 	}
 
 	@Override
 	public void close() throws SailException {
 
+		sailSource.close();
+		sailSourceInferred.close();
 	}
 
 	@Override
@@ -56,5 +55,10 @@ class ElasticsearchSailStore implements SailStore {
 	@Override
 	public SailSource getInferredSailSource() {
 		return sailSourceInferred;
+	}
+
+	public void init() {
+		sailSource.init();
+		sailSourceInferred.init();
 	}
 }

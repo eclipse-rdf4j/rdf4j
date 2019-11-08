@@ -19,17 +19,41 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
+import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
+import org.elasticsearch.client.Client;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.cluster.health.ClusterHealthStatus;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
 public class ElasticsearchStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
+	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);
+
 	private ElasticsearchSailStore sailStore;
+	private String hostname;
+	private int port;
 
 	public ElasticsearchStore(String hostname, int port, String index) {
 
 		sailStore = new ElasticsearchSailStore(hostname, port, index);
+		this.hostname = hostname;
+		this.port = port;
+	}
+
+	@Override
+	protected void initializeInternal() throws SailException {
+		waitForElasticsearch(10);
+		sailStore.init();
 	}
 
 	@Override
@@ -49,6 +73,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected void shutDownInternal() throws SailException {
+		sailStore.close();
 
 	}
 
@@ -99,6 +124,54 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	public void setEvaluationStrategyFactory(EvaluationStrategyFactory evalStratFactory) {
 		this.evalStratFactory = evalStratFactory;
+
+	}
+
+	public void waitForElasticsearch(int minutes) {
+
+		LocalDateTime tenMinFromNow = LocalDateTime.now().plusMinutes(minutes);
+
+		logger.info("Waiting for Elasticsearch to start");
+
+		while (true) {
+			if (LocalDateTime.now().isAfter(tenMinFromNow)) {
+				logger.error("Could not connect to Elasticsearch after 10 minutes of trying!");
+
+				throw new RuntimeException("Could not connect to Elasticsearch after 10 minutes of trying!");
+
+			}
+			try {
+				Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
+				ClusterHealthResponse clusterHealthResponse;
+				try (TransportClient client = new PreBuiltTransportClient(settings)) {
+					client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
+
+					ClusterHealthRequest request = new ClusterHealthRequest();
+
+					clusterHealthResponse = client.admin().cluster().health(request).actionGet();
+					ClusterHealthStatus status = clusterHealthResponse.getStatus();
+					logger.info("Cluster status: {}", status.name());
+
+					if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
+						logger.info("Elasticsearch started!");
+						return;
+
+					}
+				}
+
+			} catch (Throwable e) {
+				logger.info("Unable to connect to elasticsearch cluster due to {}", e.getClass().getSimpleName());
+				e.printStackTrace();
+			}
+
+			logger.info(".");
+
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException ignored) {
+
+			}
+		}
 
 	}
 }
