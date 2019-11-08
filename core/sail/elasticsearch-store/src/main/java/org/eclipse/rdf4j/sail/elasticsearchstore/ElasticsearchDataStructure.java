@@ -14,20 +14,23 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
+import org.elasticsearch.action.bulk.BulkRequestBuilder;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexResponse;
-import org.elasticsearch.action.search.SearchRequestBuilder;
+import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,9 +39,12 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
@@ -87,55 +93,16 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	}
 
+	private final int BUFFER_THRESHOLD = 1024;
+	private List<Statement> buffer = Collections.synchronizedList(new ArrayList<>());
+
 	@Override
 	public void addStatement(Client client, Statement statement) {
-
-		XContentBuilder builder;
-
-		try {
-			builder = jsonBuilder()
-					.startObject()
-					.field("subject", statement.getSubject().stringValue())
-					.field("predicate", statement.getPredicate().stringValue())
-					.field("object", Base64.getEncoder()
-							.encodeToString(statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
-			Resource context = statement.getContext();
-
-			if (context != null) {
-				builder.field("context", context.stringValue());
-			}
-
-			if (statement.getSubject() instanceof IRI) {
-				builder.field("subject_IRI", true);
-			} else {
-				builder.field("subject_BNode", true);
-			}
-
-			if (statement.getObject() instanceof IRI) {
-				builder.field("object_IRI", true);
-			} else if (statement.getObject() instanceof BNode) {
-				builder.field("object_BNode", true);
-			} else {
-				builder.field("object_Datatype", ((Literal) statement.getObject()).getDatatype().stringValue());
-				if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-					builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
-				}
-			}
-
-			builder.endObject();
-
-		} catch (IOException e) {
-			throw new IllegalStateException(e);
+		if (buffer.size() > BUFFER_THRESHOLD) {
+			flushBuffer(client);
 		}
 
-		IndexResponse response;
-
-		response = client.prepareIndex(index, ELASTICSEARCH_TYPE)
-				.setSource(builder)
-				.get();
-
-		System.out.println(response.toString());
+		buffer.add(statement);
 
 	}
 
@@ -144,78 +111,112 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	}
 
+	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(Client client, QueryBuilder queryBuilder) {
+
+		return new CloseableIteration<SearchHit, RuntimeException>() {
+
+			Iterator<SearchHit> items;
+			String scrollId;
+
+			{
+
+				SearchResponse scrollResp = client.prepareSearch(index)
+						.setScroll(new TimeValue(60000))
+						.setSearchType(SearchType.QUERY_THEN_FETCH)
+						.setQuery(queryBuilder)
+						.setSize(1000)
+						.get();
+
+				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
+				scrollId = scrollResp.getScrollId();
+
+			}
+
+			SearchHit next;
+			boolean empty = false;
+
+			private void calculateNext() {
+
+				if (next != null) {
+					return;
+				}
+				if (empty) {
+					return;
+				}
+
+				if (items.hasNext()) {
+					next = items.next();
+				} else {
+
+					SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
+							.setScroll(new TimeValue(60000))
+							.execute()
+							.actionGet();
+
+					items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
+					scrollId = scrollResp.getScrollId();
+
+					if (items.hasNext()) {
+						next = items.next();
+					} else {
+						ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+						clearScrollRequest.addScrollId(scrollId);
+						client.clearScroll(clearScrollRequest).actionGet();
+						scrollId = null;
+						empty = true;
+					}
+
+				}
+
+			}
+
+			@Override
+			public boolean hasNext() {
+				calculateNext();
+				return next != null;
+			}
+
+			@Override
+			public SearchHit next() {
+				calculateNext();
+
+				SearchHit temp = next;
+				next = null;
+
+				return temp;
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+
+				if (scrollId != null) {
+					ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+					clearScrollRequest.addScrollId(scrollId);
+					client.clearScroll(clearScrollRequest).actionGet();
+					scrollId = null;
+					empty = true;
+				}
+
+			}
+
+		};
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Client client, Resource subject,
 			IRI predicate,
 			Value object, Resource... context) {
 
-		boolean matchAll = true;
-
-		BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
-
-		if (subject != null) {
-			matchAll = false;
-			boolQueryBuilder.must(QueryBuilders.termQuery("subject", subject.stringValue()));
-			if (subject instanceof IRI) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("subject_IRI", true));
-			} else {
-				boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNode", true));
-			}
-		}
-
-		if (predicate != null) {
-			matchAll = false;
-			boolQueryBuilder.must(QueryBuilders.termQuery("predicate", predicate.stringValue()));
-		}
-
-		if (object != null) {
-			matchAll = false;
-			boolQueryBuilder.must(QueryBuilders.termQuery("object",
-					Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
-			if (object instanceof IRI) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
-			} else if (object instanceof BNode) {
-				boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
-			} else {
-				boolQueryBuilder.must(
-						QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
-				if (((Literal) object).getLanguage().isPresent()) {
-					boolQueryBuilder
-							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
-				}
-			}
-		}
-
-		if (context != null && context.length > 0) {
-			matchAll = false;
-			throw new IllegalStateException("Not implemented yet");
-		}
-
-		SearchRequestBuilder searchRequestBuilder = client.prepareSearch(index)
-				.setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
-				.setFrom(0)
-				.setSize(9999);
-
-		if (matchAll) {
-			searchRequestBuilder.setQuery(matchAllQuery());
-		} else {
-			searchRequestBuilder.setQuery(boolQueryBuilder);
-		}
-
-		logger.info(searchRequestBuilder.toString());
-
-		SearchResponse response = searchRequestBuilder
-				.get();
-
-		SearchHits hits = response.getHits();
-
-		if (hits.totalHits > 9999) {
-			throw new IllegalStateException("Store only support getting 9999 statements currently");
-		}
+		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, context);
 
 		return new CloseableIteration<Statement, SailException>() {
 
-			Iterator<SearchHit> iterator = Arrays.asList(hits.getHits()).iterator();
+			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(client, queryBuilder);
 
 			@Override
 			public boolean hasNext() throws SailException {
@@ -271,19 +272,148 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 			@Override
 			public void close() throws SailException {
+				iterator.close();
 
 			}
 		};
 
 	}
 
+	private QueryBuilder getQueryBuilder(Resource subject, IRI predicate, Value object, Resource[] context) {
+		boolean matchAll = true;
+
+		BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+
+		if (subject != null) {
+			matchAll = false;
+			boolQueryBuilder.must(QueryBuilders.termQuery("subject", subject.stringValue()));
+			if (subject instanceof IRI) {
+				boolQueryBuilder.must(QueryBuilders.termQuery("subject_IRI", true));
+			} else {
+				boolQueryBuilder.must(QueryBuilders.termQuery("subject_BNode", true));
+			}
+		}
+
+		if (predicate != null) {
+			matchAll = false;
+			boolQueryBuilder.must(QueryBuilders.termQuery("predicate", predicate.stringValue()));
+		}
+
+		if (object != null) {
+			matchAll = false;
+			boolQueryBuilder.must(QueryBuilders.termQuery("object",
+					Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
+			if (object instanceof IRI) {
+				boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
+			} else if (object instanceof BNode) {
+				boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
+			} else {
+				boolQueryBuilder.must(
+						QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
+				if (((Literal) object).getLanguage().isPresent()) {
+					boolQueryBuilder
+							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
+				}
+			}
+		}
+
+		if (context != null && context.length > 0) {
+			matchAll = false;
+			throw new IllegalStateException("Not implemented yet");
+		}
+
+		QueryBuilder queryBuilder;
+
+		if (matchAll) {
+			queryBuilder = matchAllQuery();
+		} else {
+			queryBuilder = boolQueryBuilder;
+
+		}
+		return queryBuilder;
+	}
+
 	@Override
 	public void flush(Client client) {
+
+		flushBuffer(client);
 
 		client.admin()
 				.indices()
 				.prepareRefresh(index)
 				.get();
+
+	}
+
+	synchronized private void flushBuffer(Client client) {
+
+		if (buffer.isEmpty())
+			return;
+
+		BulkRequestBuilder bulkRequest = client.prepareBulk();
+
+		boolean hasFailures;
+
+		do {
+
+			buffer.forEach(statement -> {
+				XContentBuilder builder;
+
+				try {
+					builder = jsonBuilder()
+							.startObject()
+							.field("subject", statement.getSubject().stringValue())
+							.field("predicate", statement.getPredicate().stringValue())
+							.field("object", Base64.getEncoder()
+									.encodeToString(
+											statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
+					Resource context = statement.getContext();
+
+					if (context != null) {
+						builder.field("context", context.stringValue());
+					}
+
+					if (statement.getSubject() instanceof IRI) {
+						builder.field("subject_IRI", true);
+					} else {
+						builder.field("subject_BNode", true);
+					}
+
+					if (statement.getObject() instanceof IRI) {
+						builder.field("object_IRI", true);
+					} else if (statement.getObject() instanceof BNode) {
+						builder.field("object_BNode", true);
+					} else {
+						builder.field("object_Datatype", ((Literal) statement.getObject()).getDatatype().stringValue());
+						if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+							builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+						}
+					}
+
+					builder.endObject();
+
+				} catch (IOException e) {
+					throw new IllegalStateException(e);
+				}
+
+				bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE)
+						.setSource(builder));
+
+			});
+
+			BulkResponse bulkResponse = bulkRequest.get();
+			if (bulkResponse.hasFailures()) {
+				logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
+						bulkResponse.buildFailureMessage());
+				hasFailures = true;
+			} else {
+				hasFailures = false;
+			}
+
+		} while (hasFailures);
+
+		buffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
 
 	}
 

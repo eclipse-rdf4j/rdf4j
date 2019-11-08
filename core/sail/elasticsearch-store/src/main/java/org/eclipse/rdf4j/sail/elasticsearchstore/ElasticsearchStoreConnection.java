@@ -32,7 +32,7 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 		this.sail = sail;
 	}
 
-	protected ElasticsearchStoreConnection(ElasticsearchStore sail, SailStore store,
+	ElasticsearchStoreConnection(ElasticsearchStore sail, SailStore store,
 										   EvaluationStrategyFactory evalStratFactory) {
 		super(sail, store, evalStratFactory);
 		this.sail = sail;
@@ -43,11 +43,6 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 		return sail;
 	}
 
-
-	@Override
-	public boolean isActive() throws UnknownSailTransactionStateException {
-		return true;
-	}
 
 	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {

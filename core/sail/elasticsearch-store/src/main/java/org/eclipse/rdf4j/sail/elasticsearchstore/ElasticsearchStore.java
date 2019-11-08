@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.common.settings.Settings;
@@ -32,6 +31,8 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.Collections;
 import java.util.List;
 
@@ -52,7 +53,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected void initializeInternal() throws SailException {
-		waitForElasticsearch(10);
+		waitForElasticsearch(10, ChronoUnit.MINUTES);
 		sailStore.init();
 	}
 
@@ -127,9 +128,9 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	}
 
-	public void waitForElasticsearch(int minutes) {
+	public void waitForElasticsearch(int time, TemporalUnit timeUnit) {
 
-		LocalDateTime tenMinFromNow = LocalDateTime.now().plusMinutes(minutes);
+		LocalDateTime tenMinFromNow = LocalDateTime.now().plus(time, timeUnit);
 
 		logger.info("Waiting for Elasticsearch to start");
 

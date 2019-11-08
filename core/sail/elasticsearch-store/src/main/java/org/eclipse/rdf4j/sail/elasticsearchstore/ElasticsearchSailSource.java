@@ -52,6 +52,7 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public void close() throws SailException {
+		dataStructure.flush(client);
 		client.close();
 	}
 

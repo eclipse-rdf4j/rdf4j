@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
@@ -174,7 +175,9 @@ public class ElasticsearchStoreTest {
 	public void testAddData() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 
 	}
@@ -183,9 +186,12 @@ public class ElasticsearchStoreTest {
 	public void testGetData() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.flush();
 			List<? extends Statement> statements = Iterations.asList(connection.getStatements(null, null, null, true));
+
+			connection.commit();
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -383,12 +389,16 @@ public class ElasticsearchStoreTest {
 	public void testShutdownAndRecreate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 		elasticsearchStore.shutDown();
 
@@ -398,16 +408,43 @@ public class ElasticsearchStoreTest {
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 		elasticsearchStore.shutDown();
 
 		elasticsearchStore.init();
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 		elasticsearchStore.shutDown();
+
+	}
+
+	@Test
+	public void testAddLargeDataset() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			StopWatch stopWatch = StopWatch.createStarted();
+			connection.begin();
+			int count = 100000;
+			for (int i = 0; i < count; i++) {
+				connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i));
+			}
+			connection.commit();
+			stopWatch.stop();
+			logger.info("Adding data took: " + stopWatch.getTime(TimeUnit.MILLISECONDS) + "s");
+
+			stopWatch = StopWatch.createStarted();
+			assertEquals(count, connection.size());
+			stopWatch.stop();
+			logger.info("Getting size took: " + stopWatch.getTime(TimeUnit.MILLISECONDS) + "s");
+
+		}
 
 	}
 
