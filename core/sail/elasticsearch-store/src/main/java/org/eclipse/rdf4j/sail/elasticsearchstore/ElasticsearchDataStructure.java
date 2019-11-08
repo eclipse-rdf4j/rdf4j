@@ -12,11 +12,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
-import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
@@ -52,6 +50,17 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
 public class ElasticsearchDataStructure extends DataStructureInterface {
 
+	private static final String mapping;
+
+	static {
+		try {
+			mapping = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()
+				.getResourceAsStream("elasticsearchStoreMapping.json"), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchDataStructure.class);
 
 	private static final String ELASTICSEARCH_TYPE = "statement";
@@ -70,24 +79,18 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 		CreateIndexRequest request = new CreateIndexRequest(index);
 
-		try {
-			String mapping = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()
-					.getResourceAsStream("elasticsearchStoreMapping.json"), StandardCharsets.UTF_8);
-			request.mapping(ELASTICSEARCH_TYPE,
-					mapping,
-					XContentType.JSON);
-		} catch (IOException e) {
-			throw new IllegalStateException(e);
-		}
-		try (Client client = getClient()) {
 
+		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
+
+		try (Client client = getClient()) {
 			boolean indexExistsAlready = client.admin()
-					.indices()
-					.exists(new IndicesExistsRequest(index))
-					.actionGet()
-					.isExists();
+				.indices()
+				.exists(new IndicesExistsRequest(index))
+				.actionGet()
+				.isExists();
+
 			if (!indexExistsAlready) {
-				CreateIndexResponse createIndexResponse = client.admin().indices().create(request).actionGet();
+				client.admin().indices().create(request).actionGet();
 			}
 		}
 
@@ -121,11 +124,11 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
-						.setScroll(new TimeValue(60000))
-						.setSearchType(SearchType.QUERY_THEN_FETCH)
-						.setQuery(queryBuilder)
-						.setSize(1000)
-						.get();
+					.setScroll(new TimeValue(60000))
+					.setSearchType(SearchType.QUERY_THEN_FETCH)
+					.setQuery(queryBuilder)
+					.setSize(1000)
+					.get();
 
 				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 				scrollId = scrollResp.getScrollId();
@@ -149,9 +152,9 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				} else {
 
 					SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-							.setScroll(new TimeValue(60000))
-							.execute()
-							.actionGet();
+						.setScroll(new TimeValue(60000))
+						.execute()
+						.actionGet();
 
 					items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 					scrollId = scrollResp.getScrollId();
@@ -209,8 +212,8 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Client client, Resource subject,
-			IRI predicate,
-			Value object, Resource... context) {
+																				IRI predicate,
+																				Value object, Resource... context) {
 
 		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, context);
 
@@ -242,7 +245,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				Value objectRes;
 
 				String objectString = new String(Base64.getDecoder().decode(sourceAsMap.get("object").toString()),
-						StandardCharsets.UTF_8);
+					StandardCharsets.UTF_8);
 
 				if (sourceAsMap.containsKey("object_IRI")) {
 					objectRes = vf.createIRI(objectString);
@@ -254,7 +257,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 					} else {
 						objectRes = vf.createLiteral(objectString,
-								vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
+							vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
 
 					}
 
@@ -302,17 +305,17 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 		if (object != null) {
 			matchAll = false;
 			boolQueryBuilder.must(QueryBuilders.termQuery("object",
-					Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
+				Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
 			if (object instanceof IRI) {
 				boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
 			} else if (object instanceof BNode) {
 				boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
 			} else {
 				boolQueryBuilder.must(
-						QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
+					QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
 				if (((Literal) object).getLanguage().isPresent()) {
 					boolQueryBuilder
-							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
+						.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
 				}
 			}
 		}
@@ -339,20 +342,21 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 		flushBuffer(client);
 
 		client.admin()
-				.indices()
-				.prepareRefresh(index)
-				.get();
+			.indices()
+			.prepareRefresh(index)
+			.get();
 
 	}
 
 	synchronized private void flushBuffer(Client client) {
 
-		if (buffer.isEmpty())
+		if (buffer.isEmpty()) {
 			return;
+		}
 
 		BulkRequestBuilder bulkRequest = client.prepareBulk();
 
-		boolean hasFailures;
+		int failures = 0;
 
 		do {
 
@@ -361,12 +365,12 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 				try {
 					builder = jsonBuilder()
-							.startObject()
-							.field("subject", statement.getSubject().stringValue())
-							.field("predicate", statement.getPredicate().stringValue())
-							.field("object", Base64.getEncoder()
-									.encodeToString(
-											statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
+						.startObject()
+						.field("subject", statement.getSubject().stringValue())
+						.field("predicate", statement.getPredicate().stringValue())
+						.field("object", Base64.getEncoder()
+							.encodeToString(
+								statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
 					Resource context = statement.getContext();
 
 					if (context != null) {
@@ -398,20 +402,26 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				}
 
 				bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE)
-						.setSource(builder));
+					.setSource(builder));
 
 			});
 
 			BulkResponse bulkResponse = bulkRequest.get();
 			if (bulkResponse.hasFailures()) {
-				logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
+				failures++;
+				if (failures < 10) {
+					logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
 						bulkResponse.buildFailureMessage());
-				hasFailures = true;
+				} else {
+					throw new RuntimeException("Elasticsearch has failed " + failures
+						+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
+				}
+
 			} else {
-				hasFailures = false;
+				failures = 0;
 			}
 
-		} while (hasFailures);
+		} while (failures > 0);
 
 		buffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
 
