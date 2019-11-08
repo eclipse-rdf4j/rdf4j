@@ -56,11 +56,11 @@ public class ElasticsearchStoreTransactionsTest {
 		String version = "6.5.4";
 
 		embeddedElastic = EmbeddedElastic.builder()
-			.withElasticVersion(version)
-			.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
-			.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-			.withInstallationDirectory(installLocation)
-			.withDownloadDirectory(new File("tempElasticsearchDownload"))
+				.withElasticVersion(version)
+				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
+				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
+				.withInstallationDirectory(installLocation)
+				.withDownloadDirectory(new File("tempElasticsearchDownload"))
 //			.withPlugin("analysis-stempel")
 //			.withIndex("cars", IndexSettings.builder()
 //				.withType("car", getSystemResourceAsStream("car-mapping.json"))
@@ -70,8 +70,8 @@ public class ElasticsearchStoreTransactionsTest {
 //				.withType("audio_book", getSystemResourceAsStream("audio-book-mapping.json"))
 //				.withSettings(getSystemResourceAsStream("elastic-settings.json"))
 //				.build())
-			.withStartTimeout(5, TimeUnit.MINUTES)
-			.build();
+				.withStartTimeout(5, TimeUnit.MINUTES)
+				.build();
 
 		embeddedElastic.start();
 	}
@@ -88,7 +88,7 @@ public class ElasticsearchStoreTransactionsTest {
 	public void after() throws UnknownHostException {
 
 		StopWatch stopWatch = StopWatch.createStarted();
-		//printAllDocs();
+		// printAllDocs();
 		deleteAllIndexes();
 		stopWatch.stop();
 		logTime(stopWatch, "after()", TimeUnit.SECONDS);
@@ -106,7 +106,6 @@ public class ElasticsearchStoreTransactionsTest {
 		} else {
 			throw new RuntimeException("Unknow time unit: " + timeUnit);
 		}
-
 
 	}
 
@@ -153,16 +152,15 @@ public class ElasticsearchStoreTransactionsTest {
 			client.addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9350));
 
 			return client.admin()
-				.indices()
-				.getIndex(new GetIndexRequest())
-				.actionGet()
-				.getIndices();
+					.indices()
+					.getIndex(new GetIndexRequest())
+					.actionGet()
+					.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
 
 	}
-
 
 	@Test
 	public void testAddData() {
@@ -190,7 +188,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -207,7 +205,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -219,13 +217,13 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -239,7 +237,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(bNode, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -260,7 +258,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(bNode, RDF.TYPE, bNode);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(bNode, RDF.TYPE, bNode, true));
+					.asList(connection.getStatements(bNode, RDF.TYPE, bNode, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -282,7 +280,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -303,7 +301,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -324,7 +322,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -345,7 +343,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -366,7 +364,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -378,7 +376,6 @@ public class ElasticsearchStoreTransactionsTest {
 
 	}
 
-
 	@Test
 	public void testAddLargeDataset() {
 		StopWatch stopWatch = StopWatch.createStarted();
@@ -388,7 +385,6 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch.stop();
 
 			logTime(stopWatch, "Creating repo and getting connection", TimeUnit.SECONDS);
-
 
 			stopWatch = StopWatch.createStarted();
 			connection.begin();
@@ -405,10 +401,8 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch.stop();
 			logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
 
-
 		}
 
 	}
-
 
 }

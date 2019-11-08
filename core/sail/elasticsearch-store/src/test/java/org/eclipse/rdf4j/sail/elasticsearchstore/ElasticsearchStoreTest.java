@@ -45,11 +45,11 @@ public class ElasticsearchStoreTest {
 		String version = "6.5.4";
 
 		embeddedElastic = EmbeddedElastic.builder()
-			.withElasticVersion(version)
-			.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
-			.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-			.withInstallationDirectory(installLocation)
-			.withDownloadDirectory(new File("tempElasticsearchDownload"))
+				.withElasticVersion(version)
+				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
+				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
+				.withInstallationDirectory(installLocation)
+				.withDownloadDirectory(new File("tempElasticsearchDownload"))
 //			.withPlugin("analysis-stempel")
 //			.withIndex("cars", IndexSettings.builder()
 //				.withType("car", getSystemResourceAsStream("car-mapping.json"))
@@ -59,8 +59,8 @@ public class ElasticsearchStoreTest {
 //				.withType("audio_book", getSystemResourceAsStream("audio-book-mapping.json"))
 //				.withSettings(getSystemResourceAsStream("elastic-settings.json"))
 //				.build())
-			.withStartTimeout(5, TimeUnit.MINUTES)
-			.build();
+				.withStartTimeout(5, TimeUnit.MINUTES)
+				.build();
 
 		embeddedElastic.start();
 	}
@@ -126,10 +126,10 @@ public class ElasticsearchStoreTest {
 			client.addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9350));
 
 			return client.admin()
-				.indices()
-				.getIndex(new GetIndexRequest())
-				.actionGet()
-				.getIndices();
+					.indices()
+					.getIndex(new GetIndexRequest())
+					.actionGet()
+					.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
@@ -160,7 +160,6 @@ public class ElasticsearchStoreTest {
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 		}
 	}
-
 
 	@Test
 	public void testShutdownAndRecreate() {
@@ -201,6 +200,5 @@ public class ElasticsearchStoreTest {
 		elasticsearchStore.shutDown();
 
 	}
-
 
 }
