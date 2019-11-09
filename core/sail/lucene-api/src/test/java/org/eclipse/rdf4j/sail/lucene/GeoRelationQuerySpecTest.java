@@ -61,10 +61,8 @@ public class GeoRelationQuerySpecTest extends SearchQueryEvaluatorTest {
 		bsa.setBindingSets(Collections.singletonList(bindingSet));
 
 		querySpec.replaceQueryPatternsWithResults(bsa);
-
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 
 	@Test
@@ -87,10 +85,8 @@ public class GeoRelationQuerySpecTest extends SearchQueryEvaluatorTest {
 		BindingSetAssignment bsa = new BindingSetAssignment();
 
 		querySpec.replaceQueryPatternsWithResults(bsa);
-
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 
 }
