@@ -498,6 +498,26 @@ public class ElasticsearchStoreTransactionsTest {
 
 	}
 
+	@Test
+	public void testAddDelete() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin();
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			assertEquals(1, connection.size());
+
+			connection.begin();
+			connection.remove((Resource) null, null, null);
+			connection.commit();
+
+			assertEquals(0, connection.size());
+		}
+
+	}
+
 	private HashSet<Statement> asSet(Statement... statements) {
 		return new HashSet<>(Arrays.asList(statements));
 	}

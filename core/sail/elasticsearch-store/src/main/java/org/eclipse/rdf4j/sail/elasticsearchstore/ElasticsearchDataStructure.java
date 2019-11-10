@@ -8,8 +8,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
@@ -29,8 +27,6 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
 import org.elasticsearch.index.reindex.DeleteByQueryAction;
-import org.elasticsearch.index.reindex.DeleteByQueryRequest;
-import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
@@ -114,17 +110,34 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 	@Override
 	public void removeStatement(Client client, Statement statement) {
 
-		Resource[] context = { statement.getContext() };
+		if (statement instanceof ElasticsearchId) {
+			String elasticsearchId = ((ElasticsearchId) statement).getElasticsearchId();
+			client.prepareDelete(index, ELASTICSEARCH_TYPE, elasticsearchId).get();
+		} else {
+			Resource[] context = { statement.getContext() };
+
+			BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
+					.filter(getQueryBuilder(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							context))
+					.source(index)
+					.get();
+
+			long deleted = response.getDeleted();
+			assert deleted == 1;
+		}
+
+	}
+
+	@Override
+	public void clear(Client client, Resource[] contexts) {
 
 		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
-				.filter(getQueryBuilder(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-						context))
+				.filter(getQueryBuilder(null, null, null, contexts))
+				.abortOnVersionConflict(false)
 				.source(index)
 				.get();
 
 		long deleted = response.getDeleted();
-		assert deleted == 1;
-
 	}
 
 	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(Client client, QueryBuilder queryBuilder) {
@@ -241,6 +254,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 		return new CloseableIteration<Statement, SailException>() {
 
 			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(client, queryBuilder);
+			ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
 
 			@Override
 			public boolean hasNext() throws SailException {
@@ -253,7 +267,6 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				SearchHit next = iterator.next();
 				Map<String, Object> sourceAsMap = next.getSourceAsMap();
 
-				ValueFactory vf = SimpleValueFactory.getInstance();
 				Resource subjectRes;
 				if (sourceAsMap.containsKey("subject_IRI")) {
 					subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
@@ -292,9 +305,9 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				}
 
 				if (contextRes != null) {
-					return vf.createStatement(subjectRes, predicateRes, objectRes, contextRes);
+					return vf.createStatement(next.getId(), subjectRes, predicateRes, objectRes, contextRes);
 				} else {
-					return vf.createStatement(subjectRes, predicateRes, objectRes);
+					return vf.createStatement(next.getId(), subjectRes, predicateRes, objectRes);
 				}
 			}
 

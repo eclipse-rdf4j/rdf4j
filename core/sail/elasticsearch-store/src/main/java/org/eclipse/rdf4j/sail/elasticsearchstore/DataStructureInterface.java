@@ -53,4 +53,5 @@ public abstract class DataStructureInterface {
 
 	abstract void init();
 
+	public abstract void clear(Client client, Resource[] contexts);
 }

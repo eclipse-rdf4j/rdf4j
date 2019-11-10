@@ -91,12 +91,9 @@ class ElasticsearchSailSource implements SailSource {
 			@Override
 			public void clear(Resource... contexts) throws SailException {
 
-				try (CloseableIteration<? extends Statement, SailException> statements = dataStructure
-					.getStatements(clientPool.getClient(), null, null, null, contexts)) {
-					while (statements.hasNext()) {
-						dataStructure.removeStatement(clientPool.getClient(), statements.next());
-					}
-				}
+				dataStructure.clear(clientPool.getClient(), contexts);
+
+
 
 			}
 
