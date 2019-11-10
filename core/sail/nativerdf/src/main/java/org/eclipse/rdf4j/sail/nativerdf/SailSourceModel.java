@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
- * 
+ *
  * @author James Leigh
  */
 class SailSourceModel extends AbstractModel {
@@ -281,7 +281,7 @@ class SailSourceModel extends AbstractModel {
 				try {
 					while (stmts.hasNext()) {
 						Statement st = stmts.next();
-						sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+						sink().deprecate(st);
 					}
 				} finally {
 					stmts.close();
@@ -360,7 +360,7 @@ class SailSourceModel extends AbstractModel {
 			try {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
-					sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+					sink().deprecate(st);
 				}
 			} finally {
 				stmts.close();
