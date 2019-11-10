@@ -22,68 +22,43 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.cluster.health.ClusterHealthStatus;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ElasticsearchStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);
 
-	private ElasticsearchSailStore sailStore;
-	private String hostname;
-	private int port;
+	private final ElasticsearchSailStore sailStore;
+	private final String hostname;
+	private final int port;
 
-	ClientPool clientPool = new ClientPool() {
-
-		Client client;
-
-		@Override
-		public Client getClient() {
-			if (client != null) {
-				return client;
-			}
-
-			synchronized (this) {
-				try {
-					Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
-					TransportClient client = new PreBuiltTransportClient(settings);
-					client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
-					this.client = client;
-				} catch (UnknownHostException e) {
-					throw new RuntimeException(e);
-				}
-			}
-
-			return client;
-		}
-
-		@Override
-		synchronized public void close() throws Exception {
-			if (client != null) {
-				client.close();
-				client = null;
-			}
-		}
-	};
+	final ClientPool clientPool;
 
 	public ElasticsearchStore(String hostname, int port, String index) {
+
+		clientPool = new ClientPoolImpl(hostname, port);
 
 		sailStore = new ElasticsearchSailStore(hostname, port, index, clientPool);
 		this.hostname = hostname;
 		this.port = port;
+
+		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
+		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
+				clientPool);
+
 	}
 
 	@Override
@@ -176,25 +151,25 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 		while (true) {
 			if (LocalDateTime.now().isAfter(tenMinFromNow)) {
-				logger.error("Could not connect to Elasticsearch after 10 minutes of trying!");
+				logger.error(
+						"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
 
 				try {
 					clientPool.close();
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
-				throw new RuntimeException("Could not connect to Elasticsearch after 10 minutes of trying!");
+				throw new RuntimeException(
+						"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
 
 			}
 			try {
-				Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
-				ClusterHealthResponse clusterHealthResponse;
-
 				Client client = clientPool.getClient();
 
-				ClusterHealthRequest request = new ClusterHealthRequest();
-
-				clusterHealthResponse = client.admin().cluster().health(request).actionGet();
+				ClusterHealthResponse clusterHealthResponse = client.admin()
+						.cluster()
+						.health(new ClusterHealthRequest())
+						.actionGet();
 				ClusterHealthStatus status = clusterHealthResponse.getStatus();
 				logger.info("Cluster status: {}", status.name());
 
@@ -225,4 +200,48 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 		}
 
 	}
+
+	// this code does some final safety cleanup when the user's ElasticsearchStore gets garbage collected
+	private void startGarbageCollectionMonitoring(ReferenceQueue<ElasticsearchStore> referenceQueue,
+			Reference<ElasticsearchStore> ref, ClientPool clientPool) {
+
+		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
+			Thread t = Executors.defaultThreadFactory().newThread(r);
+			// this thread pool does not need to stick around if the all other threads are done
+			t.setDaemon(true);
+			return t;
+		});
+
+		ex.execute(() -> {
+			while (referenceQueue.poll() != ref) {
+				// don't hang forever
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+					// should never be interrupted
+					break;
+				}
+			}
+
+			if (ref.get() != null) {
+				// we were apparently interrupted before the object was set to be finalized
+				return;
+			}
+
+			if (!clientPool.isClosed()) {
+				logger.warn(
+						"Closing ClientPool in ElasticsearchStore due to store having no references and shutdown() never being called()");
+			}
+
+			try {
+				clientPool.close();
+			} catch (Exception ignored) {
+				// ignoring any exception, since this cleanup is best effort
+			}
+
+		});
+		// this is a soft operation, the thread pool will actually wait until the task above has completed
+		ex.shutdown();
+	}
+
 }

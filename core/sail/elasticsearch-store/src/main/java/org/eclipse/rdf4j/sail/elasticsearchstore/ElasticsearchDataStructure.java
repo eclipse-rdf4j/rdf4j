@@ -27,6 +27,10 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.reindex.BulkByScrollResponse;
+import org.elasticsearch.index.reindex.DeleteByQueryAction;
+import org.elasticsearch.index.reindex.DeleteByQueryRequest;
+import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
@@ -109,6 +113,17 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	@Override
 	public void removeStatement(Client client, Statement statement) {
+
+		Resource[] context = { statement.getContext() };
+
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
+				.filter(getQueryBuilder(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+						context))
+				.source(index)
+				.get();
+
+		long deleted = response.getDeleted();
+		assert deleted == 1;
 
 	}
 

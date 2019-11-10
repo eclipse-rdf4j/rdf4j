@@ -52,6 +52,8 @@ public class ElasticsearchStoreTransactionsTest {
 
 	private static File installLocation = Files.newTemporaryFolder();
 
+	private static ElasticsearchStore elasticsearchStore;
+
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
@@ -76,28 +78,32 @@ public class ElasticsearchStoreTransactionsTest {
 				.build();
 
 		embeddedElastic.start();
+
+		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+
 	}
 
 	@AfterClass
 	public static void afterClass() throws IOException {
 
+		elasticsearchStore.shutDown();
 		embeddedElastic.stop();
 
 		FileUtils.deleteDirectory(installLocation);
 	}
 
-	@After
-	public void after() throws UnknownHostException {
+	@Before
+	public void before() throws UnknownHostException {
 
-		StopWatch stopWatch = StopWatch.createStarted();
-		// printAllDocs();
-		deleteAllIndexes();
-		stopWatch.stop();
-		logTime(stopWatch, "after()", TimeUnit.SECONDS);
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
+			connection.removeStatements(null, null, null);
+			connection.commit();
+		}
 
 	}
 
-	public void logTime(StopWatch stopWatch, String message, TimeUnit timeUnit) {
+	public static void logTime(StopWatch stopWatch, String message, TimeUnit timeUnit) {
 
 		if (timeUnit == TimeUnit.SECONDS) {
 			logger.info("`{}` took {} seconds", message, stopWatch.getTime(TimeUnit.MILLISECONDS) / 1000.0);
@@ -108,14 +114,6 @@ public class ElasticsearchStoreTransactionsTest {
 		} else {
 			throw new RuntimeException("Unknow time unit: " + timeUnit);
 		}
-
-	}
-
-	@Before
-	public void before() throws UnknownHostException {
-//		embeddedElastic.refreshIndices();
-//
-//		embeddedElastic.deleteIndices();
 
 	}
 
@@ -166,19 +164,16 @@ public class ElasticsearchStoreTransactionsTest {
 
 	@Test
 	public void testAddData() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetData() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -193,13 +188,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepository() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 
@@ -211,13 +205,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositorySpecificStatement() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 
@@ -230,13 +223,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryBNodeSubject() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			BNode bNode = vf.createBNode();
@@ -252,13 +244,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(bNode, statements.get(0).getSubject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryBNodeObject() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			BNode bNode = vf.createBNode();
@@ -275,13 +266,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(bNode, statements.get(0).getObject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryStringObject() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			Literal label = vf.createLiteral("label1");
@@ -297,13 +287,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryStringObjectWhitespace() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			Literal label = vf.createLiteral("rdf:type label");
@@ -319,13 +308,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryDate() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			Literal label = vf.createLiteral(new Date());
@@ -341,13 +329,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryLang() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			Literal label = vf.createLiteral("norsk bokmål", "nb");
@@ -363,13 +350,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryIRISubjectWhitespace() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			IRI iri = vf.createIRI("http://example.com/ space /test");
@@ -390,43 +376,12 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(iri, statements.get(0).getSubject());
 
 		}
-		elasticsearchStore.shutDown();
-
-	}
-
-	@Test
-	public void testAddLargeDataset() {
-		StopWatch stopWatch = StopWatch.createStarted();
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
-
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			stopWatch.stop();
-
-			logTime(stopWatch, "Creating repo and getting connection", TimeUnit.SECONDS);
-
-			stopWatch = StopWatch.createStarted();
-			connection.begin();
-			int count = 100000;
-			for (int i = 0; i < count; i++) {
-				connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i));
-			}
-			connection.commit();
-			stopWatch.stop();
-			logTime(stopWatch, "Adding data", TimeUnit.SECONDS);
-
-			stopWatch = StopWatch.createStarted();
-			assertEquals(count, connection.size());
-			stopWatch.stop();
-			logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
-
-		}
-		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testGetDataSailRepositoryContextIRI() {
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
 			Resource context1 = vf.createIRI("http://example.com/context1");
@@ -501,7 +456,6 @@ public class ElasticsearchStoreTransactionsTest {
 					contextAllStatements);
 
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
