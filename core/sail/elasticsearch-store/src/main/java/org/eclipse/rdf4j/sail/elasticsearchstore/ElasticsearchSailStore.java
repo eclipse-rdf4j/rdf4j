@@ -24,9 +24,9 @@ class ElasticsearchSailStore implements SailStore {
 	private ElasticsearchSailSource sailSource;
 	private ElasticsearchSailSource sailSourceInferred;
 
-	ElasticsearchSailStore(String hostname, int port, String index) {
-		sailSource = new ElasticsearchSailSource(new ElasticsearchDataStructure(hostname, port, index));
-		sailSourceInferred = new ElasticsearchSailSource(new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
+	ElasticsearchSailStore(String hostname, int port, String index, ClientPool clientPool) {
+		sailSource = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index));
+		sailSourceInferred = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
 	}
 
 	@Override

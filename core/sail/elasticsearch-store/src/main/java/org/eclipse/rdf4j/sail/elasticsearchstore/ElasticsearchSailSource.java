@@ -38,27 +38,26 @@ import java.util.Set;
 class ElasticsearchSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
-	private final Client client;
+	private final ClientPool clientPool;
 
 //	private final MemNamespaceStore namespaceStore;
 
-	ElasticsearchSailSource(DataStructureInterface dataStructure) {
+	ElasticsearchSailSource(ClientPool clientPool, DataStructureInterface dataStructure) {
 		this.dataStructure = dataStructure;
 //		this.namespaceStore = MemNamespaceStore;
-
-		this.client = getClient();
-
+		this.clientPool = clientPool;
 	}
+
+
 
 	@Override
 	public void close() throws SailException {
-		dataStructure.flush(client);
-		client.close();
+		dataStructure.flush(clientPool.getClient());
 	}
 
 	@Override
 	public SailSource fork() {
-		return new ElasticsearchSailSource(this.dataStructure);
+		return new ElasticsearchSailSource(clientPool, this.dataStructure);
 	}
 
 	@Override
@@ -71,7 +70,7 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public void flush() throws SailException {
-				dataStructure.flush(client);
+				dataStructure.flush(clientPool.getClient());
 			}
 
 			@Override
@@ -93,9 +92,9 @@ class ElasticsearchSailSource implements SailSource {
 			public void clear(Resource... contexts) throws SailException {
 
 				try (CloseableIteration<? extends Statement, SailException> statements = dataStructure
-					.getStatements(client, null, null, null, contexts)) {
+					.getStatements(clientPool.getClient(), null, null, null, contexts)) {
 					while (statements.hasNext()) {
-						dataStructure.removeStatement(client, statements.next());
+						dataStructure.removeStatement(clientPool.getClient(), statements.next());
 					}
 				}
 
@@ -109,13 +108,13 @@ class ElasticsearchSailSource implements SailSource {
 			@Override
 			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
-				dataStructure.addStatement(client, statement);
+				dataStructure.addStatement(clientPool.getClient(), statement);
 			}
 
 			@Override
 			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
-				dataStructure.removeStatement(client, statement);
+				dataStructure.removeStatement(clientPool.getClient(), statement);
 			}
 
 			@Override
@@ -204,7 +203,7 @@ class ElasticsearchSailSource implements SailSource {
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 																						Value obj, Resource... contexts) throws SailException {
-				return dataStructure.getStatements(client, subj, pred, obj, contexts);
+				return dataStructure.getStatements(clientPool.getClient(), subj, pred, obj, contexts);
 			}
 
 		};
@@ -216,25 +215,8 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		dataStructure.flush(client);
+		dataStructure.flush(clientPool.getClient());
 	}
-
-
-	private Client getClient() {
-
-
-		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
-		TransportClient client = new PreBuiltTransportClient(settings);
-		try {
-			client.addTransportAddress(new TransportAddress(InetAddress.getByName(dataStructure.getHostname()), dataStructure.getPort()));
-		} catch (UnknownHostException e) {
-			throw new RuntimeException(e);
-		}
-
-		return client;
-
-	}
-
 
 	public void init() {
 		dataStructure.init();

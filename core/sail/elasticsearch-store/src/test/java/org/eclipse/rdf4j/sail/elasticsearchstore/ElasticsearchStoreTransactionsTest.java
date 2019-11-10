@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import javafx.scene.paint.Stop;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
@@ -8,6 +7,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -36,7 +36,9 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -170,6 +172,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -190,6 +193,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -207,6 +211,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -225,6 +230,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
 					statements.get(0));
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -246,6 +252,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(bNode, statements.get(0).getSubject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -268,6 +275,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(bNode, statements.get(0).getObject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -289,6 +297,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -310,6 +319,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -331,6 +341,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -352,6 +363,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(label, statements.get(0).getObject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -363,8 +375,13 @@ public class ElasticsearchStoreTransactionsTest {
 			IRI iri = vf.createIRI("http://example.com/ space /test");
 			connection.add(iri, RDF.TYPE, RDFS.RESOURCE);
 
+			StopWatch stopWatch = StopWatch.createStarted();
+
 			List<? extends Statement> statements = Iterations
 					.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -373,6 +390,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(iri, statements.get(0).getSubject());
 
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
@@ -402,7 +420,93 @@ public class ElasticsearchStoreTransactionsTest {
 			logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
 
 		}
+		elasticsearchStore.shutDown();
 
+	}
+
+	@Test
+	public void testGetDataSailRepositoryContextIRI() {
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			Resource context1 = vf.createIRI("http://example.com/context1");
+			Resource context2 = vf.createBNode();
+			Resource context3 = vf.createIRI("http://example.com/context3");
+
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, context1);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context2);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PREDICATE, context3);
+			connection.add(RDF.TYPE, RDF.TYPE, vf.createLiteral("no context"));
+
+			printAllDocs();
+
+			StopWatch stopWatch = StopWatch.createStarted();
+			Set<Statement> context1Statements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context1));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			stopWatch = StopWatch.createStarted();
+
+			Set<Statement> context2Statements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context2));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			stopWatch = StopWatch.createStarted();
+
+			Set<Statement> context3Statements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context3));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			stopWatch = StopWatch.createStarted();
+
+			Set<Statement> contextNoneStatements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null, true, (Resource) null));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			stopWatch = StopWatch.createStarted();
+
+			Set<Statement> contextAllStatements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			stopWatch = StopWatch.createStarted();
+
+			Set<Statement> contextContext1And2Statements = Iterations
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context1, context2));
+
+			stopWatch.stop();
+			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
+
+			Statement statementContext1 = vf.createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, context1);
+			Statement statementContext2 = vf.createStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context2);
+			Statement statementContext3 = vf.createStatement(RDF.TYPE, RDF.TYPE, RDF.PREDICATE, context3);
+			Statement statementContextNone = vf.createStatement(RDF.TYPE, RDF.TYPE, vf.createLiteral("no context"));
+
+			assertEquals(asSet(statementContext1), context1Statements);
+			assertEquals(asSet(statementContext2), context2Statements);
+			assertEquals(asSet(statementContext3), context3Statements);
+			assertEquals(asSet(statementContext1, statementContext2), contextContext1And2Statements);
+			assertEquals(asSet(statementContextNone), contextNoneStatements);
+			assertEquals(asSet(statementContext1, statementContext2, statementContext3, statementContextNone),
+					contextAllStatements);
+
+		}
+		elasticsearchStore.shutDown();
+
+	}
+
+	private HashSet<Statement> asSet(Statement... statements) {
+		return new HashSet<>(Arrays.asList(statements));
 	}
 
 }

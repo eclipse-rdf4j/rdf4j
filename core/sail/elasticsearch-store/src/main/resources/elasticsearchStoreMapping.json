@@ -30,6 +30,12 @@
         },
         "context": {
           "type": "keyword"
+        },
+        "context_IRI": {
+          "type": "boolean"
+        },
+        "context_BNode": {
+          "type": "boolean"
         }
       }
     }

@@ -17,7 +17,6 @@ import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
@@ -119,14 +118,15 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 			Iterator<SearchHit> items;
 			String scrollId;
+			long itemsRetrieved = 0;
+			int size = 1000;
 
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
 						.setScroll(new TimeValue(60000))
-						.setSearchType(SearchType.QUERY_THEN_FETCH)
 						.setQuery(queryBuilder)
-						.setSize(1000)
+						.setSize(size)
 						.get();
 
 				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
@@ -149,27 +149,37 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				if (items.hasNext()) {
 					next = items.next();
 				} else {
-
-					SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-							.setScroll(new TimeValue(60000))
-							.execute()
-							.actionGet();
-
-					items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
-					scrollId = scrollResp.getScrollId();
-
-					if (items.hasNext()) {
-						next = items.next();
+					if (itemsRetrieved < size - 2) {
+						// the count of our prevous scroll was lower than requested size, so nothing more to get now.
+						scrollIsEmpty();
 					} else {
-						ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
-						clearScrollRequest.addScrollId(scrollId);
-						client.clearScroll(clearScrollRequest).actionGet();
-						scrollId = null;
-						empty = true;
+						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
+								.setScroll(new TimeValue(60000))
+								.execute()
+								.actionGet();
+
+						items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
+						scrollId = scrollResp.getScrollId();
+
+						if (items.hasNext()) {
+							next = items.next();
+						} else {
+							scrollIsEmpty();
+						}
+
+						itemsRetrieved = 0;
 					}
 
 				}
 
+			}
+
+			private void scrollIsEmpty() {
+				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+				clearScrollRequest.addScrollId(scrollId);
+				client.clearScroll(clearScrollRequest).actionGet();
+				scrollId = null;
+				empty = true;
 			}
 
 			@Override
@@ -185,6 +195,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 				SearchHit temp = next;
 				next = null;
 
+				itemsRetrieved++;
 				return temp;
 			}
 
@@ -197,11 +208,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			public void close() {
 
 				if (scrollId != null) {
-					ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
-					clearScrollRequest.addScrollId(scrollId);
-					client.clearScroll(clearScrollRequest).actionGet();
-					scrollId = null;
-					empty = true;
+					scrollIsEmpty();
 				}
 
 			}
@@ -262,7 +269,18 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 				}
 
-				return vf.createStatement(subjectRes, predicateRes, objectRes);
+				Resource contextRes = null;
+				if (sourceAsMap.containsKey("context_IRI")) {
+					contextRes = vf.createIRI(sourceAsMap.get("context").toString());
+				} else if (sourceAsMap.containsKey("context_BNode")) {
+					contextRes = vf.createBNode(sourceAsMap.get("context").toString());
+				}
+
+				if (contextRes != null) {
+					return vf.createStatement(subjectRes, predicateRes, objectRes, contextRes);
+				} else {
+					return vf.createStatement(subjectRes, predicateRes, objectRes);
+				}
 			}
 
 			@Override
@@ -281,7 +299,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	}
 
-	private QueryBuilder getQueryBuilder(Resource subject, IRI predicate, Value object, Resource[] context) {
+	private QueryBuilder getQueryBuilder(Resource subject, IRI predicate, Value object, Resource[] contexts) {
 		boolean matchAll = true;
 
 		BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
@@ -319,9 +337,35 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			}
 		}
 
-		if (context != null && context.length > 0) {
+		if (contexts != null && contexts.length > 0) {
 			matchAll = false;
-			throw new IllegalStateException("Not implemented yet");
+
+			BoolQueryBuilder contextQueryBuilder = new BoolQueryBuilder();
+
+			for (Resource context : contexts) {
+
+				if (context == null) {
+
+					contextQueryBuilder.should(new BoolQueryBuilder().mustNot(QueryBuilders.existsQuery("context")));
+
+				} else if (context instanceof IRI) {
+
+					contextQueryBuilder.should(
+							new BoolQueryBuilder()
+									.must(QueryBuilders.termQuery("context", context.stringValue()))
+									.must(QueryBuilders.termQuery("context_IRI", true)));
+
+				} else { // BNode
+					contextQueryBuilder.should(
+							new BoolQueryBuilder()
+									.must(QueryBuilders.termQuery("context", context.stringValue()))
+									.must(QueryBuilders.termQuery("context_BNode", true)));
+				}
+
+			}
+
+			boolQueryBuilder.must(contextQueryBuilder);
+
 		}
 
 		QueryBuilder queryBuilder;
@@ -332,7 +376,8 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 			queryBuilder = boolQueryBuilder;
 
 		}
-		return queryBuilder;
+
+		return QueryBuilders.constantScoreQuery(queryBuilder);
 	}
 
 	@Override
@@ -370,10 +415,17 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 							.field("object", Base64.getEncoder()
 									.encodeToString(
 											statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
+
 					Resource context = statement.getContext();
 
 					if (context != null) {
 						builder.field("context", context.stringValue());
+
+						if (context instanceof IRI) {
+							builder.field("context_IRI", true);
+						} else {
+							builder.field("context_BNode", true);
+						}
 					}
 
 					if (statement.getSubject() instanceof IRI) {

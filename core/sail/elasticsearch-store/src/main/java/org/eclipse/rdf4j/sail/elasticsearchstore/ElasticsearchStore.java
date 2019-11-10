@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.common.settings.Settings;
@@ -30,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
@@ -44,9 +46,42 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 	private String hostname;
 	private int port;
 
+	ClientPool clientPool = new ClientPool() {
+
+		Client client;
+
+		@Override
+		public Client getClient() {
+			if (client != null) {
+				return client;
+			}
+
+			synchronized (this) {
+				try {
+					Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
+					TransportClient client = new PreBuiltTransportClient(settings);
+					client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
+					this.client = client;
+				} catch (UnknownHostException e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			return client;
+		}
+
+		@Override
+		synchronized public void close() throws Exception {
+			if (client != null) {
+				client.close();
+				client = null;
+			}
+		}
+	};
+
 	public ElasticsearchStore(String hostname, int port, String index) {
 
-		sailStore = new ElasticsearchSailStore(hostname, port, index);
+		sailStore = new ElasticsearchSailStore(hostname, port, index, clientPool);
 		this.hostname = hostname;
 		this.port = port;
 	}
@@ -75,6 +110,11 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 	@Override
 	protected void shutDownInternal() throws SailException {
 		sailStore.close();
+		try {
+			clientPool.close();
+		} catch (Exception e) {
+			throw new SailException(e);
+		}
 
 	}
 
@@ -138,30 +178,40 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 			if (LocalDateTime.now().isAfter(tenMinFromNow)) {
 				logger.error("Could not connect to Elasticsearch after 10 minutes of trying!");
 
+				try {
+					clientPool.close();
+				} catch (Exception e) {
+					throw new RuntimeException(e);
+				}
 				throw new RuntimeException("Could not connect to Elasticsearch after 10 minutes of trying!");
 
 			}
 			try {
 				Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 				ClusterHealthResponse clusterHealthResponse;
-				try (TransportClient client = new PreBuiltTransportClient(settings)) {
-					client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
 
-					ClusterHealthRequest request = new ClusterHealthRequest();
+				Client client = clientPool.getClient();
 
-					clusterHealthResponse = client.admin().cluster().health(request).actionGet();
-					ClusterHealthStatus status = clusterHealthResponse.getStatus();
-					logger.info("Cluster status: {}", status.name());
+				ClusterHealthRequest request = new ClusterHealthRequest();
 
-					if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
-						logger.info("Elasticsearch started!");
-						return;
+				clusterHealthResponse = client.admin().cluster().health(request).actionGet();
+				ClusterHealthStatus status = clusterHealthResponse.getStatus();
+				logger.info("Cluster status: {}", status.name());
 
-					}
+				if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
+					logger.info("Elasticsearch started!");
+					return;
+
 				}
 
 			} catch (Throwable e) {
 				logger.info("Unable to connect to elasticsearch cluster due to {}", e.getClass().getSimpleName());
+
+				try {
+					clientPool.close();
+				} catch (Exception e2) {
+					throw new RuntimeException(e2);
+				}
 				e.printStackTrace();
 			}
 

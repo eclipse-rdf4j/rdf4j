@@ -139,6 +139,7 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testInstantiate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
+		elasticsearchStore.shutDown();
 	}
 
 	@Test
@@ -146,12 +147,14 @@ public class ElasticsearchStoreTest {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 		}
+		elasticsearchStore.shutDown();
 
 	}
 
 	@Test
 	public void testSailRepository() {
 		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		elasticsearchStore.shutDown();
 	}
 
 	@Test
@@ -159,6 +162,7 @@ public class ElasticsearchStoreTest {
 		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 		}
+		elasticsearchStore.shutDown();
 	}
 
 	@Test
