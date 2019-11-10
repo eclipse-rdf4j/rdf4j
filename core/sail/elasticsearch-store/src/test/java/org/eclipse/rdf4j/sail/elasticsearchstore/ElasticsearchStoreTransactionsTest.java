@@ -12,15 +12,17 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
-import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -454,6 +456,43 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(asSet(statementContextNone), contextNoneStatements);
 			assertEquals(asSet(statementContext1, statementContext2, statementContext3, statementContextNone),
 					contextAllStatements);
+
+		}
+
+	}
+
+	@Test
+	public void sparqlTest() throws IOException {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
+			connection.add(
+					ElasticsearchStoreTransactionsTest.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
+					RDFFormat.TURTLE);
+			connection.commit();
+
+			StopWatch stopwatch = StopWatch.createStarted();
+
+			TupleQuery tupleQuery = connection.prepareTupleQuery(String.join("\n", "",
+					"PREFIX sh: <http://www.w3.org/ns/shacl#>",
+					"select * where {",
+					"	?a a sh:NodeShape ;",
+					"		sh:property ?property .",
+					"",
+					"	?property sh:path ?path;",
+					"				 sh:minCount ?minCount.",
+					"}"));
+
+			List<BindingSet> bindingSets = Iterations.asList(tupleQuery.evaluate());
+
+			stopwatch.stop();
+			logTime(stopwatch, "query", TimeUnit.MILLISECONDS);
+
+			assertEquals(1, bindingSets.size());
+			assertEquals("http://example.com/ns#PersonShape", bindingSets.get(0).getValue("a").stringValue());
+			assertEquals("http://www.w3.org/2000/01/rdf-schema#label",
+					bindingSets.get(0).getValue("path").stringValue());
+			assertEquals("1", bindingSets.get(0).getValue("minCount").stringValue());
 
 		}
 
