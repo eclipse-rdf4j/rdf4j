@@ -50,14 +50,14 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DeleteBenchmark {
 
-	@Param({ "1", "10", "100", "1000" })
+	@Param({ "100", "1000", "10000" })
 	public int NUMBER_OF_STATEMENTS = 10;
 
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
 
-	SailRepository elasticsearchStore;
+	private SailRepository elasticsearchStore;
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
@@ -105,7 +105,7 @@ public class DeleteBenchmark {
 	}
 
 	@TearDown(Level.Invocation)
-	public void afterInvocation() throws IOException {
+	public void afterInvocation() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();

@@ -109,8 +109,7 @@ class ElasticsearchSailSource implements SailSource {
 			}
 
 			@Override
-			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
+			public void deprecate(Statement statement) throws SailException {
 				dataStructure.removeStatement(clientPool.getClient(), statement);
 			}
 

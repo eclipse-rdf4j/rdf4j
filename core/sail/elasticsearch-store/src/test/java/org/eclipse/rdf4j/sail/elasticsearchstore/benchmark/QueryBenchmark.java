@@ -54,7 +54,7 @@ public class QueryBenchmark {
 
 	private static File installLocation = Files.newTemporaryFolder();
 
-	SailRepository elasticsearchStore;
+	private SailRepository elasticsearchStore;
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {

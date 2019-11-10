@@ -32,7 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
- * 
+ *
  * @author James Leigh
  */
 class SailSourceBranch implements SailSource {
@@ -92,7 +92,7 @@ class SailSourceBranch implements SailSource {
 
 	/**
 	 * Creates a new in-memory {@link SailSource} derived from the given {@link SailSource}.
-	 * 
+	 *
 	 * @param backingSource
 	 */
 	public SailSourceBranch(SailSource backingSource) {
@@ -101,7 +101,7 @@ class SailSourceBranch implements SailSource {
 
 	/**
 	 * Creates a new {@link SailSource} derived from the given {@link SailSource}.
-	 * 
+	 *
 	 * @param backingSource
 	 * @param modelFactory
 	 */
@@ -112,7 +112,7 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * Creates a new {@link SailSource} derived from the given {@link SailSource} and if <code>autoFlush</code> is true,
 	 * will automatically call {@link #flush()} when not in use.
-	 * 
+	 *
 	 * @param backingSource
 	 * @param modelFactory
 	 * @param autoFlush
@@ -486,7 +486,7 @@ class SailSourceBranch implements SailSource {
 		Model deprecated = change.getDeprecated();
 		if (deprecated != null) {
 			for (Statement st : deprecated) {
-				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				sink.deprecate(st);
 			}
 		}
 		Model approved = change.getApproved();

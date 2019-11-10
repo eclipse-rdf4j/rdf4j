@@ -619,7 +619,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
-				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				sink.deprecate(st);
 				statementsRemoved = true;
 				notifyStatementRemoved(st);
 			}

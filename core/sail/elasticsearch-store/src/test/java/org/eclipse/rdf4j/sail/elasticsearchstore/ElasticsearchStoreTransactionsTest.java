@@ -510,7 +510,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(1, connection.size());
 
 			connection.begin();
-			connection.remove((Resource) null, null, null);
+			connection.remove(RDF.TYPE, null, null);
 			connection.commit();
 
 			assertEquals(0, connection.size());

@@ -95,15 +95,16 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	private final int BUFFER_THRESHOLD = 1024;
-	private List<Statement> buffer = Collections.synchronizedList(new ArrayList<>());
+	private List<Statement> addStatementBuffer = Collections.synchronizedList(new ArrayList<>());
+	private List<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>());
 
 	@Override
 	public void addStatement(Client client, Statement statement) {
-		if (buffer.size() > BUFFER_THRESHOLD) {
-			flushBuffer(client);
+		if (addStatementBuffer.size() > BUFFER_THRESHOLD) {
+			flushAddStatementBuffer(client);
 		}
 
-		buffer.add(statement);
+		addStatementBuffer.add(statement);
 
 	}
 
@@ -111,8 +112,13 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 	public void removeStatement(Client client, Statement statement) {
 
 		if (statement instanceof ElasticsearchId) {
-			String elasticsearchId = ((ElasticsearchId) statement).getElasticsearchId();
-			client.prepareDelete(index, ELASTICSEARCH_TYPE, elasticsearchId).get();
+
+			if (deleteStatementBuffer.size() > BUFFER_THRESHOLD) {
+				flushRemoveStatementBuffer(client);
+			}
+
+			deleteStatementBuffer.add((ElasticsearchId) statement);
+
 		} else {
 			Resource[] context = { statement.getContext() };
 
@@ -411,7 +417,8 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 	@Override
 	public void flush(Client client) {
 
-		flushBuffer(client);
+		flushAddStatementBuffer(client);
+		flushRemoveStatementBuffer(client);
 
 		client.admin()
 				.indices()
@@ -420,9 +427,9 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 	}
 
-	synchronized private void flushBuffer(Client client) {
+	synchronized private void flushAddStatementBuffer(Client client) {
 
-		if (buffer.isEmpty()) {
+		if (addStatementBuffer.isEmpty()) {
 			return;
 		}
 
@@ -432,7 +439,7 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 		do {
 
-			buffer.forEach(statement -> {
+			addStatementBuffer.forEach(statement -> {
 				XContentBuilder builder;
 
 				try {
@@ -502,7 +509,46 @@ public class ElasticsearchDataStructure extends DataStructureInterface {
 
 		} while (failures > 0);
 
-		buffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
+		addStatementBuffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
+
+	}
+
+	synchronized private void flushRemoveStatementBuffer(Client client) {
+
+		if (deleteStatementBuffer.isEmpty()) {
+			return;
+		}
+
+		BulkRequestBuilder bulkRequest = client.prepareBulk();
+
+		int failures = 0;
+
+		do {
+
+			deleteStatementBuffer.forEach(statement -> {
+
+				bulkRequest.add(client.prepareDelete(index, ELASTICSEARCH_TYPE, statement.getElasticsearchId()));
+
+			});
+
+			BulkResponse bulkResponse = bulkRequest.get();
+			if (bulkResponse.hasFailures()) {
+				failures++;
+				if (failures < 10) {
+					logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
+							bulkResponse.buildFailureMessage());
+				} else {
+					throw new RuntimeException("Elasticsearch has failed " + failures
+							+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
+				}
+
+			} else {
+				failures = 0;
+			}
+
+		} while (failures > 0);
+
+		deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
 
 	}
 
