@@ -29,6 +29,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.openjdk.jmh.annotations.TearDown;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
@@ -615,6 +616,36 @@ public class ElasticsearchStoreTransactionsTest {
 
 		}
 
+	}
+
+	@Test
+	public void testHashCollision() {
+		String fb = "FB";
+		String ea = "Ea";
+
+		assertEquals(fb.hashCode(), ea.hashCode());
+
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			Literal fbLiteral = vf.createLiteral(fb);
+			Literal eaLiteral = vf.createLiteral(ea);
+
+			assertEquals(fbLiteral.stringValue().hashCode(), eaLiteral.stringValue().hashCode());
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(RDF.TYPE, RDFS.LABEL, fbLiteral);
+			connection.add(RDF.TYPE, RDFS.LABEL, eaLiteral);
+			connection.commit();
+
+			assertEquals(2, connection.size());
+
+			List<Statement> fbLiteralList = Iterations.asList(connection.getStatements(null, null, fbLiteral));
+			assertEquals(1, fbLiteralList.size());
+
+			List<Statement> eaLiteralList = Iterations.asList(connection.getStatements(null, null, eaLiteral));
+			assertEquals(1, eaLiteralList.size());
+
+		}
 	}
 
 	private HashSet<Statement> asSet(Statement... statements) {

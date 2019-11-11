@@ -45,7 +45,6 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -60,6 +59,10 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 class ElasticsearchDataStructure extends DataStructureInterface {
 
 	private static final String mapping;
+
+	private final int BUFFER_THRESHOLD = 8192;
+	private List<Statement> addStatementBuffer = Collections.synchronizedList(new ArrayList<>());
+	private List<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>());
 
 	static {
 		try {
@@ -104,13 +107,9 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 	}
 
-	private final int BUFFER_THRESHOLD = 1024;
-	private List<Statement> addStatementBuffer = Collections.synchronizedList(new ArrayList<>());
-	private List<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>());
-
 	@Override
 	public void addStatement(Client client, Statement statement) {
-		if (addStatementBuffer.size() > BUFFER_THRESHOLD) {
+		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
 			flushAddStatementBuffer(client);
 		}
 
@@ -123,7 +122,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		if (statement instanceof ElasticsearchId) {
 
-			if (deleteStatementBuffer.size() > BUFFER_THRESHOLD) {
+			if (deleteStatementBuffer.size() >= BUFFER_THRESHOLD) {
 				flushRemoveStatementBuffer(client);
 			}
 
@@ -277,59 +276,84 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(client, queryBuilder);
 			ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
 
+			Statement next;
+
+			public void calculateNext() throws SailException {
+				if (next != null)
+					return;
+
+				while (iterator.hasNext() && next == null) {
+					SearchHit nextSearchHit = iterator.next();
+
+					Map<String, Object> sourceAsMap = nextSearchHit.getSourceAsMap();
+
+					Resource subjectRes;
+					if (sourceAsMap.containsKey("subject_IRI")) {
+						subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
+					} else {
+						subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
+					}
+
+					IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
+
+					Value objectRes;
+
+					String objectString = sourceAsMap.get("object").toString();
+
+					if (sourceAsMap.containsKey("object_IRI")) {
+						objectRes = vf.createIRI(objectString);
+					} else if (sourceAsMap.containsKey("object_BNode")) {
+						objectRes = vf.createBNode(objectString);
+					} else {
+						if (sourceAsMap.containsKey("object_Lang")) {
+							objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
+
+						} else {
+							objectRes = vf.createLiteral(objectString,
+									vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
+
+						}
+
+					}
+
+					// we use hash to lookup the object value because the object can be bigger than what elasticsearch
+					// allows as max for keyword (32766 bytes), so it needs to be stored in a text field that is not
+					// index. The hash is stored in an integer field and is index. The code below does hash collision
+					// check.
+					if (object != null && object.stringValue().hashCode() == objectRes.stringValue().hashCode()
+							&& !object.equals(objectRes)) {
+						continue;
+					}
+
+					Resource contextRes = null;
+					if (sourceAsMap.containsKey("context_IRI")) {
+						contextRes = vf.createIRI(sourceAsMap.get("context").toString());
+					} else if (sourceAsMap.containsKey("context_BNode")) {
+						contextRes = vf.createBNode(sourceAsMap.get("context").toString());
+					}
+
+					if (contextRes != null) {
+						next = vf.createStatement(nextSearchHit.getId(), subjectRes, predicateRes, objectRes,
+								contextRes);
+					} else {
+						next = vf.createStatement(nextSearchHit.getId(), subjectRes, predicateRes, objectRes);
+					}
+				}
+			}
+
 			@Override
 			public boolean hasNext() throws SailException {
-				return iterator.hasNext();
+				calculateNext();
+				return next != null;
 			}
 
 			@Override
 			public Statement next() throws SailException {
 
-				SearchHit next = iterator.next();
-				Map<String, Object> sourceAsMap = next.getSourceAsMap();
-
-				Resource subjectRes;
-				if (sourceAsMap.containsKey("subject_IRI")) {
-					subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
-				} else {
-					subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
-				}
-
-				IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
-
-				Value objectRes;
-
-				String objectString = new String(Base64.getDecoder().decode(sourceAsMap.get("object").toString()),
-						StandardCharsets.UTF_8);
-
-				if (sourceAsMap.containsKey("object_IRI")) {
-					objectRes = vf.createIRI(objectString);
-				} else if (sourceAsMap.containsKey("object_BNode")) {
-					objectRes = vf.createBNode(objectString);
-				} else {
-					if (sourceAsMap.containsKey("object_Lang")) {
-						objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
-
-					} else {
-						objectRes = vf.createLiteral(objectString,
-								vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
-
-					}
-
-				}
-
-				Resource contextRes = null;
-				if (sourceAsMap.containsKey("context_IRI")) {
-					contextRes = vf.createIRI(sourceAsMap.get("context").toString());
-				} else if (sourceAsMap.containsKey("context_BNode")) {
-					contextRes = vf.createBNode(sourceAsMap.get("context").toString());
-				}
-
-				if (contextRes != null) {
-					return vf.createStatement(next.getId(), subjectRes, predicateRes, objectRes, contextRes);
-				} else {
-					return vf.createStatement(next.getId(), subjectRes, predicateRes, objectRes);
-				}
+				calculateNext();
+				Statement tempNext = next;
+				next = null;
+				return tempNext;
 			}
 
 			@Override
@@ -370,8 +394,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		if (object != null) {
 			matchAll = false;
-			boolQueryBuilder.must(QueryBuilders.termQuery("object",
-					Base64.getEncoder().encodeToString(object.stringValue().getBytes(StandardCharsets.UTF_8))));
+			boolQueryBuilder.must(QueryBuilders.termQuery("object_Hash", object.stringValue().hashCode()));
 			if (object instanceof IRI) {
 				boolQueryBuilder.must(QueryBuilders.termQuery("object_IRI", true));
 			} else if (object instanceof BNode) {
@@ -462,9 +485,8 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 							.startObject()
 							.field("subject", statement.getSubject().stringValue())
 							.field("predicate", statement.getPredicate().stringValue())
-							.field("object", Base64.getEncoder()
-									.encodeToString(
-											statement.getObject().stringValue().getBytes(StandardCharsets.UTF_8)));
+							.field("object", statement.getObject().stringValue())
+							.field("object_Hash", statement.getObject().stringValue().hashCode());
 
 					Resource context = statement.getContext();
 
@@ -523,6 +545,8 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			}
 
 		} while (failures > 0);
+
+		logger.info("Added {} statements", addStatementBuffer.size());
 
 		addStatementBuffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
 

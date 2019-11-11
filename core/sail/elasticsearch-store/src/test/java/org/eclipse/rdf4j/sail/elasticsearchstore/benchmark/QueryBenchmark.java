@@ -9,14 +9,15 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -36,6 +37,9 @@ import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -90,12 +94,16 @@ public class QueryBenchmark {
 		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
 		}
 
 		System.gc();
 
+	}
+
+	private InputStream getResourceAsStream(String name) {
+		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 	@TearDown(Level.Trial)
@@ -108,10 +116,15 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public List<Statement> getStatements() throws Exception {
+	public List<BindingSet> getStatements() throws Exception {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			return Iterations.asList(connection.getStatements(null, null, null));
+			List<BindingSet> bindingSets = Iterations.asList(connection
+					.prepareTupleQuery(
+							IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8))
+					.evaluate());
+
+			return bindingSets;
 		}
 	}
 
