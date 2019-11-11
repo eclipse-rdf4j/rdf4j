@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.federated.Config;
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
@@ -93,7 +92,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected Executor executor;
 	protected Cache cache;
 
-	public FederationEvalStrategy() {
+	protected FederationContext federationContext;
+
+	public FederationEvalStrategy(FederationContext federationContext) {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
 
 			@Override
@@ -110,9 +111,10 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			public ValueFactory getValueFactory() {
 				return SimpleValueFactory.getInstance();
 			}
-		}, DelegateFederatedServiceResolver.getInstance());
-		this.executor = FederationManager.getInstance().getExecutor();
-		this.cache = FederationManager.getInstance().getCache();
+		}, federationContext.getFederatedServiceResolver());
+		this.federationContext = federationContext;
+		this.executor = federationContext.getManager().getExecutor();
+		this.cache = federationContext.getCache();
 	}
 
 	@Override
@@ -195,7 +197,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		if (contexts.length != 0)
 			log.warn("Context queries are not yet supported by FedX.");
 
-		List<Endpoint> members = FederationManager.getInstance().getFederation().getMembers();
+		List<Endpoint> members = federationContext.getFederation().getMembers();
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
@@ -215,7 +217,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return new EmptyIteration<>();
 
 		if (sources.size() == 1) {
-			Endpoint e = EndpointManager.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
+			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
 			return e.getTripleSource().getStatements(subj, pred, obj, contexts);
 		}
 
@@ -223,7 +225,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(this, queryInfo);
 
 		for (StatementSource source : sources) {
-			Endpoint e = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, contexts);
 			union.addTask(task);
 		}
@@ -239,7 +241,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
 			BindingSet bindings) throws QueryEvaluationException {
 
-		ParallelServiceExecutor pe = new ParallelServiceExecutor(service, this, bindings);
+		ParallelServiceExecutor pe = new ParallelServiceExecutor(service, this, bindings, federationContext);
 		pe.run(); // non-blocking (blocking happens in the iterator)
 		return pe;
 	}
@@ -261,7 +263,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getArg(0), bindings);
 
-		ControlledWorkerScheduler<BindingSet> joinScheduler = FederationManager.getInstance().getJoinScheduler();
+		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 
 		for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
 
@@ -310,7 +312,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			// left join is "well designed"
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(leftJoin.getLeftArg(),
 					bindings);
-			ControlledWorkerScheduler<BindingSet> scheduler = FederationManager.getInstance().getLeftJoinScheduler();
+			ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
 
 			ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler, this, leftIter, leftJoin,
 					bindings, leftJoin.getQueryInfo());
@@ -325,7 +327,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNaryUnion(NUnion union, BindingSet bindings)
 			throws QueryEvaluationException {
 
-		ControlledWorkerScheduler<BindingSet> unionScheduler = FederationManager.getInstance().getUnionScheduler();
+		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
 		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(this, unionScheduler,
 				union.getQueryInfo());
 
@@ -466,17 +468,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			CloseableIteration<BindingSet, QueryEvaluationException> result;
 
 			if (statementSources.size() == 1) {
-				Endpoint ownedEndpoint = EndpointManager.getEndpointManager()
+				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
 				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
 			}
 
 			else {
-				WorkerUnionBase<BindingSet> union = FederationManager.getInstance().createWorkerUnion(queryInfo);
+				WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 				for (StatementSource source : statementSources) {
-					Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint,
 							EmptyBindingSet.getInstance(), null));
 				}
@@ -502,17 +504,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			CloseableIteration<BindingSet, QueryEvaluationException> result;
 
 			if (statementSources.size() == 1) {
-				Endpoint ownedEndpoint = EndpointManager.getEndpointManager()
+				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
 				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
 			}
 
 			else {
-				WorkerUnionBase<BindingSet> union = FederationManager.getInstance().createWorkerUnion(queryInfo);
+				WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 				for (StatementSource source : statementSources) {
-					Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedAlgebraUnionTask(union, preparedQuery, ownedEndpoint,
 							EmptyBindingSet.getInstance(), null));
 				}

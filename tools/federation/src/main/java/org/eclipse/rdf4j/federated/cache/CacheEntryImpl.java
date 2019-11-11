@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.EntryUpdateException;
@@ -37,11 +36,6 @@ public class CacheEntryImpl implements CacheEntry {
 		return entry == null ? StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
 				: (entry.doesProvideStatements() ? StatementSourceAssurance.HAS_REMOTE_STATEMENTS
 						: StatementSourceAssurance.NONE);
-	}
-
-	@Override
-	public List<Endpoint> getEndpoints() {
-		return EndpointManager.getEndpointManager().getEndpoints(entries.keySet());
 	}
 
 	@Override

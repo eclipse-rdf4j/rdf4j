@@ -11,11 +11,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.cache.Cache;
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
-import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
@@ -23,6 +20,7 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.sail.Sail;
 import org.slf4j.Logger;
@@ -44,54 +42,52 @@ public class FedXFactory {
 	protected static final Logger log = LoggerFactory.getLogger(FedXFactory.class);
 
 	/**
-	 * Initialize the federation with the provided sparql endpoints.
+	 * Create a federation with the provided sparql endpoints.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param sparqlEndpoints the list of SPARQL endpoints
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeSparqlFederation(
+	public static FedXRepository createSparqlFederation(
 			List<String> sparqlEndpoints) throws Exception {
-
 		return newFederation().withSparqlEndpoints(sparqlEndpoints).create();
 	}
 
 	/**
-	 * Initialize the federation with a specified data source configuration file (*.ttl). Federation members are
-	 * constructed from the data source configuration. Sample data source configuration files can be found in the
-	 * documentation.
+	 * Create the federation with a specified data source configuration file (*.ttl). Federation members are constructed
+	 * from the data source configuration. Sample data source configuration files can be found in the documentation.
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param dataConfig the location of the data source configuration
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeFederation(File dataConfig)
+	public static FedXRepository createFederation(File dataConfig)
 			throws Exception {
 		return newFederation().withMembers(dataConfig).create();
 	}
 
 	/**
-	 * Initialize the federation by providing the endpoints to add. The fedx configuration can provide information about
-	 * the dataConfig to be used which may contain the default federation members.
+	 * Create the federation by providing the endpoints to add. The fedx configuration can provide information about the
+	 * dataConfig to be used which may contain the default federation members.
 	 * <p>
 	 * 
 	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param endpoints additional endpoints to be added, may be null or empty
 	 * 
-	 * @return the initialized FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 * 
 	 * @throws Exception
 	 */
-	public static FedXRepository initializeFederation(
+	public static FedXRepository createFederation(
 			List<Endpoint> endpoints) throws FedXException {
 
 		return newFederation().withMembers(endpoints).create();
@@ -108,6 +104,7 @@ public class FedXFactory {
 	}
 
 	protected RepositoryResolver repositoryResolver;
+	protected FederatedServiceResolver federatedServiceResolver;
 	protected List<Endpoint> members = new ArrayList<>();
 	protected File fedxConfig;
 	protected File fedxBaseDir;
@@ -118,6 +115,11 @@ public class FedXFactory {
 
 	public FedXFactory withRepositoryResolver(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
+		return this;
+	}
+
+	public FedXFactory withFederatedServiceResolver(FederatedServiceResolver federatedServiceResolver) {
+		this.federatedServiceResolver = federatedServiceResolver;
 		return this;
 	}
 
@@ -216,25 +218,21 @@ public class FedXFactory {
 			}
 		}
 
-		// initialize defaults
-		Cache cache = initializeCache();
-
 		initializeMembersFromConfig();
-
-		initializeResolvableEndpoints();
 
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}
-		return FederationManager.initialize(members, cache);
-	}
 
-	protected Cache initializeCache() {
-		String location = Config.getConfig().getCacheLocation();
-		File cacheLocation = FileUtil.getFileLocation(location);
-		Cache cache = new MemoryCache(cacheLocation);
-		cache.initialize();
-		return cache;
+		FedX federation = new FedX(members);
+		FedXRepository repo = new FedXRepository(federation);
+		if (this.repositoryResolver != null) {
+			repo.setRepositoryResolver(repositoryResolver);
+		}
+		if (this.federatedServiceResolver != null) {
+			repo.setFederatedServiceResolver(federatedServiceResolver);
+		}
+		return repo;
 	}
 
 	protected void initializeMembersFromConfig() {
@@ -246,16 +244,5 @@ public class FedXFactory {
 
 		File dataConfigFile = FileUtil.getFileLocation(dataConfig);
 		withMembers(dataConfigFile);
-	}
-
-	protected void initializeResolvableEndpoints() {
-		for (Endpoint e : members) {
-			if (e instanceof ResolvableEndpoint) {
-				if (repositoryResolver != null) {
-					// configure the explicitly set repository resolver, if any
-					((ResolvableEndpoint) e).setRepositoryResolver(repositoryResolver);
-				}
-			}
-		}
 	}
 }

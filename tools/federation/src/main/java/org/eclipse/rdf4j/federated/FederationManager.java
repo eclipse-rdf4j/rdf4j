@@ -7,22 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
-import org.eclipse.rdf4j.federated.endpoint.EndpointType;
-import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
@@ -35,14 +28,8 @@ import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.monitoring.Monitoring;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
-import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
-import org.eclipse.rdf4j.federated.util.Version;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +47,7 @@ import org.slf4j.LoggerFactory;
  * <pre>
  * Config.initialize(fedxConfig);
  * List&ltEndpoint&gt members = ...			// e.g. use EndpointFactory methods
- * Repository repo = FedXFactory.initializeFederation(endpoints);
+ * FedXRepository repo = FedXFactory.initializeFederation(endpoints);
  * ReositoryConnection conn = repo.getConnection();
  * 
  * // Do something with the connection, e.g. query evaluation
@@ -85,107 +72,9 @@ public class FederationManager {
 		HYBRID;
 	}
 
-	/**
-	 * The singleton instance of the federation manager
-	 */
-	private static FederationManager instance = null;
-
-	/**
-	 * Initialize the Singleton {@link FederationManager} instance with the provided information. The
-	 * {@link FederationManager} remains initialized until {@link #shutDown()} is invoked, usually this is done by
-	 * invoking {@link Repository#shutDown()}:
-	 * 
-	 * @param members initialize the federation with a list of repository members, null and empty lists are allowed
-	 * @param cache   the cache instance to be used
-	 * @return the initialized {@link Repository} representing the federation. Needs to be shut down by the caller
-	 */
-	static synchronized FedXRepository initialize(List<Endpoint> members, Cache cache) {
-		if (instance != null)
-			throw new FedXRuntimeException("FederationManager already initialized.");
-
-		log.info("Initializing federation manager ...");
-		log.info("FedX Version Information: " + Version.getVersionInfo().getVersionString());
-
-		monitoring = MonitoringFactory.createMonitoring();
-
-		DelegateFederatedServiceResolver.initialize();
-
-		ExecutorService ex = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
-		FedX federation = new FedX(members);
-
-		FedXRepository repo = new FedXRepository(federation);
-
-		instance = new FederationManager(federation, cache, ex, repo);
-		instance.updateStrategy();
-		instance.reset();
-
-		try {
-			repo.init();
-		} catch (RepositoryException e) {
-			// should never occur
-			throw new FedXRuntimeException(e);
-		}
-
-		EndpointManager.initialize(members);
-
-		if (Config.getConfig().isEnableJMX()) {
-			try {
-				MonitoringUtil.initializeJMXMonitoring();
-			} catch (Exception e1) {
-				log.error("JMX monitoring could not be initialized: " + e1.getMessage());
-			}
-		}
-
-		// initialize prefix declarations, if any
-		String prefixFile = Config.getConfig().getPrefixDeclarations();
-		if (prefixFile != null) {
-			QueryManager qm = instance.getQueryManager();
-			Properties props = new Properties();
-			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {
-				props.load(fin);
-			} catch (IOException e) {
-				throw new FedXRuntimeException("Error loading prefix properties: " + e.getMessage());
-			}
-
-			for (String ns : props.stringPropertyNames()) {
-				qm.addPrefixDeclaration(ns, props.getProperty(ns)); // register namespace/prefix pair
-			}
-		}
-
-		return repo;
-	}
-
-	/**
-	 * Return the initialized {@link FederationManager} instance.
-	 * 
-	 * @return the federation manager
-	 */
-	public static FederationManager getInstance() {
-		if (instance == null)
-			throw new FedXRuntimeException("FederationManager has not been initialized yet, call #initialize() first.");
-		return instance;
-	}
-
-	/**
-	 * Returns true if the {@link FederationManager} is initialized.
-	 * 
-	 * @return true or false;
-	 */
-	public static boolean isInitialized() {
-		return instance != null;
-	}
-
-	static Monitoring monitoring;
-
-	public static Monitoring getMonitoringService() {
-		if (!isInitialized())
-			throw new IllegalStateException("Monitoring service can only be used if FedX is initialized.");
-		return monitoring;
-	}
-
 	/* Instance variables */
+	protected FederationContext federationContext;
 	protected FedX federation;
-	protected Cache cache;
 	protected ExecutorService executor;
 	protected FederationEvalStrategy strategy;
 	protected FederationType type;
@@ -193,16 +82,17 @@ public class FederationManager {
 	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
 	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
 
-	private FederationManager(FedX federation, Cache cache, ExecutorService executor,
-			Repository repo) {
-		this.federation = federation;
-		this.cache = cache;
-		this.executor = executor;
-		QueryManager.instance = new QueryManager(this, repo); // initialize the singleton query manager
+	public FederationManager() {
+
 	}
 
-	public FedX getFederation() {
-		return federation;
+	public void init(FedX federation, FederationContext federationContext) {
+		this.federation = federation;
+		this.federationContext = federationContext;
+		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
+
+		updateStrategy();
+		reset();
 	}
 
 	/**
@@ -230,16 +120,8 @@ public class FederationManager {
 
 	}
 
-	public Cache getCache() {
-		return cache;
-	}
-
 	public Executor getExecutor() {
 		return executor;
-	}
-
-	public Monitoring getMonitoring() {
-		return monitoring;
 	}
 
 	public FederationEvalStrategy getStrategy() {
@@ -263,36 +145,16 @@ public class FederationManager {
 	}
 
 	/**
+	 * Add the specified endpoint to the federation. The federation must not contain a member with the same endpoint
+	 * location.
 	 * 
-	 * @return the singleton query manager
-	 */
-	public QueryManager getQueryManager() {
-		// the singleton querymanager
-		return QueryManager.getInstance();
-	}
-
-	/**
-	 * Add the specified endpoint to the federation. The endpoint must be initialized and the federation must not
-	 * contain a member with the same endpoint location.
-	 * 
-	 * @param e              the initialized endpoint
+	 * @param e              the endpoint
 	 * @param updateStrategy optional parameter, to determine if strategy is to be updated, default=true
 	 * 
-	 * @throws FedXRuntimeException if the endpoint is not initialized, or if the federation has already a member with
-	 *                              the same location
+	 * @throws FedXRuntimeException if the federation has already a member with the same location
 	 */
 	public void addEndpoint(Endpoint e, boolean... updateStrategy) throws FedXRuntimeException {
 		log.info("Adding endpoint " + e.getId() + " to federation ...");
-
-		/* check if endpoint is initialized */
-		if (!e.isInitialized()) {
-			try {
-				e.initialize();
-			} catch (RepositoryException e1) {
-				throw new FedXRuntimeException(
-						"Provided endpoint was not initialized and could not be initialized: " + e1.getMessage(), e1);
-			}
-		}
 
 		/* check for duplicate before adding: heuristic => same location */
 		for (Endpoint member : federation.getMembers())
@@ -301,7 +163,7 @@ public class FederationManager {
 						+ e.getEndpoint() + " (eid=" + member.getId() + ")");
 
 		federation.addMember(e);
-		EndpointManager.getEndpointManager().addEndpoint(e);
+		federationContext.getEndpointManager().addEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true))
@@ -311,7 +173,7 @@ public class FederationManager {
 	/**
 	 * Add the specified endpoints to the federation and take care for updating all structures.
 	 * 
-	 * @param endpoints a list of initialized endpoints to add
+	 * @param endpoints a list of endpoints to add
 	 */
 	public void addAll(List<Endpoint> endpoints) {
 		log.info("Adding " + endpoints.size() + " endpoints to the federation.");
@@ -337,8 +199,7 @@ public class FederationManager {
 			throw new FedXRuntimeException("Endpoint " + e.getId() + " is not a member of the current federation.");
 
 		federation.removeMember(e);
-		EndpointManager.getEndpointManager().removeEndpoint(e);
-		e.shutDown();
+		federationContext.getEndpointManager().removeEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true))
@@ -362,27 +223,6 @@ public class FederationManager {
 	}
 
 	/**
-	 * return the number of triples in the federation as string. Retrieving the size is only supported
-	 * {@link EndpointType#NativeStore} and {@link EndpointType#RemoteRepository}.
-	 * 
-	 * If the federation contains other types of endpoints, the size is indicated as a lower bound, i.e. the string
-	 * starts with a larger sign.
-	 * 
-	 * @return the number of triples in the federation
-	 */
-	public String getFederationSize() {
-		long size = 0;
-		boolean isLowerBound = false;
-		for (Endpoint e : getFederation().getMembers())
-			try {
-				size += e.size();
-			} catch (RepositoryException e1) {
-				isLowerBound = true;
-			}
-		return isLowerBound ? ">" + size : Long.toString(size);
-	}
-
-	/**
 	 * Shutdown the federation including the following operations:
 	 * <p>
 	 * 
@@ -395,14 +235,10 @@ public class FederationManager {
 	 * @throws FedXException if an error occurs while shutting down the federation
 	 */
 	public synchronized void shutDown() throws FedXException {
-		if (instance == null) {
-			log.warn("Federation is already shut down. Ignoring.");
-			log.debug("Details:", new Exception("Trace"));
-			return;
-		}
+
 		log.info("Shutting down federation and all underlying repositories ...");
 		// Abort all running queries
-		QueryManager.instance.shutdown();
+		federationContext.getQueryManager().shutdown();
 		executor.shutdown();
 		try {
 			executor.awaitTermination(30, TimeUnit.SECONDS);
@@ -428,13 +264,9 @@ public class FederationManager {
 			log.warn("Failed to shutdown left join scheduler: " + e.getMessage());
 			log.debug("Details: ", e);
 		}
-		DelegateFederatedServiceResolver.shutdown(); // shutdown any federated service resolver
-		federation.shutDownInternal();
-		cache.persist();
+		federationContext.getFederatedServiceResolver().shutDown();
+		federationContext.getCache().persist();
 		Config.reset();
-		EndpointManager.getEndpointManager().shutDown();
-		instance = null;
-		monitoring = null;
 	}
 
 	/**
@@ -447,7 +279,7 @@ public class FederationManager {
 	 * @see SynchronousWorkerUnion
 	 */
 	public WorkerUnionBase<BindingSet> createWorkerUnion(QueryInfo queryInfo) {
-		FederationEvalStrategy strategy = FederationManager.getInstance().getStrategy();
+		FederationEvalStrategy strategy = getStrategy();
 		if (type == FederationType.LOCAL)
 			return new SynchronousWorkerUnion<>(strategy, queryInfo);
 		return new ControlledWorkerUnion<>(strategy, unionScheduler, queryInfo);
@@ -469,7 +301,7 @@ public class FederationManager {
 	 * </ul>
 	 * 
 	 */
-	protected void updateStrategy() {
+	public void updateStrategy() {
 
 		int localCount = 0, remoteCount = 0;
 		for (Endpoint e : federation.getMembers()) {
@@ -498,9 +330,9 @@ public class FederationManager {
 		}
 
 		if (updated) {
-			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type);
+			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type, federationContext);
 			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
-					+ instance.strategy.getClass().getSimpleName());
+					+ strategy.getClass().getSimpleName());
 		}
 
 	}

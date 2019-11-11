@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
@@ -43,12 +44,16 @@ import org.slf4j.LoggerFactory;
 public abstract class TripleSourceBase implements TripleSource {
 	private static final Logger log = LoggerFactory.getLogger(TripleSourceBase.class);
 
+	protected final FederationContext federationContext;
 	protected final Monitoring monitoringService;
 	protected final Endpoint endpoint;
+	protected final FederationEvalStrategy strategy;
 
-	public TripleSourceBase(Monitoring monitoring, Endpoint endpoint) {
-		this.monitoringService = monitoring;
+	public TripleSourceBase(FederationContext federationContext, Endpoint endpoint) {
+		this.federationContext = federationContext;
+		this.monitoringService = federationContext.getMonitoringService();
 		this.endpoint = endpoint;
+		this.strategy = federationContext.getStrategy();
 	}
 
 	@Override

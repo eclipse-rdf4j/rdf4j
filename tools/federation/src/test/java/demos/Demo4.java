@@ -11,19 +11,20 @@ import java.util.Arrays;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.QueryManager;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
 
 public class Demo4 {
 
 	public static void main(String[] args) throws Exception {
 
 		Config.initialize();
-		Repository repo = FedXFactory.initializeSparqlFederation(Arrays.asList(
+		FedXRepository repo = FedXFactory.createSparqlFederation(Arrays.asList(
 				"http://dbpedia.org/sparql",
 				"http://data.semanticweb.org/sparql"));
+
+		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
@@ -31,7 +32,7 @@ public class Demo4 {
 				+ "?President rdf:type dbpedia-owl:President .\n"
 				+ "?President dbpedia-owl:party ?Party . }";
 
-		TupleQuery query = QueryManager.prepareTupleQuery(q);
+		TupleQuery query = repo.getQueryManager().prepareTupleQuery(q);
 		try (TupleQueryResult res = query.evaluate()) {
 
 			while (res.hasNext()) {

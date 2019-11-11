@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MediumConcurrencyTest extends SPARQLBaseTest {
@@ -79,6 +80,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	}
 
 	@Test
+	@Disabled // just a test for showing the phaser
 	public void testPhaser() throws Exception {
 
 		final Phaser p1 = new Phaser(1);

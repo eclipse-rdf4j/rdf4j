@@ -9,14 +9,22 @@ package org.eclipse.rdf4j.federated;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class FedXFactoryTest extends SPARQLServerBaseTest {
+
+	// set during test runtime
+	private FederationContext federationContext;
+
+	@BeforeEach
+	public void before() {
+		federationContext = null;
+	}
 
 	@Test
 	public void testFederationWithResolver() throws Exception {
@@ -35,6 +43,8 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 				.withResolvableEndpoint("endpoint2")
 				.create();
 
+		repo.init();
+		federationContext = repo.getFederationContext();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
 		}
@@ -60,6 +70,8 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 				.withMembers(dataConfig)
 				.create();
 
+		repo.init();
+		federationContext = repo.getFederationContext();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
 		}
@@ -69,5 +81,10 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 
 	protected File toFile(String resource) throws Exception {
 		return new File(FedXFactoryTest.class.getResource(resource).toURI());
+	}
+
+	@Override
+	protected FederationContext federationContext() {
+		return this.federationContext;
 	}
 }

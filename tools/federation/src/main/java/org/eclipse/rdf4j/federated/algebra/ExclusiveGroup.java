@@ -15,9 +15,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -44,6 +43,8 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 	protected FilterValueExpr filter = null;
 	protected transient Endpoint ownedEndpoint = null;
 
+	private final FederationEvalStrategy strategy;
+
 	public ExclusiveGroup(Collection<ExclusiveStatement> ownedNodes, StatementSource owner, QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
 		this.owner = new ArrayList<>(1);
@@ -51,7 +52,9 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
-		ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(owner.getEndpointID());
+		ownedEndpoint = queryInfo.getFederationContext().getEndpointManager().getEndpoint(owner.getEndpointID());
+
+		strategy = queryInfo.getFederationContext().getStrategy();
 	}
 
 	/**
@@ -163,7 +166,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 		try {
 			// use the particular evaluation strategy for evaluation
-			return FederationManager.getInstance().getStrategy().evaluateExclusiveGroup(this, bindings);
+			return strategy.evaluateExclusiveGroup(this, bindings);
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}

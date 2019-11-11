@@ -8,10 +8,20 @@
 package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
+import java.util.Set;
 
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class ServiceTests extends SPARQLBaseTest {
@@ -80,8 +90,8 @@ public class ServiceTests extends SPARQLBaseTest {
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		Endpoint endpoint1 = EndpointManager.getEndpointManager().getEndpointByName("http://endpoint1");
-		FederationManager.getInstance().removeEndpoint(endpoint1);
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
+		fedxRule.removeEndpoint(endpoint1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
 	}
 
@@ -158,5 +168,57 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		evaluateQueryPlan("/tests/service/query08.rq", "/tests/service/query08.qp");
 		execute("/tests/service/query08.rq", "/tests/service/query08.srx", false);
+	}
+
+	@Test
+	public void test9() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
+			@Override
+			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
+			}
+		};
+
+		// workaround for test: shutdown and re-initialize in order to set a custom federated service
+		FedXRepository repo = fedxRule.getRepository();
+		repo.shutDown();
+		Config.initialize();
+		repo.setFederatedServiceResolver(serviceResolver);
+		repo.init();
+
+		/*
+		 * test select query retrieving all persons from endpoint 1 (SERVICE), endpoint not part of federation =>
+		 * evaluate using externally provided service resolver endpoint1 is reachable as
+		 * http://localhost:18080/repositories/endpoint1 via HTTP
+		 */
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
+				"/tests/data/data4.ttl"));
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
+		fedxRule.removeEndpoint(endpoint1);
+		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
+
+		Assertions.assertEquals(1,
+				((TestSparqlFederatedService) serviceResolver
+						.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount);
+	}
+
+	static class TestSparqlFederatedService extends SPARQLFederatedService {
+
+		long serviceRequestCount = 0;
+
+		public TestSparqlFederatedService(String serviceUrl, HttpClientSessionManager client) {
+			super(serviceUrl, client);
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
+				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+			serviceRequestCount++;
+			return super.select(service, projectionVars, bindings, baseUri);
+		}
+
 	}
 }

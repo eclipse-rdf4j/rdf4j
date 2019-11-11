@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -44,6 +44,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	protected final FedXService service;
 	protected final FederationEvalStrategy strategy;
 	protected final BindingSet bindings;
+	protected final FederationContext federationContext;
 
 	protected CloseableIteration<BindingSet, QueryEvaluationException> rightIter = null;
 	protected boolean finished = false;
@@ -55,20 +56,22 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	 * @param service
 	 * @param strategy
 	 * @param bindings
+	 * @param federationContext
 	 */
 	public ParallelServiceExecutor(FedXService service,
-			FederationEvalStrategy strategy, BindingSet bindings) {
+			FederationEvalStrategy strategy, BindingSet bindings, FederationContext federationContext) {
 		super();
 		this.service = service;
 		this.strategy = strategy;
 		this.bindings = bindings;
+		this.federationContext = federationContext;
 	}
 
 	@Override
 	public void run() {
 
 		latch = new CountDownLatch(1);
-		ControlledWorkerScheduler<BindingSet> scheduler = FederationManager.getInstance().getUnionScheduler();
+		ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getUnionScheduler();
 		scheduler.schedule(new ParallelServiceTask());
 	}
 

@@ -28,6 +28,8 @@ public class GettingStartedDemo {
 				.withSparqlEndpoint("https://query.wikidata.org/sparql")
 				.create();
 
+		repository.init();
+
 		try (RepositoryConnection conn = repository.getConnection()) {
 
 			String query = "PREFIX wd: <http://www.wikidata.org/entity/> "

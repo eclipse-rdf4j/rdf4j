@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager.FederationType;
 
 /**
@@ -23,23 +24,27 @@ public class FederationEvaluationStrategyFactory {
 	 * this is {@link Config#getSailEvaluationStrategy()} and {@link Config#getSPARQLEvaluationStrategy()}.
 	 * 
 	 * @param federationType
+	 * @param federationContext
 	 * @return the {@link FederationEvalStrategy}
 	 */
-	public static FederationEvalStrategy getEvaluationStrategy(FederationType federationType) {
+	public static FederationEvalStrategy getEvaluationStrategy(FederationType federationType,
+			FederationContext federationContext) {
 
 		switch (federationType) {
 		case LOCAL:
-			return instantiate(Config.getConfig().getSailEvaluationStrategy());
+			return instantiate(Config.getConfig().getSailEvaluationStrategy(), federationContext);
 		case REMOTE:
 		case HYBRID:
 		default:
-			return instantiate(Config.getConfig().getSPARQLEvaluationStrategy());
+			return instantiate(Config.getConfig().getSPARQLEvaluationStrategy(), federationContext);
 		}
 	}
 
-	private static FederationEvalStrategy instantiate(String evalStrategyClass) {
+	private static FederationEvalStrategy instantiate(String evalStrategyClass, FederationContext federationContext) {
 		try {
-			return (FederationEvalStrategy) Class.forName(evalStrategyClass).getDeclaredConstructor().newInstance();
+			return (FederationEvalStrategy) Class.forName(evalStrategyClass)
+					.getDeclaredConstructor(FederationContext.class)
+					.newInstance(federationContext);
 		} catch (InstantiationException e) {
 			throw new IllegalStateException("Class " + evalStrategyClass + " could not be instantiated.", e);
 		} catch (ClassNotFoundException e) {

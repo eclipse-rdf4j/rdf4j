@@ -18,17 +18,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
-import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.cache.Cache;
+import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.cache.CacheEntry;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
-import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -160,7 +158,8 @@ public class SourceSelection {
 		Set<Endpoint> endpoints = new HashSet<>();
 		for (List<StatementSource> sourceList : stmtToSources.values())
 			for (StatementSource source : sourceList)
-				endpoints.add(EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID()));
+				endpoints
+						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
 		return endpoints;
 	}
 
@@ -192,13 +191,15 @@ public class SourceSelection {
 		}
 
 		private final SourceSelection sourceSelection;
-		private ControlledWorkerScheduler<BindingSet> scheduler = FederationManager.getInstance().getJoinScheduler();
+		private final ControlledWorkerScheduler<BindingSet> scheduler;
 		private CountDownLatch latch;
 		private boolean finished = false;
 		protected List<Exception> errors = new CopyOnWriteArrayList<>();
 
 		private SourceSelectionExecutorWithLatch(SourceSelection sourceSelection) {
 			this.sourceSelection = sourceSelection;
+			// TODO simpler access pattern
+			this.scheduler = sourceSelection.queryInfo.getFederationContext().getManager().getJoinScheduler();
 		}
 
 		/**

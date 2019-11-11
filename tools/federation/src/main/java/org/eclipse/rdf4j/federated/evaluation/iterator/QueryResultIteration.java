@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,12 +34,14 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 
 	protected final CloseableIteration<BindingSet, QueryEvaluationException> inner;
 	protected final QueryInfo queryInfo;
+	protected final QueryManager qm;
 
 	public QueryResultIteration(
 			CloseableIteration<BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;
+		this.qm = queryInfo.getFederationContext().getQueryManager();
 	}
 
 	@Override
@@ -49,7 +50,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 			return true;
 		else {
 			// inform the query manager that this query is done
-			FederationManager.getInstance().getQueryManager().finishQuery(queryInfo);
+			qm.finishQuery(queryInfo);
 			return false;
 		}
 	}
@@ -59,7 +60,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 		try {
 			BindingSet next = inner.next();
 			if (next == null)
-				FederationManager.getInstance().getQueryManager().finishQuery(queryInfo);
+				qm.finishQuery(queryInfo);
 			return next;
 		} catch (QueryEvaluationException e) {
 			abortQuery();
@@ -82,7 +83,6 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	 * Abort the query in the schedulers if it is still running.
 	 */
 	protected void abortQuery() {
-		QueryManager qm = FederationManager.getInstance().getQueryManager();
 		if (qm.isRunning(queryInfo))
 			qm.abortQuery(queryInfo);
 	}

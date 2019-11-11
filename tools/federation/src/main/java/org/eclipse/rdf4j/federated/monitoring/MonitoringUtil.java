@@ -12,16 +12,16 @@ import java.lang.management.ManagementFactory;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformation;
 import org.eclipse.rdf4j.federated.monitoring.jmx.FederationStatus;
 
 public class MonitoringUtil {
 
-	public static void printMonitoringInformation() {
+	public static void printMonitoringInformation(FederationContext federationContext) {
 
-		MonitoringService ms = getMonitoringService();
+		MonitoringService ms = getMonitoringService(federationContext);
 
 		System.out.println("### Request monitoring: ");
 		for (MonitoringInformation m : ms.getAllMonitoringInformation()) {
@@ -29,8 +29,9 @@ public class MonitoringUtil {
 		}
 	}
 
-	public static MonitoringService getMonitoringService() throws FedXRuntimeException {
-		Monitoring m = FederationManager.getMonitoringService();
+	private static MonitoringService getMonitoringService(FederationContext federationContext)
+			throws FedXRuntimeException {
+		Monitoring m = federationContext.getMonitoringService();
 		if (m instanceof MonitoringService)
 			return (MonitoringService) m;
 		throw new FedXRuntimeException("Monitoring is currently disabled for this system.");
@@ -47,12 +48,12 @@ public class MonitoringUtil {
 	 * 
 	 * @throws Exception
 	 */
-	public static void initializeJMXMonitoring() throws Exception {
+	public static void initializeJMXMonitoring(FederationContext federationContext) throws Exception {
 		if (JMX_initialized)
 			return;
 		MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
 		ObjectName monitoring = new ObjectName("org.eclipse.rdf4j.federated:type=FederationStatus");
-		mbs.registerMBean(new FederationStatus(), monitoring);
+		mbs.registerMBean(new FederationStatus(federationContext), monitoring);
 		JMX_initialized = true;
 	}
 }
