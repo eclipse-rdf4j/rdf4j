@@ -1,4 +1,3 @@
-/* @formatter:off */
 /*******************************************************************************
  * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
@@ -21,14 +20,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -48,8 +40,6 @@ class ElasticsearchSailSource implements SailSource {
 		this.clientPool = clientPool;
 	}
 
-
-
 	@Override
 	public void close() throws SailException {
 		dataStructure.flush(clientPool.getClient());
@@ -57,7 +47,7 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ElasticsearchSailSource(clientPool, this.dataStructure);
+		return new ElasticsearchSailSource(clientPool, new ReadCommittedWrapper(this.dataStructure));
 	}
 
 	@Override
@@ -92,8 +82,6 @@ class ElasticsearchSailSource implements SailSource {
 			public void clear(Resource... contexts) throws SailException {
 
 				dataStructure.clear(clientPool.getClient(), contexts);
-
-
 
 			}
 
@@ -198,7 +186,7 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-																						Value obj, Resource... contexts) throws SailException {
+					Value obj, Resource... contexts) throws SailException {
 				return dataStructure.getStatements(clientPool.getClient(), subj, pred, obj, contexts);
 			}
 

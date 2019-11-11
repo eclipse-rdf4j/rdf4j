@@ -1,4 +1,3 @@
-/* @formatter:off */
 /*******************************************************************************
  * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
@@ -20,13 +19,13 @@ import org.eclipse.rdf4j.sail.base.SailStore;
  */
 class ElasticsearchSailStore implements SailStore {
 
-
 	private ElasticsearchSailSource sailSource;
 	private ElasticsearchSailSource sailSourceInferred;
 
 	ElasticsearchSailStore(String hostname, int port, String index, ClientPool clientPool) {
 		sailSource = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index));
-		sailSourceInferred = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
+		sailSourceInferred = new ElasticsearchSailSource(clientPool,
+				new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
 	}
 
 	@Override

@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -177,14 +178,14 @@ public class ElasticsearchStoreTest {
 	public void testShutdownAndRecreate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
@@ -197,7 +198,7 @@ public class ElasticsearchStoreTest {
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
@@ -206,7 +207,7 @@ public class ElasticsearchStoreTest {
 		elasticsearchStore.init();
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
@@ -218,10 +219,10 @@ public class ElasticsearchStoreTest {
 	public void testAddRemoveData() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.removeStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
@@ -245,7 +246,7 @@ public class ElasticsearchStoreTest {
 					TimeUnit.SECONDS);
 
 			stopWatch = StopWatch.createStarted();
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			int count = 100000;
 			for (int i = 0; i < count; i++) {
 				connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i));

@@ -32,7 +32,7 @@ import java.lang.ref.ReferenceQueue;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,12 +69,12 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return Collections.singletonList(IsolationLevels.NONE);
+		return Arrays.asList(IsolationLevels.NONE, IsolationLevels.READ_UNCOMMITTED);
 	}
 
 	@Override
 	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.NONE;
+		return IsolationLevels.READ_UNCOMMITTED;
 	}
 
 	@Override

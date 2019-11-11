@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -88,7 +89,9 @@ public class QueryBenchmark {
 
 		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
 		}
 
 		System.gc();

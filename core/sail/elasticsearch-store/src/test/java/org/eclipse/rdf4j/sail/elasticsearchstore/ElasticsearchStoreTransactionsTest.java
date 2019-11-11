@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -98,7 +99,7 @@ public class ElasticsearchStoreTransactionsTest {
 	public void before() throws UnknownHostException {
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.removeStatements(null, null, null);
 			connection.commit();
 		}
@@ -167,7 +168,7 @@ public class ElasticsearchStoreTransactionsTest {
 	@Test
 	public void testAddData() {
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
@@ -177,7 +178,7 @@ public class ElasticsearchStoreTransactionsTest {
 	@Test
 	public void testGetData() {
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.flush();
 			List<? extends Statement> statements = Iterations.asList(connection.getStatements(null, null, null, true));
@@ -465,7 +466,7 @@ public class ElasticsearchStoreTransactionsTest {
 	public void sparqlTest() throws IOException {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.add(
 					ElasticsearchStoreTransactionsTest.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
 					RDFFormat.TURTLE);
@@ -503,15 +504,29 @@ public class ElasticsearchStoreTransactionsTest {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
 			assertEquals(1, connection.size());
 
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.remove(RDF.TYPE, null, null);
 			connection.commit();
+
+			assertEquals(0, connection.size());
+		}
+
+	}
+
+	@Test
+	public void testRollback() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.rollback();
 
 			assertEquals(0, connection.size());
 		}

@@ -1,4 +1,3 @@
-/* @formatter:off */
 /*******************************************************************************
  * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
@@ -26,10 +25,10 @@ public abstract class DataStructureInterface {
 	public abstract void removeStatement(Client client, Statement statement);
 
 	public abstract CloseableIteration<? extends Statement, SailException> getStatements(Client client,
-																						 Resource subject,
-																						 IRI predicate,
-																						 Value object,
-																						 Resource... context);
+			Resource subject,
+			IRI predicate,
+			Value object,
+			Resource... context);
 
 	public abstract void flush(Client client);
 

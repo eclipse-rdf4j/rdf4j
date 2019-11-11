@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -108,7 +109,7 @@ public class DeleteBenchmark {
 	public void afterInvocation() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.remove((Resource) null, null, null);
 			connection.commit();
 		}
@@ -118,14 +119,14 @@ public class DeleteBenchmark {
 	public long addAndClear() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
 				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
 			}
 			connection.commit();
 		}
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.clear();
 			connection.commit();
 		}
@@ -139,14 +140,14 @@ public class DeleteBenchmark {
 	public long addAndDelete() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
 				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
 			}
 			connection.commit();
 		}
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			connection.remove(RDF.TYPE, RDFS.LABEL, null);
 			connection.commit();
 		}
@@ -160,7 +161,7 @@ public class DeleteBenchmark {
 	public long addAndSize() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.NONE);
 			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
 				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
 			}
