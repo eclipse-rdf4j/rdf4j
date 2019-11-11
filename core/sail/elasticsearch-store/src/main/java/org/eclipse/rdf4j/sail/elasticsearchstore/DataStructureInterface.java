@@ -56,4 +56,5 @@ public abstract class DataStructureInterface {
 
 	abstract void flushThrough(Client client);
 
+	public abstract void setElasticsearchScrollTimeout(int timeout);
 }

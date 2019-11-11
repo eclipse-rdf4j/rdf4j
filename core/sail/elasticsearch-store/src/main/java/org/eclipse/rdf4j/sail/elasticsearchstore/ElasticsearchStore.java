@@ -243,4 +243,8 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 		ex.shutdown();
 	}
 
+	public void setElasticsearchScrollTimeout(int timeout) {
+		sailStore.setElasticsearchScrollTimeout(timeout);
+	}
+
 }

@@ -204,4 +204,8 @@ class ElasticsearchSailSource implements SailSource {
 	public void init() {
 		dataStructure.init();
 	}
+
+	public void setElasticsearchScrollTimeout(int timeout) {
+		dataStructure.setElasticsearchScrollTimeout(timeout);
+	}
 }

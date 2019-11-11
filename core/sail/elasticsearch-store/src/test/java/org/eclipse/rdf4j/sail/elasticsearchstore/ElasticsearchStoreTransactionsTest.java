@@ -16,6 +16,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -28,6 +30,7 @@ import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.openjdk.jmh.annotations.TearDown;
 import org.slf4j.Logger;
@@ -100,6 +103,8 @@ public class ElasticsearchStoreTransactionsTest {
 
 	@Before
 	public void before() throws UnknownHostException {
+
+		this.elasticsearchStore.setElasticsearchScrollTimeout(60000);
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -671,6 +676,37 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(1, eaLiteralList.size());
 
 		}
+	}
+
+	// TODO: this throws a SearchPhaseExecutionException, even thought it should have gotten wrapped at some point in a
+	// RepositoryException or something like that
+	@Ignore("slow test")
+	@Test(expected = RepositoryException.class)
+	public void testScrollTimeout() throws InterruptedException {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		this.elasticsearchStore.setElasticsearchScrollTimeout(1);
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 2000; i++) {
+				connection.add(RDF.TYPE, RDF.TYPE, vf.createLiteral(i));
+
+			}
+			connection.commit();
+
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
+				int count = 0;
+				while (statements.hasNext()) {
+					if (count++ % 1000 == 999) {
+						Thread.sleep(60000);
+					}
+					statements.next();
+				}
+			}
+
+		}
+
 	}
 
 	private HashSet<Statement> asSet(Statement... statements) {

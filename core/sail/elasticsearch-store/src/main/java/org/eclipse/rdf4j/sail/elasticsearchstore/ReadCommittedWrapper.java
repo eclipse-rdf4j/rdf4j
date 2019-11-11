@@ -205,6 +205,11 @@ class ReadCommittedWrapper extends DataStructureInterface {
 	}
 
 	@Override
+	public void setElasticsearchScrollTimeout(int timeout) {
+		dataStructure.setElasticsearchScrollTimeout(timeout);
+	}
+
+	@Override
 	public void flush(Client client) {
 	}
 

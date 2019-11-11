@@ -79,6 +79,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	private final String index;
 	private final String hostname;
 	private final int port;
+	private int scrollTimeout = 60000;
 
 	ElasticsearchDataStructure(String hostname, int port, String index) {
 		super();
@@ -172,7 +173,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
-						.setScroll(new TimeValue(60000))
+						.setScroll(new TimeValue(scrollTimeout))
 						.setQuery(queryBuilder)
 						.setSize(size)
 						.get();
@@ -202,7 +203,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 						scrollIsEmpty();
 					} else {
 						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-								.setScroll(new TimeValue(60000))
+								.setScroll(new TimeValue(scrollTimeout))
 								.execute()
 								.actionGet();
 
@@ -626,6 +627,11 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		} catch (UnknownHostException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	@Override
+	public void setElasticsearchScrollTimeout(int timeout) {
+		this.scrollTimeout = timeout;
 	}
 
 }

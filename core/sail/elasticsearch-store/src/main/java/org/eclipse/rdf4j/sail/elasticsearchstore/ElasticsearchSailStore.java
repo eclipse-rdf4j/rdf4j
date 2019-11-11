@@ -60,4 +60,9 @@ class ElasticsearchSailStore implements SailStore {
 		sailSource.init();
 		sailSourceInferred.init();
 	}
+
+	public void setElasticsearchScrollTimeout(int timeout) {
+		sailSource.setElasticsearchScrollTimeout(timeout);
+		sailSourceInferred.setElasticsearchScrollTimeout(timeout);
+	}
 }
