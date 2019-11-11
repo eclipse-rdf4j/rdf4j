@@ -45,6 +45,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 
@@ -300,7 +301,31 @@ public class ElasticsearchStoreTransactionsTest {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
-			Literal label = vf.createLiteral("rdf:type label");
+			Literal label = vf.createLiteral("rdf:type label \n jfelwkfjl \r fjklwejf \t åøæ");
+			connection.add(RDF.TYPE, RDFS.LABEL, label);
+
+			List<? extends Statement> statements = Iterations
+					.asList(connection.getStatements(null, null, label, true));
+
+			System.out.println(Arrays.toString(statements.toArray()));
+
+			assertEquals(1, statements.size());
+
+			assertEquals(label, statements.get(0).getObject());
+
+		}
+
+	}
+
+	@Test
+	public void testGetDataSailRepositoryLongString() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			StringBuilder sb = new StringBuilder();
+			IntStream.range(0, 100000).forEach(i -> sb.append(i + ""));
+
+			Literal label = vf.createLiteral(sb.toString());
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations

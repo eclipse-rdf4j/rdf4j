@@ -540,6 +540,11 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 							+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
 				}
 
+				try {
+					Thread.sleep(failures * 100);
+				} catch (InterruptedException ignored) {
+				}
+
 			} else {
 				failures = 0;
 			}
