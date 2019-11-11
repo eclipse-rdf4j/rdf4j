@@ -54,7 +54,10 @@ import java.util.Map;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
-public class ElasticsearchDataStructure extends DataStructureInterface {
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
+class ElasticsearchDataStructure extends DataStructureInterface {
 
 	private static final String mapping;
 

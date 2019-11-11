@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.NAMESPACE;
 
 /**
- * @author Arjohn Kampman
+ * @author Håvard Mikkelsen Ottestad
  */
 public class ElasticsearchStoreConfig extends BaseSailConfig {
 

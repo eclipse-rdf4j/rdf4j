@@ -37,13 +37,14 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
 public class ElasticsearchStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);
 
 	private final ElasticsearchSailStore sailStore;
-	private final String hostname;
-	private final int port;
 
 	final ClientPool clientPool;
 
@@ -52,8 +53,6 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 		clientPool = new ClientPoolImpl(hostname, port);
 
 		sailStore = new ElasticsearchSailStore(hostname, port, index, clientPool);
-		this.hostname = hostname;
-		this.port = port;
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),

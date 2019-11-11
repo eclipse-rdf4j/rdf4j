@@ -21,14 +21,17 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
-public class ReadCommittedWrapper extends DataStructureInterface {
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
+class ReadCommittedWrapper extends DataStructureInterface {
 
-	DataStructureInterface dataStructure;
+	private DataStructureInterface dataStructure;
 
-	Set<Statement> internalAdded = new HashSet<>(1000);
-	Set<Statement> internalRemoved = new HashSet<>(100);
+	private Set<Statement> internalAdded = new HashSet<>(1000);
+	private Set<Statement> internalRemoved = new HashSet<>(100);
 
-	public ReadCommittedWrapper(DataStructureInterface dataStructure) {
+	ReadCommittedWrapper(DataStructureInterface dataStructure) {
 		this.dataStructure = dataStructure;
 	}
 

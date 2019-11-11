@@ -9,6 +9,9 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.elasticsearch.client.Client;
 
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
 public interface ClientPool extends AutoCloseable {
 
 	Client getClient();

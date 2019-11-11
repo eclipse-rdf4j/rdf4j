@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
 public interface ElasticsearchId {
 	String getElasticsearchId();
 }

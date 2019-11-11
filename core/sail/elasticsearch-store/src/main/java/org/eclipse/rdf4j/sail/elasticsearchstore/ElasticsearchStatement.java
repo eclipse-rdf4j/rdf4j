@@ -12,7 +12,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleStatement;
 
-public class ElasticsearchStatement extends SimpleStatement implements ElasticsearchId {
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
+class ElasticsearchStatement extends SimpleStatement implements ElasticsearchId {
 
 	private String elasticsearchId;
 

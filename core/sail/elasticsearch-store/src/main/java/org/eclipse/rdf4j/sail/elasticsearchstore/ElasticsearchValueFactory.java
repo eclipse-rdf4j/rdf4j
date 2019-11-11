@@ -13,7 +13,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
 
-public class ElasticsearchValueFactory extends AbstractValueFactory {
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
+class ElasticsearchValueFactory extends AbstractValueFactory {
 
 	/*-----------*
 	 * Constants *
@@ -36,11 +39,11 @@ public class ElasticsearchValueFactory extends AbstractValueFactory {
 	private ElasticsearchValueFactory() {
 	}
 
-	public Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object) {
+	Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object) {
 		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object);
 	}
 
-	public Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
+	Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
 			Resource context) {
 		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context);
 	}

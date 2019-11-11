@@ -52,6 +52,9 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSink sink(IsolationLevel level) throws SailException {
+
+//		DataStructureInterface dataStructure = new ReadCommittedWrapper(this.dataStructure);
+
 		return new SailSink() {
 			@Override
 			public void prepare() throws SailException {

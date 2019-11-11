@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * Defines constants for the ElasticsearchStore schema which is used by {@link ElasticsearchStoreFactory}s to initialize
  * {@link ElasticsearchStore}s.
  *
- * @author Arjohn Kampman
+ * @author Håvard Mikkelsen Ottestad
  */
 public class ElasticsearchStoreSchema {
 

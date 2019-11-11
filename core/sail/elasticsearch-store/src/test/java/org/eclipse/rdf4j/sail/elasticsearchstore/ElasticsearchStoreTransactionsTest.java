@@ -10,6 +10,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -529,6 +530,50 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.rollback();
 
 			assertEquals(0, connection.size());
+		}
+
+	}
+
+	@Test
+	public void testRollback2() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			assertEquals(1, connection.size());
+			connection.rollback();
+
+			assertEquals(0, connection.size());
+		}
+
+	}
+
+	@Test
+	public void testRollbackClear() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			BNode context = vf.createBNode();
+
+			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context);
+			connection.commit();
+			assertEquals(2, connection.size());
+
+			connection.begin();
+			connection.clear(context);
+			connection.commit();
+			assertEquals(1, connection.size());
+
+			connection.begin();
+			connection.clear();
+			assertEquals(0, connection.size());
+
+			connection.rollback();
+
+			assertEquals(1, connection.size());
 		}
 
 	}

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 /**
  * A {@link SailFactory} that creates {@link ElasticsearchStore}s based on RDF configuration data.
  *
- * @author Arjohn Kampman
+ * @author Håvard Mikkelsen Ottestad
  */
 public class ElasticsearchStoreFactory implements SailFactory {
 

@@ -16,14 +16,17 @@ import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
-public class ClientPoolImpl implements ClientPool {
+/**
+ * @author Håvard Mikkelsen Ottestad
+ */
+class ClientPoolImpl implements ClientPool {
 
 	transient private Client client;
 	private transient boolean closed = false;
 	final private String hostname;
 	final private int port;
 
-	public ClientPoolImpl(String hostname, int port) {
+	ClientPoolImpl(String hostname, int port) {
 		this.hostname = hostname;
 		this.port = port;
 	}
