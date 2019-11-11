@@ -9,15 +9,19 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
+import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.search.ClearScrollRequest;
@@ -29,6 +33,7 @@ import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.engine.VersionConflictEngineException;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
@@ -43,12 +48,19 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
@@ -61,8 +73,10 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	private static final String mapping;
 
 	private final int BUFFER_THRESHOLD = 8192;
-	private List<Statement> addStatementBuffer = Collections.synchronizedList(new ArrayList<>());
-	private List<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>());
+	private Set<Statement> addStatementBuffer = Collections.synchronizedSet(new HashSet<>());
+	private Set<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>());
+
+	private final static ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
 
 	static {
 		try {
@@ -275,70 +289,35 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		return new CloseableIteration<Statement, SailException>() {
 
 			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(client, queryBuilder);
-			ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
 
 			Statement next;
 
 			public void calculateNext() throws SailException {
-				if (next != null)
+				if (next != null) {
 					return;
+				}
 
 				while (iterator.hasNext() && next == null) {
 					SearchHit nextSearchHit = iterator.next();
 
 					Map<String, Object> sourceAsMap = nextSearchHit.getSourceAsMap();
 
-					Resource subjectRes;
-					if (sourceAsMap.containsKey("subject_IRI")) {
-						subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
-					} else {
-						subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
-					}
+					String id = nextSearchHit.getId();
 
-					IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
-
-					Value objectRes;
-
-					String objectString = sourceAsMap.get("object").toString();
-
-					if (sourceAsMap.containsKey("object_IRI")) {
-						objectRes = vf.createIRI(objectString);
-					} else if (sourceAsMap.containsKey("object_BNode")) {
-						objectRes = vf.createBNode(objectString);
-					} else {
-						if (sourceAsMap.containsKey("object_Lang")) {
-							objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
-
-						} else {
-							objectRes = vf.createLiteral(objectString,
-									vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
-
-						}
-
-					}
+					Statement statement = sourceToStatement(sourceAsMap, id);
 
 					// we use hash to lookup the object value because the object can be bigger than what elasticsearch
 					// allows as max for keyword (32766 bytes), so it needs to be stored in a text field that is not
 					// index. The hash is stored in an integer field and is index. The code below does hash collision
 					// check.
-					if (object != null && object.stringValue().hashCode() == objectRes.stringValue().hashCode()
-							&& !object.equals(objectRes)) {
+					if (object != null
+							&& object.stringValue().hashCode() == statement.getObject().stringValue().hashCode()
+							&& !object.equals(statement.getObject())) {
 						continue;
 					}
 
-					Resource contextRes = null;
-					if (sourceAsMap.containsKey("context_IRI")) {
-						contextRes = vf.createIRI(sourceAsMap.get("context").toString());
-					} else if (sourceAsMap.containsKey("context_BNode")) {
-						contextRes = vf.createBNode(sourceAsMap.get("context").toString());
-					}
+					next = statement;
 
-					if (contextRes != null) {
-						next = vf.createStatement(nextSearchHit.getId(), subjectRes, predicateRes, objectRes,
-								contextRes);
-					} else {
-						next = vf.createStatement(nextSearchHit.getId(), subjectRes, predicateRes, objectRes);
-					}
 				}
 			}
 
@@ -525,25 +504,64 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 					throw new IllegalStateException(e);
 				}
 
-				bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE)
-						.setSource(builder));
+				bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE, sha256(statement))
+						.setSource(builder)
+						.setOpType(DocWriteRequest.OpType.CREATE));
 
 			});
 
 			BulkResponse bulkResponse = bulkRequest.get();
 			if (bulkResponse.hasFailures()) {
-				failures++;
-				if (failures < 10) {
-					logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
-							bulkResponse.buildFailureMessage());
-				} else {
-					throw new RuntimeException("Elasticsearch has failed " + failures
-							+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
-				}
 
-				try {
-					Thread.sleep(failures * 100);
-				} catch (InterruptedException ignored) {
+				List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
+
+				boolean onlyVersionConflicts = bulkItemResponses.stream()
+						.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
+				if (onlyVersionConflicts) {
+					// probably trying to add duplicates, or we have a hash conflict
+
+					Set<String> failedIDs = bulkItemResponses.stream()
+							.map(BulkItemResponse::getId)
+							.collect(Collectors.toSet());
+
+					// clean up addedStatements
+					addStatementBuffer = addStatementBuffer.stream()
+							.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry failed
+																						// statements
+							// filter out duplicates
+							.filter(statement -> {
+
+								String sha256 = sha256(statement);
+								Statement statementById = getStatementById(client, sha256);
+
+								return !statement.equals(statementById);
+							})
+
+							// now we only have conflicts
+							.map(statement -> {
+								// TODO handle conflict. Probably by doing something to change to id, mark it as a
+								// conflict. Store all the conflicts in memory, to check against and refresh them from
+								// disc when we boot
+
+								return statement;
+
+							})
+							.collect(Collectors.toSet());
+
+				} else {
+					failures++;
+					if (failures < 10) {
+						logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
+								bulkResponse.buildFailureMessage());
+					} else {
+						throw new RuntimeException("Elasticsearch has failed " + failures
+								+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
+					}
+
+					try {
+						Thread.sleep(failures * 100);
+					} catch (InterruptedException ignored) {
+					}
 				}
 
 			} else {
@@ -554,8 +572,26 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		logger.info("Added {} statements", addStatementBuffer.size());
 
-		addStatementBuffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
+		addStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
 
+	}
+
+	private Statement getStatementById(Client client, String sha256) {
+
+		Map<String, Object> source = client.prepareGet(index, ELASTICSEARCH_TYPE, sha256).get().getSource();
+
+		return sourceToStatement(source, sha256);
+
+	}
+
+	private List<BulkItemResponse> getBulkItemResponses(BulkResponse bulkResponse) {
+		List<BulkItemResponse> bulkItemResponses = new ArrayList<>();
+		Iterator<BulkItemResponse> iterator = bulkResponse.iterator();
+
+		while (iterator.hasNext()) {
+			bulkItemResponses.add(iterator.next());
+		}
+		return bulkItemResponses;
 	}
 
 	synchronized private void flushRemoveStatementBuffer(Client client) {
@@ -593,7 +629,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		} while (failures > 0);
 
-		deleteStatementBuffer = Collections.synchronizedList(new ArrayList<>(BUFFER_THRESHOLD));
+		deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
 
 	}
 
@@ -632,6 +668,78 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	@Override
 	public void setElasticsearchScrollTimeout(int timeout) {
 		this.scrollTimeout = timeout;
+	}
+
+	String sha256(Statement statement) {
+
+		String originalString = statement.toString();
+
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+			byte[] hash = digest.digest(originalString.getBytes(StandardCharsets.UTF_8));
+
+			StringBuilder hexString = new StringBuilder();
+			for (byte b : hash) {
+				String hex = Integer.toHexString(0xff & b);
+				if (hex.length() == 1) {
+					hexString.append('0');
+				}
+				hexString.append(hex);
+			}
+			return hexString.toString();
+		} catch (NoSuchAlgorithmException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	private static Statement sourceToStatement(Map<String, Object> sourceAsMap, String id) {
+
+		Resource subjectRes;
+		if (sourceAsMap.containsKey("subject_IRI")) {
+			subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
+		} else {
+			subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
+		}
+
+		IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
+
+		Value objectRes;
+
+		String objectString = sourceAsMap.get("object").toString();
+
+		if (sourceAsMap.containsKey("object_IRI")) {
+			objectRes = vf.createIRI(objectString);
+		} else if (sourceAsMap.containsKey("object_BNode")) {
+			objectRes = vf.createBNode(objectString);
+		} else {
+			if (sourceAsMap.containsKey("object_Lang")) {
+				objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
+
+			} else {
+				objectRes = vf.createLiteral(objectString,
+						vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
+
+			}
+
+		}
+
+		Resource contextRes = null;
+		if (sourceAsMap.containsKey("context_IRI")) {
+			contextRes = vf.createIRI(sourceAsMap.get("context").toString());
+		} else if (sourceAsMap.containsKey("context_BNode")) {
+			contextRes = vf.createBNode(sourceAsMap.get("context").toString());
+		}
+
+		Statement statement;
+
+		if (contextRes != null) {
+			statement = vf.createStatement(id, subjectRes, predicateRes, objectRes, contextRes);
+		} else {
+			statement = vf.createStatement(id, subjectRes, predicateRes, objectRes);
+		}
+		return statement;
 	}
 
 }

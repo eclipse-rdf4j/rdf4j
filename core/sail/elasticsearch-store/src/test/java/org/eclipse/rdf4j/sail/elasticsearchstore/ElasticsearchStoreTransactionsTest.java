@@ -709,6 +709,64 @@ public class ElasticsearchStoreTransactionsTest {
 
 	}
 
+	@Test
+	public void testAddSameStatement() {
+
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 2000; i++) {
+				connection.add(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + ""));
+			}
+			connection.commit();
+
+			List<Statement> typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null));
+			assertEquals(1, typeStatements.size());
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null));
+			assertEquals(1, typeStatements.size());
+
+		}
+	}
+
+	@Test
+	public void testAddSameStatement2() {
+
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 2000; i++) {
+				connection.add(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + ""));
+			}
+			connection.commit();
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+
+			List<Statement> typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null));
+			assertEquals(1, typeStatements.size());
+
+			connection.commit();
+
+			typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null));
+			assertEquals(1, typeStatements.size());
+
+		}
+	}
+
 	private HashSet<Statement> asSet(Statement... statements) {
 		return new HashSet<>(Arrays.asList(statements));
 	}
