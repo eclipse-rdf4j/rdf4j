@@ -525,7 +525,7 @@ public class ElasticsearchStoreTransactionsTest {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
-			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.rollback();
 
@@ -539,7 +539,23 @@ public class ElasticsearchStoreTransactionsTest {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
-			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			assertEquals(1, connection.size());
+			connection.rollback();
+
+			assertEquals(0, connection.size());
+		}
+
+	}
+
+	@Test
+	public void testRollback3() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			assertEquals(0, connection.size());
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			assertEquals(1, connection.size());
 			connection.rollback();
@@ -556,7 +572,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			BNode context = vf.createBNode();
 
-			connection.begin(IsolationLevels.READ_UNCOMMITTED);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context);
 			connection.commit();
@@ -574,6 +590,29 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.rollback();
 
 			assertEquals(1, connection.size());
+		}
+
+	}
+
+	@Test
+	public void testRollbackClearSimple() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			BNode context = vf.createBNode();
+
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context);
+			connection.commit();
+
+			connection.begin();
+			connection.clear();
+			assertEquals(0, connection.size());
+			connection.rollback();
+
+			assertEquals(2, connection.size());
+
 		}
 
 	}

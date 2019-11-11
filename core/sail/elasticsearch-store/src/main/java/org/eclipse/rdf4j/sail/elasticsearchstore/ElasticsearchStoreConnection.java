@@ -52,9 +52,4 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 
 	}
 
-	@Override
-	protected IsolationLevel getTransactionIsolation() {
-		return IsolationLevels.NONE;
-	}
-
 }

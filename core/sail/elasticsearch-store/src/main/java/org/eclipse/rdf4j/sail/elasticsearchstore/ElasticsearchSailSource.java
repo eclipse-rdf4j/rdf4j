@@ -42,7 +42,6 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public void close() throws SailException {
-		dataStructure.flush(clientPool.getClient());
 	}
 
 	@Override
@@ -52,9 +51,6 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSink sink(IsolationLevel level) throws SailException {
-
-//		DataStructureInterface dataStructure = new ReadCommittedWrapper(this.dataStructure);
-
 		return new SailSink() {
 			@Override
 			public void prepare() throws SailException {
@@ -202,7 +198,7 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		dataStructure.flush(clientPool.getClient());
+		dataStructure.flushThrough(clientPool.getClient());
 	}
 
 	public void init() {

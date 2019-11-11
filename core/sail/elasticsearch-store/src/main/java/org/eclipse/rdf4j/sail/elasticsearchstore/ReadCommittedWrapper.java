@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -16,7 +17,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.client.Client;
 
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -84,7 +84,12 @@ class ReadCommittedWrapper extends DataStructureInterface {
 				};
 
 			} else {
-				return dataStructure.getStatements(client, subject, predicate, object, context);
+				if (internalRemoved.contains(statement)) {
+					return new EmptyIteration<>();
+				} else {
+					return dataStructure.getStatements(client, subject, predicate, object, context);
+
+				}
 
 			}
 
@@ -92,7 +97,10 @@ class ReadCommittedWrapper extends DataStructureInterface {
 
 			return new CloseableIteration<Statement, SailException>() {
 
-				Iterator<Statement> left = internalAdded.stream()
+				Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
+				Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
+
+				Iterator<Statement> left = internalAddedLocal.stream()
 						.filter(statement -> {
 
 							if (subject != null && !statement.getSubject().equals(subject)) {
@@ -109,50 +117,39 @@ class ReadCommittedWrapper extends DataStructureInterface {
 								return false;
 							}
 
-							if (internalRemoved.contains(statement)) {
-								return false;
-							}
-
 							return true;
-
 						})
-						.sorted(Comparator.comparing(Object::toString))
 						.iterator();
+
 				CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(client,
 						subject, predicate, object, context);
-
-				Statement nextLeft;
-				Statement nextRight;
 
 				Statement next;
 
 				private void setNext() {
 
-					if (nextLeft == null && left.hasNext()) {
-						nextLeft = left.next();
-					}
+					if (next != null)
+						return;
 
-					if (nextRight == null && right.hasNext()) {
-						nextRight = right.next();
-					}
+					do {
+						Statement tempNext = null;
+						if (left.hasNext()) {
+							tempNext = left.next();
+						} else if (right.hasNext()) {
+							tempNext = right.next();
 
-					if (nextRight != null && nextRight.equals(nextLeft)) {
-						next = nextRight;
-						nextRight = null;
-						nextLeft = null;
-					} else if (nextLeft == null) {
-						next = nextRight;
-						nextRight = null;
-					} else if (nextRight == null) {
-						next = nextLeft;
-						nextLeft = null;
-					} else if (nextLeft.toString().compareTo(nextRight.toString()) > 0) {
-						next = nextLeft;
-						nextLeft = null;
-					} else {
-						next = nextRight;
-						nextRight = null;
-					}
+							if (internalAddedLocal.contains(tempNext)) {
+								tempNext = null;
+							}
+						}
+
+						if (tempNext != null) {
+							if (!internalRemovedLocal.contains(tempNext)) {
+								next = tempNext;
+							}
+						}
+
+					} while (next == null && (left.hasNext() || right.hasNext()));
 
 				}
 
@@ -191,7 +188,7 @@ class ReadCommittedWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	public void flush(Client client) {
+	public void flushThrough(Client client) {
 
 		internalAdded
 				.stream()
@@ -200,8 +197,15 @@ class ReadCommittedWrapper extends DataStructureInterface {
 
 		internalRemoved.forEach(statement -> dataStructure.removeStatement(client, statement));
 
+		internalAdded = new HashSet<>(internalAdded.size());
+		internalRemoved = new HashSet<>(internalRemoved.size());
+
 		dataStructure.flush(client);
 
+	}
+
+	@Override
+	public void flush(Client client) {
 	}
 
 	@Override
@@ -227,7 +231,12 @@ class ReadCommittedWrapper extends DataStructureInterface {
 	@Override
 	public void clear(Client client, Resource[] contexts) {
 
-		// TODO
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(client, null, null, null,
+				contexts)) {
+			while (statements.hasNext()) {
+				removeStatement(client, statements.next());
+			}
+		}
 
 	}
 }

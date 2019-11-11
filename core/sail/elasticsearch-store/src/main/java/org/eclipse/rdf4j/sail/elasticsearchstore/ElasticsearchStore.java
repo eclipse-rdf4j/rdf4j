@@ -68,12 +68,12 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return Arrays.asList(IsolationLevels.NONE, IsolationLevels.READ_UNCOMMITTED);
+		return Arrays.asList(IsolationLevels.NONE, IsolationLevels.READ_UNCOMMITTED, IsolationLevels.READ_COMMITTED);
 	}
 
 	@Override
 	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.READ_UNCOMMITTED;
+		return IsolationLevels.READ_COMMITTED;
 	}
 
 	@Override

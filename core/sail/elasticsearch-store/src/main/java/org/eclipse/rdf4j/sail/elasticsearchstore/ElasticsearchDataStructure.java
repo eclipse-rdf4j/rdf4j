@@ -156,6 +156,11 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		long deleted = response.getDeleted();
 	}
 
+	@Override
+	void flushThrough(Client client) {
+		// no underlying store to flush to
+	}
+
 	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(Client client, QueryBuilder queryBuilder) {
 
 		return new CloseableIteration<SearchHit, RuntimeException>() {
