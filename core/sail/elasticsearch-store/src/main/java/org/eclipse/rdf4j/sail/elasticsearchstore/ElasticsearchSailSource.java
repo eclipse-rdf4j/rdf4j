@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -31,13 +32,16 @@ class ElasticsearchSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
 	private final ClientPool clientPool;
+	private final MemNamespaceStore namespaceStore;
 
 //	private final MemNamespaceStore namespaceStore;
 
-	ElasticsearchSailSource(ClientPool clientPool, DataStructureInterface dataStructure) {
+	ElasticsearchSailSource(ClientPool clientPool, DataStructureInterface dataStructure,
+			MemNamespaceStore namespaceStore) {
 		this.dataStructure = dataStructure;
-//		this.namespaceStore = MemNamespaceStore;
+		this.namespaceStore = namespaceStore;
 		this.clientPool = clientPool;
+
 	}
 
 	@Override
@@ -46,7 +50,7 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ElasticsearchSailSource(clientPool, new ReadCommittedWrapper(this.dataStructure));
+		return new ElasticsearchSailSource(clientPool, new ReadCommittedWrapper(this.dataStructure), namespaceStore);
 	}
 
 	@Override
@@ -64,17 +68,17 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public synchronized void setNamespace(String prefix, String name) throws SailException {
-//				namespaceStore.setNamespace(prefix, name);
+				namespaceStore.setNamespace(prefix, name);
 			}
 
 			@Override
 			public synchronized void removeNamespace(String prefix) throws SailException {
-//				namespaceStore.removeNamespace(prefix);
+				namespaceStore.removeNamespace(prefix);
 			}
 
 			@Override
 			public synchronized void clearNamespaces() throws SailException {
-//				namespaceStore.clear();
+				namespaceStore.clear();
 			}
 
 			@Override
@@ -117,14 +121,14 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public String getNamespace(String prefix) throws SailException {
-//				return namespaceStore.getNamespace(prefix);
-				return null;
+				return namespaceStore.getNamespace(prefix);
+//				return null;
 			}
 
 			@Override
 			public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-//				return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
-				return new EmptyIteration<>();
+				return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+//				return new EmptyIteration<>();
 			}
 
 			@Override

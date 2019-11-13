@@ -9,14 +9,12 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
@@ -57,10 +55,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
@@ -72,7 +68,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 	private static final String mapping;
 
-	private final int BUFFER_THRESHOLD = 8192;
+	private final int BUFFER_THRESHOLD = 1024 * 16;
 	private Set<Statement> addStatementBuffer = Collections.synchronizedSet(new HashSet<>());
 	private Set<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>());
 
@@ -135,26 +131,31 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	@Override
 	public void removeStatement(Client client, Statement statement) {
 
+		ElasticsearchId elasticsearchIdStatement;
+
 		if (statement instanceof ElasticsearchId) {
 
-			if (deleteStatementBuffer.size() >= BUFFER_THRESHOLD) {
-				flushRemoveStatementBuffer(client);
-			}
-
-			deleteStatementBuffer.add((ElasticsearchId) statement);
+			elasticsearchIdStatement = (ElasticsearchId) statement;
 
 		} else {
-			Resource[] context = { statement.getContext() };
 
-			BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
-					.filter(getQueryBuilder(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-							context))
-					.source(index)
-					.get();
+			String id = sha256(statement);
 
-			long deleted = response.getDeleted();
-			assert deleted == 1;
+			if (statement.getContext() == null) {
+				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),
+						statement.getPredicate());
+			} else {
+				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),
+						statement.getPredicate(), statement.getContext());
+			}
+
 		}
+
+		if (deleteStatementBuffer.size() >= BUFFER_THRESHOLD) {
+			flushRemoveStatementBuffer(client);
+		}
+
+		deleteStatementBuffer.add(elasticsearchIdStatement);
 
 	}
 
@@ -457,58 +458,69 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		do {
 
-			addStatementBuffer.forEach(statement -> {
-				XContentBuilder builder;
+			addStatementBuffer
 
-				try {
-					builder = jsonBuilder()
-							.startObject()
-							.field("subject", statement.getSubject().stringValue())
-							.field("predicate", statement.getPredicate().stringValue())
-							.field("object", statement.getObject().stringValue())
-							.field("object_Hash", statement.getObject().stringValue().hashCode());
+					.stream()
+					.parallel()
+					.map(statement -> {
+						XContentBuilder builder;
 
-					Resource context = statement.getContext();
+						try {
+							builder = jsonBuilder()
+									.startObject()
+									.field("subject", statement.getSubject().stringValue())
+									.field("predicate", statement.getPredicate().stringValue())
+									.field("object", statement.getObject().stringValue())
+									.field("object_Hash", statement.getObject().stringValue().hashCode());
 
-					if (context != null) {
-						builder.field("context", context.stringValue());
+							Resource context = statement.getContext();
 
-						if (context instanceof IRI) {
-							builder.field("context_IRI", true);
-						} else {
-							builder.field("context_BNode", true);
+							if (context != null) {
+								builder.field("context", context.stringValue());
+
+								if (context instanceof IRI) {
+									builder.field("context_IRI", true);
+								} else {
+									builder.field("context_BNode", true);
+								}
+							}
+
+							if (statement.getSubject() instanceof IRI) {
+								builder.field("subject_IRI", true);
+							} else {
+								builder.field("subject_BNode", true);
+							}
+
+							if (statement.getObject() instanceof IRI) {
+								builder.field("object_IRI", true);
+							} else if (statement.getObject() instanceof BNode) {
+								builder.field("object_BNode", true);
+							} else {
+								builder.field("object_Datatype",
+										((Literal) statement.getObject()).getDatatype().stringValue());
+								if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+									builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+								}
+							}
+
+							builder.endObject();
+
+							return new BuilderAndSha(sha256(statement), builder);
+
+						} catch (IOException e) {
+							throw new IllegalStateException(e);
 						}
-					}
 
-					if (statement.getSubject() instanceof IRI) {
-						builder.field("subject_IRI", true);
-					} else {
-						builder.field("subject_BNode", true);
-					}
+					})
+					.collect(Collectors.toList())
+					.forEach(builderAndSha -> {
 
-					if (statement.getObject() instanceof IRI) {
-						builder.field("object_IRI", true);
-					} else if (statement.getObject() instanceof BNode) {
-						builder.field("object_BNode", true);
-					} else {
-						builder.field("object_Datatype", ((Literal) statement.getObject()).getDatatype().stringValue());
-						if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-							builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+						bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
+								.setSource(builderAndSha.getBuilder())
+								.setOpType(DocWriteRequest.OpType.CREATE));
 
-						}
-					}
-
-					builder.endObject();
-
-				} catch (IOException e) {
-					throw new IllegalStateException(e);
-				}
-
-				bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE, sha256(statement))
-						.setSource(builder)
-						.setOpType(DocWriteRequest.OpType.CREATE));
-
-			});
+					});
 
 			BulkResponse bulkResponse = bulkRequest.get();
 			if (bulkResponse.hasFailures()) {
@@ -527,7 +539,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 					// clean up addedStatements
 					addStatementBuffer = addStatementBuffer.stream()
 							.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry failed
-																						// statements
+							// statements
 							// filter out duplicates
 							.filter(statement -> {
 
@@ -742,4 +754,22 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		return statement;
 	}
 
+}
+
+class BuilderAndSha {
+	private final String sha256;
+	private final XContentBuilder builder;
+
+	BuilderAndSha(String sha256, XContentBuilder builder) {
+		this.sha256 = sha256;
+		this.builder = builder;
+	}
+
+	String getSha256() {
+		return sha256;
+	}
+
+	XContentBuilder getBuilder() {
+		return builder;
+	}
 }

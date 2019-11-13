@@ -51,27 +51,13 @@ import java.util.concurrent.TimeUnit;
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class QueryBenchmark {
+public class AddBenchmark {
 
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
 
 	private SailRepository elasticsearchStore;
-
-	private static final String query1;
-	private static final String query2;
-	private static final String query3;
-
-	static {
-		try {
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-	}
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
@@ -104,18 +90,13 @@ public class QueryBenchmark {
 		embeddedElastic.start();
 
 		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
 
 		System.gc();
 
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
+		return AddBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 	@TearDown(Level.Trial)
@@ -128,26 +109,16 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> groupByQuery() {
+	public void clearAndAddLargeFile() throws IOException {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			List<BindingSet> bindingSets = Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
 
-			return bindingSets;
-		}
-	}
-
-	@Benchmark
-	public void simpleUpdateQuery() {
-
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.prepareUpdate(query2).execute();
-		}
-
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.prepareUpdate(query3).execute();
+			connection.begin(IsolationLevels.NONE);
+			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
+			connection.commit();
 		}
 	}
 

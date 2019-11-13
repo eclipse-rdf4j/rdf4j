@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -291,6 +292,26 @@ public class ElasticsearchStoreTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("label"));
 		}
 		return clientPool;
+	}
+
+	@Test
+	public void testNamespacePersistenc() {
+
+		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
+			connection.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
+			connection.commit();
+		}
+
+		elasticsearchStore.shutDown();
+		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			String namespace = connection.getNamespace(SHACL.PREFIX);
+			assertEquals(SHACL.NAMESPACE, namespace);
+		}
 	}
 
 }

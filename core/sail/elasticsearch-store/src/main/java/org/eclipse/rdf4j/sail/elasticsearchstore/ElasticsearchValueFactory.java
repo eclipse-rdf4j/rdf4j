@@ -39,11 +39,11 @@ class ElasticsearchValueFactory extends AbstractValueFactory {
 	private ElasticsearchValueFactory() {
 	}
 
-	Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object) {
+	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object) {
 		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object);
 	}
 
-	Statement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
+	ElasticsearchContextStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
 			Resource context) {
 		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context);
 	}

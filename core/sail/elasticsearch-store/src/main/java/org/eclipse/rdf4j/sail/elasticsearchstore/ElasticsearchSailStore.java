@@ -22,10 +22,13 @@ class ElasticsearchSailStore implements SailStore {
 	private ElasticsearchSailSource sailSource;
 	private ElasticsearchSailSource sailSourceInferred;
 
+	private final MemNamespaceStore namespaceStore = new MemNamespaceStore();
+
 	ElasticsearchSailStore(String hostname, int port, String index, ClientPool clientPool) {
-		sailSource = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index));
+		sailSource = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index),
+				namespaceStore);
 		sailSourceInferred = new ElasticsearchSailSource(clientPool,
-				new ElasticsearchDataStructure(hostname, port, index + "_inferred"));
+				new ElasticsearchDataStructure(hostname, port, index + "_inferred"), namespaceStore);
 	}
 
 	@Override

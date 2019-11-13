@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -764,6 +765,23 @@ public class ElasticsearchStoreTransactionsTest {
 			typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null));
 			assertEquals(1, typeStatements.size());
 
+		}
+	}
+
+	@Test
+	public void testNamespace() {
+
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin();
+			connection.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			String namespace = connection.getNamespace(SHACL.PREFIX);
+			assertEquals(SHACL.NAMESPACE, namespace);
 		}
 	}
 
