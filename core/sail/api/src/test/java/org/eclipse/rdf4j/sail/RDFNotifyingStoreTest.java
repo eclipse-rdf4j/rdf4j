@@ -34,7 +34,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 
 	/**
 	 * Gets an instance of the Sail that should be tested. The returned repository should already have been initialized.
-	 * 
+	 *
 	 * @return an initialized Sail.
 	 * @throws SailException If the initialization of the repository failed.
 	 */

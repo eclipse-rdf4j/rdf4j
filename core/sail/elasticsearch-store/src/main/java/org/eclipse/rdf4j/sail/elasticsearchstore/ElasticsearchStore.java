@@ -48,6 +48,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	final ClientPool clientPool;
 
+
 	public ElasticsearchStore(String hostname, int port, String index) {
 
 		clientPool = new ClientPoolImpl(hostname, port);
@@ -58,6 +59,10 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
 				clientPool);
 
+	}
+
+	ElasticsearchSailStore getSailStore() {
+		return sailStore;
 	}
 
 	@Override
@@ -94,7 +99,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		return new ElasticsearchStoreConnection(this, sailStore, getEvaluationStrategyFactory());
+		return new ElasticsearchStoreConnection(this);
 	}
 
 	@Override

@@ -15,41 +15,93 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 public class ElasticsearchStoreConnection extends SailSourceConnection {
 
-	ElasticsearchStore sail;
+	private final ElasticsearchStore sail;
 
-	protected ElasticsearchStoreConnection(ElasticsearchStore sail, SailStore store,
-			FederatedServiceResolver resolver) {
-		super(sail, store, resolver);
-		this.sail = sail;
-	}
+	private volatile DefaultSailChangedEvent sailChangedEvent;
 
-	ElasticsearchStoreConnection(ElasticsearchStore sail, SailStore store,
-			EvaluationStrategyFactory evalStratFactory) {
-		super(sail, store, evalStratFactory);
+
+	ElasticsearchStoreConnection(ElasticsearchStore sail) {
+		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.sail = sail;
+		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
 
 	public ElasticsearchStore getSail() {
 		return sail;
 	}
 
+
+	@Override
+	protected void startTransactionInternal() throws SailException {
+		super.startTransactionInternal();
+	}
+
+	@Override
+	protected void commitInternal() throws SailException {
+		super.commitInternal();
+
+		sail.notifySailChanged(sailChangedEvent);
+
+		// create a fresh event object.
+		sailChangedEvent = new DefaultSailChangedEvent(sail);
+	}
+
+	@Override
+	protected void rollbackInternal() throws SailException {
+		super.rollbackInternal();
+		// create a fresh event object.
+		sailChangedEvent = new DefaultSailChangedEvent(sail);
+	}
+
 	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		// post statement added
+		// assume the triple is not yet present in the triple store
+		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
+	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
+		// assume the triple is not yet present in the triple store
+		sailChangedEvent.setStatementsAdded(true);
+		return ret;
 	}
 
 	@Override
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
-
+		throws SailException {
+		sailChangedEvent.setStatementsRemoved(true);
 	}
+
+	@Override
+	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
+		throws SailException {
+		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
+		sailChangedEvent.setStatementsRemoved(true);
+		return ret;
+	}
+
+	@Override
+	protected void clearInternal(Resource... contexts) throws SailException {
+		super.clearInternal(contexts);
+		sailChangedEvent.setStatementsRemoved(true);
+	}
+
+	@Override
+	public void clearInferred(Resource... contexts) throws SailException {
+		super.clearInferred(contexts);
+		sailChangedEvent.setStatementsRemoved(true);
+	}
+
 
 }
