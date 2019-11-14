@@ -15,6 +15,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -30,7 +31,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tests concurrent read and write access to a Sail implementation.
- * 
+ *
  * @author Arjohn Kampman
  */
 public abstract class SailConcurrencyTest {
@@ -103,7 +104,7 @@ public abstract class SailConcurrencyTest {
 			try {
 				final SailConnection conn = store.getConnection();
 				try {
-					conn.begin();
+					conn.begin(IsolationLevels.READ_COMMITTED);
 					while (txnSize < targetSize.get()) {
 						IRI subject = vf.createIRI("urn:instance-" + txnSize);
 						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral("li" + txnSize), context);
@@ -142,7 +143,7 @@ public abstract class SailConcurrencyTest {
 	/**
 	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or errors. This
 	 * test may fail intermittently rather than consistently, given its dependency on multi-threading.
-	 * 
+	 *
 	 * @see https://github.com/eclipse/rdf4j/issues/693
 	 */
 	@Test

@@ -119,7 +119,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	public void addStatement(Client client, Statement statement) {
+	synchronized public void addStatement(Client client, Statement statement) {
 		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
 			flushAddStatementBuffer(client);
 		}
@@ -129,7 +129,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	public void removeStatement(Client client, Statement statement) {
+	synchronized public void removeStatement(Client client, Statement statement) {
 
 		ElasticsearchId elasticsearchIdStatement;
 
@@ -160,7 +160,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	public void clear(Client client, Resource[] contexts) {
+	synchronized public void clear(Client client, Resource[] contexts) {
 
 		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
 				.filter(getQueryBuilder(null, null, null, contexts))
@@ -527,6 +527,9 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 				List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
 
+				logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
+						bulkResponse.buildFailureMessage());
+
 				boolean onlyVersionConflicts = bulkItemResponses.stream()
 						.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
 				if (onlyVersionConflicts) {
@@ -562,10 +565,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 				} else {
 					failures++;
-					if (failures < 10) {
-						logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
-								bulkResponse.buildFailureMessage());
-					} else {
+					if (failures > 10) {
 						throw new RuntimeException("Elasticsearch has failed " + failures
 								+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
 					}
@@ -589,7 +589,6 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	private Statement getStatementById(Client client, String sha256) {
-
 		Map<String, Object> source = client.prepareGet(index, ELASTICSEARCH_TYPE, sha256).get().getSource();
 
 		return sourceToStatement(source, sha256);

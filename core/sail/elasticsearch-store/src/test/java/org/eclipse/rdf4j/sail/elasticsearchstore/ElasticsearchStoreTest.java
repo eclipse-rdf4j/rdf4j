@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -27,7 +26,6 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,7 +34,6 @@ import java.net.UnknownHostException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.AssertionsForClassTypes.fail;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -52,35 +49,13 @@ public class ElasticsearchStoreTest {
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
-		String version = "6.5.4";
-
-		embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(version)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
-				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-				.withInstallationDirectory(installLocation)
-				.withDownloadDirectory(new File("tempElasticsearchDownload"))
-//			.withPlugin("analysis-stempel")
-//			.withIndex("cars", IndexSettings.builder()
-//				.withType("car", getSystemResourceAsStream("car-mapping.json"))
-//				.build())
-//			.withIndex("books", IndexSettings.builder()
-//				.withType(PAPER_BOOK_INDEX_TYPE, getSystemResourceAsStream("paper-book-mapping.json"))
-//				.withType("audio_book", getSystemResourceAsStream("audio-book-mapping.json"))
-//				.withSettings(getSystemResourceAsStream("elastic-settings.json"))
-//				.build())
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
-
-		embeddedElastic.start();
+		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 	}
 
 	@AfterClass
 	public static void afterClass() throws IOException {
 
-		embeddedElastic.stop();
-
-		FileUtils.deleteDirectory(installLocation);
+		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 	}
 
 	@After
