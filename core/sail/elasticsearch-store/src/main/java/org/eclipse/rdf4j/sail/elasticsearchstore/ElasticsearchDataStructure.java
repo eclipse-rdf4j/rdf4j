@@ -531,11 +531,13 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 						bulkResponse.buildFailureMessage());
 
 				boolean onlyVersionConflicts = bulkItemResponses.stream()
+						.filter(BulkItemResponse::isFailed)
 						.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
 				if (onlyVersionConflicts) {
 					// probably trying to add duplicates, or we have a hash conflict
 
 					Set<String> failedIDs = bulkItemResponses.stream()
+							.filter(BulkItemResponse::isFailed)
 							.map(BulkItemResponse::getId)
 							.collect(Collectors.toSet());
 

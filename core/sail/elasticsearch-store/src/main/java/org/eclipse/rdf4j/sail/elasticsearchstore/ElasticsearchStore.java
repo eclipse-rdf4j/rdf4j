@@ -48,7 +48,6 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	final ClientPool clientPool;
 
-
 	public ElasticsearchStore(String hostname, int port, String index) {
 
 		clientPool = new ClientPoolImpl(hostname, port);

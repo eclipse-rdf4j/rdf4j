@@ -26,7 +26,7 @@ public class ElasticsarchGraphQueryResultTest extends GraphQueryResultTest {
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
-		TestHelpers.startElasticsearch(installLocation);
+		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 	}
 
 	@AfterClass

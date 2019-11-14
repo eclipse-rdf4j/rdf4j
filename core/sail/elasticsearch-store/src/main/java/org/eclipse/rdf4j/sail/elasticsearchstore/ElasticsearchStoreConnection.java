@@ -29,7 +29,6 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 
 	private volatile DefaultSailChangedEvent sailChangedEvent;
 
-
 	ElasticsearchStoreConnection(ElasticsearchStore sail) {
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.sail = sail;
@@ -39,7 +38,6 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 	public ElasticsearchStore getSail() {
 		return sail;
 	}
-
 
 	@Override
 	protected void startTransactionInternal() throws SailException {
@@ -79,13 +77,13 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
@@ -102,6 +100,5 @@ public class ElasticsearchStoreConnection extends SailSourceConnection {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
-
 
 }
