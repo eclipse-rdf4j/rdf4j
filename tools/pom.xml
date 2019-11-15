@@ -17,10 +17,6 @@
 	<name>RDF4J Tools</name>
 	<description>Server, Workbench, Console and other end-user tools for RDF4J.</description>
 
-	<properties>
-		<spring.version>5.1.7.RELEASE</spring.version>
-	</properties>
-
 	<modules>
 		<module>config</module>
 		<module>console</module>
