@@ -69,6 +69,8 @@ public class ElasticsearchStoreTransactionsTest {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 
+		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "test");
+
 	}
 
 	@AfterClass
@@ -81,7 +83,7 @@ public class ElasticsearchStoreTransactionsTest {
 	@Before
 	public void before() throws UnknownHostException {
 
-		this.elasticsearchStore.setElasticsearchScrollTimeout(60000);
+		elasticsearchStore.setElasticsearchScrollTimeout(60000);
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
