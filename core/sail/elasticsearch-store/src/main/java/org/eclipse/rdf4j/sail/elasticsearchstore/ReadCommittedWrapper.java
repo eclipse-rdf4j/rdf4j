@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
-import org.elasticsearch.client.Client;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -36,18 +35,18 @@ class ReadCommittedWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	public void addStatement(Client client, Statement statement) {
+	public void addStatement(Statement statement) {
 		internalAdded.add(statement);
 		internalRemoved.remove(statement);
 	}
 
 	@Override
-	public void removeStatement(Client client, Statement statement) {
+	public void removeStatement(Statement statement) {
 		internalRemoved.add(statement);
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Client client, Resource subject,
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
 			IRI predicate, Value object, Resource... context) {
 
 		if (subject != null && predicate != null && object != null && context != null && context.length == 1) {
@@ -87,7 +86,7 @@ class ReadCommittedWrapper extends DataStructureInterface {
 				if (internalRemoved.contains(statement)) {
 					return new EmptyIteration<>();
 				} else {
-					return dataStructure.getStatements(client, subject, predicate, object, context);
+					return dataStructure.getStatements(subject, predicate, object, context);
 
 				}
 
@@ -121,15 +120,16 @@ class ReadCommittedWrapper extends DataStructureInterface {
 						})
 						.iterator();
 
-				CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(client,
+				CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
 						subject, predicate, object, context);
 
 				Statement next;
 
 				private void setNext() {
 
-					if (next != null)
+					if (next != null) {
 						return;
+					}
 
 					do {
 						Statement tempNext = null;
@@ -187,45 +187,50 @@ class ReadCommittedWrapper extends DataStructureInterface {
 
 	}
 
+	private static boolean containsContext(Resource[] haystack, Resource needle) {
+		for (Resource resource : haystack) {
+			if (resource == null && needle == null) {
+				return true;
+			}
+			if (resource != null && resource.equals(needle)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	@Override
-	public void flushThrough(Client client) {
+	public void flushThrough() {
 
 		internalAdded
 				.stream()
 				.filter(statement -> !internalRemoved.contains(statement))
-				.forEach(statement -> dataStructure.addStatement(client, statement));
+				.forEach(statement -> dataStructure.addStatement(statement));
 
-		internalRemoved.forEach(statement -> dataStructure.removeStatement(client, statement));
+		internalRemoved.forEach(statement -> dataStructure.removeStatement(statement));
 
 		internalAdded = new HashSet<>(internalAdded.size());
 		internalRemoved = new HashSet<>(internalRemoved.size());
 
-		dataStructure.flush(client);
+		dataStructure.flush();
 
 	}
 
 	@Override
-	public void setElasticsearchScrollTimeout(int timeout) {
-		dataStructure.setElasticsearchScrollTimeout(timeout);
+	boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		boolean removed = false;
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
+				contexts)) {
+			while (statements.hasNext()) {
+				removed = true;
+				removeStatement(statements.next());
+			}
+		}
+		return removed;
 	}
 
 	@Override
-	public void flush(Client client) {
-	}
-
-	@Override
-	String getHostname() {
-		return dataStructure.getHostname();
-	}
-
-	@Override
-	int getPort() {
-		return dataStructure.getPort();
-	}
-
-	@Override
-	String getClustername() {
-		return dataStructure.getClustername();
+	public void flush() {
 	}
 
 	@Override
@@ -234,12 +239,12 @@ class ReadCommittedWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	public void clear(Client client, Resource[] contexts) {
+	public void clear(Resource[] contexts) {
 
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(client, null, null, null,
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null,
 				contexts)) {
 			while (statements.hasNext()) {
-				removeStatement(client, statements.next());
+				removeStatement(statements.next());
 			}
 		}
 

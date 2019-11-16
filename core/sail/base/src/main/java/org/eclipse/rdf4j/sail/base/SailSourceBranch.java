@@ -485,9 +485,17 @@ class SailSourceBranch implements SailSource {
 		}
 		Model deprecated = change.getDeprecated();
 		if (deprecated != null) {
-			for (Statement st : deprecated) {
-				sink.deprecate(st);
+
+			if (sink instanceof SailSinkVersion2) {
+				for (Statement st : deprecated) {
+					((SailSinkVersion2) sink).deprecate(st);
+				}
+			} else {
+				for (Statement st : deprecated) {
+					sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				}
 			}
+
 		}
 		Model approved = change.getApproved();
 		if (approved != null) {

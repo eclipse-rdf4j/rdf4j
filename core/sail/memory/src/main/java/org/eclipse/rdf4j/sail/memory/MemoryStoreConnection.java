@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
 /**
  * Implementation of a Sail Connection for memory stores.
- * 
+ *
  * @author Arjohn Kampman
  * @author jeen
  */

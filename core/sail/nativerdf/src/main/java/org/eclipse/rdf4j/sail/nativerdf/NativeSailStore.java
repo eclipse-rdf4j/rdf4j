@@ -430,9 +430,8 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void deprecate(Statement statement) throws SailException {
-			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
-					statement.getContext());
+		public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			removeStatements(subj, pred, obj, explicit, ctx);
 		}
 
 		/**

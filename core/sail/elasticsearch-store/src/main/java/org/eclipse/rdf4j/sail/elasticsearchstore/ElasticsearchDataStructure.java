@@ -26,9 +26,6 @@ import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
@@ -39,13 +36,10 @@ import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
 import org.elasticsearch.index.reindex.DeleteByQueryAction;
 import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -70,6 +64,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	private static final String mapping;
 
 	private final int BUFFER_THRESHOLD = 1024 * 16;
+	private final ClientPool clientPool;
 	private Set<Statement> addStatementBuffer = Collections.synchronizedSet(new HashSet<>());
 	private Set<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>());
 
@@ -78,7 +73,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	static {
 		try {
 			mapping = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()
-				.getResourceAsStream("elasticsearchStoreMapping.json"), StandardCharsets.UTF_8);
+					.getResourceAsStream("elasticsearchStoreMapping.json"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -92,11 +87,12 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	private final int port;
 	private int scrollTimeout = 60000;
 
-	ElasticsearchDataStructure(String hostname, int port, String index) {
+	ElasticsearchDataStructure(ClientPool clientPool, String hostname, int port, String index) {
 		super();
 		this.hostname = hostname;
 		this.port = port;
 		this.index = index;
+		this.clientPool = clientPool;
 	}
 
 	private void createIndex() {
@@ -105,24 +101,23 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
 
-		try (Client client = getClient()) {
-			boolean indexExistsAlready = client.admin()
+		boolean indexExistsAlready = clientPool.getClient()
+				.admin()
 				.indices()
 				.exists(new IndicesExistsRequest(index))
 				.actionGet()
 				.isExists();
 
-			if (!indexExistsAlready) {
-				client.admin().indices().create(request).actionGet();
-			}
+		if (!indexExistsAlready) {
+			clientPool.getClient().admin().indices().create(request).actionGet();
 		}
 
 	}
 
 	@Override
-	synchronized public void addStatement(Client client, Statement statement) {
+	synchronized public void addStatement(Statement statement) {
 		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
-			flushAddStatementBuffer(client);
+			flushAddStatementBuffer(clientPool.getClient());
 		}
 
 		addStatementBuffer.add(statement);
@@ -130,7 +125,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void removeStatement(Client client, Statement statement) {
+	synchronized public void removeStatement(Statement statement) {
 
 		ElasticsearchId elasticsearchIdStatement;
 
@@ -144,16 +139,16 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 			if (statement.getContext() == null) {
 				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),
-					statement.getPredicate());
+						statement.getPredicate());
 			} else {
 				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),
-					statement.getPredicate(), statement.getContext());
+						statement.getPredicate(), statement.getContext());
 			}
 
 		}
 
 		if (deleteStatementBuffer.size() >= BUFFER_THRESHOLD) {
-			flushRemoveStatementBuffer(client);
+			flushRemoveStatementBuffer(clientPool.getClient());
 		}
 
 		deleteStatementBuffer.add(elasticsearchIdStatement);
@@ -161,23 +156,23 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void clear(Client client, Resource[] contexts) {
+	synchronized public void clear(Resource[] contexts) {
 
-		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
-			.filter(getQueryBuilder(null, null, null, contexts))
-			.abortOnVersionConflict(false)
-			.source(index)
-			.get();
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientPool.getClient())
+				.filter(getQueryBuilder(null, null, null, contexts))
+				.abortOnVersionConflict(false)
+				.source(index)
+				.get();
 
 		long deleted = response.getDeleted();
 	}
 
 	@Override
-	void flushThrough(Client client) {
+	void flushThrough() {
 		// no underlying store to flush to
 	}
 
-	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(Client client, QueryBuilder queryBuilder) {
+	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(QueryBuilder queryBuilder) {
 
 		return new CloseableIteration<SearchHit, RuntimeException>() {
 
@@ -185,14 +180,15 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			String scrollId;
 			long itemsRetrieved = 0;
 			int size = 1000;
+			Client client = clientPool.getClient();
 
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
-					.setScroll(new TimeValue(scrollTimeout))
-					.setQuery(queryBuilder)
-					.setSize(size)
-					.get();
+						.setScroll(new TimeValue(scrollTimeout))
+						.setQuery(queryBuilder)
+						.setSize(size)
+						.get();
 
 				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 				scrollId = scrollResp.getScrollId();
@@ -219,9 +215,9 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 						scrollIsEmpty();
 					} else {
 						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-							.setScroll(new TimeValue(scrollTimeout))
-							.execute()
-							.actionGet();
+								.setScroll(new TimeValue(scrollTimeout))
+								.execute()
+								.actionGet();
 
 						items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 						scrollId = scrollResp.getScrollId();
@@ -282,15 +278,15 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Client client, Resource subject,
-																				IRI predicate,
-																				Value object, Resource... context) {
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
+			IRI predicate,
+			Value object, Resource... context) {
 
 		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, context);
 
 		return new LookAheadIteration<Statement, SailException>() {
 
-			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(client, queryBuilder);
+			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(queryBuilder);
 
 			@Override
 			protected Statement getNextElement() throws SailException {
@@ -311,8 +307,8 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 					// index. The hash is stored in an integer field and is index. The code below does hash collision
 					// check.
 					if (object != null
-						&& object.stringValue().hashCode() == statement.getObject().stringValue().hashCode()
-						&& !object.equals(statement.getObject())) {
+							&& object.stringValue().hashCode() == statement.getObject().stringValue().hashCode()
+							&& !object.equals(statement.getObject())) {
 						continue;
 					}
 
@@ -322,7 +318,6 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 				return next;
 			}
-
 
 			@Override
 			public void remove() throws SailException {
@@ -336,7 +331,6 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				super.handleClose();
 				iterator.close();
 			}
-
 
 		};
 
@@ -371,10 +365,10 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				boolQueryBuilder.must(QueryBuilders.termQuery("object_BNode", true));
 			} else {
 				boolQueryBuilder.must(
-					QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
+						QueryBuilders.termQuery("object_Datatype", ((Literal) object).getDatatype().stringValue()));
 				if (((Literal) object).getLanguage().isPresent()) {
 					boolQueryBuilder
-						.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
+							.must(QueryBuilders.termQuery("object_Lang", ((Literal) object).getLanguage().get()));
 				}
 			}
 		}
@@ -393,15 +387,15 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				} else if (context instanceof IRI) {
 
 					contextQueryBuilder.should(
-						new BoolQueryBuilder()
-							.must(QueryBuilders.termQuery("context", context.stringValue()))
-							.must(QueryBuilders.termQuery("context_IRI", true)));
+							new BoolQueryBuilder()
+									.must(QueryBuilders.termQuery("context", context.stringValue()))
+									.must(QueryBuilders.termQuery("context_IRI", true)));
 
 				} else { // BNode
 					contextQueryBuilder.should(
-						new BoolQueryBuilder()
-							.must(QueryBuilders.termQuery("context", context.stringValue()))
-							.must(QueryBuilders.termQuery("context_BNode", true)));
+							new BoolQueryBuilder()
+									.must(QueryBuilders.termQuery("context", context.stringValue()))
+									.must(QueryBuilders.termQuery("context_BNode", true)));
 				}
 
 			}
@@ -423,15 +417,17 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	public void flush(Client client) {
+	public void flush() {
+
+		Client client = clientPool.getClient();
 
 		flushAddStatementBuffer(client);
 		flushRemoveStatementBuffer(client);
 
 		client.admin()
-			.indices()
-			.prepareRefresh(index)
-			.get();
+				.indices()
+				.prepareRefresh(index)
+				.get();
 
 	}
 
@@ -441,7 +437,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			return;
 		}
 
-		BulkRequestBuilder bulkRequest = client.prepareBulk();
+		BulkRequestBuilder bulkRequest = clientPool.getClient().prepareBulk();
 
 		int failures = 0;
 
@@ -449,67 +445,68 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 			addStatementBuffer
 
-				.stream()
-				.parallel()
-				.map(statement -> {
-					XContentBuilder builder;
+					.stream()
+					.parallel()
+					.map(statement -> {
+						XContentBuilder builder;
 
-					try {
-						builder = jsonBuilder()
-							.startObject()
-							.field("subject", statement.getSubject().stringValue())
-							.field("predicate", statement.getPredicate().stringValue())
-							.field("object", statement.getObject().stringValue())
-							.field("object_Hash", statement.getObject().stringValue().hashCode());
+						try {
+							builder = jsonBuilder()
+									.startObject()
+									.field("subject", statement.getSubject().stringValue())
+									.field("predicate", statement.getPredicate().stringValue())
+									.field("object", statement.getObject().stringValue())
+									.field("object_Hash", statement.getObject().stringValue().hashCode());
 
-						Resource context = statement.getContext();
+							Resource context = statement.getContext();
 
-						if (context != null) {
-							builder.field("context", context.stringValue());
+							if (context != null) {
+								builder.field("context", context.stringValue());
 
-							if (context instanceof IRI) {
-								builder.field("context_IRI", true);
+								if (context instanceof IRI) {
+									builder.field("context_IRI", true);
+								} else {
+									builder.field("context_BNode", true);
+								}
+							}
+
+							if (statement.getSubject() instanceof IRI) {
+								builder.field("subject_IRI", true);
 							} else {
-								builder.field("context_BNode", true);
+								builder.field("subject_BNode", true);
 							}
-						}
 
-						if (statement.getSubject() instanceof IRI) {
-							builder.field("subject_IRI", true);
-						} else {
-							builder.field("subject_BNode", true);
-						}
+							if (statement.getObject() instanceof IRI) {
+								builder.field("object_IRI", true);
+							} else if (statement.getObject() instanceof BNode) {
+								builder.field("object_BNode", true);
+							} else {
+								builder.field("object_Datatype",
+										((Literal) statement.getObject()).getDatatype().stringValue());
+								if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+									builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
 
-						if (statement.getObject() instanceof IRI) {
-							builder.field("object_IRI", true);
-						} else if (statement.getObject() instanceof BNode) {
-							builder.field("object_BNode", true);
-						} else {
-							builder.field("object_Datatype",
-								((Literal) statement.getObject()).getDatatype().stringValue());
-							if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-								builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
+								}
 							}
+
+							builder.endObject();
+
+							return new BuilderAndSha(sha256(statement), builder);
+
+						} catch (IOException e) {
+							throw new IllegalStateException(e);
 						}
 
-						builder.endObject();
+					})
+					.collect(Collectors.toList())
+					.forEach(builderAndSha -> {
 
-						return new BuilderAndSha(sha256(statement), builder);
+						bulkRequest.add(clientPool.getClient()
+								.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
+								.setSource(builderAndSha.getBuilder())
+								.setOpType(DocWriteRequest.OpType.CREATE));
 
-					} catch (IOException e) {
-						throw new IllegalStateException(e);
-					}
-
-				})
-				.collect(Collectors.toList())
-				.forEach(builderAndSha -> {
-
-					bulkRequest.add(client.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
-						.setSource(builderAndSha.getBuilder())
-						.setOpType(DocWriteRequest.OpType.CREATE));
-
-				});
+					});
 
 			BulkResponse bulkResponse = bulkRequest.get();
 			if (bulkResponse.hasFailures()) {
@@ -517,48 +514,48 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
 
 				logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
-					bulkResponse.buildFailureMessage());
+						bulkResponse.buildFailureMessage());
 
 				boolean onlyVersionConflicts = bulkItemResponses.stream()
-					.filter(BulkItemResponse::isFailed)
-					.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
+						.filter(BulkItemResponse::isFailed)
+						.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
 				if (onlyVersionConflicts) {
 					// probably trying to add duplicates, or we have a hash conflict
 
 					Set<String> failedIDs = bulkItemResponses.stream()
-						.filter(BulkItemResponse::isFailed)
-						.map(BulkItemResponse::getId)
-						.collect(Collectors.toSet());
+							.filter(BulkItemResponse::isFailed)
+							.map(BulkItemResponse::getId)
+							.collect(Collectors.toSet());
 
 					// clean up addedStatements
 					addStatementBuffer = addStatementBuffer.stream()
-						.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry failed
-						// statements
-						// filter out duplicates
-						.filter(statement -> {
+							.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry failed
+							// statements
+							// filter out duplicates
+							.filter(statement -> {
 
-							String sha256 = sha256(statement);
-							Statement statementById = getStatementById(client, sha256);
+								String sha256 = sha256(statement);
+								Statement statementById = getStatementById(sha256);
 
-							return !statement.equals(statementById);
-						})
+								return !statement.equals(statementById);
+							})
 
-						// now we only have conflicts
-						.map(statement -> {
-							// TODO handle conflict. Probably by doing something to change to id, mark it as a
-							// conflict. Store all the conflicts in memory, to check against and refresh them from
-							// disc when we boot
+							// now we only have conflicts
+							.map(statement -> {
+								// TODO handle conflict. Probably by doing something to change to id, mark it as a
+								// conflict. Store all the conflicts in memory, to check against and refresh them from
+								// disc when we boot
 
-							return statement;
+								return statement;
 
-						})
-						.collect(Collectors.toSet());
+							})
+							.collect(Collectors.toSet());
 
 				} else {
 					failures++;
 					if (failures > 10) {
 						throw new RuntimeException("Elasticsearch has failed " + failures
-							+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
+								+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
 					}
 
 					try {
@@ -573,14 +570,17 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		} while (failures > 0);
 
-		logger.info("Added {} statements", addStatementBuffer.size());
+		logger.debug("Added {} statements", addStatementBuffer.size());
 
 		addStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
 
 	}
 
-	private Statement getStatementById(Client client, String sha256) {
-		Map<String, Object> source = client.prepareGet(index, ELASTICSEARCH_TYPE, sha256).get().getSource();
+	private Statement getStatementById(String sha256) {
+		Map<String, Object> source = clientPool.getClient()
+				.prepareGet(index, ELASTICSEARCH_TYPE, sha256)
+				.get()
+				.getSource();
 
 		return sourceToStatement(source, sha256);
 
@@ -602,7 +602,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 			return;
 		}
 
-		BulkRequestBuilder bulkRequest = client.prepareBulk();
+		BulkRequestBuilder bulkRequest = clientPool.getClient().prepareBulk();
 
 		int failures = 0;
 
@@ -610,7 +610,8 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 			deleteStatementBuffer.forEach(statement -> {
 
-				bulkRequest.add(client.prepareDelete(index, ELASTICSEARCH_TYPE, statement.getElasticsearchId()));
+				bulkRequest.add(clientPool.getClient()
+						.prepareDelete(index, ELASTICSEARCH_TYPE, statement.getElasticsearchId()));
 
 			});
 
@@ -619,10 +620,10 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				failures++;
 				if (failures < 10) {
 					logger.warn("Elasticsearch has failures when adding data, retrying. Message: {}",
-						bulkResponse.buildFailureMessage());
+							bulkResponse.buildFailureMessage());
 				} else {
 					throw new RuntimeException("Elasticsearch has failed " + failures
-						+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
+							+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
 				}
 
 			} else {
@@ -631,23 +632,10 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 		} while (failures > 0);
 
+		logger.debug("Removed {} statements", deleteStatementBuffer.size());
+
 		deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
 
-	}
-
-	@Override
-	String getHostname() {
-		return hostname;
-	}
-
-	@Override
-	int getPort() {
-		return port;
-	}
-
-	@Override
-	String getClustername() {
-		return "cluster1";
 	}
 
 	@Override
@@ -656,20 +644,43 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		createIndex();
 	}
 
-	private Client getClient() {
-		try {
-			Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
-			TransportClient client = new PreBuiltTransportClient(settings);
-			client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
-			return client;
-		} catch (UnknownHostException e) {
-			throw new RuntimeException(e);
-		}
+	public void setElasticsearchScrollTimeout(int timeout) {
+		this.scrollTimeout = timeout;
 	}
 
 	@Override
-	public void setElasticsearchScrollTimeout(int timeout) {
-		this.scrollTimeout = timeout;
+	synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+
+		flushRemoveStatementBuffer(clientPool.getClient());
+
+		// delete single statement
+		if (subj != null && pred != null && obj != null && contexts.length == 1) {
+			Statement statement;
+
+			if (contexts[0] == null) {
+				statement = vf.createStatement(subj, pred, obj);
+			} else {
+				statement = vf.createStatement(subj, pred, obj, contexts[0]);
+			}
+
+			String id = sha256(statement);
+
+			boolean exists = clientPool.getClient().prepareGet(index, ELASTICSEARCH_TYPE, id).get().isExists();
+			if (exists) {
+				clientPool.getClient().prepareDelete(index, ELASTICSEARCH_TYPE, id).get();
+			}
+			return exists;
+
+		}
+
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientPool.getClient())
+				.filter(getQueryBuilder(subj, pred, obj, contexts))
+				.source(index)
+				.get();
+
+		long deleted = response.getDeleted();
+		return deleted > 0;
 	}
 
 	String sha256(Statement statement) {
@@ -721,7 +732,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 			} else {
 				objectRes = vf.createLiteral(objectString,
-					vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
+						vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
 
 			}
 

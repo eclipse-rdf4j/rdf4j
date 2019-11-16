@@ -240,18 +240,18 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
-	public synchronized void deprecate(Statement statement) {
+	public synchronized void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) {
 
 		if (approved != null) {
-			approved.remove(statement);
+			approved.remove(subj, pred, obj, ctx);
 		}
 		if (deprecated == null) {
 			deprecated = createEmptyModel();
 		}
-		deprecated.add(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
-		if (approvedContexts != null && approvedContexts.contains(statement.getContext())
-				&& !approved.contains(null, null, null, statement.getContext())) {
-			approvedContexts.remove(statement.getContext());
+		deprecated.add(subj, pred, obj, ctx);
+		if (approvedContexts != null && approvedContexts.contains(ctx)
+				&& !approved.contains(null, null, null, ctx)) {
+			approvedContexts.remove(ctx);
 		}
 	}
 

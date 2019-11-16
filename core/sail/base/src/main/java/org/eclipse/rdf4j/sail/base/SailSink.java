@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.base;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -105,9 +104,12 @@ public interface SailSink extends SailClosable {
 	 * Removes a statement with the specified subject, predicate, object, and context. All four parameters may be
 	 * non-null.
 	 *
-	 * @param statement The statement that should be removed
+	 * @param subj The subject of the statement that should be removed
+	 * @param pred The predicate of the statement that should be removed
+	 * @param obj  The object of the statement that should be removed
+	 * @param ctx  The context from which to remove the statement
 	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
 	 */
-	void deprecate(Statement statement) throws SailException;
+	void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
 }

@@ -24,11 +24,9 @@ class ElasticsearchSailStore implements SailStore {
 
 	private final MemNamespaceStore namespaceStore = new MemNamespaceStore();
 
-	ElasticsearchSailStore(String hostname, int port, String index, ClientPool clientPool) {
-		sailSource = new ElasticsearchSailSource(clientPool, new ElasticsearchDataStructure(hostname, port, index),
-				namespaceStore);
-		sailSourceInferred = new ElasticsearchSailSource(clientPool,
-				new ElasticsearchDataStructure(hostname, port, index + "_inferred"), namespaceStore);
+	public ElasticsearchSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred) {
+		sailSource = new ElasticsearchSailSource(dataStructure, namespaceStore);
+		sailSourceInferred = new ElasticsearchSailSource(dataStructureInferred, namespaceStore);
 	}
 
 	@Override
@@ -64,8 +62,4 @@ class ElasticsearchSailStore implements SailStore {
 		sailSourceInferred.init();
 	}
 
-	public void setElasticsearchScrollTimeout(int timeout) {
-		sailSource.setElasticsearchScrollTimeout(timeout);
-		sailSourceInferred.setElasticsearchScrollTimeout(timeout);
-	}
 }

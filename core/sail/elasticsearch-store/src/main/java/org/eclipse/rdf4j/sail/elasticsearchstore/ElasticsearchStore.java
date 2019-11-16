@@ -48,11 +48,16 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	final ClientPool clientPool;
 
+	private final ElasticsearchDataStructure dataStructure;
+	private final ElasticsearchDataStructure dataStructureInferred;
+
 	public ElasticsearchStore(String hostname, int port, String index) {
 
 		clientPool = new ClientPoolImpl(hostname, port);
 
-		sailStore = new ElasticsearchSailStore(hostname, port, index, clientPool);
+		dataStructure = new ElasticsearchDataStructure(clientPool, hostname, port, index);
+		dataStructureInferred = new ElasticsearchDataStructure(clientPool, hostname, port, index + "_inferred");
+		sailStore = new ElasticsearchSailStore(dataStructure, dataStructureInferred);
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
@@ -248,7 +253,8 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 	}
 
 	public void setElasticsearchScrollTimeout(int timeout) {
-		sailStore.setElasticsearchScrollTimeout(timeout);
+		dataStructure.setElasticsearchScrollTimeout(timeout);
+		dataStructureInferred.setElasticsearchScrollTimeout(timeout);
 	}
 
 }

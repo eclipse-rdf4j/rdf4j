@@ -506,12 +506,11 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void deprecate(Statement statement) throws SailException {
+		public synchronized void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
-			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(statement.getSubject(),
-					statement.getPredicate(), statement.getObject(),
-					explicit, nextSnapshot, statement.getContext());) {
+			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
+					explicit, nextSnapshot, ctx);) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);

@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -76,32 +77,8 @@ public class QueryBenchmark {
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
-		String version = "6.5.4";
-
-		File tempElasticsearchDownload = new File("tempElasticsearchDownload");
-
-		System.out.println("Download directory: " + tempElasticsearchDownload.getAbsolutePath());
-
-		embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(version)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
-				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-				.withInstallationDirectory(installLocation)
-				.withDownloadDirectory(tempElasticsearchDownload)
-				.withJavaHome(JavaHomeOption.path("/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home"))
-//			.withPlugin("analysis-stempel")
-//			.withIndex("cars", IndexSettings.builder()
-//				.withType("car", getSystemResourceAsStream("car-mapping.json"))
-//				.build())
-//			.withIndex("books", IndexSettings.builder()
-//				.withType(PAPER_BOOK_INDEX_TYPE, getSystemResourceAsStream("paper-book-mapping.json"))
-//				.withType("audio_book", getSystemResourceAsStream("audio-book-mapping.json"))
-//				.withSettings(getSystemResourceAsStream("elastic-settings.json"))
-//				.build())
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
-
-		embeddedElastic.start();
+		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
+				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
 
 		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
@@ -119,12 +96,11 @@ public class QueryBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() throws IOException {
+	public void afterClass() {
 
 		elasticsearchStore.shutDown();
-		embeddedElastic.stop();
+		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 
-		FileUtils.deleteDirectory(installLocation);
 	}
 
 	@Benchmark
@@ -148,6 +124,22 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.prepareUpdate(query3).execute();
+		}
+	}
+
+	@Benchmark
+	public void simpleUpdateQueryIsolationNone() {
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.prepareUpdate(query2).execute();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.prepareUpdate(query3).execute();
+			connection.commit();
 		}
 	}
 

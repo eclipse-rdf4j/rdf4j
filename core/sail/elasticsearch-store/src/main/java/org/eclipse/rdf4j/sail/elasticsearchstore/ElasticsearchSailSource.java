@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -19,7 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SailSinkVersion2;
 import org.eclipse.rdf4j.sail.base.SailSource;
 
 import java.util.HashSet;
@@ -31,17 +30,11 @@ import java.util.Set;
 class ElasticsearchSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
-	private final ClientPool clientPool;
 	private final MemNamespaceStore namespaceStore;
 
-//	private final MemNamespaceStore namespaceStore;
-
-	ElasticsearchSailSource(ClientPool clientPool, DataStructureInterface dataStructure,
-			MemNamespaceStore namespaceStore) {
+	public ElasticsearchSailSource(DataStructureInterface dataStructure, MemNamespaceStore namespaceStore) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
-		this.clientPool = clientPool;
-
 	}
 
 	@Override
@@ -50,12 +43,12 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ElasticsearchSailSource(clientPool, new ReadCommittedWrapper(this.dataStructure), namespaceStore);
+		return new ElasticsearchSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore);
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
-		return new SailSink() {
+	public SailSinkVersion2 sink(IsolationLevel level) throws SailException {
+		return new SailSinkVersion2() {
 			@Override
 			public void prepare() throws SailException {
 
@@ -63,7 +56,7 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public void flush() throws SailException {
-				dataStructure.flush(clientPool.getClient());
+				dataStructure.flush();
 			}
 
 			@Override
@@ -83,9 +76,7 @@ class ElasticsearchSailSource implements SailSource {
 
 			@Override
 			public void clear(Resource... contexts) throws SailException {
-
-				dataStructure.clear(clientPool.getClient(), contexts);
-
+				dataStructure.clear(contexts);
 			}
 
 			@Override
@@ -96,12 +87,22 @@ class ElasticsearchSailSource implements SailSource {
 			@Override
 			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
-				dataStructure.addStatement(clientPool.getClient(), statement);
+				dataStructure.addStatement(statement);
+			}
+
+			@Override
+			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+				throw new IllegalStateException("Unsupported operation. Use deprecate(Statement statement) instead!");
 			}
 
 			@Override
 			public void deprecate(Statement statement) throws SailException {
-				dataStructure.removeStatement(clientPool.getClient(), statement);
+				dataStructure.removeStatement(statement);
+			}
+
+			@Override
+			public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+				return dataStructure.removeStatementsByQuery(subj, pred, obj, contexts);
 			}
 
 			@Override
@@ -190,7 +191,7 @@ class ElasticsearchSailSource implements SailSource {
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 					Value obj, Resource... contexts) throws SailException {
-				return dataStructure.getStatements(clientPool.getClient(), subj, pred, obj, contexts);
+				return dataStructure.getStatements(subj, pred, obj, contexts);
 			}
 
 		};
@@ -202,14 +203,11 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		dataStructure.flushThrough(clientPool.getClient());
+		dataStructure.flushThrough();
 	}
 
 	public void init() {
 		dataStructure.init();
 	}
 
-	public void setElasticsearchScrollTimeout(int timeout) {
-		dataStructure.setElasticsearchScrollTimeout(timeout);
-	}
 }

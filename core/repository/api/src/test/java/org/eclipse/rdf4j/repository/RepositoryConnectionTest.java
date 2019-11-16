@@ -197,7 +197,6 @@ public abstract class RepositoryConnectionTest {
 	@Before
 	public void setUp() throws Exception {
 		testRepository = createRepository();
-		testRepository.initialize();
 
 		testCon = testRepository.getConnection();
 		testCon.clear();

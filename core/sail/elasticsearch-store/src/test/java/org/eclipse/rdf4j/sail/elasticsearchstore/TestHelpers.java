@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.FileUtils;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
+import pl.allegro.tech.embeddedelasticsearch.JavaHomeOption;
 import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
@@ -10,24 +11,19 @@ import java.util.concurrent.TimeUnit;
 
 public class TestHelpers {
 
+	public static final String VERSION = "6.5.4";
+	public static final String CLUSTER = "cluster1";
+	public static final String ELASTICSEARCH_DOWNLOAD_DIRECTORY = "tempElasticsearchDownload";
+
 	public static EmbeddedElastic startElasticsearch(File installLocation) throws IOException, InterruptedException {
-		String version = "6.5.4";
 
 		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(version)
+				.withElasticVersion(VERSION)
 				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
 				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
 				.withInstallationDirectory(installLocation)
 				.withDownloadDirectory(new File("tempElasticsearchDownload"))
 //			.withPlugin("analysis-stempel")
-//			.withIndex("cars", IndexSettings.builder()
-//				.withType("car", getSystemResourceAsStream("car-mapping.json"))
-//				.build())
-//			.withIndex("books", IndexSettings.builder()
-//				.withType(PAPER_BOOK_INDEX_TYPE, getSystemResourceAsStream("paper-book-mapping.json"))
-//				.withType("audio_book", getSystemResourceAsStream("audio-book-mapping.json"))
-//				.withSettings(getSystemResourceAsStream("elastic-settings.json"))
-//				.build())
 				.withStartTimeout(5, TimeUnit.MINUTES)
 				.build();
 
@@ -43,5 +39,23 @@ public class TestHelpers {
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	public static EmbeddedElastic startElasticsearch(File installLocation, String javaHomePath)
+			throws IOException, InterruptedException {
+
+		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
+				.withElasticVersion(VERSION)
+				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
+				.withSetting(PopularProperties.CLUSTER_NAME, CLUSTER)
+				.withInstallationDirectory(installLocation)
+				.withJavaHome(JavaHomeOption.path(javaHomePath))
+				.withDownloadDirectory(new File(ELASTICSEARCH_DOWNLOAD_DIRECTORY))
+//			.withPlugin("analysis-stempel")
+				.withStartTimeout(5, TimeUnit.MINUTES)
+				.build();
+
+		embeddedElastic.start();
+		return embeddedElastic;
 	}
 }
