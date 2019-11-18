@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -32,8 +32,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-import pl.allegro.tech.embeddedelasticsearch.JavaHomeOption;
-import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
 import java.io.IOException;
@@ -107,28 +105,32 @@ public class QueryBenchmark {
 	public List<BindingSet> groupByQuery() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			List<BindingSet> bindingSets = Iterations.asList(connection
+			return Iterations.asList(connection
 					.prepareTupleQuery(query1)
 					.evaluate());
-
-			return bindingSets;
 		}
 	}
 
 	@Benchmark
-	public void simpleUpdateQuery() {
+	public boolean simpleUpdateQueryIsolationReadCommitted() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query2).execute();
+			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query3).execute();
+			connection.commit();
 		}
+		return hasStatement();
+
 	}
 
 	@Benchmark
-	public void simpleUpdateQueryIsolationNone() {
+	public boolean simpleUpdateQueryIsolationNone() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -140,6 +142,14 @@ public class QueryBenchmark {
 			connection.begin(IsolationLevels.NONE);
 			connection.prepareUpdate(query3).execute();
 			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	private boolean hasStatement() {
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
 	}
 

@@ -57,7 +57,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 		dataStructure = new ElasticsearchDataStructure(clientPool, hostname, port, index);
 		dataStructureInferred = new ElasticsearchDataStructure(clientPool, hostname, port, index + "_inferred");
-		sailStore = new ElasticsearchSailStore(dataStructure, dataStructureInferred);
+		sailStore = new ElasticsearchSailStore((dataStructure), (dataStructureInferred));
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
