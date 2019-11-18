@@ -41,16 +41,16 @@ import java.util.concurrent.TimeUnit;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DeleteBenchmark {
 
-	@Param({ "100", "1000", "10000" })
-	public int NUMBER_OF_STATEMENTS = 10;
+//	@Param({ "100", "1000", "10000" })
+	public int NUMBER_OF_STATEMENTS = 10000;
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -78,18 +78,8 @@ public class DeleteBenchmark {
 
 	}
 
-	@TearDown(Level.Invocation)
-	public void afterInvocation() {
-
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.remove((Resource) null, null, null);
-			connection.commit();
-		}
-	}
-
-	@Benchmark
-	public long addAndClear() {
+	@Setup(Level.Invocation)
+	public void beforeInvocation() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -98,6 +88,21 @@ public class DeleteBenchmark {
 			}
 			connection.commit();
 		}
+	}
+
+	@TearDown(Level.Invocation)
+	public void afterInvocation() {
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+		}
+	}
+
+	@Benchmark
+	public boolean clear() {
+
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.clear();
@@ -105,20 +110,14 @@ public class DeleteBenchmark {
 		}
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			return connection.size();
+			return connection.hasStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE, false, RDFS.RESOURCE);
 		}
+
 	}
 
 	@Benchmark
-	public long addAndDelete() {
+	public boolean delete() {
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
-				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
-			}
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.remove(RDF.TYPE, RDFS.LABEL, null);
@@ -126,20 +125,14 @@ public class DeleteBenchmark {
 		}
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			return connection.size();
+			return connection.hasStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE, false, RDFS.RESOURCE);
 		}
+
 	}
 
 	@Benchmark
-	public long addAndDeleteReadCommitted() {
+	public boolean deleteReadCommitted() {
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
-				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
-			}
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.remove(RDF.TYPE, RDFS.LABEL, null);
@@ -147,24 +140,18 @@ public class DeleteBenchmark {
 		}
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			return connection.size();
+			return connection.hasStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE, false, RDFS.RESOURCE);
 		}
+
 	}
 
 	@Benchmark
-	public long addAndSize() {
+	public boolean hasStatement() {
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			for (int i = 0; i < NUMBER_OF_STATEMENTS; i++) {
-				connection.add(RDF.TYPE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral(i));
-			}
-			connection.commit();
+			return connection.hasStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE, false, RDFS.RESOURCE);
 		}
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			return connection.size();
-		}
 	}
 
 }

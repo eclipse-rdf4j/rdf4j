@@ -27,7 +27,6 @@ import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.engine.VersionConflictEngineException;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -46,6 +45,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -53,7 +53,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
 /**
@@ -448,54 +447,46 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 					.stream()
 					.parallel()
 					.map(statement -> {
-						XContentBuilder builder;
 
-						try {
-							builder = jsonBuilder()
-									.startObject()
-									.field("subject", statement.getSubject().stringValue())
-									.field("predicate", statement.getPredicate().stringValue())
-									.field("object", statement.getObject().stringValue())
-									.field("object_Hash", statement.getObject().stringValue().hashCode());
+						Map<String, Object> jsonMap = new HashMap<>();
 
-							Resource context = statement.getContext();
+						jsonMap.put("subject", statement.getSubject().stringValue());
+						jsonMap.put("predicate", statement.getPredicate().stringValue());
+						jsonMap.put("object", statement.getObject().stringValue());
+						jsonMap.put("object_Hash", statement.getObject().stringValue().hashCode());
 
-							if (context != null) {
-								builder.field("context", context.stringValue());
+						Resource context = statement.getContext();
 
-								if (context instanceof IRI) {
-									builder.field("context_IRI", true);
-								} else {
-									builder.field("context_BNode", true);
-								}
-							}
+						if (context != null) {
+							jsonMap.put("context", context.stringValue());
 
-							if (statement.getSubject() instanceof IRI) {
-								builder.field("subject_IRI", true);
+							if (context instanceof IRI) {
+								jsonMap.put("context_IRI", true);
 							} else {
-								builder.field("subject_BNode", true);
+								jsonMap.put("context_BNode", true);
 							}
-
-							if (statement.getObject() instanceof IRI) {
-								builder.field("object_IRI", true);
-							} else if (statement.getObject() instanceof BNode) {
-								builder.field("object_BNode", true);
-							} else {
-								builder.field("object_Datatype",
-										((Literal) statement.getObject()).getDatatype().stringValue());
-								if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-									builder.field("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
-								}
-							}
-
-							builder.endObject();
-
-							return new BuilderAndSha(sha256(statement), builder);
-
-						} catch (IOException e) {
-							throw new IllegalStateException(e);
 						}
+
+						if (statement.getSubject() instanceof IRI) {
+							jsonMap.put("subject_IRI", true);
+						} else {
+							jsonMap.put("subject_BNode", true);
+						}
+
+						if (statement.getObject() instanceof IRI) {
+							jsonMap.put("object_IRI", true);
+						} else if (statement.getObject() instanceof BNode) {
+							jsonMap.put("object_BNode", true);
+						} else {
+							jsonMap.put("object_Datatype",
+									((Literal) statement.getObject()).getDatatype().stringValue());
+							if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+								jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+							}
+						}
+
+						return new BuilderAndSha(sha256(statement), jsonMap);
 
 					})
 					.collect(Collectors.toList())
@@ -503,7 +494,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 						bulkRequest.add(clientPool.getClient()
 								.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
-								.setSource(builderAndSha.getBuilder())
+								.setSource(builderAndSha.getMap())
 								.setOpType(DocWriteRequest.OpType.CREATE));
 
 					});
@@ -652,8 +643,6 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
 
-		flushRemoveStatementBuffer(clientPool.getClient());
-
 		// delete single statement
 		if (subj != null && pred != null && obj != null && contexts.length == 1) {
 			Statement statement;
@@ -677,6 +666,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientPool.getClient())
 				.filter(getQueryBuilder(subj, pred, obj, contexts))
 				.source(index)
+				.abortOnVersionConflict(false)
 				.get();
 
 		long deleted = response.getDeleted();
@@ -755,22 +745,4 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 		return statement;
 	}
 
-}
-
-class BuilderAndSha {
-	private final String sha256;
-	private final XContentBuilder builder;
-
-	BuilderAndSha(String sha256, XContentBuilder builder) {
-		this.sha256 = sha256;
-		this.builder = builder;
-	}
-
-	String getSha256() {
-		return sha256;
-	}
-
-	XContentBuilder getBuilder() {
-		return builder;
-	}
 }
