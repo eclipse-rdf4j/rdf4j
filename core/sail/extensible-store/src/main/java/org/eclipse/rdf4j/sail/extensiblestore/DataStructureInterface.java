@@ -36,7 +36,14 @@ public interface DataStructureInterface {
 
 	void init();
 
-	void clear(Resource[] contexts);
+	default void clear(Resource[] contexts) {
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null,
+				contexts)) {
+			while (statements.hasNext()) {
+				removeStatement(statements.next());
+			}
+		}
+	}
 
 	// flush through to any underlying storage, called by the likes of commit()
 	void flushThrough();

@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -49,52 +51,24 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
 			IRI predicate, Value object, Resource... context) {
 
+		// must match single statement
 		if (subject != null && predicate != null && object != null && context != null && context.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, context[0]);
 
 			if (internalAdded.contains(statement)) {
-				return new CloseableIteration<Statement, SailException>() {
-					Statement statement = SimpleValueFactory.getInstance()
-							.createStatement(subject, predicate, object, context[0]);
-
-					@Override
-					public void close() throws SailException {
-
-					}
-
-					@Override
-					public boolean hasNext() throws SailException {
-						return statement != null;
-					}
-
-					@Override
-					public Statement next() throws SailException {
-						Statement temp = statement;
-						statement = null;
-
-						return temp;
-					}
-
-					@Override
-					public void remove() throws SailException {
-
-					}
-				};
-
+				return new SingletonIteration<>(statement);
 			} else {
 				if (internalRemoved.contains(statement)) {
 					return new EmptyIteration<>();
 				} else {
 					return dataStructure.getStatements(subject, predicate, object, context);
-
 				}
-
 			}
 
 		} else {
 
-			return new CloseableIteration<Statement, SailException>() {
+			return new LookAheadIteration<Statement, SailException>() {
 
 				Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
 				Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
@@ -123,13 +97,16 @@ class ReadCommittedWrapper implements DataStructureInterface {
 				CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
 						subject, predicate, object, context);
 
-				Statement next;
+				@Override
+				protected void handleClose() throws SailException {
+					super.handleClose();
+					right.close();
+				}
 
-				private void setNext() {
+				@Override
+				protected Statement getNextElement() throws SailException {
 
-					if (next != null) {
-						return;
-					}
+					Statement next = null;
 
 					do {
 						Statement tempNext = null;
@@ -151,36 +128,10 @@ class ReadCommittedWrapper implements DataStructureInterface {
 
 					} while (next == null && (left.hasNext() || right.hasNext()));
 
-				}
-
-				@Override
-				public void close() throws SailException {
-					right.close();
-				}
-
-				@Override
-				public boolean hasNext() throws SailException {
-					if (next == null) {
-						setNext();
-					}
-					return next != null;
-				}
-
-				@Override
-				public Statement next() throws SailException {
-					if (next == null) {
-						setNext();
-					}
-					Statement temp = next;
-					next = null;
-
-					return temp;
-				}
-
-				@Override
-				public void remove() throws SailException {
+					return next;
 
 				}
+
 			};
 
 		}
@@ -217,19 +168,6 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		boolean removed = false;
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
-				contexts)) {
-			while (statements.hasNext()) {
-				removed = true;
-				removeStatement(statements.next());
-			}
-		}
-		return removed;
-	}
-
-	@Override
 	public void flush() {
 	}
 
@@ -238,15 +176,4 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		dataStructure.init();
 	}
 
-	@Override
-	public void clear(Resource[] contexts) {
-
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null,
-				contexts)) {
-			while (statements.hasNext()) {
-				removeStatement(statements.next());
-			}
-		}
-
-	}
 }

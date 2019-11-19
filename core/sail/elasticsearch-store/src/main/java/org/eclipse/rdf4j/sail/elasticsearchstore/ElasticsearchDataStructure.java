@@ -63,7 +63,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	private static final String MAPPING;
 
-	static final int BUFFER_THRESHOLD = 1024 * 16;
+	private static final int BUFFER_THRESHOLD = 1024 * 16;
 	private final ClientPool clientPool;
 	private Set<Statement> addStatementBuffer = Collections.synchronizedSet(new HashSet<>());
 	private Set<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>());
@@ -149,111 +149,6 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		// no underlying store to flush to
 	}
 
-	CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(QueryBuilder queryBuilder) {
-
-		return new CloseableIteration<SearchHit, RuntimeException>() {
-
-			Iterator<SearchHit> items;
-			String scrollId;
-			long itemsRetrieved = 0;
-			int size = 1000;
-			Client client = clientPool.getClient();
-
-			{
-
-				SearchResponse scrollResp = client.prepareSearch(index)
-						.setScroll(new TimeValue(scrollTimeout))
-						.setQuery(queryBuilder)
-						.setSize(size)
-						.get();
-
-				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
-				scrollId = scrollResp.getScrollId();
-
-			}
-
-			SearchHit next;
-			boolean empty = false;
-
-			private void calculateNext() {
-
-				if (next != null) {
-					return;
-				}
-				if (empty) {
-					return;
-				}
-
-				if (items.hasNext()) {
-					next = items.next();
-				} else {
-					if (itemsRetrieved < size - 2) {
-						// the count of our prevous scroll was lower than requested size, so nothing more to get now.
-						scrollIsEmpty();
-					} else {
-						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-								.setScroll(new TimeValue(scrollTimeout))
-								.execute()
-								.actionGet();
-
-						items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
-						scrollId = scrollResp.getScrollId();
-
-						if (items.hasNext()) {
-							next = items.next();
-						} else {
-							scrollIsEmpty();
-						}
-
-						itemsRetrieved = 0;
-					}
-
-				}
-
-			}
-
-			private void scrollIsEmpty() {
-				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
-				clearScrollRequest.addScrollId(scrollId);
-				client.clearScroll(clearScrollRequest).actionGet();
-				scrollId = null;
-				empty = true;
-			}
-
-			@Override
-			public boolean hasNext() {
-				calculateNext();
-				return next != null;
-			}
-
-			@Override
-			public SearchHit next() {
-				calculateNext();
-
-				SearchHit temp = next;
-				next = null;
-
-				itemsRetrieved++;
-				return temp;
-			}
-
-			@Override
-			public void remove() {
-				throw new UnsupportedOperationException();
-			}
-
-			@Override
-			public void close() {
-
-				if (scrollId != null) {
-					scrollIsEmpty();
-				}
-
-			}
-
-		};
-	}
-
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
 			IRI predicate,
@@ -263,7 +158,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		return new LookAheadIteration<Statement, SailException>() {
 
-			CloseableIteration<SearchHit, RuntimeException> iterator = getScrollingIterator(queryBuilder);
+			CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
+					.getScrollingIterator(queryBuilder, clientPool.getClient(), index, scrollTimeout);
 
 			@Override
 			protected Statement getNextElement() throws SailException {
