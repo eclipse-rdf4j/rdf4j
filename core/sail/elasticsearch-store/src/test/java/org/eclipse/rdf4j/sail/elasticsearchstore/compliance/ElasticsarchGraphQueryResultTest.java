@@ -1,6 +1,12 @@
+/*******************************************************************************
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
-import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.repository.GraphQueryResultTest;
 import org.eclipse.rdf4j.repository.Repository;
@@ -9,13 +15,10 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Test;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
 public class ElasticsarchGraphQueryResultTest extends GraphQueryResultTest {
 

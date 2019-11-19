@@ -11,7 +11,7 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConcurrencyTest;
-import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.SailInterruptTest;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -22,10 +22,9 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * An extension of {@link SailConcurrencyTest} for testing the class
- * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
+ * An extension of {@link SailConcurrencyTest} for testing the class {@link NativeStore}.
  */
-public class ElasticsearchStoreConcurrencyTest extends SailConcurrencyTest {
+public class ElasticsearchStoreInterruptTest extends SailInterruptTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -44,18 +43,14 @@ public class ElasticsearchStoreConcurrencyTest extends SailConcurrencyTest {
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
-	protected NotifyingSail createSail() throws SailException {
-		NotifyingSail sail = new ElasticsearchStore("localhost", 9350, "index1");
-		try (NotifyingSailConnection connection = sail.getConnection()) {
+	protected NotifyingSail createSail() {
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "index1");
+		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
 			connection.clear();
 			connection.commit();
 		}
-		return sail;
+		return elasticsearchStore;
 	}
 }

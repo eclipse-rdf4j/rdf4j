@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
-import java.util.Iterator;
-
 /**
  * @Author Håvard Mikkelsen Ottestad
  */
