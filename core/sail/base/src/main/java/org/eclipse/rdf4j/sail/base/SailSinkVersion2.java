@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 public interface SailSinkVersion2 extends SailSink {
 
 	/**
-	 * Removes a statement with the specified subject, predicate, object, and context.
+	 * Removes a statement.
 	 *
 	 * @param statement The statement that should be removed
 	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
@@ -35,4 +35,5 @@ public interface SailSinkVersion2 extends SailSink {
 	 * @throws SailException If statements could not be removed, for example because no transaction is active.
 	 */
 	boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts);
+
 }

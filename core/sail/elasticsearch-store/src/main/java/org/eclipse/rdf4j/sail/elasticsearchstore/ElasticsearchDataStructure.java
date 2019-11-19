@@ -90,7 +90,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	synchronized public void addStatement(Statement statement) {
 		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
-			flushAddStatementBuffer(clientPool.getClient());
+			flushAddStatementBuffer();
 		}
 
 		addStatementBuffer.add(statement);
@@ -121,7 +121,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		}
 
 		if (deleteStatementBuffer.size() >= BUFFER_THRESHOLD) {
-			flushRemoveStatementBuffer(clientPool.getClient());
+			flushRemoveStatementBuffer();
 		}
 
 		deleteStatementBuffer.add(elasticsearchIdStatement);
@@ -290,8 +290,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		Client client = clientPool.getClient();
 
-		flushAddStatementBuffer(client);
-		flushRemoveStatementBuffer(client);
+		flushAddStatementBuffer();
+		flushRemoveStatementBuffer();
 
 		client.admin()
 				.indices()
@@ -300,7 +300,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	synchronized private void flushAddStatementBuffer(Client client) {
+	synchronized private void flushAddStatementBuffer() {
 
 		if (addStatementBuffer.isEmpty()) {
 			return;
@@ -457,7 +457,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		return bulkItemResponses;
 	}
 
-	synchronized private void flushRemoveStatementBuffer(Client client) {
+	synchronized private void flushRemoveStatementBuffer() {
 
 		if (deleteStatementBuffer.isEmpty()) {
 			return;
