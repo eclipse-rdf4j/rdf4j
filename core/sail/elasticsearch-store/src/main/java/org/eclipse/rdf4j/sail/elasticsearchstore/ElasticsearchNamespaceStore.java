@@ -137,9 +137,7 @@ public class ElasticsearchNamespaceStore implements NamespaceStore {
 			public SimpleNamespace next() {
 				Map<String, Object> sourceAsMap = iterator.next().getSourceAsMap();
 
-				new SimpleNamespace(sourceAsMap.get(PREFIX).toString(), sourceAsMap.get(NAMESPACE).toString());
-
-				return null;
+				return new SimpleNamespace(sourceAsMap.get(PREFIX).toString(), sourceAsMap.get(NAMESPACE).toString());
 			}
 		};
 
