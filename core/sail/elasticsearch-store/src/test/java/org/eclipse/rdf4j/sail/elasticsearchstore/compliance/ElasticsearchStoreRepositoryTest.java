@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 import java.io.File;
@@ -43,5 +44,11 @@ public class ElasticsearchStoreRepositoryTest extends RepositoryTest {
 	protected Repository createRepository() {
 		SailRepository sailRepository = new SailRepository(new ElasticsearchStore("localhost", 9350, "index1"));
 		return sailRepository;
+	}
+
+	@Ignore
+	@Override
+	public void testShutdownFollowedByInit() throws Exception {
+		// ignore test
 	}
 }

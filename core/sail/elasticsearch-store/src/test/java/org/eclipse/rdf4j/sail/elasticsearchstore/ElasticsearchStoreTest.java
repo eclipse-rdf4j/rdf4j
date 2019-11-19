@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -169,8 +170,7 @@ public class ElasticsearchStoreTest {
 
 	}
 
-	@Ignore("Doesn't work right now")
-	@Test
+	@Test(expected = RepositoryException.class)
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
@@ -179,8 +179,6 @@ public class ElasticsearchStoreTest {
 			connection.commit();
 		}
 		elasticsearchStore.shutDown();
-
-		elasticsearchStore.init();
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

@@ -36,6 +36,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -50,6 +51,8 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	private final ElasticsearchDataStructure dataStructure;
 	private final ElasticsearchDataStructure dataStructureInferred;
+
+	AtomicBoolean shutdown = new AtomicBoolean(false);
 
 	public ElasticsearchStore(String hostname, int port, String index) {
 
@@ -71,6 +74,9 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected void initializeInternal() throws SailException {
+		if (shutdown.get()) {
+			throw new SailException("ElasticsearchStore can not be initialized after calling shutdown!");
+		}
 		waitForElasticsearch(10, ChronoUnit.MINUTES);
 		sailStore.init();
 	}
@@ -92,13 +98,14 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	@Override
 	protected void shutDownInternal() throws SailException {
-		sailStore.close();
-		try {
-			clientPool.close();
-		} catch (Exception e) {
-			throw new SailException(e);
+		if (shutdown.compareAndSet(false, true)) {
+			sailStore.close();
+			try {
+				clientPool.close();
+			} catch (Exception e) {
+				throw new SailException(e);
+			}
 		}
-
 	}
 
 	@Override
