@@ -52,7 +52,9 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 	private final ElasticsearchDataStructure dataStructure;
 	private final ElasticsearchDataStructure dataStructureInferred;
 
-	AtomicBoolean shutdown = new AtomicBoolean(false);
+	private final NamespaceStore namespaceStore;
+
+	private AtomicBoolean shutdown = new AtomicBoolean(false);
 
 	public ElasticsearchStore(String hostname, int port, String index) {
 
@@ -60,7 +62,8 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 		dataStructure = new ElasticsearchDataStructure(clientPool, hostname, port, index);
 		dataStructureInferred = new ElasticsearchDataStructure(clientPool, hostname, port, index + "_inferred");
-		sailStore = new ElasticsearchSailStore((dataStructure), (dataStructureInferred));
+		namespaceStore = new ElasticsearchNamespaceStore(clientPool, index + "_namespaces");
+		sailStore = new ElasticsearchSailStore((dataStructure), (dataStructureInferred), namespaceStore);
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
@@ -79,6 +82,7 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 		}
 		waitForElasticsearch(10, ChronoUnit.MINUTES);
 		sailStore.init();
+		namespaceStore.init();
 	}
 
 	@Override

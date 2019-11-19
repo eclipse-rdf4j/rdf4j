@@ -22,9 +22,8 @@ class ElasticsearchSailStore implements SailStore {
 	private ElasticsearchSailSource sailSource;
 	private ElasticsearchSailSource sailSourceInferred;
 
-	private final MemNamespaceStore namespaceStore = new MemNamespaceStore();
-
-	public ElasticsearchSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred) {
+	public ElasticsearchSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
+			NamespaceStore namespaceStore) {
 		sailSource = new ElasticsearchSailSource(dataStructure, namespaceStore);
 		sailSourceInferred = new ElasticsearchSailSource(dataStructureInferred, namespaceStore);
 	}

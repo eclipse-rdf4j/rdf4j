@@ -30,9 +30,9 @@ import java.util.Set;
 class ElasticsearchSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
-	private final MemNamespaceStore namespaceStore;
+	private final NamespaceStore namespaceStore;
 
-	public ElasticsearchSailSource(DataStructureInterface dataStructure, MemNamespaceStore namespaceStore) {
+	public ElasticsearchSailSource(DataStructureInterface dataStructure, NamespaceStore namespaceStore) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
 	}

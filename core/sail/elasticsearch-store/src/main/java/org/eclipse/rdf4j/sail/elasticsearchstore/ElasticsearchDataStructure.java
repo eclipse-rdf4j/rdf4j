@@ -632,7 +632,21 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	@Override
 	void init() {
 
-		createIndex();
+		CreateIndexRequest request = new CreateIndexRequest(index);
+
+		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
+
+		boolean indexExistsAlready = clientPool.getClient()
+				.admin()
+				.indices()
+				.exists(new IndicesExistsRequest(index))
+				.actionGet()
+				.isExists();
+
+		if (!indexExistsAlready) {
+			clientPool.getClient().admin().indices().create(request).actionGet();
+		}
+
 	}
 
 	public void setElasticsearchScrollTimeout(int timeout) {

@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
@@ -170,7 +171,7 @@ public class ElasticsearchStoreTest {
 
 	}
 
-	@Test(expected = RepositoryException.class)
+	@Test(expected = SailException.class)
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
