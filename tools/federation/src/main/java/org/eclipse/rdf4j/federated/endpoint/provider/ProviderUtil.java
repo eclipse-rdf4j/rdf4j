@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.endpoint.provider;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -50,7 +49,6 @@ public class ProviderUtil {
 		try {
 			conn = repo.getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o } LIMIT 1");
-			FedXUtil.applyMaxQueryExecutionTime(query);
 			TupleQueryResult qRes = null;
 			try {
 				qRes = query.evaluate();

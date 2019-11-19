@@ -75,7 +75,7 @@ public class QueryManager {
 	public void init() {
 
 		// initialize prefix declarations, if any
-		String prefixFile = Config.getConfig().getPrefixDeclarations();
+		String prefixFile = federationManager.federationContext.getConfig().getPrefixDeclarations();
 		if (prefixFile != null) {
 			Properties props = new Properties();
 			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {

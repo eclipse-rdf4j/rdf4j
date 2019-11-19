@@ -13,18 +13,10 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Properties;
 
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.provider.ProviderUtil;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
-import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.monitoring.QueryLog;
-import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
 import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -148,155 +140,12 @@ public class Config {
 	}
 
 	/**
-	 * The location of the cache, i.e. currently used in {@link MemoryCache}
-	 * 
-	 * @return the cache location
-	 */
-	public String getCacheLocation() {
-		return props.getProperty("cacheLocation", "cache.db");
-	}
-
-	/**
-	 * The (maximum) number of join worker threads used in the {@link ControlledWorkerScheduler} for join operations.
-	 * Default is 20.
-	 * 
-	 * @return the number of join worker threads
-	 */
-	public int getJoinWorkerThreads() {
-		return Integer.parseInt(props.getProperty("joinWorkerThreads", "20"));
-	}
-
-	/**
-	 * The (maximum) number of union worker threads used in the {@link ControlledWorkerScheduler} for join operations.
-	 * Default is 20
-	 * 
-	 * @return number of union worker threads
-	 */
-	public int getUnionWorkerThreads() {
-		return Integer.parseInt(props.getProperty("unionWorkerThreads", "20"));
-	}
-
-	/**
-	 * The (maximum) number of left join worker threads used in the {@link ControlledWorkerScheduler} for join
-	 * operations. Default is 10.
-	 * 
-	 * @return the number of left join worker threads
-	 */
-	public int getLeftJoinWorkerThreads() {
-		return Integer.parseInt(props.getProperty("leftJoinWorkerThreads", "10"));
-	}
-
-	/**
-	 * The block size for a bound join, i.e. the number of bindings that are integrated in a single subquery. Default is
-	 * 15.
-	 * 
-	 * @return the bound join block size
-	 */
-	public int getBoundJoinBlockSize() {
-		return Integer.parseInt(props.getProperty("boundJoinBlockSize", "15"));
-	}
-
-	/**
-	 * Get the maximum query time in seconds used for query evaluation. Applied in CLI or in general if
-	 * {@link QueryManager} is used to create queries.
-	 * <p>
-	 * <p>
-	 * Set to 0 to disable query timeouts.
-	 * </p>
-	 * 
-	 * The timeout is also applied for individual fine-granular join or union operations as a max time.
-	 * </p>
-	 * 
-	 * @return the maximum query time in seconds
-	 */
-	public int getEnforceMaxQueryTime() {
-		return Integer.parseInt(props.getProperty("enforceMaxQueryTime", "30"));
-	}
-
-	/**
-	 * Flag to enable/disable monitoring features. Default=false.
-	 * 
-	 * @return whether monitoring is enabled
-	 */
-	public boolean isEnableMonitoring() {
-		return Boolean.parseBoolean(props.getProperty("enableMonitoring", "false"));
-	}
-
-	/**
 	 * Flag to enable/disable JMX monitoring. Default=false
 	 * 
 	 * @return whether JMX is enabled
 	 */
 	public boolean isEnableJMX() {
 		return Boolean.parseBoolean(props.getProperty("monitoring.enableJMX", "false"));
-	}
-
-	/**
-	 * Flag to enable/disable query plan logging via {@link QueryPlanLog}. Default=false The {@link QueryPlanLog}
-	 * facility allows to retrieve the query execution plan from a variable local to the executing thread.
-	 * 
-	 * @return whether the query plan shall be logged
-	 */
-	public boolean isLogQueryPlan() {
-		return Boolean.parseBoolean(props.getProperty("monitoring.logQueryPlan", "false"));
-	}
-
-	/**
-	 * Flag to enable/disable query logging via {@link QueryLog}. Default=false The {@link QueryLog} facility allows to
-	 * log all queries to a file. See {@link QueryLog} for details.
-	 * 
-	 * Required {@link Config#isEnableMonitoring()} to be active.
-	 * 
-	 * @return whether queries are logged
-	 */
-	public boolean isLogQueries() {
-		return Boolean.parseBoolean(props.getProperty("monitoring.logQueries", "false"));
-	}
-
-	/**
-	 * Returns the path to a property file containing prefix declarations as "namespace=prefix" pairs (one per line).
-	 * <p>
-	 * Default: no prefixes are replaced. Note that prefixes are only replaced when using the CLI or the
-	 * {@link QueryManager} to create/evaluate queries.
-	 * 
-	 * Example:
-	 * 
-	 * <code>
-	 * foaf=http://xmlns.com/foaf/0.1/
-	 * rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
-	 * =http://mydefaultns.org/
-	 * </code>
-	 * 
-	 * @return the location of the prefix declarations
-	 */
-	public String getPrefixDeclarations() {
-		return props.getProperty("prefixDeclarations");
-	}
-
-	/**
-	 * Returns the fully qualified class name of the {@link FederationEvalStrategy} implementation that is used in the
-	 * case of SAIL implementations, e.g. for native stores.
-	 * 
-	 * Default {@link SailFederationEvalStrategy}
-	 * 
-	 * @return the evaluation strategy class
-	 */
-	public String getSailEvaluationStrategy() {
-		return props.getProperty("sailEvaluationStrategy", SailFederationEvalStrategy.class.getName());
-	}
-
-	/**
-	 * Returns the fully qualified class name of the {@link FederationEvalStrategy} implementation that is used in the
-	 * case of SPARQL implementations, e.g. SPARQL repository or remote repository.
-	 * 
-	 * Default {@link SparqlFederationEvalStrategyWithValues}
-	 * 
-	 * Alternative implementation: {@link SparqlFederationEvalStrategy}
-	 * 
-	 * @return the evaluation strategy class
-	 */
-	public String getSPARQLEvaluationStrategy() {
-		return props.getProperty("sparqlEvaluationStrategy", SparqlFederationEvalStrategyWithValues.class.getName());
 	}
 
 	/**
@@ -308,20 +157,6 @@ public class Config {
 	 */
 	public boolean useSingletonConnectionPerEndpoint() {
 		return Boolean.parseBoolean(props.getProperty("endpoint.useSingletonConnection", "false"));
-	}
-
-	/**
-	 * Returns a flag indicating whether vectored evaluation using the VALUES clause shall be applied for SERVICE
-	 * expressions.
-	 * 
-	 * Default: false
-	 * 
-	 * Note: for todays endpoints it is more efficient to disable vectored evaluation of SERVICE.
-	 * 
-	 * @return whether SERVICE expressions are evaluated using bound joins
-	 */
-	public boolean getEnableServiceAsBoundJoin() {
-		return Boolean.parseBoolean(props.getProperty("optimizer.enableServiceAsBoundJoin", "false"));
 	}
 
 	/**
@@ -343,15 +178,6 @@ public class Config {
 	@Deprecated
 	public boolean isDebugWorkerScheduler() {
 		return Boolean.parseBoolean(props.getProperty("debugWorkerScheduler", "false"));
-	}
-
-	/**
-	 * The debug mode for query plan. If enabled, the query execution plan is printed to stdout
-	 * 
-	 * @return whether the query plan is printed to std out
-	 */
-	public boolean isDebugQueryPlan() {
-		return Boolean.parseBoolean(props.getProperty("debugQueryPlan", "false"));
 	}
 
 	/**

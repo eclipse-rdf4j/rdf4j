@@ -106,6 +106,7 @@ public class FedXFactory {
 	protected RepositoryResolver repositoryResolver;
 	protected FederatedServiceResolver federatedServiceResolver;
 	protected List<Endpoint> members = new ArrayList<>();
+	protected FedXConfig config = FedXConfig.DEFAULT_CONFIG;
 	protected File fedxConfig;
 	protected File fedxBaseDir;
 
@@ -168,6 +169,11 @@ public class FedXFactory {
 		return this;
 	}
 
+	public FedXFactory withConfig(FedXConfig config) {
+		this.config = config;
+		return this;
+	}
+
 	public FedXFactory withConfigFile(File configFile) {
 		if (Config.isInitialized()) {
 			throw new IllegalStateException("FedX config is already initialized.");
@@ -225,7 +231,7 @@ public class FedXFactory {
 		}
 
 		FedX federation = new FedX(members);
-		FedXRepository repo = new FedXRepository(federation);
+		FedXRepository repo = new FedXRepository(federation, this.config);
 		if (this.repositoryResolver != null) {
 			repo.setRepositoryResolver(repositoryResolver);
 		}

@@ -105,17 +105,17 @@ public class FederationManager {
 
 		if (joinScheduler != null)
 			joinScheduler.abort();
-		joinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getJoinWorkerThreads(),
+		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
 				"Join Scheduler");
 
 		if (unionScheduler != null)
 			unionScheduler.abort();
-		unionScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getUnionWorkerThreads(),
+		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
 				"Union Scheduler");
 
 		if (leftJoinScheduler != null)
 			leftJoinScheduler.abort();
-		leftJoinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getLeftJoinWorkerThreads(),
+		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
 				"Left Join Scheduler");
 
 	}
