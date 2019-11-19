@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.stream.StreamSupport;
 
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
@@ -123,21 +124,10 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 			throw new SailException("Namespace store only supports 10 000 items, found " + hits.totalHits);
 		}
 
-		return new Iterator<SimpleNamespace>() {
-			Iterator<SearchHit> iterator = hits.iterator();
-
-			@Override
-			public boolean hasNext() {
-				return iterator.hasNext();
-			}
-
-			@Override
-			public SimpleNamespace next() {
-				Map<String, Object> sourceAsMap = iterator.next().getSourceAsMap();
-
-				return new SimpleNamespace(sourceAsMap.get(PREFIX).toString(), sourceAsMap.get(NAMESPACE).toString());
-			}
-		};
+		return StreamSupport.stream(hits.spliterator(), false)
+				.map(SearchHit::getSourceAsMap)
+				.map(map -> new SimpleNamespace(map.get(PREFIX).toString(), map.get(NAMESPACE).toString()))
+				.iterator();
 
 	}
 }
