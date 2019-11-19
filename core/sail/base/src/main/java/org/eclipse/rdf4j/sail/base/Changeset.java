@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -241,7 +240,6 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) {
-
 		if (approved != null) {
 			approved.remove(subj, pred, obj, ctx);
 		}
@@ -249,8 +247,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated = createEmptyModel();
 		}
 		deprecated.add(subj, pred, obj, ctx);
-		if (approvedContexts != null && approvedContexts.contains(ctx)
-				&& !approved.contains(null, null, null, ctx)) {
+		if (approvedContexts != null && approvedContexts.contains(ctx) && !approved.contains(null, null, null, ctx)) {
 			approvedContexts.remove(ctx);
 		}
 	}

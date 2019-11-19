@@ -5,14 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
  * @Author Håvard Mikkelsen Ottestad
  */
-public interface NamespaceStore extends Iterable<SimpleNamespace> {
+public interface NamespaceStoreInterface extends Iterable<SimpleNamespace> {
 	String getNamespace(String prefix);
 
 	void setNamespace(String prefix, String namespace);

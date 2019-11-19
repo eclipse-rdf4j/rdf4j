@@ -5,16 +5,18 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 
-import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreConnection;
+import org.eclipse.rdf4j.repository.GraphQueryResultTest;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
 
-/**
- * @author Håvard Mikkelsen Ottestad
- */
-public class ElasticsearchStoreConnection extends ExtensibleStoreConnection<ElasticsearchStore> {
+public class ExtensibleGraphQueryResultTest extends GraphQueryResultTest {
 
-	ElasticsearchStoreConnection(ElasticsearchStore sail) {
-		super(sail);
+	@Override
+	protected Repository newRepository() {
+		return new SailRepository(new ExtensibleStoreImpl());
 	}
+
 }

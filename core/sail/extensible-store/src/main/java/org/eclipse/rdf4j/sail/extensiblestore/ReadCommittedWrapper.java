@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -23,29 +23,25 @@ import java.util.Set;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class WriteCacheWrapper extends DataStructureInterface {
+class ReadCommittedWrapper implements DataStructureInterface {
 
 	private DataStructureInterface dataStructure;
 
-	private Set<Statement> internalAdded = new HashSet<>();
-	private Set<Statement> internalRemoved = new HashSet<>();
+	private Set<Statement> internalAdded = new HashSet<>(1000);
+	private Set<Statement> internalRemoved = new HashSet<>(100);
 
-	WriteCacheWrapper(DataStructureInterface dataStructure) {
+	ReadCommittedWrapper(DataStructureInterface dataStructure) {
 		this.dataStructure = dataStructure;
 	}
 
 	@Override
-	synchronized public void addStatement(Statement statement) {
-		if (internalAdded.size() >= ElasticsearchDataStructure.BUFFER_THRESHOLD)
-			flushThrough();
+	public void addStatement(Statement statement) {
 		internalAdded.add(statement);
 		internalRemoved.remove(statement);
 	}
 
 	@Override
-	synchronized public void removeStatement(Statement statement) {
-		if (internalRemoved.size() >= ElasticsearchDataStructure.BUFFER_THRESHOLD)
-			flushThrough();
+	public void removeStatement(Statement statement) {
 		internalRemoved.add(statement);
 	}
 
@@ -204,7 +200,7 @@ class WriteCacheWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void flushThrough() {
+	public void flushThrough() {
 
 		internalAdded
 				.stream()
@@ -221,30 +217,16 @@ class WriteCacheWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	synchronized boolean removeStatementsByQuery(Resource subject, IRI predicate, Value object, Resource[] contexts) {
-		final boolean[] removed = { false };
-
-		internalAdded.removeIf(statement -> {
-			if (subject != null && !statement.getSubject().equals(subject)) {
-				return false;
+	public boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		boolean removed = false;
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
+				contexts)) {
+			while (statements.hasNext()) {
+				removed = true;
+				removeStatement(statements.next());
 			}
-			if (predicate != null && !statement.getPredicate().equals(predicate)) {
-				return false;
-			}
-			if (object != null && !statement.getObject().equals(object)) {
-				return false;
-			}
-			if (contexts != null && contexts.length > 0
-					&& !containsContext(contexts, statement.getContext())) {
-				return false;
-			}
-			removed[0] = true;
-
-			return true;
-		});
-
-		return dataStructure.removeStatementsByQuery(subject, predicate, object, contexts) || removed[0];
-
+		}
+		return removed;
 	}
 
 	@Override
@@ -252,7 +234,7 @@ class WriteCacheWrapper extends DataStructureInterface {
 	}
 
 	@Override
-	void init() {
+	public void init() {
 		dataStructure.init();
 	}
 

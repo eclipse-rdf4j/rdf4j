@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -27,12 +27,12 @@ import java.util.Set;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchSailSource implements SailSource {
+public class ExtensibleSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
-	private final NamespaceStore namespaceStore;
+	private final NamespaceStoreInterface namespaceStore;
 
-	public ElasticsearchSailSource(DataStructureInterface dataStructure, NamespaceStore namespaceStore) {
+	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
 	}
@@ -43,7 +43,7 @@ class ElasticsearchSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ElasticsearchSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore);
+		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore);
 	}
 
 	@Override

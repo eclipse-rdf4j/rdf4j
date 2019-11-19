@@ -11,10 +11,10 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
-import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 
 /**
- * A {@link SailFactory} that creates {@link ElasticsearchStore}s based on RDF configuration data.
+ * A {@link SailFactory} that creates {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}s based on RDF
+ * configuration data.
  *
  * @author Håvard Mikkelsen Ottestad
  */

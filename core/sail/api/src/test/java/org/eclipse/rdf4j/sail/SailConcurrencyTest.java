@@ -15,7 +15,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -104,7 +103,7 @@ public abstract class SailConcurrencyTest {
 			try {
 				final SailConnection conn = store.getConnection();
 				try {
-					conn.begin(IsolationLevels.READ_COMMITTED);
+					conn.begin();
 					while (txnSize < targetSize.get()) {
 						IRI subject = vf.createIRI("urn:instance-" + txnSize);
 						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral("li" + txnSize), context);

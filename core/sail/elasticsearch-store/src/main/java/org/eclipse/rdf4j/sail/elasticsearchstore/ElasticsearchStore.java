@@ -7,18 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
-import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.client.Client;
@@ -32,8 +23,6 @@ import java.lang.ref.ReferenceQueue;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
-import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,29 +30,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ElasticsearchStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructure, ElasticsearchNamespaceStore> {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);
 
-	private final ElasticsearchSailStore sailStore;
-
 	final ClientPool clientPool;
-
-	private final ElasticsearchDataStructure dataStructure;
-	private final ElasticsearchDataStructure dataStructureInferred;
-
-	private final NamespaceStore namespaceStore;
-
-	private AtomicBoolean shutdown = new AtomicBoolean(false);
+	private final AtomicBoolean shutdown = new AtomicBoolean(false);
 
 	public ElasticsearchStore(String hostname, int port, String index) {
-
 		clientPool = new ClientPoolImpl(hostname, port);
 
-		dataStructure = new ElasticsearchDataStructure(clientPool, hostname, port, index);
-		dataStructureInferred = new ElasticsearchDataStructure(clientPool, hostname, port, index + "_inferred");
+		dataStructure = new ElasticsearchDataStructure(clientPool, index);
+		dataStructureInferred = new ElasticsearchDataStructure(clientPool, index + "_inferred");
 		namespaceStore = new ElasticsearchNamespaceStore(clientPool, index + "_namespaces");
-		sailStore = new ElasticsearchSailStore((dataStructure), (dataStructureInferred), namespaceStore);
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
@@ -71,95 +50,26 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 
 	}
 
-	ElasticsearchSailStore getSailStore() {
-		return sailStore;
-	}
-
 	@Override
 	protected void initializeInternal() throws SailException {
 		if (shutdown.get()) {
-			throw new SailException("ElasticsearchStore can not be initialized after calling shutdown!");
+			throw new SailException("Can not be initialized after calling shutdown!");
 		}
 		waitForElasticsearch(10, ChronoUnit.MINUTES);
-		sailStore.init();
-		namespaceStore.init();
-	}
 
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return Arrays.asList(IsolationLevels.NONE, IsolationLevels.READ_UNCOMMITTED, IsolationLevels.READ_COMMITTED);
-	}
-
-	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.READ_COMMITTED;
-	}
-
-	@Override
-	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-
+		super.initializeInternal();
 	}
 
 	@Override
 	protected void shutDownInternal() throws SailException {
 		if (shutdown.compareAndSet(false, true)) {
-			sailStore.close();
+			super.shutDownInternal();
 			try {
 				clientPool.close();
 			} catch (Exception e) {
 				throw new SailException(e);
 			}
 		}
-	}
-
-	@Override
-	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		return new ElasticsearchStoreConnection(this);
-	}
-
-	@Override
-	public boolean isWritable() throws SailException {
-		return false;
-	}
-
-	@Override
-	public ValueFactory getValueFactory() {
-		return SimpleValueFactory.getInstance();
-	}
-
-	private EvaluationStrategyFactory evalStratFactory;
-
-	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
-		if (evalStratFactory == null) {
-			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
-		}
-		evalStratFactory.setQuerySolutionCacheThreshold(0);
-		return evalStratFactory;
-	}
-
-	/**
-	 * independent life cycle
-	 */
-	private FederatedServiceResolver serviceResolver;
-
-	/**
-	 * dependent life cycle
-	 */
-	private SPARQLServiceResolver dependentServiceResolver;
-
-	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
-		if (serviceResolver == null) {
-			if (dependentServiceResolver == null) {
-				dependentServiceResolver = new SPARQLServiceResolver();
-			}
-			setFederatedServiceResolver(dependentServiceResolver);
-		}
-		return serviceResolver;
-	}
-
-	public void setEvaluationStrategyFactory(EvaluationStrategyFactory evalStratFactory) {
-		this.evalStratFactory = evalStratFactory;
-
 	}
 
 	public void waitForElasticsearch(int time, TemporalUnit timeUnit) {
@@ -266,6 +176,11 @@ public class ElasticsearchStore extends AbstractNotifyingSail implements Federat
 	public void setElasticsearchScrollTimeout(int timeout) {
 		dataStructure.setElasticsearchScrollTimeout(timeout);
 		dataStructureInferred.setElasticsearchScrollTimeout(timeout);
+	}
+
+	@Override
+	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+		return new ElasticsearchStoreConnection(this);
 	}
 
 }

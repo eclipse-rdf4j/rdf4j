@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -17,15 +17,15 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchSailStore implements SailStore {
+public class ExtensibleSailStore implements SailStore {
 
-	private ElasticsearchSailSource sailSource;
-	private ElasticsearchSailSource sailSourceInferred;
+	private ExtensibleSailSource sailSource;
+	private ExtensibleSailSource sailSourceInferred;
 
-	public ElasticsearchSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-			NamespaceStore namespaceStore) {
-		sailSource = new ElasticsearchSailSource(dataStructure, namespaceStore);
-		sailSourceInferred = new ElasticsearchSailSource(dataStructureInferred, namespaceStore);
+	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
+			NamespaceStoreInterface namespaceStore) {
+		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
+		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
 	}
 
 	@Override

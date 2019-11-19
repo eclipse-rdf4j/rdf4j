@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
@@ -58,9 +59,9 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchDataStructure extends DataStructureInterface {
+class ElasticsearchDataStructure implements DataStructureInterface {
 
-	private static final String mapping;
+	private static final String MAPPING;
 
 	static final int BUFFER_THRESHOLD = 1024 * 16;
 	private final ClientPool clientPool;
@@ -71,7 +72,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 	static {
 		try {
-			mapping = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()
+			MAPPING = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()
 					.getResourceAsStream("elasticsearchStoreMapping.json"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
@@ -82,35 +83,12 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 
 	private static final String ELASTICSEARCH_TYPE = "statement";
 	private final String index;
-	private final String hostname;
-	private final int port;
 	private int scrollTimeout = 60000;
 
-	ElasticsearchDataStructure(ClientPool clientPool, String hostname, int port, String index) {
+	ElasticsearchDataStructure(ClientPool clientPool, String index) {
 		super();
-		this.hostname = hostname;
-		this.port = port;
 		this.index = index;
 		this.clientPool = clientPool;
-	}
-
-	private void createIndex() {
-
-		CreateIndexRequest request = new CreateIndexRequest(index);
-
-		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
-
-		boolean indexExistsAlready = clientPool.getClient()
-				.admin()
-				.indices()
-				.exists(new IndicesExistsRequest(index))
-				.actionGet()
-				.isExists();
-
-		if (!indexExistsAlready) {
-			clientPool.getClient().admin().indices().create(request).actionGet();
-		}
-
 	}
 
 	@Override
@@ -167,7 +145,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	void flushThrough() {
+	public void flushThrough() {
 		// no underlying store to flush to
 	}
 
@@ -630,11 +608,7 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 	}
 
 	@Override
-	void init() {
-
-		CreateIndexRequest request = new CreateIndexRequest(index);
-
-		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
+	public void init() {
 
 		boolean indexExistsAlready = clientPool.getClient()
 				.admin()
@@ -644,17 +618,19 @@ class ElasticsearchDataStructure extends DataStructureInterface {
 				.isExists();
 
 		if (!indexExistsAlready) {
+			CreateIndexRequest request = new CreateIndexRequest(index);
+			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
 			clientPool.getClient().admin().indices().create(request).actionGet();
 		}
 
 	}
 
-	public void setElasticsearchScrollTimeout(int timeout) {
+	void setElasticsearchScrollTimeout(int timeout) {
 		this.scrollTimeout = timeout;
 	}
 
 	@Override
-	synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
+	public synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
 
 		// delete single statement

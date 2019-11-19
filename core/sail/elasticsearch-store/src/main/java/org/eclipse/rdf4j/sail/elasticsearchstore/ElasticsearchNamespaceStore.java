@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.NamespaceStoreInterface;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.elasticsearch.action.get.GetResponse;
@@ -32,7 +33,7 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 /**
  * @Author Håvard Mikkelsen Ottestad
  */
-public class ElasticsearchNamespaceStore implements NamespaceStore {
+class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchNamespaceStore.class);
 	private static final String PREFIX = "prefix";
@@ -42,18 +43,18 @@ public class ElasticsearchNamespaceStore implements NamespaceStore {
 	private final String index;
 
 	private static final String ELASTICSEARCH_TYPE = "namespace";
-	private static final String mapping;
+	private static final String MAPPING;
 
 	static {
 		try {
-			mapping = IOUtils.toString(ElasticsearchNamespaceStore.class.getClassLoader()
+			MAPPING = IOUtils.toString(ElasticsearchNamespaceStore.class.getClassLoader()
 					.getResourceAsStream("elasticsearchStoreNamespaceMapping.json"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
 	}
 
-	public ElasticsearchNamespaceStore(ClientPool clientPool, String index) {
+	ElasticsearchNamespaceStore(ClientPool clientPool, String index) {
 		this.clientPool = clientPool;
 		this.index = index;
 	}
@@ -93,11 +94,6 @@ public class ElasticsearchNamespaceStore implements NamespaceStore {
 
 	@Override
 	public void init() {
-
-		CreateIndexRequest request = new CreateIndexRequest(index);
-
-		request.mapping(ELASTICSEARCH_TYPE, mapping, XContentType.JSON);
-
 		boolean indexExistsAlready = clientPool.getClient()
 				.admin()
 				.indices()
@@ -106,6 +102,8 @@ public class ElasticsearchNamespaceStore implements NamespaceStore {
 				.isExists();
 
 		if (!indexExistsAlready) {
+			CreateIndexRequest request = new CreateIndexRequest(index);
+			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
 			clientPool.getClient().admin().indices().create(request).actionGet();
 		}
 
