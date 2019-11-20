@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -239,6 +240,23 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
+	public synchronized void approve(Statement statement) {
+		if (deprecated != null) {
+			deprecated.remove(statement);
+		}
+		if (approved == null) {
+			approved = createEmptyModel();
+		}
+		approved.add(statement);
+		if (statement.getContext() != null) {
+			if (approvedContexts == null) {
+				approvedContexts = new HashSet<>();
+			}
+			approvedContexts.add(statement.getContext());
+		}
+	}
+
+	@Override
 	public synchronized void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) {
 		if (approved != null) {
 			approved.remove(subj, pred, obj, ctx);
@@ -247,6 +265,21 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated = createEmptyModel();
 		}
 		deprecated.add(subj, pred, obj, ctx);
+		if (approvedContexts != null && approvedContexts.contains(ctx) && !approved.contains(null, null, null, ctx)) {
+			approvedContexts.remove(ctx);
+		}
+	}
+
+	@Override
+	public synchronized void deprecate(Statement statement) {
+		if (approved != null) {
+			approved.remove(statement);
+		}
+		if (deprecated == null) {
+			deprecated = createEmptyModel();
+		}
+		deprecated.add(statement);
+		Resource ctx = statement.getContext();
 		if (approvedContexts != null && approvedContexts.contains(ctx) && !approved.contains(null, null, null, ctx)) {
 			approvedContexts.remove(ctx);
 		}
