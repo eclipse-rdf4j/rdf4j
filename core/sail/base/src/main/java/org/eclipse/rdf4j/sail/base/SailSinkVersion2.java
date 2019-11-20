@@ -21,14 +21,6 @@ import org.eclipse.rdf4j.sail.SailException;
 public interface SailSinkVersion2 extends SailSink {
 
 	/**
-	 * Removes a statement.
-	 *
-	 * @param statement The statement that should be removed
-	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
-	 */
-	void deprecate(Statement statement) throws SailException;
-
-	/**
 	 * Removes all statements with the specified subject, predicate, object, and context. All four parameters may be
 	 * null.
 	 *

@@ -37,8 +37,8 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	final ClientPool clientPool;
 	private final AtomicBoolean shutdown = new AtomicBoolean(false);
 
-	public ElasticsearchStore(String hostname, int port, String index) {
-		clientPool = new ClientPoolImpl(hostname, port);
+	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
+		clientPool = new ClientPoolImpl(hostname, port, clusterName);
 
 		dataStructure = new ElasticsearchDataStructure(clientPool, index);
 		dataStructureInferred = new ElasticsearchDataStructure(clientPool, index + "_inferred");

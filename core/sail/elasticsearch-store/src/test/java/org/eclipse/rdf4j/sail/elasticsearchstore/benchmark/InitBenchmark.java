@@ -65,7 +65,8 @@ public class InitBenchmark {
 	@Benchmark
 	public void initWithElasticsearchClientCreation() {
 
-		SailRepository elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		SailRepository elasticsearchStore = new SailRepository(
+				new ElasticsearchStore("localhost", 9350, "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

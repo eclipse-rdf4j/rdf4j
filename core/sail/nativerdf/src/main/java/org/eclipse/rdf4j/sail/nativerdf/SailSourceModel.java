@@ -286,17 +286,10 @@ class SailSourceModel extends AbstractModel {
 				stmts = dataset().getStatements(subj, pred, obj, contexts);
 				try {
 
-					if (sink instanceof SailSinkVersion2) {
-						while (stmts.hasNext()) {
-							Statement st = stmts.next();
+					while (stmts.hasNext()) {
+						Statement st = stmts.next();
 
-							((SailSinkVersion2) sink).deprecate(st);
-						}
-					} else {
-						while (stmts.hasNext()) {
-							Statement st = stmts.next();
-							sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
-						}
+						sink.deprecate(st);
 					}
 
 				} finally {
@@ -375,18 +368,12 @@ class SailSourceModel extends AbstractModel {
 			CloseableIteration<? extends Statement, SailException> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
 			try {
-				if (sink instanceof SailSinkVersion2) {
-					while (stmts.hasNext()) {
-						Statement st = stmts.next();
 
-						((SailSinkVersion2) sink).deprecate(st);
-					}
-				} else {
-					while (stmts.hasNext()) {
-						Statement st = stmts.next();
-						sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
-					}
+				while (stmts.hasNext()) {
+					Statement st = stmts.next();
+					sink.deprecate(st);
 				}
+
 			} finally {
 				stmts.close();
 			}

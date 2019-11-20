@@ -481,26 +481,18 @@ class SailSourceBranch implements SailSource {
 		}
 		Set<Resource> deprecatedContexts = change.getDeprecatedContexts();
 		if (deprecatedContexts != null && !deprecatedContexts.isEmpty()) {
-			sink.clear(deprecatedContexts.toArray(new Resource[deprecatedContexts.size()]));
+			sink.clear(deprecatedContexts.toArray(new Resource[0]));
 		}
 		Model deprecated = change.getDeprecated();
 		if (deprecated != null) {
-
-			if (sink instanceof SailSinkVersion2) {
-				for (Statement st : deprecated) {
-					((SailSinkVersion2) sink).deprecate(st);
-				}
-			} else {
-				for (Statement st : deprecated) {
-					sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
-				}
+			for (Statement st : deprecated) {
+				sink.deprecate(st);
 			}
-
 		}
 		Model approved = change.getApproved();
 		if (approved != null) {
 			for (Statement st : approved) {
-				sink.approve(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				sink.approve(st);
 			}
 		}
 	}

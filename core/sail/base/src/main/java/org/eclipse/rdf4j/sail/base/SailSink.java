@@ -8,8 +8,10 @@
 package org.eclipse.rdf4j.sail.base;
 
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -101,6 +103,16 @@ public interface SailSink extends SailClosable {
 	void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
 	/**
+	 * Adds a statement to the store.
+	 *
+	 * @param statement The statement to add.
+	 * @throws SailException If the statement could not be added, for example because no transaction is active.
+	 */
+	default void approve(Statement statement) throws SailException {
+		approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
+	}
+
+	/**
 	 * Removes a statement with the specified subject, predicate, object, and context. All four parameters may be
 	 * non-null.
 	 *
@@ -111,5 +123,15 @@ public interface SailSink extends SailClosable {
 	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
 	 */
 	void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
+
+	/**
+	 * Removes a statement.
+	 *
+	 * @param statement The statement that should be removed
+	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
+	 */
+	default void deprecate(Statement statement) throws SailException {
+		deprecate(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
+	}
 
 }

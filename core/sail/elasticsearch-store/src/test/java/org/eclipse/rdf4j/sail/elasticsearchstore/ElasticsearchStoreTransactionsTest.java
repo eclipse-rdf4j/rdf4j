@@ -73,7 +73,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 
-		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "test");
+		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "cluster1", "test");
 
 	}
 

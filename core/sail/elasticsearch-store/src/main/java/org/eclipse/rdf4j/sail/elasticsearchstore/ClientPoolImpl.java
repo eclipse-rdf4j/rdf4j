@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
@@ -23,12 +24,14 @@ class ClientPoolImpl implements ClientPool {
 
 	transient private Client client;
 	private transient boolean closed = false;
-	final private String hostname;
-	final private int port;
+	private String hostname;
+	private int port;
+	private String clusterName;
 
-	ClientPoolImpl(String hostname, int port) {
+	ClientPoolImpl(String hostname, int port, String clusterName) {
 		this.hostname = hostname;
 		this.port = port;
+		this.clusterName = clusterName;
 	}
 
 	@Override
@@ -41,14 +44,16 @@ class ClientPoolImpl implements ClientPool {
 			if (closed) {
 				throw new IllegalStateException("Elasticsearch Client pool is closed!");
 			}
+
 			try {
-				Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
+				Settings settings = Settings.builder().put("cluster.name", clusterName).build();
 				TransportClient client = new PreBuiltTransportClient(settings);
 				client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
 				this.client = client;
 			} catch (UnknownHostException e) {
-				throw new RuntimeException(e);
+				throw new SailException(e);
 			}
+
 		}
 
 		return client;
@@ -64,8 +69,9 @@ class ClientPoolImpl implements ClientPool {
 		if (!closed) {
 			closed = true;
 			if (client != null) {
-				client.close();
+				Client temp = client;
 				client = null;
+				temp.close();
 			}
 		}
 	}

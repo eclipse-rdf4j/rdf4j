@@ -62,7 +62,7 @@ public class DeleteBenchmark {
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
 				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
 
-		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "testindex"));
+		elasticsearchStore = new SailRepository(new ElasticsearchStore("localhost", 9350, "cluster1", "testindex"));
 
 		System.gc();
 

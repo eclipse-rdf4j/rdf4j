@@ -44,7 +44,7 @@ public class ElasticsearchStoreContextTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "index1");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost", 9350, "cluster1", "index1");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
 			connection.clear();
