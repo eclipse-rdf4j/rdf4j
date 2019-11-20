@@ -7,12 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -36,6 +30,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SailSinkVersion2;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
@@ -47,6 +42,12 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
@@ -351,7 +352,7 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	private final class MemorySailSink implements SailSink {
+	private final class MemorySailSink implements SailSinkVersion2 {
 
 		private final boolean explicit;
 
@@ -510,7 +511,7 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-					explicit, nextSnapshot, ctx);) {
+					explicit, nextSnapshot, ctx)) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);
@@ -565,6 +566,24 @@ class MemorySailStore implements SailStore {
 			st.addToComponentLists();
 			return st;
 		}
+
+		@Override
+		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			acquireExclusiveTransactionLock();
+			boolean deprecated = false;
+			requireCleanup = true;
+			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
+					explicit, nextSnapshot, contexts)) {
+				while (iter.hasNext()) {
+					deprecated = true;
+					MemStatement st = iter.next();
+					st.setTillSnapshot(nextSnapshot);
+				}
+			}
+
+			return deprecated;
+		}
+
 	}
 
 	/**
