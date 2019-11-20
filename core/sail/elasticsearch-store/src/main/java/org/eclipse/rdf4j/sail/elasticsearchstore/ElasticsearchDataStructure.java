@@ -61,8 +61,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	private static final int BUFFER_THRESHOLD = 1024 * 16;
 	private final ClientPool clientPool;
-	private Set<Statement> addStatementBuffer = Collections.synchronizedSet(new HashSet<>());
-	private Set<ElasticsearchId> deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>());
+	private Set<Statement> addStatementBuffer = new HashSet<>();
+	private Set<ElasticsearchId> deleteStatementBuffer = new HashSet<>();
 
 	private final static ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
 
