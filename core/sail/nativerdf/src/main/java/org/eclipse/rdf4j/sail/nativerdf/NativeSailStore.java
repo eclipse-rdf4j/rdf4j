@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
-import org.eclipse.rdf4j.sail.base.SailSinkVersion2;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
@@ -332,7 +331,7 @@ class NativeSailStore implements SailStore {
 
 	}
 
-	private final class NativeSailSink implements SailSinkVersion2 {
+	private final class NativeSailSink implements SailSink {
 
 		private final boolean explicit;
 

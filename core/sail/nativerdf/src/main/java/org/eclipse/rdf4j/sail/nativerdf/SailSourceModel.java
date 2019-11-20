@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
-import org.eclipse.rdf4j.sail.base.SailSinkVersion2;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;

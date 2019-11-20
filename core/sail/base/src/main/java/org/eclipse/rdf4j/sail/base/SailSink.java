@@ -134,4 +134,12 @@ public interface SailSink extends SailClosable {
 		deprecate(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
 	}
 
+	/**
+	 * Removes all statements with the specified subject, predicate, object, and context. All four parameters may be
+	 * null.
+	 *
+	 * @throws SailException If statements could not be removed, for example because no transaction is active.
+	 */
+	boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts);
+
 }

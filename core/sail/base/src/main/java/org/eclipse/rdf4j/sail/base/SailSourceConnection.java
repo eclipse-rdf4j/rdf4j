@@ -615,9 +615,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
 
-		if (!hasConnectionListeners() && sink instanceof SailSinkVersion2
-				&& getIsolationLevel().isCompatibleWith(IsolationLevels.NONE)) {
-			return ((SailSinkVersion2) sink).deprecateByQuery(subj, pred, obj, contexts);
+		if (!hasConnectionListeners() && getIsolationLevel().isCompatibleWith(IsolationLevels.NONE)
+				&& !(sink instanceof Changeset)) {
+			return sink.deprecateByQuery(subj, pred, obj, contexts);
 		}
 
 		boolean statementsRemoved = false;

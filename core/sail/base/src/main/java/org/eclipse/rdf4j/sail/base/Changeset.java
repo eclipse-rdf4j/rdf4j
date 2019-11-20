@@ -271,6 +271,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
+	public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		throw new UnsupportedOperationException("Not implemented");
+	}
+
+	@Override
 	public synchronized void deprecate(Statement statement) {
 		if (approved != null) {
 			approved.remove(statement);

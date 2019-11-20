@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailSinkVersion2;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 
 import java.util.HashSet;
@@ -47,8 +47,8 @@ public class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public SailSinkVersion2 sink(IsolationLevel level) throws SailException {
-		return new SailSinkVersion2() {
+	public SailSink sink(IsolationLevel level) throws SailException {
+		return new SailSink() {
 			@Override
 			public void prepare() throws SailException {
 
