@@ -12,6 +12,8 @@ import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -56,7 +58,7 @@ public class QueryBenchmark {
 
 	private static File installLocation = Files.newTemporaryFolder();
 
-	private SailRepository elasticsearchStore;
+	private SailRepository repository;
 
 	private static final String query1;
 	private static final String query2;
@@ -72,18 +74,25 @@ public class QueryBenchmark {
 		}
 	}
 
+	private List<Statement> statementList;
+
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
 				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
 
-		elasticsearchStore = new SailRepository(
+		repository = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 		}
 
 		System.gc();
@@ -97,7 +106,7 @@ public class QueryBenchmark {
 	@TearDown(Level.Trial)
 	public void afterClass() {
 
-		elasticsearchStore.shutDown();
+		repository.shutDown();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 
 	}
@@ -105,7 +114,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public List<BindingSet> groupByQuery() {
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return Iterations.asList(connection
 					.prepareTupleQuery(query1)
 					.evaluate());
@@ -115,13 +124,13 @@ public class QueryBenchmark {
 	@Benchmark
 	public boolean simpleUpdateQueryIsolationReadCommitted() {
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query2).execute();
 			connection.commit();
 		}
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query3).execute();
 			connection.commit();
@@ -133,13 +142,13 @@ public class QueryBenchmark {
 	@Benchmark
 	public boolean simpleUpdateQueryIsolationNone() {
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.prepareUpdate(query2).execute();
 			connection.commit();
 		}
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.prepareUpdate(query3).execute();
 			connection.commit();
@@ -148,8 +157,23 @@ public class QueryBenchmark {
 
 	}
 
+	@Benchmark
+	public boolean removeByQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+			connection.add(statementList);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
 	private boolean hasStatement() {
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
 	}
