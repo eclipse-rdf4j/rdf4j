@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
@@ -28,8 +29,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
+ * <p>
+ * An RDF4J SailStore persisted to Elasticsearch.
+ * </p>
+ *
+ * <p>
+ * This is an EXPERIMENTAL feature. Use at your own risk!
+ * </p>
+ *
+ * <p>
+ * There is no write-ahead logging, so a failure during a transaction may result in partially persisted changes.
+ * </p>
+ *
+ *
  * @author Håvard Mikkelsen Ottestad
  */
+@Experimental
 public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructure, ElasticsearchNamespaceStore> {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);

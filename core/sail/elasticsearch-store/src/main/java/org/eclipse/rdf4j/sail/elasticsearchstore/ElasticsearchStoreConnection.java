@@ -7,11 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreConnection;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
+
+@Experimental
 public class ElasticsearchStoreConnection extends ExtensibleStoreConnection<ElasticsearchStore> {
 
 	ElasticsearchStoreConnection(ElasticsearchStore sail) {
