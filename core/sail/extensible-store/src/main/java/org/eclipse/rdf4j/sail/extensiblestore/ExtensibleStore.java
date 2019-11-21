@@ -89,11 +89,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	@Override
-	public boolean isWritable() throws SailException {
-		return false;
-	}
-
-	@Override
 	public ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
