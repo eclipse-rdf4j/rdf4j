@@ -63,7 +63,8 @@ public class TestHelpers {
 
 		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
 				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
+				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
+				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
 				.withSetting(PopularProperties.CLUSTER_NAME, CLUSTER)
 				.withInstallationDirectory(installLocation)
 				.withJavaHome(JavaHomeOption.path(javaHomePath))

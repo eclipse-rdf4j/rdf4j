@@ -539,9 +539,38 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			boolean exists = clientPool.getClient().prepareGet(index, ELASTICSEARCH_TYPE, id).get().isExists();
 			if (exists) {
-				clientPool.getClient().prepareDelete(index, ELASTICSEARCH_TYPE, id).get();
+
+				if (contexts[0] == null) {
+					statement = vf.createStatement(id, subj, pred, obj);
+				} else {
+					statement = vf.createStatement(id, subj, pred, obj, contexts[0]);
+				}
+
+				// don't actually delete it just yet, we can just call remove and it will be removed at some point
+				// before or during flush
+				removeStatement(statement);
 			}
 			return exists;
+
+		}
+
+		// Elasticsearch delete by query is slow. It's still faster when deleting a lot of data. We assume that
+		// getStatement and bulk delete is faster up to 1000 statements. If there are more, then we instead use
+		// elasticsearch delete by query.
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
+				contexts)) {
+			List<Statement> statementsToDelete = new ArrayList<>();
+			for (int i = 0; i < 1000 && statements.hasNext(); i++) {
+				statementsToDelete.add(statements.next());
+			}
+
+			if (!statements.hasNext()) {
+				for (Statement statement : statementsToDelete) {
+					removeStatement(statement);
+				}
+
+				return !statementsToDelete.isEmpty();
+			}
 
 		}
 
@@ -553,6 +582,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		long deleted = response.getDeleted();
 		return deleted > 0;
+
 	}
 
 	String sha256(Statement statement) {
