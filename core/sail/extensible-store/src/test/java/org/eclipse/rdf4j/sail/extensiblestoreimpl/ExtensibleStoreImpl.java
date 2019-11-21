@@ -16,4 +16,9 @@ public class ExtensibleStoreImpl extends ExtensibleStore<DataStructure, Namespac
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new ExtensibleStoreConnectionImpl(this);
 	}
+
+	@Override
+	public boolean isWritable() throws SailException {
+		return true;
+	}
 }
