@@ -12,11 +12,11 @@ PREFIX dct: <http://purl.org/dc/terms/>
 
 
 DELETE {
-      ?a dct:title "Download "@en .
+      ?a a dcat:Distribution .
 }
 INSERT {
-      ?a dct:title "download "@en .
+      ?a a dcat:distribution .
 } WHERE {
-      ?a dct:title "Download "@en .
+      ?a a dcat:Distribution .
 }
 
