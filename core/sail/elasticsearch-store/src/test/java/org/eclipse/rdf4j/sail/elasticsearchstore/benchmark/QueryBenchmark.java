@@ -61,14 +61,21 @@ public class QueryBenchmark {
 	private SailRepository repository;
 
 	private static final String query1;
-	private static final String query2;
-	private static final String query3;
-
+	private static final String query2_1;
+	private static final String query2_2;
+	private static final String query3_1;
+	private static final String query3_2;
+	private static final String query4_1;
+	private static final String query4_2;
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
+			query2_1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.1.qr"), StandardCharsets.UTF_8);
+			query2_2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.2.qr"), StandardCharsets.UTF_8);
+			query3_1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.1.qr"), StandardCharsets.UTF_8);
+			query3_2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.2.qr"), StandardCharsets.UTF_8);
+			query4_1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.1.qr"), StandardCharsets.UTF_8);
+			query4_2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.2.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -126,13 +133,13 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
+			connection.prepareUpdate(query4_1).execute();
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
+			connection.prepareUpdate(query4_2).execute();
 			connection.commit();
 		}
 		return hasStatement();
@@ -144,13 +151,13 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query2).execute();
+			connection.prepareUpdate(query4_1).execute();
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
+			connection.prepareUpdate(query4_2).execute();
 			connection.commit();
 		}
 		return hasStatement();

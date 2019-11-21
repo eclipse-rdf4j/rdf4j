@@ -9,14 +9,16 @@ PREFIX dc: <http://purl.org/dc/terms/>
 PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
 PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
 PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX vcard: <http://www.w3.org/2006/vcard/ns#>
 
+#matches ~200
 
 DELETE {
-      ?a a dcat:Distribution .
+      ?a a foaf:organization.
 }
 INSERT {
-      ?a a dcat:distribution .
+      ?a a foaf:Organization.
 } WHERE {
-      ?a a dcat:Distribution .
+      ?a a foaf:organization.
 }
 
