@@ -183,4 +183,8 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		return new ElasticsearchStoreConnection(this);
 	}
 
+	@Override
+	public boolean isWritable() throws SailException {
+		return true;
+	}
 }
