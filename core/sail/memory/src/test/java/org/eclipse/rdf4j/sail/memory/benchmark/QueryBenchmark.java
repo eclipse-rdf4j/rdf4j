@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -64,7 +66,9 @@ public class QueryBenchmark {
 		}
 	}
 
-	@Setup(Level.Trial)
+	List<Statement> statementList;
+
+	@Setup(Level.Invocation)
 	public void beforeClass() throws IOException, InterruptedException {
 
 		repository = new SailRepository(new MemoryStore());
@@ -75,6 +79,11 @@ public class QueryBenchmark {
 			connection.commit();
 		}
 
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+		}
+
 		System.gc();
 
 	}
@@ -83,7 +92,7 @@ public class QueryBenchmark {
 		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
-	@TearDown(Level.Trial)
+	@TearDown(Level.Invocation)
 	public void afterClass() {
 
 		repository.shutDown();
@@ -130,6 +139,18 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.prepareUpdate(query3).execute();
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean removeByQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.remove((Resource) null, RDF.TYPE, null);
 			connection.commit();
 		}
 		return hasStatement();
