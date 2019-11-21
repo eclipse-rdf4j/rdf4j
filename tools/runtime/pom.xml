@@ -19,6 +19,12 @@
 	<dependencies>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-client</artifactId>
+			<version>${project.version}</version>
+			<type>pom</type>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-storage</artifactId>
 			<version>${project.version}</version>
 			<type>pom</type>
