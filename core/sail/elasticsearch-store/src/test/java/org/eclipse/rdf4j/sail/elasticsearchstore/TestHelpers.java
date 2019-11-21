@@ -8,25 +8,32 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 import pl.allegro.tech.embeddedelasticsearch.JavaHomeOption;
 import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 public class TestHelpers {
 
+	private final static Random random = new Random();
 	public static final String VERSION = "6.5.4";
 	public static final String CLUSTER = "cluster1";
 	public static final String ELASTICSEARCH_DOWNLOAD_DIRECTORY = "tempElasticsearchDownload";
+
+	private static final Logger logger = LoggerFactory.getLogger(TestHelpers.class);
 
 	public static EmbeddedElastic startElasticsearch(File installLocation) throws IOException, InterruptedException {
 
 		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
 				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, 9350)
+				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
+				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
 				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
 				.withInstallationDirectory(installLocation)
 				.withDownloadDirectory(new File("tempElasticsearchDownload"))
@@ -35,6 +42,9 @@ public class TestHelpers {
 				.build();
 
 		embeddedElastic.start();
+		logger.info("Elasticearch using transport port: " + embeddedElastic.getTransportTcpPort());
+		logger.info("Elasticearch using http port: " + embeddedElastic.getHttpPort());
+
 		return embeddedElastic;
 	}
 

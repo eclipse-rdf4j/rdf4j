@@ -46,7 +46,8 @@ public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest
 
 	@Override
 	protected Sail createSail() throws SailException {
-		NotifyingSail sail = new ElasticsearchStore("localhost", 9350, "cluster1", "index1");
+		NotifyingSail sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
+				"index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.clear();

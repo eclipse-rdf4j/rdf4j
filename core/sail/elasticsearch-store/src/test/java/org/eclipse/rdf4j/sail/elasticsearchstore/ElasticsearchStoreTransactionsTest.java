@@ -73,7 +73,8 @@ public class ElasticsearchStoreTransactionsTest {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 
-		elasticsearchStore = new ElasticsearchStore("localhost", 9350, "cluster1", "test");
+		elasticsearchStore = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
+				"test");
 
 	}
 
@@ -143,7 +144,8 @@ public class ElasticsearchStoreTransactionsTest {
 
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
-			client.addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9350));
+			client.addTransportAddress(
+					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
 
 			return client.admin()
 					.indices()
