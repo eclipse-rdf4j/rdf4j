@@ -13,6 +13,8 @@ import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -68,6 +70,8 @@ public class QueryBenchmark {
 		}
 	}
 
+	List<Statement> statementList;
+
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
@@ -79,6 +83,11 @@ public class QueryBenchmark {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 		}
 
 		System.gc();
@@ -105,6 +114,21 @@ public class QueryBenchmark {
 					.prepareTupleQuery(query1)
 					.evaluate());
 		}
+	}
+
+	@Benchmark
+	public boolean removeByQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+			connection.add(statementList);
+			connection.commit();
+		}
+		return hasStatement();
+
 	}
 
 	@Benchmark
