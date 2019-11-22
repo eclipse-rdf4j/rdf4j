@@ -63,10 +63,8 @@ public class DistanceQuerySpecTest extends SearchQueryEvaluatorTest {
 		bsa.setBindingSets(Collections.singletonList(bindingSet));
 
 		querySpec.replaceQueryPatternsWithResults(bsa);
-
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 
 	@Test
@@ -87,10 +85,8 @@ public class DistanceQuerySpecTest extends SearchQueryEvaluatorTest {
 		final DistanceQuerySpec querySpec = (DistanceQuerySpec) queries.get(0);
 
 		querySpec.replaceQueryPatternsWithResults(new BindingSetAssignment());
-
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 
 }
