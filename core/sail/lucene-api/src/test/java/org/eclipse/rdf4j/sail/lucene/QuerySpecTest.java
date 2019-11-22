@@ -41,9 +41,8 @@ public class QuerySpecTest extends SearchQueryEvaluatorTest {
 		BindingSetAssignment bsa = new BindingSetAssignment();
 		bsa.setBindingSets(createBindingSet("searchR", "urn:1"));
 		querySpec.replaceQueryPatternsWithResults(bsa);
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 
 	@Test
@@ -61,8 +60,7 @@ public class QuerySpecTest extends SearchQueryEvaluatorTest {
 		QuerySpec querySpec = (QuerySpec) queries.get(0);
 		BindingSetAssignment bsa = new BindingSetAssignment();
 		querySpec.replaceQueryPatternsWithResults(bsa);
-		assertEquals(
-				expectedQueryPlan,
-				querySpec.getParentQueryModelNode().getParentNode().toString());
+		String result = querySpec.getParentQueryModelNode().getParentNode().toString().replaceAll("\r\n|\r", "\n");
+		assertEquals(expectedQueryPlan, result);
 	}
 }
