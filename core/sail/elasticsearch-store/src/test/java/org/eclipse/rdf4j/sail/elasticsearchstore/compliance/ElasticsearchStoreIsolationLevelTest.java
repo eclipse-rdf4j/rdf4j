@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -32,22 +33,28 @@ public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest
 
 	private static File installLocation = Files.newTemporaryFolder();
 
+	private static ClientPoolImpl clientPool;
+
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void beforeClass() throws Exception {
+
 		SailIsolationLevelTest.setUpClass();
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
+		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
+
 	}
 
 	@AfterClass
-	public static void afterClass() throws IOException {
+	public static void afterClass() throws Exception {
 
+		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+
 	}
 
 	@Override
 	protected Sail createSail() throws SailException {
-		NotifyingSail sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
-				"index1");
+		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.clear();

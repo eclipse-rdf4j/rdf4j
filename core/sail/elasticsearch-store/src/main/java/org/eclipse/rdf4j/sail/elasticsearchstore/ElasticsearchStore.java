@@ -65,6 +65,15 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	}
 
+	public ElasticsearchStore(ClientPoolImpl clientPool, String index) {
+		this.clientPool = new UnclosableClientPool(clientPool);
+
+		dataStructure = new ElasticsearchDataStructure(this.clientPool, index);
+		dataStructureInferred = new ElasticsearchDataStructure(this.clientPool, index + "_inferred");
+		namespaceStore = new ElasticsearchNamespaceStore(this.clientPool, index + "_namespaces");
+
+	}
+
 	@Override
 	protected void initializeInternal() throws SailException {
 		if (shutdown.get()) {

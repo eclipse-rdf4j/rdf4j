@@ -11,6 +11,7 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.SparqlRegexTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -25,24 +26,28 @@ public class ElasticsearchStoreSparqlRegexTest extends SparqlRegexTest {
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
+	private static ClientPoolImpl clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
+		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
 	}
 
 	@AfterClass
-	public static void afterClass() throws IOException {
+	public static void afterClass() throws Exception {
 
+		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+
 	}
 
 	@Override
 	protected Repository newRepository() throws IOException {
 		SailRepository sailRepository = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "index1"));
+				new ElasticsearchStore(clientPool, "index1"));
 		return sailRepository;
 	}
 }

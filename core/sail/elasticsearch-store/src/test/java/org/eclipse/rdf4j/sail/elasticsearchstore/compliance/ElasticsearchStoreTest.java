@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -33,24 +34,26 @@ public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
+	static ClientPoolImpl clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
+		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
 	}
 
 	@AfterClass
-	public static void afterClass() throws IOException {
+	public static void afterClass() throws Exception {
 
+		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 	}
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		NotifyingSail sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
-				"index1");
+		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.clear();

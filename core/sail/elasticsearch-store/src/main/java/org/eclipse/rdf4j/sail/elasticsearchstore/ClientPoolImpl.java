@@ -20,7 +20,7 @@ import java.net.UnknownHostException;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ClientPoolImpl implements ClientPool {
+public class ClientPoolImpl implements ClientPool {
 
 	transient private Client client;
 	private transient boolean closed = false;
@@ -28,7 +28,7 @@ class ClientPoolImpl implements ClientPool {
 	private int port;
 	private String clusterName;
 
-	ClientPoolImpl(String hostname, int port, String clusterName) {
+	public ClientPoolImpl(String hostname, int port, String clusterName) {
 		this.hostname = hostname;
 		this.port = port;
 		this.clusterName = clusterName;
