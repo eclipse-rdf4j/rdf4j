@@ -13,10 +13,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Properties;
 
-import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,16 +125,6 @@ public class Config {
 		return Boolean.parseBoolean(props.getProperty("monitoring.enableJMX", "false"));
 	}
 
-	/**
-	 * Whether to use a singleton {@link RepositoryConnection} per {@link Endpoint}. Default: false
-	 * 
-	 * If not set, a fresh {@link RepositoryConnection} is used for each triple store interaction.
-	 * 
-	 * @return indicator whether a singleton connection shall be used per endpoint
-	 */
-	public boolean useSingletonConnectionPerEndpoint() {
-		return Boolean.parseBoolean(props.getProperty("endpoint.useSingletonConnection", "false"));
-	}
 
 	/**
 	 * The debug mode for worker scheduler, the scheduler prints usage stats regularly if enabled
