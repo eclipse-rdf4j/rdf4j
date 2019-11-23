@@ -46,6 +46,8 @@ public class FedXConfig {
 
 	private boolean debugQueryPlan = false;
 
+	private boolean enableJmx = false;
+
 	private Class<? extends FederationEvalStrategy> sailEvaluationStrategy = SailFederationEvalStrategy.class;
 
 	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategyWithValues.class;
@@ -216,5 +218,14 @@ public class FedXConfig {
 	 */
 	public boolean isDebugQueryPlan() {
 		return debugQueryPlan;
+	}
+
+	/**
+	 * Flag to enable/disable JMX monitoring. Default=false
+	 * 
+	 * @return whether JMX is enabled
+	 */
+	public boolean isEnableJMX() {
+		return enableJmx;
 	}
 }

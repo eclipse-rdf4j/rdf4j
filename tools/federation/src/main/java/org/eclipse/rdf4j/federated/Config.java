@@ -116,14 +116,7 @@ public class Config {
 		return props.getProperty(propertyName, def);
 	}
 
-	/**
-	 * Flag to enable/disable JMX monitoring. Default=false
-	 * 
-	 * @return whether JMX is enabled
-	 */
-	public boolean isEnableJMX() {
-		return Boolean.parseBoolean(props.getProperty("monitoring.enableJMX", "false"));
-	}
+
 
 
 	/**

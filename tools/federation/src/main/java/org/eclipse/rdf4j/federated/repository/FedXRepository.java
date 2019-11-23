@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.federated.repository;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FedXConfig;
@@ -105,7 +104,7 @@ public class FedXRepository extends SailRepository {
 		queryManager.init();
 		fedxServiceResolver.initialize();
 
-		if (Config.getConfig().isEnableJMX()) {
+		if (fedXConfig.isEnableJMX()) {
 			try {
 				MonitoringUtil.initializeJMXMonitoring(federationContext);
 			} catch (Exception e1) {
