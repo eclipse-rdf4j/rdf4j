@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -34,13 +34,13 @@ public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
-	static ClientPoolImpl clientPool;
+	static SingletonClientProvider clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
+		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
 	}
 

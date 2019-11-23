@@ -12,6 +12,7 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -48,17 +49,21 @@ public class InitBenchmark {
 
 	private static File installLocation = Files.newTemporaryFolder();
 
+	SingletonClientProvider clientPool;
+
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
 				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
 
+		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 		System.gc();
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void afterClass() throws Exception {
 
+		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
 	}
 
@@ -67,6 +72,22 @@ public class InitBenchmark {
 
 		SailRepository elasticsearchStore = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+		}
+
+		elasticsearchStore.shutDown();
+
+	}
+
+	@Benchmark
+	public void initWithoutElasticsearchClientCreation() {
+
+		SailRepository elasticsearchStore = new SailRepository(
+				new ElasticsearchStore(clientPool, "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

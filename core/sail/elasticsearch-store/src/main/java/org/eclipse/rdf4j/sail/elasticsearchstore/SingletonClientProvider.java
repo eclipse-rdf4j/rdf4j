@@ -20,7 +20,7 @@ import java.net.UnknownHostException;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ClientPoolImpl implements ClientPool {
+public class SingletonClientProvider implements ClientProvider {
 
 	transient private Client client;
 	private transient boolean closed = false;
@@ -28,7 +28,7 @@ public class ClientPoolImpl implements ClientPool {
 	private int port;
 	private String clusterName;
 
-	public ClientPoolImpl(String hostname, int port, String clusterName) {
+	public SingletonClientProvider(String hostname, int port, String clusterName) {
 		this.hostname = hostname;
 		this.port = port;
 		this.clusterName = clusterName;
@@ -42,7 +42,7 @@ public class ClientPoolImpl implements ClientPool {
 
 		synchronized (this) {
 			if (closed) {
-				throw new IllegalStateException("Elasticsearch Client pool is closed!");
+				throw new IllegalStateException("Elasticsearch Client Provider is closed!");
 			}
 
 			try {

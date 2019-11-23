@@ -40,7 +40,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	private static final String PREFIX = "prefix";
 	private static final String NAMESPACE = "namespace";
 
-	private final ClientPool clientPool;
+	private final ClientProvider clientProvider;
 	private final String index;
 
 	private static final String ELASTICSEARCH_TYPE = "namespace";
@@ -55,14 +55,14 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		}
 	}
 
-	ElasticsearchNamespaceStore(ClientPool clientPool, String index) {
-		this.clientPool = clientPool;
+	ElasticsearchNamespaceStore(ClientProvider clientProvider, String index) {
+		this.clientProvider = clientProvider;
 		this.index = index;
 	}
 
 	@Override
 	public String getNamespace(String prefix) {
-		GetResponse documentFields = clientPool.getClient().prepareGet(index, ELASTICSEARCH_TYPE, prefix).get();
+		GetResponse documentFields = clientProvider.getClient().prepareGet(index, ELASTICSEARCH_TYPE, prefix).get();
 		if (documentFields.isExists()) {
 			return documentFields.getSource().get(NAMESPACE).toString();
 		}
@@ -77,25 +77,25 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		map.put(PREFIX, prefix);
 		map.put(NAMESPACE, namespace);
 
-		clientPool.getClient().prepareIndex(index, ELASTICSEARCH_TYPE, prefix).setSource(map).get();
-		clientPool.getClient().admin().indices().prepareRefresh(index).get();
+		clientProvider.getClient().prepareIndex(index, ELASTICSEARCH_TYPE, prefix).setSource(map).get();
+		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
 	}
 
 	@Override
 	public void removeNamespace(String prefix) {
-		clientPool.getClient().prepareDelete(index, ELASTICSEARCH_TYPE, prefix).get();
-		clientPool.getClient().admin().indices().prepareRefresh(index).get();
+		clientProvider.getClient().prepareDelete(index, ELASTICSEARCH_TYPE, prefix).get();
+		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
 	}
 
 	@Override
 	public void clear() {
-		clientPool.getClient().admin().indices().prepareDelete(index).get();
+		clientProvider.getClient().admin().indices().prepareDelete(index).get();
 		init();
 	}
 
 	@Override
 	public void init() {
-		boolean indexExistsAlready = clientPool.getClient()
+		boolean indexExistsAlready = clientProvider.getClient()
 				.admin()
 				.indices()
 				.exists(new IndicesExistsRequest(index))
@@ -105,7 +105,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		if (!indexExistsAlready) {
 			CreateIndexRequest request = new CreateIndexRequest(index);
 			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
-			clientPool.getClient().admin().indices().create(request).actionGet();
+			clientProvider.getClient().admin().indices().create(request).actionGet();
 		}
 
 	}
@@ -113,7 +113,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	@Override
 	public Iterator<SimpleNamespace> iterator() {
 
-		SearchResponse searchResponse = clientPool.getClient()
+		SearchResponse searchResponse = clientProvider.getClient()
 				.prepareSearch(index)
 				.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
 				.setSize(10000)

@@ -60,7 +60,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	private static final String MAPPING;
 
 	private static final int BUFFER_THRESHOLD = 1024 * 16;
-	private final ClientPool clientPool;
+	private final ClientProvider clientProvider;
 	private Set<Statement> addStatementBuffer = new HashSet<>();
 	private Set<ElasticsearchId> deleteStatementBuffer = new HashSet<>();
 
@@ -81,10 +81,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	private final String index;
 	private int scrollTimeout = 60000;
 
-	ElasticsearchDataStructure(ClientPool clientPool, String index) {
+	ElasticsearchDataStructure(ClientProvider clientProvider, String index) {
 		super();
 		this.index = index;
-		this.clientPool = clientPool;
+		this.clientProvider = clientProvider;
 	}
 
 	@Override
@@ -131,7 +131,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	synchronized public void clear(Resource[] contexts) {
 
-		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientPool.getClient())
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientProvider.getClient())
 				.filter(getQueryBuilder(null, null, null, contexts))
 				.abortOnVersionConflict(false)
 				.source(index)
@@ -155,7 +155,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		return new LookAheadIteration<Statement, SailException>() {
 
 			CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
-					.getScrollingIterator(queryBuilder, clientPool.getClient(), index, scrollTimeout);
+					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);
 
 			@Override
 			protected Statement getNextElement() throws SailException {
@@ -288,7 +288,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	public void flush() {
 
-		Client client = clientPool.getClient();
+		Client client = clientProvider.getClient();
 
 		flushAddStatementBuffer();
 		flushRemoveStatementBuffer();
@@ -306,7 +306,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			return;
 		}
 
-		BulkRequestBuilder bulkRequest = clientPool.getClient().prepareBulk();
+		BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
 
 		int failures = 0;
 
@@ -362,7 +362,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 					.collect(Collectors.toList())
 					.forEach(builderAndSha -> {
 
-						bulkRequest.add(clientPool.getClient()
+						bulkRequest.add(clientProvider.getClient()
 								.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
 								.setSource(builderAndSha.getMap())
 								.setOpType(DocWriteRequest.OpType.CREATE));
@@ -438,7 +438,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	private Statement getStatementById(String sha256) {
-		Map<String, Object> source = clientPool.getClient()
+		Map<String, Object> source = clientProvider.getClient()
 				.prepareGet(index, ELASTICSEARCH_TYPE, sha256)
 				.get()
 				.getSource();
@@ -463,7 +463,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			return;
 		}
 
-		BulkRequestBuilder bulkRequest = clientPool.getClient().prepareBulk();
+		BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
 
 		int failures = 0;
 
@@ -471,7 +471,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			deleteStatementBuffer.forEach(statement -> {
 
-				bulkRequest.add(clientPool.getClient()
+				bulkRequest.add(clientProvider.getClient()
 						.prepareDelete(index, ELASTICSEARCH_TYPE, statement.getElasticsearchId()));
 
 			});
@@ -502,7 +502,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	public void init() {
 
-		boolean indexExistsAlready = clientPool.getClient()
+		boolean indexExistsAlready = clientProvider.getClient()
 				.admin()
 				.indices()
 				.exists(new IndicesExistsRequest(index))
@@ -512,7 +512,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		if (!indexExistsAlready) {
 			CreateIndexRequest request = new CreateIndexRequest(index);
 			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
-			clientPool.getClient().admin().indices().create(request).actionGet();
+			clientProvider.getClient().admin().indices().create(request).actionGet();
 		}
 
 	}
@@ -537,7 +537,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			String id = sha256(statement);
 
-			boolean exists = clientPool.getClient().prepareGet(index, ELASTICSEARCH_TYPE, id).get().isExists();
+			boolean exists = clientProvider.getClient().prepareGet(index, ELASTICSEARCH_TYPE, id).get().isExists();
 			if (exists) {
 
 				if (contexts[0] == null) {
@@ -574,7 +574,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		}
 
-		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientPool.getClient())
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientProvider.getClient())
 				.filter(getQueryBuilder(subj, pred, obj, contexts))
 				.source(index)
 				.abortOnVersionConflict(false)

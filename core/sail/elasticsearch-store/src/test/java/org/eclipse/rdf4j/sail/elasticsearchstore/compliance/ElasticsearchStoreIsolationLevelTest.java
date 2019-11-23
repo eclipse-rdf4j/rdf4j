@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
-import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -21,7 +21,6 @@ import org.junit.BeforeClass;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 import java.io.File;
-import java.io.IOException;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the class
@@ -33,14 +32,14 @@ public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest
 
 	private static File installLocation = Files.newTemporaryFolder();
 
-	private static ClientPoolImpl clientPool;
+	private static SingletonClientProvider clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws Exception {
 
 		SailIsolationLevelTest.setUpClass();
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
+		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
 	}
 

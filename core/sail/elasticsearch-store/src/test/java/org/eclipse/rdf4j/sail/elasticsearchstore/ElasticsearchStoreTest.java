@@ -39,7 +39,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -258,9 +257,9 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testGC() {
 
-		ClientPool clientPool = initElasticsearchStoreForGcTest();
+		ClientProvider clientProvider = initElasticsearchStoreForGcTest();
 
-		for (int i = 0; i < 100 && !clientPool.isClosed(); i++) {
+		for (int i = 0; i < 100 && !clientProvider.isClosed(); i++) {
 			System.gc();
 			try {
 				Thread.sleep(i * 100);
@@ -268,21 +267,21 @@ public class ElasticsearchStoreTest {
 			}
 		}
 
-		assertTrue(clientPool.isClosed());
+		assertTrue(clientProvider.isClosed());
 
 	}
 
-	private ClientPool initElasticsearchStoreForGcTest() {
+	private ClientProvider initElasticsearchStoreForGcTest() {
 		ElasticsearchStore sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
 				"testindex");
 
-		ClientPool clientPool = sail.clientPool;
+		ClientProvider clientProvider = sail.clientProvider;
 		SailRepository elasticsearchStore = new SailRepository(sail);
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("label"));
 		}
-		return clientPool;
+		return clientProvider;
 	}
 
 	@Test

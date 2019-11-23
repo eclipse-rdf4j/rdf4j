@@ -11,7 +11,7 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
-import org.eclipse.rdf4j.sail.elasticsearchstore.ClientPoolImpl;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
@@ -30,13 +30,13 @@ public class ElasticsearchStoreContextTest extends RDFNotifyingStoreTest {
 
 	private static File installLocation = Files.newTemporaryFolder();
 
-	private static ClientPoolImpl clientPool;
+	private static SingletonClientProvider clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new ClientPoolImpl("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
+		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
 	}
 

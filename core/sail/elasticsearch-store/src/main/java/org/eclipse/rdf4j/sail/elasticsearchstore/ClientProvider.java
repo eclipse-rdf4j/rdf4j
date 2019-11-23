@@ -12,7 +12,7 @@ import org.elasticsearch.client.Client;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-interface ClientPool extends AutoCloseable {
+interface ClientProvider extends AutoCloseable {
 
 	Client getClient();
 

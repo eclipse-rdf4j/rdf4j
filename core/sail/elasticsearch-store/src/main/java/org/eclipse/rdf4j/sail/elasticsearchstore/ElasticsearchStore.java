@@ -49,28 +49,28 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStore.class);
 
-	final ClientPool clientPool;
+	final ClientProvider clientProvider;
 	private final AtomicBoolean shutdown = new AtomicBoolean(false);
 
 	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
-		clientPool = new ClientPoolImpl(hostname, port, clusterName);
+		clientProvider = new SingletonClientProvider(hostname, port, clusterName);
 
-		dataStructure = new ElasticsearchDataStructure(clientPool, index);
-		dataStructureInferred = new ElasticsearchDataStructure(clientPool, index + "_inferred");
-		namespaceStore = new ElasticsearchNamespaceStore(clientPool, index + "_namespaces");
+		dataStructure = new ElasticsearchDataStructure(clientProvider, index);
+		dataStructureInferred = new ElasticsearchDataStructure(clientProvider, index + "_inferred");
+		namespaceStore = new ElasticsearchNamespaceStore(clientProvider, index + "_namespaces");
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
-				clientPool);
+				clientProvider);
 
 	}
 
-	public ElasticsearchStore(ClientPoolImpl clientPool, String index) {
-		this.clientPool = new UnclosableClientPool(clientPool);
+	public ElasticsearchStore(SingletonClientProvider clientPool, String index) {
+		this.clientProvider = new UnclosableClientProvider(clientPool);
 
-		dataStructure = new ElasticsearchDataStructure(this.clientPool, index);
-		dataStructureInferred = new ElasticsearchDataStructure(this.clientPool, index + "_inferred");
-		namespaceStore = new ElasticsearchNamespaceStore(this.clientPool, index + "_namespaces");
+		dataStructure = new ElasticsearchDataStructure(this.clientProvider, index);
+		dataStructureInferred = new ElasticsearchDataStructure(this.clientProvider, index + "_inferred");
+		namespaceStore = new ElasticsearchNamespaceStore(this.clientProvider, index + "_namespaces");
 
 	}
 
@@ -89,7 +89,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		if (shutdown.compareAndSet(false, true)) {
 			super.shutDownInternal();
 			try {
-				clientPool.close();
+				clientProvider.close();
 			} catch (Exception e) {
 				throw new SailException(e);
 			}
@@ -108,7 +108,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 						"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
 
 				try {
-					clientPool.close();
+					clientProvider.close();
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
@@ -117,7 +117,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 			}
 			try {
-				Client client = clientPool.getClient();
+				Client client = clientProvider.getClient();
 
 				ClusterHealthResponse clusterHealthResponse = client.admin()
 						.cluster()
@@ -136,7 +136,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 				logger.info("Unable to connect to elasticsearch cluster due to {}", e.getClass().getSimpleName());
 
 				try {
-					clientPool.close();
+					clientProvider.close();
 				} catch (Exception e2) {
 					throw new RuntimeException(e2);
 				}
@@ -156,7 +156,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	// this code does some final safety cleanup when the user's ElasticsearchStore gets garbage collected
 	private void startGarbageCollectionMonitoring(ReferenceQueue<ElasticsearchStore> referenceQueue,
-			Reference<ElasticsearchStore> ref, ClientPool clientPool) {
+			Reference<ElasticsearchStore> ref, ClientProvider clientProvider) {
 
 		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
 			Thread t = Executors.defaultThreadFactory().newThread(r);
@@ -181,13 +181,13 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 				return;
 			}
 
-			if (!clientPool.isClosed()) {
+			if (!clientProvider.isClosed()) {
 				logger.warn(
 						"Closing ClientPool in ElasticsearchStore due to store having no references and shutdown() never being called()");
 			}
 
 			try {
-				clientPool.close();
+				clientProvider.close();
 			} catch (Exception ignored) {
 				// ignoring any exception, since this cleanup is best effort
 			}
