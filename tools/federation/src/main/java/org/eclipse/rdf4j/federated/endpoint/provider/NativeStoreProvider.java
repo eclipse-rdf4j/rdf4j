@@ -79,13 +79,9 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 			try {
 				repo.init();
-
-				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {
 				repo.shutDown();
 			}
-
-			ProviderUtil.checkConnectionIfConfigured(repo);
 
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, repoInfo.getLocation(),
 					EndpointClassification.Local, repo);

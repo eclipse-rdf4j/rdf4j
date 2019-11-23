@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.endpoint.provider.ProviderUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -137,17 +136,6 @@ public class Config {
 	 */
 	public boolean useSingletonConnectionPerEndpoint() {
 		return Boolean.parseBoolean(props.getProperty("endpoint.useSingletonConnection", "false"));
-	}
-
-	/**
-	 * If enabled, repository connections are validated by
-	 * {@link ProviderUtil#checkConnectionIfConfigured(org.eclipse.rdf4j.repository.Repository)} prior to adding the
-	 * endpoint to the federation. If validation fails, an error is thrown to the user.
-	 * 
-	 * @return whether repository connections are validated
-	 */
-	public boolean isValidateRepositoryConnections() {
-		return Boolean.parseBoolean(props.getProperty("validateRepositoryConnections", "false"));
 	}
 
 	/**

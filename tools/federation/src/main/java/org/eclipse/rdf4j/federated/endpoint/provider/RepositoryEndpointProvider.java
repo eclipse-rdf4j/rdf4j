@@ -49,8 +49,6 @@ public class RepositoryEndpointProvider implements EndpointProvider<RepositoryIn
 					repository.init();
 					didInitialize = true;
 				}
-
-				ProviderUtil.checkConnectionIfConfigured(repository);
 			} finally {
 				if (didInitialize) {
 					repository.shutDown();
