@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import java.io.File;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -15,7 +14,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
@@ -23,19 +21,12 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 
 public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 
-	private final File configurationPreset;
-
 	protected FedXRepository repository;
 
 	// settings that get applied in the actual config
 	protected Map<String, String> configSettings = new HashMap<>();
 
-	public FedXRule(File configurationPreset) {
-		this.configurationPreset = configurationPreset;
-	}
-
 	public FedXRule() {
-		this(null);
 	}
 
 	public FedXRule withMonitoring() {
@@ -49,11 +40,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 		for (Entry<String, String> config : configSettings.entrySet()) {
 			Config.getConfig().set(config.getKey(), config.getValue());
 		}
-		List<Endpoint> endpoints;
-		if (configurationPreset != null)
-			endpoints = EndpointFactory.loadFederationMembers(configurationPreset);
-		else
-			endpoints = Collections.<Endpoint>emptyList();
+		List<Endpoint> endpoints = Collections.<Endpoint>emptyList();
 		repository = FedXFactory.createFederation(endpoints);
 		repository.init();
 		getFederationContext().getCache().clear();

@@ -52,6 +52,8 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	protected RepositoryResolver repositoryResolver;
 
+	protected File dataDir;
+
 	public FedX(List<Endpoint> endpoints) {
 		if (endpoints != null) {
 			members.addAll(endpoints);
@@ -113,7 +115,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	@Override
 	public File getDataDir() {
-		throw new UnsupportedOperationException("Operation not supported yet.");
+		return dataDir;
 	}
 
 	@Override
@@ -155,7 +157,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	@Override
 	public void setDataDir(File dataDir) {
-		throw new UnsupportedOperationException("Operation not supported yet.");
+		this.dataDir = dataDir;
 	}
 
 	/**

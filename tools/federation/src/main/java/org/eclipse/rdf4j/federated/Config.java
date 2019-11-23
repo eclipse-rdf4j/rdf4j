@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.provider.ProviderUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,25 +120,6 @@ public class Config {
 	}
 
 	/**
-	 * the base directory for any location used in fedx, e.g. for repositories
-	 * 
-	 * @return the base directory (default: unspecified, callers should assume the execution directory)
-	 * @see FileUtil
-	 */
-	public String getBaseDir() {
-		return props.getProperty("baseDir");
-	}
-
-	/**
-	 * The location of the dataConfig.
-	 * 
-	 * @return the data config location (relative to {@link #getBaseDir()})
-	 */
-	public String getDataConfig() {
-		return props.getProperty("dataConfig");
-	}
-
-	/**
 	 * Flag to enable/disable JMX monitoring. Default=false
 	 * 
 	 * @return whether JMX is enabled
@@ -167,7 +147,7 @@ public class Config {
 	 * @return whether repository connections are validated
 	 */
 	public boolean isValidateRepositoryConnections() {
-		return Boolean.parseBoolean(props.getProperty("validateRepositoryConnections", "true"));
+		return Boolean.parseBoolean(props.getProperty("validateRepositoryConnections", "false"));
 	}
 
 	/**

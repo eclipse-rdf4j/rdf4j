@@ -99,8 +99,6 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 		File dataConfigFile = null;
 		if (fedXConfig.getDataConfig() != null) {
 			dataConfigFile = new File(baseDir, fedXConfig.getDataConfig());
-		} else if (Config.getConfig().getDataConfig() != null) {
-			dataConfigFile = new File(baseDir, Config.getConfig().getDataConfig());
 		}
 
 		if (members == null && dataConfigFile == null) {

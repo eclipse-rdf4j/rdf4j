@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInforma
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
-import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -131,7 +130,7 @@ public class FedXFactory {
 
 	public FedXFactory withMembers(File dataConfig) {
 		log.info("Loading federation members from dataConfig " + dataConfig + ".");
-		members.addAll(EndpointFactory.loadFederationMembers(dataConfig));
+		members.addAll(EndpointFactory.loadFederationMembers(dataConfig, fedxBaseDir));
 		return this;
 	}
 
@@ -148,7 +147,7 @@ public class FedXFactory {
 	 */
 	public FedXFactory withMembers(Model model) {
 		log.debug("Loading federation members from model.");
-		members.addAll(EndpointFactory.loadFederationMembers(model));
+		members.addAll(EndpointFactory.loadFederationMembers(model, fedxBaseDir));
 		return this;
 	}
 
@@ -183,9 +182,7 @@ public class FedXFactory {
 	}
 
 	/**
-	 * Configure the FedX base directory (i.e. {@link Config#getBaseDir()}) at federation construction time. Note that
-	 * any explicitly configured value in {@link Config#getBaseDir()} has precedence (i.e. if a value is configured,
-	 * this setting is ignored).
+	 * Configure the FedX base directory at federation construction time.
 	 * 
 	 * @param fedxBaseDir the existing fedx base directory
 	 * @return the {@link FedXFactory} instance
@@ -213,19 +210,6 @@ public class FedXFactory {
 			}
 		}
 
-		Config config = Config.getConfig();
-		if (fedxBaseDir != null) {
-			if (config.getBaseDir() != null) {
-				log.warn("Ignoring fedx base directory, already configured as " + Config.getConfig().getBaseDir()
-						+ " in fedx configuration.");
-			} else {
-				log.debug("Initializing FedX base directory to " + fedxBaseDir.getAbsolutePath());
-				config.set("baseDir", fedxBaseDir.getAbsolutePath());
-			}
-		}
-
-		initializeMembersFromConfig();
-
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}
@@ -238,17 +222,9 @@ public class FedXFactory {
 		if (this.federatedServiceResolver != null) {
 			repo.setFederatedServiceResolver(federatedServiceResolver);
 		}
-		return repo;
-	}
-
-	protected void initializeMembersFromConfig() {
-
-		String dataConfig = Config.getConfig().getDataConfig();
-		if (dataConfig == null) {
-			return;
+		if (this.fedxBaseDir != null) {
+			repo.setDataDir(fedxBaseDir);
 		}
-
-		File dataConfigFile = FileUtil.getFileLocation(dataConfig);
-		withMembers(dataConfigFile);
+		return repo;
 	}
 }
