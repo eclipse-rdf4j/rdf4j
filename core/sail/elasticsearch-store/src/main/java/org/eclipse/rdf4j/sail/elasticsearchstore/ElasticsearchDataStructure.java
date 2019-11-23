@@ -446,8 +446,6 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			workingBuffer = Collections.emptySet();
 
 		} finally {
-			assert workingBuffer != null;
-			assert workingBuffer.isEmpty();
 			if (workingBuffer != null && !workingBuffer.isEmpty()) {
 				synchronized (this) {
 					addStatementBuffer.addAll(workingBuffer);
