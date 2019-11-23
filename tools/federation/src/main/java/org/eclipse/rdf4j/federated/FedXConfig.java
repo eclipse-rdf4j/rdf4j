@@ -54,6 +54,201 @@ public class FedXConfig {
 
 	private String prefixDeclarations = null;
 
+	/* factory like setters */
+
+	/**
+	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()).
+	 * 
+	 * <p>Can be set after federation construction and initialize.</p>
+	 * 
+	 * @param flag
+	 * @return the current config
+	 */
+	public FedXConfig withDebugQueryPlan(boolean flag) {
+		this.debugQueryPlan = flag;
+		return this;
+	}
+
+	/**
+	 * Set whether to log queries. See {@link #isLogQueries()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param flag
+	 * @return the current config
+	 */
+	public FedXConfig withLogQueries(boolean flag) {
+		this.isLogQueries = flag;
+		return this;
+	}
+
+	/**
+	 * Set the {@link FederationEvalStrategy} for SPARQL federations. See {@link #getSPARQLEvaluationStrategy()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param sparqlEvaluationStrategy
+	 * @return the current config
+	 */
+	public FedXConfig withSparqlEvaluationStrategy(Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy) {
+		this.sparqlEvaluationStrategy = sparqlEvaluationStrategy;
+		return this;
+	}
+
+	/**
+	 * Set the {@link FederationEvalStrategy} for SAIL federations. See {@link #getSailEvaluationStrategy()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param sailEvaluationStrategy
+	 * @return the current config
+	 */
+	public FedXConfig withSailEvaluationStrategy(Class<? extends FederationEvalStrategy> sailEvaluationStrategy) {
+		this.sailEvaluationStrategy = sailEvaluationStrategy;
+		return this;
+	}
+
+	/**
+	 * Set enforce max query time. See {@link #getEnforceMaxQueryTime()}.
+	 * 
+	 * <p>
+	 * Can be set after federation construction and initialize.
+	 * </p>
+	 * 
+	 * @param enforceMaxQueryTime time in seconds, 0 to disable
+	 * @return the current config
+	 */
+	public FedXConfig withEnforceMaxQueryTime(int enforceMaxQueryTime) {
+		this.enforceMaxQueryTime = enforceMaxQueryTime;
+		return this;
+	}
+
+	/**
+	 * Enable monitoring. See {@link #isEnableMonitoring()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param flag
+	 * @return the current config
+	 */
+	public FedXConfig withEnableMonitoring(boolean flag) {
+		this.enableMonitoring = flag;
+		return this;
+	}
+
+	/**
+	 * Define the cache location. See {@link #getCacheLocation()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param cacheLocation
+	 * @return the current config
+	 */
+	public FedXConfig withCacheLocation(String cacheLocation) {
+		this.cacheLocation = cacheLocation;
+		return this;
+	}
+
+	/**
+	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param boundJoinBlockSize
+	 * @return the current config
+	 */
+	public FedXConfig withBoundJoinBlockSize(int boundJoinBlockSize) {
+		this.boundJoinBlockSize = boundJoinBlockSize;
+		return this;
+	}
+
+	/**
+	 * Set the number of join worker threads. See {@link #getJoinWorkerThreads()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param joinWorkerThreads
+	 * @return the current config
+	 */
+	public FedXConfig withJoinWorkerThreads(int joinWorkerThreads) {
+		this.joinWorkerThreads = joinWorkerThreads;
+		return this;
+	}
+
+	/**
+	 * Set the number of left join worker threads. See {@link #getLeftJoinWorkerThreads()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param leftJoinWorkerThreads
+	 * @return the current config
+	 */
+	public FedXConfig withLeftJoinWorkerThreads(int leftJoinWorkerThreads) {
+		this.leftJoinWorkerThreads = leftJoinWorkerThreads;
+		return this;
+	}
+
+	/**
+	 * Set the number of union worker threads. See {@link #getUnionWorkerThreads()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param unionWorkerThreads
+	 * @return the current config
+	 */
+	public FedXConfig withUnionWorkerThreads(int unionWorkerThreads) {
+		this.unionWorkerThreads = unionWorkerThreads;
+		return this;
+	}
+
+	/**
+	 * Set the optional prefix declarations file. See {@link #getPrefixDeclarations()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param prefixFile
+	 * @return
+	 */
+	public FedXConfig withPrefixDeclarations(String prefixFile) {
+		this.prefixDeclarations = prefixFile;
+		return this;
+	}
+
+	/**
+	 * Whether to log the query plan with {@link QueryPlanLog}. See {@link #isLogQueryPlan()}.
+	 * 
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 * 
+	 * @param flag
+	 * @return the current config
+	 */
+	public FedXConfig withLogQueryPlan(boolean flag) {
+		this.isLogQueryPlan = flag;
+		return this;
+	}
+
 	/**
 	 * The location of the cache, i.e. currently used in {@link MemoryCache}
 	 * 

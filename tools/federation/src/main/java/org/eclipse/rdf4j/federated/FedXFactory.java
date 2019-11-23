@@ -41,9 +41,7 @@ public class FedXFactory {
 	protected static final Logger log = LoggerFactory.getLogger(FedXFactory.class);
 
 	/**
-	 * Create a federation with the provided sparql endpoints.
-	 * 
-	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
+	 * Create a federation with the provided sparql endpoints
 	 * 
 	 * @param sparqlEndpoints the list of SPARQL endpoints
 	 * 
@@ -60,8 +58,6 @@ public class FedXFactory {
 	 * Create the federation with a specified data source configuration file (*.ttl). Federation members are constructed
 	 * from the data source configuration. Sample data source configuration files can be found in the documentation.
 	 * 
-	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
-	 * 
 	 * @param dataConfig the location of the data source configuration
 	 * 
 	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
@@ -77,8 +73,6 @@ public class FedXFactory {
 	 * Create the federation by providing the endpoints to add. The fedx configuration can provide information about the
 	 * dataConfig to be used which may contain the default federation members.
 	 * <p>
-	 * 
-	 * NOTE: {@link Config#initialize(File)} needs to be invoked before.
 	 * 
 	 * @param endpoints additional endpoints to be added, may be null or empty
 	 * 
@@ -106,7 +100,6 @@ public class FedXFactory {
 	protected FederatedServiceResolver federatedServiceResolver;
 	protected List<Endpoint> members = new ArrayList<>();
 	protected FedXConfig config = FedXConfig.DEFAULT_CONFIG;
-	protected File fedxConfig;
 	protected File fedxBaseDir;
 
 	private FedXFactory() {
@@ -173,14 +166,6 @@ public class FedXFactory {
 		return this;
 	}
 
-	public FedXFactory withConfigFile(File configFile) {
-		if (Config.isInitialized()) {
-			throw new IllegalStateException("FedX config is already initialized.");
-		}
-		this.fedxConfig = configFile;
-		return this;
-	}
-
 	/**
 	 * Configure the FedX base directory at federation construction time.
 	 * 
@@ -201,14 +186,6 @@ public class FedXFactory {
 	 * @return the configured {@link FedXRepository}
 	 */
 	public FedXRepository create() {
-
-		if (!Config.isInitialized()) {
-			if (fedxConfig != null) {
-				Config.initialize(fedxConfig);
-			} else {
-				Config.initialize();
-			}
-		}
 
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");

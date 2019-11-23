@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.federated.generator.DataGenerator;
 import org.eclipse.rdf4j.federated.generator.ResultGenerator;
 import org.junit.jupiter.api.Disabled;
@@ -67,7 +66,6 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 	public void testPerformance() throws Throwable
 
 	{
-		fedxRule.setConfig("sparqlEvaluationStrategy", SparqlFederationEvalStrategyWithValues.class.getName());
 		String basePackage = "/tests/performance/";
 
 		/* prepare endpoints */

@@ -376,7 +376,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	/**
 	 * Return the original explicit {@link Operation#getMaxExecutionTime()} in seconds, 0 if
-	 * {@link Config#getEnforceMaxQueryTime()} should be applied.
+	 * {@link FedXConfig#getEnforceMaxQueryTime()} should be applied.
 	 * 
 	 * @param b
 	 * @return
