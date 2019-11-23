@@ -300,140 +300,160 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	synchronized private void flushAddStatementBuffer() {
+	private void flushAddStatementBuffer() {
 
-		if (addStatementBuffer.isEmpty()) {
-			return;
-		}
+		Set<Statement> workingBuffer = null;
 
-		BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
-
-		int failures = 0;
-
-		do {
-
-			addStatementBuffer
-
-					.stream()
-					.parallel()
-					.map(statement -> {
-
-						Map<String, Object> jsonMap = new HashMap<>();
-
-						jsonMap.put("subject", statement.getSubject().stringValue());
-						jsonMap.put("predicate", statement.getPredicate().stringValue());
-						jsonMap.put("object", statement.getObject().stringValue());
-						jsonMap.put("object_Hash", statement.getObject().stringValue().hashCode());
-
-						Resource context = statement.getContext();
-
-						if (context != null) {
-							jsonMap.put("context", context.stringValue());
-
-							if (context instanceof IRI) {
-								jsonMap.put("context_IRI", true);
-							} else {
-								jsonMap.put("context_BNode", true);
-							}
-						}
-
-						if (statement.getSubject() instanceof IRI) {
-							jsonMap.put("subject_IRI", true);
-						} else {
-							jsonMap.put("subject_BNode", true);
-						}
-
-						if (statement.getObject() instanceof IRI) {
-							jsonMap.put("object_IRI", true);
-						} else if (statement.getObject() instanceof BNode) {
-							jsonMap.put("object_BNode", true);
-						} else {
-							jsonMap.put("object_Datatype",
-									((Literal) statement.getObject()).getDatatype().stringValue());
-							if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-								jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
-							}
-						}
-
-						return new BuilderAndSha(sha256(statement), jsonMap);
-
-					})
-					.collect(Collectors.toList())
-					.forEach(builderAndSha -> {
-
-						bulkRequest.add(clientProvider.getClient()
-								.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
-								.setSource(builderAndSha.getMap())
-								.setOpType(DocWriteRequest.OpType.CREATE));
-
-					});
-
-			BulkResponse bulkResponse = bulkRequest.get();
-			if (bulkResponse.hasFailures()) {
-
-				List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
-
-				logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
-						bulkResponse.buildFailureMessage());
-
-				boolean onlyVersionConflicts = bulkItemResponses.stream()
-						.filter(BulkItemResponse::isFailed)
-						.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
-				if (onlyVersionConflicts) {
-					// probably trying to add duplicates, or we have a hash conflict
-
-					Set<String> failedIDs = bulkItemResponses.stream()
-							.filter(BulkItemResponse::isFailed)
-							.map(BulkItemResponse::getId)
-							.collect(Collectors.toSet());
-
-					// clean up addedStatements
-					addStatementBuffer = addStatementBuffer.stream()
-							.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry failed
-							// statements
-							// filter out duplicates
-							.filter(statement -> {
-
-								String sha256 = sha256(statement);
-								Statement statementById = getStatementById(sha256);
-
-								return !statement.equals(statementById);
-							})
-
-							// now we only have conflicts
-							.map(statement -> {
-								// TODO handle conflict. Probably by doing something to change to id, mark it as a
-								// conflict. Store all the conflicts in memory, to check against and refresh them from
-								// disc when we boot
-
-								return statement;
-
-							})
-							.collect(Collectors.toSet());
-
-				} else {
-					failures++;
-					if (failures > 10) {
-						throw new RuntimeException("Elasticsearch has failed " + failures
-								+ " times when adding data, retrying. Message: " + bulkResponse.buildFailureMessage());
-					}
-
-					try {
-						Thread.sleep(failures * 100);
-					} catch (InterruptedException ignored) {
-					}
+		try {
+			synchronized (this) {
+				if (addStatementBuffer.isEmpty()) {
+					return;
 				}
-
-			} else {
-				failures = 0;
+				workingBuffer = new HashSet<>(addStatementBuffer);
+				addStatementBuffer = new HashSet<>(Math.min(addStatementBuffer.size(), BUFFER_THRESHOLD));
 			}
 
-		} while (failures > 0);
+			BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
 
-		logger.debug("Added {} statements", addStatementBuffer.size());
+			int failures = 0;
 
-		addStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
+			do {
+
+				workingBuffer
+
+						.stream()
+						.parallel()
+						.map(statement -> {
+
+							Map<String, Object> jsonMap = new HashMap<>();
+
+							jsonMap.put("subject", statement.getSubject().stringValue());
+							jsonMap.put("predicate", statement.getPredicate().stringValue());
+							jsonMap.put("object", statement.getObject().stringValue());
+							jsonMap.put("object_Hash", statement.getObject().stringValue().hashCode());
+
+							Resource context = statement.getContext();
+
+							if (context != null) {
+								jsonMap.put("context", context.stringValue());
+
+								if (context instanceof IRI) {
+									jsonMap.put("context_IRI", true);
+								} else {
+									jsonMap.put("context_BNode", true);
+								}
+							}
+
+							if (statement.getSubject() instanceof IRI) {
+								jsonMap.put("subject_IRI", true);
+							} else {
+								jsonMap.put("subject_BNode", true);
+							}
+
+							if (statement.getObject() instanceof IRI) {
+								jsonMap.put("object_IRI", true);
+							} else if (statement.getObject() instanceof BNode) {
+								jsonMap.put("object_BNode", true);
+							} else {
+								jsonMap.put("object_Datatype",
+										((Literal) statement.getObject()).getDatatype().stringValue());
+								if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+									jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+								}
+							}
+
+							return new BuilderAndSha(sha256(statement), jsonMap);
+
+						})
+						.collect(Collectors.toList())
+						.forEach(builderAndSha -> {
+
+							bulkRequest.add(clientProvider.getClient()
+									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
+									.setSource(builderAndSha.getMap())
+									.setOpType(DocWriteRequest.OpType.CREATE));
+
+						});
+
+				BulkResponse bulkResponse = bulkRequest.get();
+				if (bulkResponse.hasFailures()) {
+
+					List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
+
+					logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
+							bulkResponse.buildFailureMessage());
+
+					boolean onlyVersionConflicts = bulkItemResponses.stream()
+							.filter(BulkItemResponse::isFailed)
+							.allMatch(resp -> resp.getFailure().getCause() instanceof VersionConflictEngineException);
+					if (onlyVersionConflicts) {
+						// probably trying to add duplicates, or we have a hash conflict
+
+						Set<String> failedIDs = bulkItemResponses.stream()
+								.filter(BulkItemResponse::isFailed)
+								.map(BulkItemResponse::getId)
+								.collect(Collectors.toSet());
+
+						// clean up addedStatements
+						workingBuffer = workingBuffer.stream()
+								.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry
+																							// failed
+								// statements
+								// filter out duplicates
+								.filter(statement -> {
+
+									String sha256 = sha256(statement);
+									Statement statementById = getStatementById(sha256);
+
+									return !statement.equals(statementById);
+								})
+
+								// now we only have conflicts
+								.map(statement -> {
+									// TODO handle conflict. Probably by doing something to change to id, mark it as a
+									// conflict. Store all the conflicts in memory, to check against and refresh them
+									// from
+									// disc when we boot
+
+									return statement;
+
+								})
+								.collect(Collectors.toSet());
+
+					} else {
+						failures++;
+						if (failures > 10) {
+							throw new RuntimeException("Elasticsearch has failed " + failures
+									+ " times when adding data, retrying. Message: "
+									+ bulkResponse.buildFailureMessage());
+						}
+
+						try {
+							Thread.sleep(failures * 100);
+						} catch (InterruptedException ignored) {
+						}
+					}
+
+				} else {
+					failures = 0;
+				}
+
+			} while (failures > 0);
+
+			logger.debug("Added {} statements", workingBuffer.size());
+
+			workingBuffer = Collections.emptySet();
+
+		} finally {
+			assert workingBuffer != null;
+			assert workingBuffer.isEmpty();
+			if (workingBuffer != null && !workingBuffer.isEmpty()) {
+				synchronized (this) {
+					addStatementBuffer.addAll(workingBuffer);
+				}
+			}
+		}
 
 	}
 
@@ -449,10 +469,9 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	private List<BulkItemResponse> getBulkItemResponses(BulkResponse bulkResponse) {
 		List<BulkItemResponse> bulkItemResponses = new ArrayList<>();
-		Iterator<BulkItemResponse> iterator = bulkResponse.iterator();
 
-		while (iterator.hasNext()) {
-			bulkItemResponses.add(iterator.next());
+		for (BulkItemResponse bulkItemResponse : bulkResponse) {
+			bulkItemResponses.add(bulkItemResponse);
 		}
 		return bulkItemResponses;
 	}
