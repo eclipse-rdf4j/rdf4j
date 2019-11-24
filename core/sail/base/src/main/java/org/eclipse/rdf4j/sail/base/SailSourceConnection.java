@@ -617,7 +617,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		// Use deprecateByQuery if we don't need to notify anyone of which statements have been deleted.
 		// Changeset can not support deprecateByQuery because it doesn't have a access to the underlying data.
-		if (!hasConnectionListeners() && !(sink instanceof Changeset)) {
+		if (!hasConnectionListeners() && sink.supportsDeprecateByQuery()) {
 			return sink.deprecateByQuery(subj, pred, obj, contexts);
 		}
 
