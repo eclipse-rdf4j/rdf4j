@@ -23,10 +23,11 @@ public class Main {
 //	}
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("org.eclipse.rdf4j.benchmark.ReasoningBenchmark.forwardChainingSchemaCachingRDFSInferencerMultipleTransactions$")
-			.param("param", "moreRdfs::12180")
-			.forks(1)
-			.build();
+		Options opt = new OptionsBuilder().include(
+				"org.eclipse.rdf4j.benchmark.ReasoningBenchmark.forwardChainingSchemaCachingRDFSInferencerMultipleTransactions$")
+				.param("param", "moreRdfs::12180")
+				.forks(1)
+				.build();
 
 		new Runner(opt).run();
 	}
