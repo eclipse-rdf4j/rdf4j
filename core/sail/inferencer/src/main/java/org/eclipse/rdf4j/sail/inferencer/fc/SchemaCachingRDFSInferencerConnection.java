@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -50,6 +53,17 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	 * true if the base Sail reported added statements.
 	 */
 	private boolean statementsAdded;
+
+	/**
+	 * Predicates that determine if a statement changes the schema cache
+	 */
+	private final List<IRI> schemaPredicates = Arrays.asList(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.RANGE,
+			RDFS.DOMAIN, RDF.TYPE);
+
+	/**
+	 * true iff the schema was changed as part of the transaction.
+	 */
+	private boolean schemaChange;
 
 	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail,
 			InferencerConnection connection) {
@@ -121,15 +135,9 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 	void doInferencing()
 			throws SailException {
-
-		// Check on schema cache size is always reliable since things can only be added to the cache
-		// The only place where things can be removed from the cache is within the method clearInferenceTables()
-		// which is only called from within this block
-		if (sail.schema == null && originalSchemaSize != sail.getSchemaSize()) {
-
+		if (sail.schema == null && schemaChange) {
 			regenerateCacheAndInferenceMaps(true);
 			inferredCleared = true;
-
 		}
 
 		if (!inferredCleared) {
@@ -762,7 +770,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 		super.begin(compatibleLevel);
 
-		originalSchemaSize = sail.getSchemaSize();
+		schemaChange = false;
 	}
 
 	@Override
@@ -792,12 +800,23 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void statementAdded(Statement st) {
 		statementsAdded = true;
+		if (!schemaChange && isSchemaStatement(st)) {
+			schemaChange = true;
+		}
 	}
 
 	// Called by base sail
 	@Override
 	public void statementRemoved(Statement st) {
 		statementsRemoved = true;
+		if (!schemaChange && isSchemaStatement(st)) {
+			schemaChange = true;
+		}
+	}
+
+	private boolean isSchemaStatement(Statement st) {
+		final IRI predicate = st.getPredicate();
+		return schemaPredicates.contains(predicate);
 	}
 
 	@Override
