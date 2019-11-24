@@ -146,6 +146,22 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	@Override
+	public boolean add(Statement statement) {
+		Resource subj = statement.getSubject();
+		IRI pred = statement.getPredicate();
+		Value obj = statement.getObject();
+		Resource context = statement.getContext();
+
+		ModelNode<Resource> s = asNode(subj);
+		ModelNode<IRI> p = asNode(pred);
+		ModelNode<Value> o = asNode(obj);
+		ModelNode<Resource> c = asNode(context);
+		ModelStatement modelStatement = new ModelStatement(s, p, o, c, statement);
+		return addModelStatement(modelStatement);
+
+	}
+
+	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (subj == null || pred == null || obj == null) {
 			throw new UnsupportedOperationException("Incomplete statement");
@@ -349,9 +365,10 @@ public class LinkedHashModel extends AbstractModel {
 		}
 	}
 
-	private static class ModelStatement extends ContextStatement {
+	public static class ModelStatement extends ContextStatement {
 
 		private static final long serialVersionUID = 2200404772364346279L;
+		private Statement statement;
 
 		ModelNode<Resource> subj;
 
@@ -364,14 +381,20 @@ public class LinkedHashModel extends AbstractModel {
 		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
 				ModelNode<Resource> ctx) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
-			assert subj != null;
-			assert pred != null;
-			assert obj != null;
-			assert ctx != null;
 			this.subj = subj;
 			this.pred = pred;
 			this.obj = obj;
 			this.ctx = ctx;
+		}
+
+		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
+				ModelNode<Resource> ctx, Statement statement) {
+			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+			this.ctx = ctx;
+			this.statement = statement;
 		}
 
 		@Override
@@ -408,6 +431,9 @@ public class LinkedHashModel extends AbstractModel {
 			return getContext().equals(((Statement) other).getContext());
 		}
 
+		public Statement getStatement() {
+			return statement;
+		}
 	}
 
 	private void writeObject(ObjectOutputStream s) throws IOException {

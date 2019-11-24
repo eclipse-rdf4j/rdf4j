@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -511,6 +512,12 @@ class MemorySailStore implements SailStore {
 			requireCleanup = true;
 			if (statement instanceof MemStatement) {
 				((MemStatement) statement).setTillSnapshot(nextSnapshot);
+			} else if (statement instanceof LinkedHashModel.ModelStatement
+					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
+				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
+				// original statement that can be retrieved here.
+				((MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement())
+						.setTillSnapshot(nextSnapshot);
 			} else {
 				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
 						statement.getSubject(),
