@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -37,8 +36,6 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
 	}
 
-	private IRI person;
-
 	private IRI woman;
 
 	private IRI man;
@@ -51,7 +48,6 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	public void setUp() throws Exception {
 		super.setUp();
 
-		person = vf.createIRI(FOAF_NS + "Person");
 		woman = vf.createIRI("http://example.org/Woman");
 		man = vf.createIRI("http://example.org/Man");
 	}
@@ -59,38 +55,64 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	@Test
 	public void testDomainInference() throws Exception {
 		testCon.begin();
-		testCon.add(name, RDFS.DOMAIN, person);
+		testCon.add(name, RDFS.DOMAIN, FOAF.PERSON);
 		testCon.add(bob, name, nameBob);
 		testCon.commit();
 
-		assertTrue(testCon.hasStatement(bob, RDF.TYPE, person, true));
+		assertTrue(testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true));
 	}
 
 	@Test
 	public void testSubClassInference() throws Exception {
 		testCon.begin();
-		testCon.add(woman, RDFS.SUBCLASSOF, person);
-		testCon.add(man, RDFS.SUBCLASSOF, person);
+		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);
+		testCon.add(man, RDFS.SUBCLASSOF, FOAF.PERSON);
 		testCon.add(alice, RDF.TYPE, woman);
 		testCon.commit();
 
-		assertTrue(testCon.hasStatement(alice, RDF.TYPE, person, true));
+		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));
+	}
+
+	@Test
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1685
+	 */
+	public void testSubClassInferenceAfterRemoval() throws Exception {
+
+		IRI mother = vf.createIRI("http://example.org/Mother");
+
+		testCon.begin();
+		testCon.add(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT);
+		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);
+		testCon.add(mother, RDFS.SUBCLASSOF, woman);
+		testCon.commit();
+
+		assertTrue(testCon.hasStatement(mother, RDFS.SUBCLASSOF, FOAF.AGENT, true));
+		assertTrue(testCon.hasStatement(woman, RDFS.SUBCLASSOF, FOAF.AGENT, true));
+
+		testCon.begin();
+		testCon.remove(mother, RDFS.SUBCLASSOF, woman);
+		testCon.commit();
+
+		assertFalse(testCon.hasStatement(mother, RDFS.SUBCLASSOF, FOAF.AGENT, true));
+		assertTrue(testCon.hasStatement(woman, RDFS.SUBCLASSOF, FOAF.AGENT, true));
+
 	}
 
 	@Test
 	public void testMakeExplicit() throws Exception {
 		testCon.begin();
-		testCon.add(woman, RDFS.SUBCLASSOF, person);
+		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);
 		testCon.add(alice, RDF.TYPE, woman);
 		testCon.commit();
 
-		assertTrue(testCon.hasStatement(alice, RDF.TYPE, person, true));
+		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));
 
 		testCon.begin();
-		testCon.add(alice, RDF.TYPE, person);
+		testCon.add(alice, RDF.TYPE, FOAF.PERSON);
 		testCon.commit();
 
-		assertTrue(testCon.hasStatement(alice, RDF.TYPE, person, true));
+		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));
 	}
 
 	@Test
