@@ -85,32 +85,41 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 		if (predicate.equals(RDFS.SUBCLASSOF)) {
 			sail.addSubClassOfStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
 			sail.addProperty(subject);
-
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
 			sail.addSubPropertyOfStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.RANGE)) {
 			sail.addRangeStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.DOMAIN)) {
 			sail.addDomainStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
 			sail.addSubPropertyOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE)) {
 			if (!sail.hasType(((Resource) object))) {
 				sail.addType((Resource) object);
+				schemaChange = true;
 			}
 		}
 
 		if (!sail.hasProperty(predicate)) {
 			sail.addProperty(predicate);
+			schemaChange = true;
 		}
 
 	}
@@ -807,9 +816,6 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void statementAdded(Statement st) {
 		statementsAdded = true;
-		if (!schemaChange && isSchemaStatement(st)) {
-			schemaChange = true;
-		}
 	}
 
 	// Called by base sail
