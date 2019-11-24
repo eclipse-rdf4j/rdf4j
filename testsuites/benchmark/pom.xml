@@ -77,7 +77,7 @@
     </profiles>
 
     <properties>
-        <jmhVersion>0.9.3</jmhVersion>
+        <jmhVersion>1.19</jmhVersion>
     </properties>
 
     <build>
