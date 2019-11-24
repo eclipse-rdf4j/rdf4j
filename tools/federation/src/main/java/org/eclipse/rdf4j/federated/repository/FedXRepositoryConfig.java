@@ -79,11 +79,6 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final String NAMESPACE = FEDX.NAMESPACE;
 
 	/**
-	 * IRI of the property pointing to the FedX configuration
-	 */
-	public static final IRI FEDX_CONFIG = vf.createIRI(NAMESPACE, "fedxConfig");
-
-	/**
 	 * IRI of the property pointing to the FedX data config
 	 */
 	public static final IRI DATA_CONFIG = vf.createIRI(NAMESPACE, "dataConfig");
@@ -155,9 +150,6 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource implNode = super.export(m);
 
 		m.setNamespace("fedx", NAMESPACE);
-		if (getFedxConfig() != null) {
-			m.add(implNode, FEDX_CONFIG, vf.createLiteral(getFedxConfig()));
-		}
 		if (getDataConfig() != null) {
 			m.add(implNode, DATA_CONFIG, vf.createLiteral(getDataConfig()));
 		}
@@ -194,8 +186,6 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectLiteral(m.filter(implNode, FEDX_CONFIG, null))
-					.ifPresent(value -> setFedxConfig(value.stringValue()));
 			Models.objectLiteral(m.filter(implNode, DATA_CONFIG, null))
 					.ifPresent(value -> setDataConfig(value.stringValue()));
 
