@@ -130,6 +130,11 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	public void commit()
 			throws SailException {
 		super.commit();
+
+		statementsRemoved = false;
+		statementsAdded = false;
+		schemaChange = false;
+
 		sail.releaseExclusiveWriteLock();
 	}
 
@@ -744,6 +749,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		regenerateCacheAndInferenceMaps(false);
 
 		statementsRemoved = false;
+		statementsAdded = false;
+		schemaChange = false;
 
 		sail.releaseExclusiveWriteLock();
 	}
