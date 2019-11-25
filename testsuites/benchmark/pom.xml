@@ -78,9 +78,6 @@
 		</profile>
 	</profiles>
 
-    <properties>
-        <jmhVersion>0.9.3</jmhVersion>
-    </properties>
 
     <build>
         <plugins>
