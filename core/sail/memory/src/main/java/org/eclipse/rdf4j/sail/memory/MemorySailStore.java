@@ -516,8 +516,10 @@ class MemorySailStore implements SailStore {
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
 				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
 				// original statement that can be retrieved here.
-				((MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement())
-						.setTillSnapshot(nextSnapshot);
+				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
+				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
+					toDeprecate.setTillSnapshot(nextSnapshot);
+				}
 			} else {
 				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
 						statement.getSubject(),
