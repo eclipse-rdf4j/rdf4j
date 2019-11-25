@@ -565,6 +565,11 @@ class NativeSailStore implements SailStore {
 		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 			return removeStatements(subj, pred, obj, explicit, contexts) > 0;
 		}
+
+		@Override
+		public boolean supportsDeprecateByQuery() {
+			return true;
+		}
 	}
 
 	/**

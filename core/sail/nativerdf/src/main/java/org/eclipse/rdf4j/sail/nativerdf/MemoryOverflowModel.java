@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * Model implementation that stores in a {@link TreeModel} until more than 10KB statements are added and the estimated
  * memory usage is more than the amount of free memory available. Once the threshold is cross this implementation
  * seamlessly changes to a disk based {@link SailSourceModel}.
- * 
+ *
  * @author James Leigh
  */
 abstract class MemoryOverflowModel extends AbstractModel {
@@ -121,6 +121,12 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow();
 		return getDelegate().add(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean add(Statement st) {
+		checkMemoryOverflow();
+		return getDelegate().add(st);
 	}
 
 	@Override
