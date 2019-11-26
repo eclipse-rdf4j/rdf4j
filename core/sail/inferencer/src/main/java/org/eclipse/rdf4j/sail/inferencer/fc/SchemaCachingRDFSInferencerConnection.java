@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -51,6 +54,17 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	 */
 	private boolean statementsAdded;
 
+	/**
+	 * Predicates that determine if a statement changes the schema cache
+	 */
+	private final List<IRI> schemaPredicates = Arrays.asList(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.RANGE,
+			RDFS.DOMAIN, RDF.TYPE);
+
+	/**
+	 * true iff the schema was changed as part of the transaction.
+	 */
+	private boolean schemaChange;
+
 	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail,
 			InferencerConnection connection) {
 
@@ -71,32 +85,41 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 		if (predicate.equals(RDFS.SUBCLASSOF)) {
 			sail.addSubClassOfStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
 			sail.addProperty(subject);
-
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
 			sail.addSubPropertyOfStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.RANGE)) {
 			sail.addRangeStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDFS.DOMAIN)) {
 			sail.addDomainStatement(statement);
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
 			sail.addSubPropertyOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE)) {
 			if (!sail.hasType(((Resource) object))) {
 				sail.addType((Resource) object);
+				schemaChange = true;
 			}
 		}
 
 		if (!sail.hasProperty(predicate)) {
 			sail.addProperty(predicate);
+			schemaChange = true;
 		}
 
 	}
@@ -116,20 +139,19 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	public void commit()
 			throws SailException {
 		super.commit();
+
+		statementsRemoved = false;
+		statementsAdded = false;
+		schemaChange = false;
+
 		sail.releaseExclusiveWriteLock();
 	}
 
 	void doInferencing()
 			throws SailException {
-
-		// Check on schema cache size is always reliable since things can only be added to the cache
-		// The only place where things can be removed from the cache is within the method clearInferenceTables()
-		// which is only called from within this block
-		if (sail.schema == null && originalSchemaSize != sail.getSchemaSize()) {
-
+		if (sail.schema == null && schemaChange) {
 			regenerateCacheAndInferenceMaps(true);
 			inferredCleared = true;
-
 		}
 
 		if (!inferredCleared) {
@@ -736,6 +758,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		regenerateCacheAndInferenceMaps(false);
 
 		statementsRemoved = false;
+		statementsAdded = false;
+		schemaChange = false;
 
 		sail.releaseExclusiveWriteLock();
 	}
@@ -762,7 +786,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 		super.begin(compatibleLevel);
 
-		originalSchemaSize = sail.getSchemaSize();
+		schemaChange = false;
 	}
 
 	@Override
@@ -798,6 +822,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void statementRemoved(Statement st) {
 		statementsRemoved = true;
+		if (!schemaChange && isSchemaStatement(st)) {
+			schemaChange = true;
+		}
+	}
+
+	private boolean isSchemaStatement(Statement st) {
+		final IRI predicate = st.getPredicate();
+		return schemaPredicates.contains(predicate);
 	}
 
 	@Override
