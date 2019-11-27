@@ -2,14 +2,13 @@ name: PR unit test (JDK 8)
 
 on: pull_request
 
-strategy:
-  matrix:
-    jdk: [1.8, 11]
-
 jobs:
   build:
 
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jdk: [1.8, 11]
 
     steps:
     - uses: actions/checkout@v1
