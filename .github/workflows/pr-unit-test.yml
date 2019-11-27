@@ -1,4 +1,4 @@
-name: PR unit test
+name: PR unit test (JDK 8)
 
 on: pull_request
 
