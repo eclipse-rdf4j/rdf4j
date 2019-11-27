@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -70,7 +71,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 				if (leftIter.hasNext()) {
 					TupleExpr rightArg = join.getRightArg();
-					if (TupleExprs.isGraphPatternGroup(rightArg) && !(rightArg instanceof Filter)) {
+					if (isOutOfScopeForLeftArgBindings(rightArg)) {
 						// leftiter bindings are out of scope for the right arg, so we merge afterward.
 						BindingSet next = leftIter.next();
 						rightIter = new MergeIteration(next, new BindingSetFilterIteration(next,
@@ -99,6 +100,13 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 				rightIter.close();
 			}
 		}
+	}
+
+	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
+		if (expr instanceof Union) {
+			return true;
+		}
+		return TupleExprs.isGraphPatternGroup(expr) && !(expr instanceof Filter);
 	}
 
 	private class MergeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
