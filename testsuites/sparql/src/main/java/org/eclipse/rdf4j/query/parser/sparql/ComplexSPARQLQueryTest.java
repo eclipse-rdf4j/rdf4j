@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -2207,6 +2208,38 @@ public abstract class ComplexSPARQLQueryTest {
 
 		assertEquals(conn.getValueFactory().createLiteral("a"), result.get(0).getValue("a"));
 		assertNull(result.get(0).getValue("b"));
+	}
+
+	@Test
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1642
+	 */
+	public void testBindScopeUnion() {
+
+		ValueFactory f = conn.getValueFactory();
+		String query = "prefix ex: <http://example.org/> \n" +
+				"select * {\n" +
+				"  bind(ex:v1 as ?v)\n" +
+				"  bind(strafter(str(?v),str(ex:)) as ?b)\n" +
+				"  {\n" +
+				"    bind(?b as ?b1)\n" +
+				"  } union {\n" +
+				"    bind(?b as ?b2)\n" +
+				"  }\n" +
+				"}";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertEquals(2, result.size());
+
+		IRI v1 = f.createIRI("http://example.org/v1");
+		Literal b = f.createLiteral("v1");
+		for (BindingSet bs : result) {
+			assertThat(bs.getValue("v")).isEqualTo(v1);
+			assertThat(bs.getValue("b1")).isNull();
+			assertThat(bs.getValue("b2")).isNull();
+		}
+
 	}
 
 	@Test

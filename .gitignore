@@ -37,3 +37,4 @@ compliance/repository/overlays
 **/webapp/META-INF/context.xml
 /core/sail/elasticsearch-store/tempElasticsearchDownload/*
 tempElasticsearchDownload
+cache.db

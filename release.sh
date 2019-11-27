@@ -206,8 +206,10 @@ git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
 
-echo "Go got Github and create a new PR"
+echo "Go to Github and create a new PR"
 echo "You want to merge 'merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}' into develop"
+echo "You can use this link: https://github.com/eclipse/rdf4j/compare/merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}...develop"
+echo ""
 echo "When you have created the PR you can press any key to continue. It's ok to merge the PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -223,7 +225,7 @@ cd assembly
 mvn -Passembly install -DskipTests
 cd ..
 
-echo "Starting utomated upload with sftp. Timeout is set to 1 hour!"
+echo "Starting automated upload with sftp. Timeout is set to 1 hour!"
 
 ./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
 
