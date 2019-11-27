@@ -14,8 +14,8 @@ jobs:
       with:
         java-version: 1.8
     - name: Verify formatting
-      run: mvn formatter:validate
+      run: mvn -B formatter:validate
     - name: Build
-      run: mvn clean install -DskipTests
+      run: mvn -B clean install -DskipTests -B
     - name: Run tests
       run: mvn -B verify --file pom.xml
