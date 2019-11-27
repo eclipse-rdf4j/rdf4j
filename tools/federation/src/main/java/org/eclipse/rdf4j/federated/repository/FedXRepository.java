@@ -86,7 +86,7 @@ public class FedXRepository extends SailRepository {
 
 		FederationManager federationManager = new FederationManager();
 
-		QueryManager queryManager = new QueryManager(federationManager, this);
+		QueryManager queryManager = new QueryManager();
 
 		DelegateFederatedServiceResolver fedxServiceResolver = new DelegateFederatedServiceResolver(
 				endpointManager);
@@ -101,7 +101,7 @@ public class FedXRepository extends SailRepository {
 		super.initializeInternal();
 
 		federationManager.init(federation, federationContext);
-		queryManager.init();
+		queryManager.init(this, federationContext);
 		fedxServiceResolver.initialize();
 
 		if (fedXConfig.isEnableJMX()) {

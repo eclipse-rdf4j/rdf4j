@@ -48,7 +48,7 @@ public class FederationContext {
 	}
 
 	public FedX getFederation() {
-		return this.getManager().federation;
+		return this.manager.getFederation();
 	}
 
 	public Cache getCache() {

@@ -73,14 +73,14 @@ public class FederationManager {
 	}
 
 	/* Instance variables */
-	protected FederationContext federationContext;
-	protected FedX federation;
-	protected ExecutorService executor;
-	protected FederationEvalStrategy strategy;
-	protected FederationType type;
-	protected ControlledWorkerScheduler<BindingSet> joinScheduler;
-	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
-	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
+	private FederationContext federationContext;
+	private FedX federation;
+	private ExecutorService executor;
+	private FederationEvalStrategy strategy;
+	private FederationType type;
+	private ControlledWorkerScheduler<BindingSet> joinScheduler;
+	private ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
+	private ControlledWorkerScheduler<BindingSet> unionScheduler;
 
 	public FederationManager() {
 
@@ -122,6 +122,10 @@ public class FederationManager {
 
 	public Executor getExecutor() {
 		return executor;
+	}
+
+	public FedX getFederation() {
+		return this.federation;
 	}
 
 	public FederationEvalStrategy getStrategy() {
