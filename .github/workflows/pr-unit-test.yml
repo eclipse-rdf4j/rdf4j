@@ -1,6 +1,6 @@
 name: PR unit test
 
-on: pull_request   
+on: pull_request
 
 jobs:
   build:
@@ -13,5 +13,9 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 1.8
-    - name: Build with Maven
+    - name: Verify formatting
+      run: mvn formatter:validate
+    - name: Build
+      run: mvn clean install -DskipTests
+    - name: Run tests
       run: mvn -B verify --file pom.xml
