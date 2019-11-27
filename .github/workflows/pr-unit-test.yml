@@ -2,6 +2,10 @@ name: PR unit test (JDK 8)
 
 on: pull_request
 
+strategy:
+  matrix:
+    jdk: [1.8, 11]
+
 jobs:
   build:
 
@@ -9,10 +13,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Set up JDK 1.8
+    - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: 1.8
+        java-version: ${{ matrix.jdk }}
     - name: Verify formatting
       run: mvn -B formatter:validate
     - name: Build
