@@ -203,7 +203,7 @@ public abstract class MultithreadedTest {
 		Random r = new Random();
 
 		try {
-			for (int i = 0; i < 3; i++) {
+			for (int i = 0; ii < 3; i++) {
 				list.stream()
 						.flatMap(Collection::stream)
 						.sorted(Comparator.comparingInt(System::identityHashCode))
