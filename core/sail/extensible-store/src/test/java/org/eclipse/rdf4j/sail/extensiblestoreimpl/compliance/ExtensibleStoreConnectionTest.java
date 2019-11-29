@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 import org.junit.runners.Parameterized;
 
 public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
@@ -32,7 +32,7 @@ public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new ExtensibleStoreImpl());
+		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 
 }

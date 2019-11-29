@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -17,7 +18,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ExtensibleSailStore implements SailStore {
+class ExtensibleSailStore implements SailStore {
 
 	private ExtensibleSailSource sailSource;
 	private ExtensibleSailSource sailSourceInferred;

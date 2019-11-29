@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.TupleQueryResultTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 
 import java.io.IOException;
 
@@ -18,7 +18,7 @@ public class ExtensibleStoreTupleQueryResultTest extends TupleQueryResultTest {
 
 	@Override
 	protected Repository newRepository() throws IOException {
-		return new SailRepository(new ExtensibleStoreImpl());
+		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 
 }

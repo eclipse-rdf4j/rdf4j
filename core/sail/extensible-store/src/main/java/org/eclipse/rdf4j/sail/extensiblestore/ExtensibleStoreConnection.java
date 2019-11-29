@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -17,6 +18,7 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
+@Experimental
 public class ExtensibleStoreConnection<E extends ExtensibleStore> extends SailSourceConnection {
 
 	protected final E sail;
@@ -29,7 +31,7 @@ public class ExtensibleStoreConnection<E extends ExtensibleStore> extends SailSo
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
 
-	public ExtensibleStore getSail() {
+	public E getSail() {
 		return sail;
 	}
 

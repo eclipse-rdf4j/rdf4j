@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -27,7 +28,8 @@ import java.util.Set;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ExtensibleSailSource implements SailSource {
+@Experimental
+class ExtensibleSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
 	private final NamespaceStoreInterface namespaceStore;

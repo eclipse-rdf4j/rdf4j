@@ -10,12 +10,12 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 
 public class ExtensibleStoreContextTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		return new ExtensibleStoreImpl();
+		return new ExtensibleStoreImplForTests();
 	}
 }

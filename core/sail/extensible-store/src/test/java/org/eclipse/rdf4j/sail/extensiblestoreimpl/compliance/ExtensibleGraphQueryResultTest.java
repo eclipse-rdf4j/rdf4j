@@ -10,13 +10,13 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 import org.eclipse.rdf4j.repository.GraphQueryResultTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 
 public class ExtensibleGraphQueryResultTest extends GraphQueryResultTest {
 
 	@Override
 	protected Repository newRepository() {
-		return new SailRepository(new ExtensibleStoreImpl());
+		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 
 }

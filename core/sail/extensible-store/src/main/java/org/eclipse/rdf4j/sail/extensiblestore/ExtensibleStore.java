@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -37,10 +38,15 @@ import java.util.Objects;
  * Implement the DataStructureInterface and the NamespaceStoreInterface. In your ExtensibleStore-extending class
  * implement a constructor and set the following variables: namespaceStore, dataStructure, dataStructureInferred.
  * </p>
+ * <p>
+ * Note that the entire ExtensibleStore and all code in this package is experimental. Method signatures, class names,
+ * interfaces and the like are likely to change in future releases.
+ * </p>
  *
  *
  * @author Håvard Mikkelsen Ottestad
  */
+@Experimental
 public abstract class ExtensibleStore<T extends DataStructureInterface, N extends NamespaceStoreInterface>
 		extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 

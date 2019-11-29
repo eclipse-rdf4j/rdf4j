@@ -10,13 +10,13 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImpl;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 
 public class ExtensibleStoreRepositoryTest extends RepositoryTest {
 
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new ExtensibleStoreImpl());
+		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 
 }

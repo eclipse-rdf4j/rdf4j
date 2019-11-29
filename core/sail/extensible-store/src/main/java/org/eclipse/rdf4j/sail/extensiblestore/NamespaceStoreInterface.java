@@ -7,11 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
  * @Author Håvard Mikkelsen Ottestad
  */
+@Experimental
 public interface NamespaceStoreInterface extends Iterable<SimpleNamespace> {
 	String getNamespace(String prefix);
 
