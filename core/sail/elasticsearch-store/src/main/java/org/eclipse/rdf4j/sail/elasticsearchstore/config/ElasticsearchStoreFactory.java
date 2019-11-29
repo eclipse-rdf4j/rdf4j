@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 
 /**
  * A {@link SailFactory} that creates {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}s based on RDF
@@ -28,7 +30,7 @@ public class ElasticsearchStoreFactory implements SailFactory {
 	public static final String SAIL_TYPE = "rdf4j:ElasticsearchStore";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:ElasticsearchStore</tt>.
+	 * Returns the Sail's type: <tt>rdf4j:ElasticsearchStore</tt>.
 	 */
 	@Override
 	public String getSailType() {
@@ -46,18 +48,23 @@ public class ElasticsearchStoreFactory implements SailFactory {
 			throw new SailConfigException("Invalid Sail type: " + sailImplConfig.getType());
 		}
 
-//		ElasticsearchStore elasticsearchStore = new ElasticsearchStore();
-//
-//		if (sailImplConfig instanceof ElasticsearchStoreConfig) {
-//			ElasticsearchStoreConfig config = (ElasticsearchStoreConfig) sailImplConfig;
-//
-//			EvaluationStrategyFactory evalStratFactory = config.getEvaluationStrategyFactory();
-//			if (evalStratFactory != null) {
-//				elasticsearchStore.setEvaluationStrategyFactory(evalStratFactory);
-//			}
-//		}
-//
-//		return elasticsearchStore;
+		if (sailImplConfig instanceof ElasticsearchStoreConfig) {
+
+			ElasticsearchStoreConfig config = (ElasticsearchStoreConfig) sailImplConfig;
+
+			config.assertRequiredValuesPresent();
+
+			ElasticsearchStore elasticsearchStore = new ElasticsearchStore(config.getHostname(), config.getPort(),
+					config.getClusterName(), config.getIndex());
+
+			EvaluationStrategyFactory evalStratFactory = config.getEvaluationStrategyFactory();
+			if (evalStratFactory != null) {
+				elasticsearchStore.setEvaluationStrategyFactory(evalStratFactory);
+			}
+
+			return elasticsearchStore;
+
+		}
 
 		return null;
 	}

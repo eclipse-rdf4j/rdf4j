@@ -52,7 +52,17 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	final ClientProvider clientProvider;
 	private final AtomicBoolean shutdown = new AtomicBoolean(false);
 
+	private String hostname;
+	private int port;
+	private String clusterName;
+	private String index;
+
 	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
+		this.hostname = hostname;
+		this.port = port;
+		this.clusterName = clusterName;
+		this.index = index;
+
 		clientProvider = new SingletonClientProvider(hostname, port, clusterName);
 
 		dataStructure = new ElasticsearchDataStructure(clientProvider, index);
@@ -210,5 +220,21 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	@Override
 	public boolean isWritable() throws SailException {
 		return true;
+	}
+
+	public String getHostname() {
+		return hostname;
+	}
+
+	public int getPort() {
+		return port;
+	}
+
+	public String getClusterName() {
+		return clusterName;
+	}
+
+	public String getIndex() {
+		return index;
 	}
 }

@@ -9,9 +9,15 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.NAMESPACE;
 
@@ -20,52 +26,34 @@ import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStor
  */
 public class ElasticsearchStoreConfig extends BaseSailConfig {
 
-//	private boolean persist = false;
-//
-//	private long syncDelay = 0L;
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	private String hostname;
+	private int port = -1;
+	private String clusterName;
+	private String index;
 
 	public ElasticsearchStoreConfig() {
 		super(ElasticsearchStoreFactory.SAIL_TYPE);
 	}
-
-//	public ElasticsearchStoreConfig(boolean persist) {
-//		this();
-//		setPersist(persist);
-//	}
-//
-//	public ElasticsearchStoreConfig(boolean persist, long syncDelay) {
-//		this(persist);
-//		setSyncDelay(syncDelay);
-//	}
-//
-//	public boolean getPersist() {
-//		return persist;
-//	}
-//
-//	public void setPersist(boolean persist) {
-//		this.persist = persist;
-//	}
-//
-//	public long getSyncDelay() {
-//		return syncDelay;
-//	}
-//
-//	public void setSyncDelay(long syncDelay) {
-//		this.syncDelay = syncDelay;
-//	}
 
 	@Override
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
 
 		graph.setNamespace("ms", NAMESPACE);
-//		if (persist) {
-//			graph.add(implNode, PERSIST, BooleanLiteral.TRUE);
-//		}
-//
-//		if (syncDelay != 0) {
-//			graph.add(implNode, SYNC_DELAY, SimpleValueFactory.getInstance().createLiteral(syncDelay));
-//		}
+		if (hostname != null) {
+			graph.add(implNode, ElasticsearchStoreSchema.hostname, vf.createLiteral(hostname));
+		}
+		if (clusterName != null) {
+			graph.add(implNode, ElasticsearchStoreSchema.clusterName, vf.createLiteral(clusterName));
+		}
+		if (index != null) {
+			graph.add(implNode, ElasticsearchStoreSchema.index, vf.createLiteral(index));
+		}
+		if (port != -1) {
+			graph.add(implNode, ElasticsearchStoreSchema.port, vf.createLiteral(port));
+		}
 
 		return implNode;
 	}
@@ -76,25 +64,105 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 		try {
 
-//			Models.objectLiteral(graph.filter(implNode, PERSIST, null)).ifPresent(persistValue -> {
-//				try {
-//					setPersist((persistValue).booleanValue());
-//				} catch (IllegalArgumentException e) {
-//					throw new SailConfigException(
-//						"Boolean value required for " + PERSIST + " property, found " + persistValue);
-//				}
-//			});
-//
-//			Models.objectLiteral(graph.filter(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
-//				try {
-//					setSyncDelay((syncDelayValue).longValue());
-//				} catch (NumberFormatException e) {
-//					throw new SailConfigException(
-//						"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
-//				}
-//			});
+			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.hostname, null)).ifPresent(value -> {
+				try {
+					setHostname(value.stringValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"String value required for " + ElasticsearchStoreSchema.hostname + " property, found "
+									+ value);
+				}
+			});
+
+			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.index, null)).ifPresent(value -> {
+				try {
+					setIndex(value.stringValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"String value required for " + ElasticsearchStoreSchema.index + " property, found "
+									+ value);
+				}
+			});
+
+			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.clusterName, null))
+					.ifPresent(value -> {
+						try {
+							setClusterName(value.stringValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"String value required for " + ElasticsearchStoreSchema.clusterName
+											+ " property, found " + value);
+						}
+					});
+
+			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.port, null)).ifPresent(value -> {
+				try {
+					setPort(value.intValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Integer value required for " + ElasticsearchStoreSchema.port + " property, found "
+									+ value);
+				}
+			});
+
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
+	}
+
+	public String getHostname() {
+		return hostname;
+	}
+
+	public int getPort() {
+		return port;
+	}
+
+	public String getClusterName() {
+		return clusterName;
+	}
+
+	public String getIndex() {
+		return index;
+	}
+
+	public void setHostname(String hostname) {
+		this.hostname = hostname;
+	}
+
+	public void setPort(int port) {
+		this.port = port;
+	}
+
+	public void setClusterName(String clusterName) {
+		this.clusterName = clusterName;
+	}
+
+	public void setIndex(String index) {
+		this.index = index;
+	}
+
+	public void assertRequiredValuesPresent() {
+
+		List<String> missingFields = new ArrayList<>();
+
+		if (hostname == null) {
+			missingFields.add("hostname");
+		}
+		if (clusterName == null) {
+			missingFields.add("clusterName");
+		}
+		if (index == null) {
+			missingFields.add("index");
+		}
+		if (port == -1) {
+			missingFields.add("port");
+		}
+
+		if (!missingFields.isEmpty()) {
+			throw new SailConfigException(
+					"Required config missing for: " + missingFields.stream().reduce((a, b) -> a + " and " + b));
+		}
+
 	}
 }
