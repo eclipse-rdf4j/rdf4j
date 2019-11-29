@@ -385,7 +385,8 @@ public class LinkedHashModel extends AbstractModel {
 
 		@Override
 		public Resource getContext() {
-			if(ctx == null) return null;
+			if (ctx == null)
+				return null;
 			return ctx.getValue();
 		}
 
