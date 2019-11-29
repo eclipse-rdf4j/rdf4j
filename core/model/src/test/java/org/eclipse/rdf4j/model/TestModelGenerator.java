@@ -40,7 +40,7 @@ public class TestModelGenerator implements TestSetGenerator<Statement> {
 
 	@Override
 	public SampleElements<Statement> samples() {
-		return new SampleElements<Statement>(st0, st1, st2, st3, st4);
+		return new SampleElements<>(st0, st1, st2, st3, st4);
 	}
 
 	@Override

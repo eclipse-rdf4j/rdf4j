@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -60,7 +59,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		repoSettings(2).setLatencySimulator(latencySimulator(2000));
 		repoSettings(3).setLatencySimulator(latencySimulator(4000));
 
-		Query query = QueryManager.prepareQuery(readQueryString("/tests/medium/query05.rq"));
+		Query query = queryManager().prepareQuery(readQueryString("/tests/medium/query05.rq"));
 		query.setMaxExecutionTime(10);
 		Assertions.assertThrows(QueryInterruptedException.class, () -> {
 			try (TupleQueryResult tq = ((TupleQuery) query).evaluate()) {
@@ -82,7 +81,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		repoSettings(1).setLatencySimulator(latencySimulator(2000));
 		repoSettings(2).setLatencySimulator(latencySimulator(2500));
 
-		Query query = QueryManager.prepareQuery(readQueryString("/tests/medium/query01.rq"));
+		Query query = queryManager().prepareQuery(readQueryString("/tests/medium/query01.rq"));
 		query.setMaxExecutionTime(5);
 
 		Assertions.assertThrows(QueryInterruptedException.class, () -> {
@@ -113,12 +112,12 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 				" { ?person a ns2:Person . ?person foaf:name ?name . }\n" +
 				"}";
 		// make sure that latency does not affect source selection
-		QueryManager.getQueryPlan(queryString);
+		federationContext().getQueryManager().getQueryPlan(queryString);
 
 		repoSettings(1).setLatencySimulator(latencySimulator(2000));
 		repoSettings(2).setLatencySimulator(latencySimulator(5000));
 
-		Query query = QueryManager.prepareQuery(queryString);
+		Query query = queryManager().prepareQuery(queryString);
 
 		try (TupleQueryResult tq = ((TupleQuery) query).evaluate()) {
 

@@ -29,6 +29,7 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +88,13 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 	}
 
+	@TearDown(Level.Invocation)
+	public void tearDown() {
+		if (shaclRepo != null) {
+			shaclRepo.shutDown();
+		}
+	}
+
 	@Benchmark
 	public void shaclPrefilled() {
 
@@ -124,6 +132,8 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			}
 		}
 
+		repository.shutDown();
+
 	}
 
 	@Benchmark
@@ -131,6 +141,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
+		repository.shutDown();
 
 	}
 
@@ -144,6 +155,8 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			connection.begin();
 			connection.commit();
 		}
+
+		repository.shutDown();
 
 	}
 

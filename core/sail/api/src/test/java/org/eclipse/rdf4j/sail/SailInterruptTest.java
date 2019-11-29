@@ -68,16 +68,13 @@ public abstract class SailInterruptTest {
 			con.close();
 		}
 
-		Runnable queryJob = new Runnable() {
-
-			public void run() {
-				while (!Thread.currentThread().isInterrupted()) {
-					try {
-						// System.out.println("query sail...");
-						iterateStatements();
-					} catch (Throwable t) {
-						// t.printStackTrace();
-					}
+		Runnable queryJob = () -> {
+			while (!Thread.currentThread().isInterrupted()) {
+				try {
+					// System.out.println("query sail...");
+					iterateStatements();
+				} catch (Throwable t) {
+					// t.printStackTrace();
 				}
 			}
 		};

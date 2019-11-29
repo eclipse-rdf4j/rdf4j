@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint;
 
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.provider.RepositoryInformation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -26,12 +27,12 @@ public class ManagedRepositoryEndpoint extends RepositoryEndpoint {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
+	public void init(FederationContext federationContext) throws RepositoryException {
 		if (isInitialized()) {
 			return;
 		}
 		repository.init();
-		super.initialize();
+		super.init(federationContext);
 	}
 
 	@Override

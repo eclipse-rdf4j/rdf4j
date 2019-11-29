@@ -35,3 +35,5 @@ dependency-reduced-pom.xml
 *.jfr
 compliance/repository/overlays
 **/webapp/META-INF/context.xml
+tempElasticsearchDownload
+cache.db

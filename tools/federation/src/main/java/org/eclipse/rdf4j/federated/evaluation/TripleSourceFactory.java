@@ -7,23 +7,24 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation;
 
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 
 public class TripleSourceFactory {
 
-	public static TripleSource tripleSourceFor(Endpoint e, EndpointType t) {
+	public static TripleSource tripleSourceFor(Endpoint e, EndpointType t, FederationContext federationContext) {
 		switch (t) {
 		case NativeStore:
-			return new SailTripleSource(e);
+			return new SailTripleSource(e, federationContext);
 		case SparqlEndpoint:
-			return new SparqlTripleSource(e);
+			return new SparqlTripleSource(e, federationContext);
 		case RemoteRepository:
-			return new SparqlTripleSource(e);
+			return new SparqlTripleSource(e, federationContext);
 		case Other:
-			return new SparqlTripleSource(e);
+			return new SparqlTripleSource(e, federationContext);
 		default:
-			return new SparqlTripleSource(e);
+			return new SparqlTripleSource(e, federationContext);
 		}
 	}
 }

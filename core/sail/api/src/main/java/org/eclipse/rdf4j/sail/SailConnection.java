@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
  * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
  * should be taken to properly close SailConnections as they might block concurrent queries and/or updates on the Sail
  * while active, depending on the Sail-implementation that is being used.
- * 
+ *
  * @author jeen
  * @author Arjohn Kampman
  */
@@ -34,7 +34,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Checks whether this SailConnection is open. A SailConnection is open from the moment it is created until it is
 	 * closed.
-	 * 
+	 *
 	 * @see SailConnection#close
 	 */
 	public boolean isOpen() throws SailException;
@@ -49,7 +49,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Evaluates the supplied TupleExpr on the data contained in this Sail object, using the (optional) dataset and
 	 * supplied bindings as input parameters.
-	 * 
+	 *
 	 * @param tupleExpr       The tuple expression to evaluate.
 	 * @param dataset         The dataset to use for evaluating the query, <tt>null</tt> to use the Sail's default
 	 *                        dataset.
@@ -66,7 +66,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Returns the set of all unique context identifiers that are used to store statements.
-	 * 
+	 *
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -76,7 +76,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
 	 * parameters may be null to indicate wildcards. The <tt>includeInferred</tt> parameter can be used to control which
 	 * statements are fetched: all statements or only the statements that have been added explicitly.
-	 * 
+	 *
 	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred            A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -106,7 +106,7 @@ public interface SailConnection extends AutoCloseable {
 	 * predicate and/or object. All three parameters may be null to indicate wildcards. The <tt>includeInferred</tt>
 	 * parameter can be used to control which statements are checked: all statements or only the statements that have
 	 * been added explicitly.
-	 * 
+	 *
 	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred            An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -123,23 +123,16 @@ public interface SailConnection extends AutoCloseable {
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 
-		CloseableIteration<? extends Statement, SailException> stIter = null;
-		try {
-
-			stIter = getStatements(subj, pred, obj, includeInferred, contexts);
+		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+				includeInferred, contexts)) {
 			return stIter.hasNext();
-
-		} finally {
-			if (stIter != null) {
-				stIter.close();
-			}
 		}
 
 	}
 
 	/**
 	 * Returns the number of (explicit) statements in the store, or in specific contexts.
-	 * 
+	 *
 	 * @param contexts The context(s) to determine the size of. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are specified the method operates on the entire repository. A
 	 *                 <tt>null</tt> value can be used to match context-less statements.
@@ -152,7 +145,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()} to be called to close the transaction.
 	 * The transaction will use the default {@link IsolationLevel} level for the SAIL, as returned by
 	 * {@link Sail#getDefaultIsolationLevel()}.
-	 * 
+	 *
 	 * @throws SailException If the connection could not start a transaction or if a transaction is already active on
 	 *                       this connection.
 	 */
@@ -161,7 +154,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Begins a transaction with the specified {@link IsolationLevel} level, requiring {@link #commit()} or
 	 * {@link #rollback()} to be called to close the transaction.
-	 * 
+	 *
 	 * @param level the transaction isolation level on which this transaction operates.
 	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation
 	 * @throws SailException                        If the connection could not start a transaction, if the supplied
@@ -175,7 +168,7 @@ public interface SailConnection extends AutoCloseable {
 	 * not calling this method should have no effect on the outcome of other calls. This method exists to give the
 	 * caller more control over the efficiency when calling {@link #prepare()}. This method may be called multiple times
 	 * within the same transaction.
-	 * 
+	 *
 	 * @throws SailException         If the updates could not be processed, for example because no transaction is
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
@@ -190,7 +183,7 @@ public interface SailConnection extends AutoCloseable {
 	 * multiple times within the same transaction by the same thread. If this method returns normally, the caller can
 	 * reasonably expect that a subsequent call to {@link #commit()} will also return normally. If this method returns
 	 * with an exception the caller should treat the exception as if it came from a call to {@link #commit()}.
-	 * 
+	 *
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
@@ -204,7 +197,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Commits any updates that have been performed since the last time {@link #commit()} or {@link #rollback()} was
 	 * called.
-	 * 
+	 *
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
@@ -216,7 +209,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Rolls back the transaction, discarding any uncommitted changes that have been made in this SailConnection.
-	 * 
+	 *
 	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or
 	 *                                              times-out). It does not indicate a problem with the integrity of the
@@ -229,7 +222,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Indicates if a transaction is currently active on the connection. A transaction is active if {@link #begin()} has
 	 * been called, and becomes inactive after {@link #commit()} or {@link #rollback()} has been called.
-	 * 
+	 *
 	 * @return <code>true</code> iff a transaction is active, <code>false</code> iff no transaction is active.
 	 * @throws UnknownSailTransactionStateException if the transaction state can not be determined (this can happen for
 	 *                                              instance when communication between client and server fails or times
@@ -239,7 +232,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Adds a statement to the store.
-	 * 
+	 *
 	 * @param subj     The subject of the statement to add.
 	 * @param pred     The predicate of the statement to add.
 	 * @param obj      The object of the statement to add.
@@ -261,7 +254,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards.
-	 * 
+	 *
 	 * @param subj     The subject of the statement that should be removed, or <tt>null</tt> to indicate a wildcard.
 	 * @param pred     The predicate of the statement that should be removed, or <tt>null</tt> to indicate a wildcard.
 	 * @param obj      The object of the statement that should be removed , or <tt>null</tt> to indicate a wildcard. *
@@ -286,14 +279,14 @@ public interface SailConnection extends AutoCloseable {
 	 * {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} or
 	 * {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)} calls before
 	 * {@link #endUpdate(UpdateContext)} is called.
-	 * 
+	 *
 	 * @throws SailException
 	 */
 	public void startUpdate(UpdateContext op) throws SailException;
 
 	/**
 	 * Adds a statement to the store. Called when adding statements through a {@link UpdateExpr} operation.
-	 * 
+	 *
 	 * @param op       operation properties of the {@link UpdateExpr} operation producing these statements.
 	 * @param subj     The subject of the statement to add.
 	 * @param pred     The predicate of the statement to add.
@@ -319,7 +312,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards. Called when removing statements through a {@link UpdateExpr}
 	 * operation.
-	 * 
+	 *
 	 * @param op       operation properties of the {@link UpdateExpr} operation removing these statements.
 	 * @param subj     The subject of the statement that should be removed.
 	 * @param pred     The predicate of the statement that should be removed.
@@ -346,7 +339,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Indicates that the given <code>op</code> will not be used in any call again. Implementations should use this to
 	 * flush of any temporary operation states that may have occurred.
-	 * 
+	 *
 	 * @param op
 	 * @throws SailException
 	 */
@@ -355,7 +348,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Removes all statements from the specified/all contexts. If no contexts are specified the method operates on the
 	 * entire repository.
-	 * 
+	 *
 	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
 	 *                 <tt>null</tt> value can be used to match context-less statements.
@@ -366,7 +359,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this Sail object.
-	 * 
+	 *
 	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
@@ -375,7 +368,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
-	 * 
+	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
 	 * @return The namespace name that is associated with the specified prefix, or <tt>null</tt> if there is no such
 	 *         namespace.
@@ -387,7 +380,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Sets the prefix for a namespace.
-	 * 
+	 *
 	 * @param prefix The new prefix, or an empty string in case of the default namespace.
 	 * @param name   The namespace name that the prefix maps to.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
@@ -398,7 +391,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
-	 * 
+	 *
 	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws NullPointerException  In case <tt>prefix</tt> is <tt>null</tt>.
@@ -408,7 +401,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Removes all namespace declarations from the repository.
-	 * 
+	 *
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -417,7 +410,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
 	 * current transaction.
-	 * 
+	 *
 	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
 	 * @see #flush()
 	 * @deprecated

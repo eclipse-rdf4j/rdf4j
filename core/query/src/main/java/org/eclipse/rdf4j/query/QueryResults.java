@@ -428,8 +428,8 @@ public class QueryResults extends Iterations {
 						} else if (XMLDatatypeUtil.isIntegerDatatype(dt1)) {
 							compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
 						} else if (dt1.equals(XMLSchema.BOOLEAN)) {
-							Boolean leftBool = Boolean.valueOf(leftLit.booleanValue());
-							Boolean rightBool = Boolean.valueOf(rightLit.booleanValue());
+							Boolean leftBool = leftLit.booleanValue();
+							Boolean rightBool = rightLit.booleanValue();
 							compareResult = leftBool.compareTo(rightBool);
 						} else if (XMLDatatypeUtil.isCalendarDatatype(dt1)) {
 							XMLGregorianCalendar left = leftLit.calendarValue();

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint;
 
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
 import org.eclipse.rdf4j.repository.Repository;
@@ -116,9 +117,10 @@ public interface Endpoint {
 	/**
 	 * Initialize this {@link Endpoint}
 	 * 
+	 * @oaram {@link FederationContext}
 	 * @throws RepositoryException
 	 */
-	public void initialize() throws RepositoryException;
+	public void init(FederationContext federationContext) throws RepositoryException;
 
 	/**
 	 * Shutdown this {@link Endpoint}

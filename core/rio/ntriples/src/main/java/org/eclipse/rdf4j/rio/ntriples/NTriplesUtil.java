@@ -114,7 +114,7 @@ public class NTriplesUtil {
 			int endLabelIdx = findEndOfLabel(nTriplesLiteral);
 
 			if (endLabelIdx != -1) {
-				int startLangIdx = nTriplesLiteral.indexOf("@", endLabelIdx);
+				int startLangIdx = nTriplesLiteral.indexOf('@', endLabelIdx);
 				int startDtIdx = nTriplesLiteral.indexOf("^^", endLabelIdx);
 
 				if (startLangIdx != -1 && startDtIdx != -1) {

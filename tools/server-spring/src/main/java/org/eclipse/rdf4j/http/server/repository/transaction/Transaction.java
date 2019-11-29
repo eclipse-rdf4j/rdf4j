@@ -56,7 +56,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  * operations that are part of the transaction from a single, dedicated thread. This is necessary because
  * {@link RepositoryConnection} is not guaranteed thread-safe and we may run into concurrency issues if we attempt to
  * share it between the various HTTP Request worker threads.
- * 
+ *
  * @author Jeen Broekstra
  */
 class Transaction implements AutoCloseable {
@@ -93,7 +93,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
-	 * 
+	 *
 	 * @param repository the {@link Repository} on which to open a transaction.
 	 * @throws InterruptedException if the transaction thread is interrupted while opening a connection.
 	 * @throws ExecutionException   if an error occurs while opening the connection.
@@ -106,7 +106,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * The identifier of this transaction object.
-	 * 
+	 *
 	 * @return a {@link UUID} that identifies this Transaction.
 	 */
 	UUID getID() {
@@ -115,7 +115,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Start the transaction.
-	 * 
+	 *
 	 * @param level the {@link IsolationLevel} to use for this transction.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while starting the transaction.
@@ -130,7 +130,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Rolls back all updates in the transaction.
-	 * 
+	 *
 	 * @throws ExecutionException
 	 * @throws InterruptedException
 	 */
@@ -156,7 +156,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Prepares a query for evaluation on this transaction.
-	 * 
+	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
 	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
@@ -173,33 +173,33 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Evaluate a TupleQuery in this transaction and return the result.
-	 * 
+	 *
 	 * @param tQuery a {@link TupleQuery} prepared on this transaction.
 	 * @return a {@link TupleQueryResult}
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	TupleQueryResult evaluate(TupleQuery tQuery) throws InterruptedException, ExecutionException {
-		Future<TupleQueryResult> result = submit(() -> tQuery.evaluate());
+		Future<TupleQueryResult> result = submit(tQuery::evaluate);
 		return getFromFuture(result);
 	}
 
 	/**
 	 * Evaluate a {@link GraphQuery} in this transaction and return the result.
-	 * 
+	 *
 	 * @param gQuery a {@link GraphQuery} prepared on this transaction.
 	 * @return a {@link GraphQueryResult}
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	GraphQueryResult evaluate(GraphQuery gQuery) throws InterruptedException, ExecutionException {
-		Future<GraphQueryResult> result = submit(() -> gQuery.evaluate());
+		Future<GraphQueryResult> result = submit(gQuery::evaluate);
 		return getFromFuture(result);
 	}
 
 	/**
 	 * Evaluate a {@link BooleanQuery} in this transaction and return the result.
-	 * 
+	 *
 	 * @param bQuery a {@link BooleanQuery} prepared on this transaction.
 	 * @return the query result as a boolean
 	 * @throws InterruptedException if the transaction thread is interrupted
@@ -231,7 +231,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Returns the number of (explicit) statements that are in the specified contexts in this transaction.
-	 * 
+	 *
 	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on the entire repository.
 	 * @return The number of explicit statements from the specified contexts in this transaction.
@@ -243,7 +243,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Adds RDF data from an {@link InputStream} to the transaction.
-	 * 
+	 *
 	 * @param inputStream
 	 * @param baseURI
 	 * @param format
@@ -336,7 +336,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Checks if the user has any scheduled tasks for this transaction that have not yet completed.
-	 * 
+	 *
 	 * @return True if there are currently no active tasks being executed for this transaction and false otherwise.
 	 */
 	boolean hasActiveOperations() {
@@ -345,7 +345,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Checks if close has been called for this transaction.
-	 * 
+	 *
 	 * @return True if the close method has been called for this transaction.
 	 */
 	boolean isClosed() {
@@ -354,7 +354,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Checks if close has been completed for this transaction.
-	 * 
+	 *
 	 * @return True if the close operations have been completed.
 	 */
 	boolean isComplete() {
@@ -363,7 +363,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Close this transaction.
-	 * 
+	 *
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
@@ -393,7 +393,7 @@ class Transaction implements AutoCloseable {
 
 	/**
 	 * Obtains a {@link RepositoryConnection} through the {@link ExecutorService}.
-	 * 
+	 *
 	 * @return A new {@link RepositoryConnection} to use for this Transaction.
 	 * @throws InterruptedException If the execution of the task was interrupted.
 	 * @throws ExecutionException   If the execution of the task failed for any reason.
@@ -415,7 +415,7 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Atomically submit the task to the executor and add to our local list used to track whether there are outstanding
 	 * operations for the executor.
-	 * 
+	 *
 	 * @param callable The task to submit
 	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the result.
 	 */
@@ -431,7 +431,7 @@ class Transaction implements AutoCloseable {
 	 * Atomically submit the task to the executor and add to our local list used to track whether there are outstanding
 	 * operations for the executor. In addition, this atomically shuts down the ExecutorService to prevent future
 	 * submissions from succeeding.
-	 * 
+	 *
 	 * @param callable The task to submit
 	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the result.
 	 */

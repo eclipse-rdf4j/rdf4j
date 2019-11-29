@@ -38,21 +38,9 @@ public class HttpClientBuilders {
 	public static HttpClientBuilder getSSLTrustAllHttpClientBuilder() {
 		try {
 			SSLContextBuilder builder = new SSLContextBuilder();
-			builder.loadTrustMaterial(null, new TrustStrategy() {
+			builder.loadTrustMaterial(null, (X509Certificate[] chain, String authType) -> true);
 
-				@Override
-				public boolean isTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-					return true;
-				}
-			});
-
-			HostnameVerifier hostNameVerifier = new HostnameVerifier() {
-
-				@Override
-				public boolean verify(String hostname, SSLSession session) {
-					return true;
-				}
-			};
+			HostnameVerifier hostNameVerifier = (String hostname, SSLSession session) -> true;
 			SSLConnectionSocketFactory sslSF = new SSLConnectionSocketFactory(builder.build(), hostNameVerifier);
 
 			return HttpClients.custom().setSSLSocketFactory(sslSF).useSystemProperties();

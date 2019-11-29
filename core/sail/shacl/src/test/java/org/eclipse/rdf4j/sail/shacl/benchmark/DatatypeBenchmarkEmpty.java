@@ -115,7 +115,7 @@ public class DatatypeBenchmarkEmpty {
 			}
 		}
 
-		repository.shutDown();
+//		repository.shutDown();
 
 	}
 
@@ -143,6 +143,8 @@ public class DatatypeBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+
+//		repository.shutDown();
 
 	}
 

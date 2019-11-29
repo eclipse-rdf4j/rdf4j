@@ -9,12 +9,12 @@ package org.eclipse.rdf4j.federated;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
@@ -23,9 +23,11 @@ import org.eclipse.rdf4j.federated.write.RepositoryWriteStrategy;
 import org.eclipse.rdf4j.federated.write.WriteStrategy;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,30 +42,39 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  * 
  */
-public class FedX implements Sail {
+public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
 
-	protected final List<Endpoint> members = new ArrayList<Endpoint>();
-	protected boolean open = false;
+	protected final List<Endpoint> members = new ArrayList<>();
 
-	protected FedX() {
-		this(null);
+	protected FederationContext federationContext;
+
+	protected RepositoryResolver repositoryResolver;
+
+	public FedX(List<Endpoint> endpoints) {
+		if (endpoints != null) {
+			members.addAll(endpoints);
+		}
+		setDefaultIsolationLevel(IsolationLevels.NONE);
 	}
 
-	protected FedX(List<Endpoint> endpoints) {
-		if (endpoints != null)
-			for (Endpoint e : endpoints)
-				addMember(e);
-		open = true;
+	public void setFederationContext(FederationContext federationContext) {
+		this.federationContext = federationContext;
 	}
 
 	/**
-	 * Add a member to the federation (internal)
+	 * Add a member to the federation (internal).
+	 * <p>
+	 * If the federation is already initialized, the given endpoint is explicitly initialized as well.
+	 * </p>
 	 * 
 	 * @param endpoint
 	 */
 	protected void addMember(Endpoint endpoint) {
+		if (isInitialized()) {
+			initializeMember(endpoint);
+		}
 		members.add(endpoint);
 	}
 
@@ -74,6 +85,7 @@ public class FedX implements Sail {
 	 * @return whether the member was removed
 	 */
 	public boolean removeMember(Endpoint endpoint) {
+		endpoint.shutDown();
 		return members.remove(endpoint);
 	}
 
@@ -95,8 +107,8 @@ public class FedX implements Sail {
 	}
 
 	@Override
-	public SailConnection getConnection() throws SailException {
-		return new FedXConnection(this);
+	protected SailConnection getConnectionInternal() throws SailException {
+		return new FedXConnection(this, federationContext);
 	}
 
 	@Override
@@ -110,17 +122,29 @@ public class FedX implements Sail {
 	}
 
 	@Override
-	public void initialize() throws SailException {
+	protected void initializeInternal() throws SailException {
 		log.debug("Initializing federation....");
 		for (Endpoint member : members) {
-			try {
-				member.initialize();
-			} catch (RepositoryException e) {
-				log.error("Initialization of endpoint " + member.getId() + " failed: " + e.getMessage());
-				throw new SailException(e);
+			initializeMember(member);
+		}
+	}
+
+	protected void initializeMember(Endpoint member) throws SailException {
+		if (member.isInitialized()) {
+			log.warn("Endpoint " + member.getId() + " was already initialized.");
+			return;
+		}
+		if (member instanceof ResolvableEndpoint) {
+			if (this.repositoryResolver != null) {
+				((ResolvableEndpoint) member).setRepositoryResolver(this.repositoryResolver);
 			}
 		}
-		open = true;
+		try {
+			member.init(federationContext);
+		} catch (RepositoryException e) {
+			log.error("Initialization of endpoint " + member.getId() + " failed: " + e.getMessage());
+			throw new SailException(e);
+		}
 	}
 
 	@Override
@@ -134,21 +158,13 @@ public class FedX implements Sail {
 		throw new UnsupportedOperationException("Operation not supported yet.");
 	}
 
-	@Override
-	public void shutDown() throws SailException {
-		try {
-			FederationManager.getInstance().shutDown();
-		} catch (FedXException e) {
-			throw new SailException(e);
-		}
-	}
-
 	/**
 	 * Try to shut down all federation members.
 	 * 
 	 * @throws FedXException if not all members could be shut down
 	 */
-	protected void shutDownInternal() throws FedXException {
+	@Override
+	protected void shutDownInternal() throws SailException {
 
 		List<Exception> errors = new ArrayList<>();
 		for (Endpoint member : members) {
@@ -162,28 +178,18 @@ public class FedX implements Sail {
 
 		if (errors.size() > 0)
 			throw new SailException("Federation could not be shut down. See logs for details.");
-
-		open = false;
 	}
 
+	/**
+	 * 
+	 * @return an unmodifiable view of the current members
+	 */
 	public List<Endpoint> getMembers() {
-		return new ArrayList<Endpoint>(members);
-	}
-
-	public boolean isOpen() {
-		return open;
+		return Collections.unmodifiableList(members);
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.NONE;
-	}
-
-	protected static final List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>(
-			Arrays.asList(IsolationLevels.NONE));
-
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return supportedIsolationLevels;
+	public void setRepositoryResolver(RepositoryResolver resolver) {
+		this.repositoryResolver = resolver;
 	}
 }

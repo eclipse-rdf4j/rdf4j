@@ -112,7 +112,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	private static void initializeServer() throws Exception {
 
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
+		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++)
 			repositoryIds.add("endpoint" + i);
 		File dataDir = new File(tempDir.toFile(), "datadir");
@@ -149,8 +149,8 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	protected List<Endpoint> prepareTest(List<String> sparqlEndpointData) throws Exception {
 
 		// clear federation and cache
-		super.prepareTest();
-		FederationManager.getInstance().removeAll();
+		federationContext().getCache().clear();
+		federationContext().getManager().removeAll();
 
 		// prepare the test endpoints (i.e. load data)
 		if (sparqlEndpointData.size() > MAX_ENDPOINTS)
@@ -167,7 +167,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		for (i = 1; i <= sparqlEndpointData.size(); i++) {
 			Endpoint e = server.loadEndpoint(i);
 			endpoints.add(e);
-			FederationManager.getInstance().addEndpoint(e, true);
+			federationContext().getManager().addEndpoint(e, true);
 		}
 		return endpoints;
 	}
@@ -229,4 +229,5 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	protected RepositorySettings repoSettings(int endpoint) {
 		return server.getRepository(endpoint);
 	}
+
 }

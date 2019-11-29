@@ -54,7 +54,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Wrap a request with an object aware of the current repository and application defaults.
-	 * 
+	 *
 	 * @param repository currently connected repository
 	 * @param request    current request
 	 * @param defaults   application default parameter values
@@ -78,7 +78,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Get the content of any uploaded file that is part of this request.
-	 * 
+	 *
 	 * @return the uploaded file contents, or null if not applicable
 	 */
 	public InputStream getContentParameter() {
@@ -87,7 +87,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Get the name of any uploaded file that is part of this request.
-	 * 
+	 *
 	 * @return the uploaded file name, or null if not applicable
 	 */
 	public String getContentFileName() {
@@ -98,7 +98,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * Get the integer value associated with the given parameter name. Internally uses getParameter(String), so looks in
 	 * this order: 1. the query parameters that were parsed at construction, using the last value if multiple exist. 2.
 	 * Request cookies. 3. The defaults.
-	 * 
+	 *
 	 * @return the value of the parameter, or zero if it is not present
 	 * @throws BadRequestException if the parameter is present but does not parse as an integer
 	 */
@@ -157,7 +157,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Returns whether a non-null, non-empty value is available for the given parameter name.
-	 * 
+	 *
 	 * @param name parameter name to check
 	 * @return true if a non-null, non-empty value exists, false otherwise
 	 */
@@ -177,7 +177,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of the given parameter name.
-	 * 
+	 *
 	 * @param name of parameter to retrieve resource from
 	 * @return value corresponding to the given parameter name
 	 * @throws BadRequestException if a problem occurs parsing the parameter value
@@ -192,7 +192,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Gets a map of the all parameters with values, also caching them in this {@link WorkbenchRequest}.
-	 * 
+	 *
 	 * @return a map of all parameters with values
 	 */
 	public Map<String, String> getSingleParameterMap() {
@@ -212,7 +212,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Gets the value of the 'type' parameter.
-	 * 
+	 *
 	 * @return the value of the 'type' parameter
 	 */
 	public String getTypeParameter() {
@@ -221,7 +221,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Gets the URI referred to by the parameter value.
-	 * 
+	 *
 	 * @param name of the parameter to check
 	 * @return the URI, or null if the parameter has no value, is only whitespace, or equals "null"
 	 * @throws BadRequestException if the value doesn't parse as a URI
@@ -237,7 +237,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Gets the URL referred to by the parameter value.
-	 * 
+	 *
 	 * @param name of the parameter to check
 	 * @return the URL
 	 * @throws BadRequestException if the value doesn't parse as a URL
@@ -253,7 +253,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	/**
 	 * Gets the {@link org.eclipse.rdf4j.model.Value} referred to by the parameter value.
-	 * 
+	 *
 	 * @param name of the parameter to check
 	 * @return the value, or null if the parameter has no value, is only whitespace, or equals "null"
 	 * @throws BadRequestException if the value doesn't parse as a URI
@@ -264,8 +264,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	private String firstLine(FileItemStream item) throws IOException {
-		InputStream stream = item.openStream();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(item.openStream()))) {
 			return reader.readLine();
 		}
 	}

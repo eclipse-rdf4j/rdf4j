@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -123,10 +122,10 @@ public class QueryAlgebraUtil {
 	public static TupleExpr selectQuery(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		if (filterExpr != null) {
@@ -163,7 +162,7 @@ public class QueryAlgebraUtil {
 	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		List<ExclusiveStatement> stmts = group.getStatements();
 
 		Join join = null;
@@ -228,7 +227,7 @@ public class QueryAlgebraUtil {
 
 		// TODO add FILTER expressions
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		Union union = new Union();
 		union.setLeftArg(constructStatementId(stmt, Integer.toString(0), varNames, unionBindings.get(0)));
@@ -264,7 +263,7 @@ public class QueryAlgebraUtil {
 	 */
 	public static TupleExpr selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		Union union = new Union();
 		union.setLeftArg(constructStatementCheckId(stmt, 0, varNames, unionBindings.get(0)));
@@ -283,81 +282,6 @@ public class QueryAlgebraUtil {
 			projList.addElement(new ProjectionElem(var));
 
 		Projection proj = new Projection(union, projList);
-
-		return proj;
-	}
-
-	public static TupleExpr selectQueryIndependentJoinGroup(IndependentJoinGroup joinGroup, BindingSet bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		Union union = null;
-
-		if (joinGroup.getMemberCount() == 2) {
-			union = new Union();
-			union.setLeftArg(constructStatementId((StatementPattern) joinGroup.getMembers().get(0), Integer.toString(0),
-					varNames, bindings));
-			union.setRightArg(constructStatementId((StatementPattern) joinGroup.getMembers().get(1),
-					Integer.toString(1), varNames, bindings));
-		} else {
-			union = new Union();
-			union.setLeftArg(constructStatementId((StatementPattern) joinGroup.getMembers().get(0), Integer.toString(0),
-					varNames, bindings));
-			Union tmp = union;
-			int idx;
-			for (idx = 1; idx < joinGroup.getMemberCount() - 1; idx++) {
-				Union _u = new Union();
-				_u.setLeftArg(constructStatementId((StatementPattern) joinGroup.getMembers().get(idx),
-						Integer.toString(idx), varNames, bindings));
-				tmp.setRightArg(_u);
-				tmp = _u;
-			}
-			tmp.setRightArg(constructStatementId((StatementPattern) joinGroup.getMembers().get(idx),
-					Integer.toString(idx), varNames, bindings));
-		}
-
-		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
-			projList.addElement(new ProjectionElem(var));
-
-		Projection proj = new Projection(union, projList);
-
-		return proj;
-	}
-
-	/**
-	 * Construct a select query representing a bound independent join group.
-	 * 
-	 * ?v_%stmt%#%bindingId$
-	 * 
-	 * SELECT ?v_0_0 ?v_0_1 ?v_1_0 ... WHERE { { ?v_0#0 p o UNION ?v_0_1 p o UNION ... } UNION { ?v_1_0 p o UNION ?v_1_1
-	 * p o UNION ... } UNION ... }
-	 * 
-	 * @param joinGroup
-	 * @param bindings
-	 * @return the SELECT query
-	 */
-	public static TupleExpr selectQueryIndependentJoinGroup(IndependentJoinGroup joinGroup, List<BindingSet> bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		Union outer = null;
-
-		if (joinGroup.getMemberCount() == 2) {
-			outer = new Union();
-			outer.setLeftArg(
-					constructInnerUnion((StatementPattern) joinGroup.getMembers().get(0), 0, varNames, bindings));
-			outer.setRightArg(
-					constructInnerUnion((StatementPattern) joinGroup.getMembers().get(1), 1, varNames, bindings));
-		} else {
-			throw new RuntimeException("TODOO");
-		}
-
-		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
-			projList.addElement(new ProjectionElem(var));
-
-		Projection proj = new Projection(outer, projList);
 
 		return proj;
 	}

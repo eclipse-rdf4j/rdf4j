@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.federated.optimizer;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -35,14 +34,15 @@ public class Optimizer {
 
 	public static TupleExpr optimize(TupleExpr parsed, Dataset dataset, BindingSet bindings,
 			FederationEvalStrategy strategy, QueryInfo queryInfo) throws SailException {
+		FederationContext federationContext = queryInfo.getFederationContext();
 		List<Endpoint> members;
 		if (dataset instanceof FedXDataset) {
 			// run the query against a selected set of endpoints
 			FedXDataset ds = (FedXDataset) dataset;
-			members = EndpointManager.getEndpointManager().getEndpoints(ds.getEndpoints());
+			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
 		} else {
 			// evaluate against entire federation
-			FedX fed = FederationManager.getInstance().getFederation();
+			FedX fed = federationContext.getFederation();
 			members = fed.getMembers();
 		}
 
@@ -53,7 +53,7 @@ public class Optimizer {
 		// Clone the tuple expression to allow for more aggressive optimizations
 		TupleExpr query = new QueryRoot(parsed.clone());
 
-		Cache cache = FederationManager.getInstance().getCache();
+		Cache cache = federationContext.getCache();
 
 		if (logger.isTraceEnabled())
 			logger.trace("Query before Optimization: " + query);

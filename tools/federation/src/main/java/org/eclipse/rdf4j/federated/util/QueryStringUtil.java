@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
@@ -82,11 +81,11 @@ public class QueryStringUtil {
 	public static String toString(StatementPattern stmt) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("{");
-		appendVar(sb, stmt.getSubjectVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getSubjectVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("; ");
-		appendVar(sb, stmt.getPredicateVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getPredicateVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("; ");
-		appendVar(sb, stmt.getObjectVar(), new HashSet<String>(), EmptyBindingSet.getInstance());
+		appendVar(sb, stmt.getObjectVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("}");
 		return sb.toString();
 	}
@@ -127,14 +126,14 @@ public class QueryStringUtil {
 	public static String selectQueryString(FedXStatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
 		res.append("SELECT ");
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		for (String var : varNames)
@@ -180,12 +179,12 @@ public class QueryStringUtil {
 			AtomicBoolean evaluated) throws IllegalQueryException {
 
 		StringBuilder sb = new StringBuilder();
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		for (ExclusiveStatement s : group.getStatements())
 			sb.append(constructStatement(s, varNames, bindings));
 
-		if (varNames.size() == 0)
+		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
 
 		StringBuilder res = new StringBuilder();
@@ -223,7 +222,7 @@ public class QueryStringUtil {
 	public static String askQueryString(ExclusiveGroup group, BindingSet bindings) {
 
 		StringBuilder sb = new StringBuilder();
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		for (ExclusiveStatement s : group.getStatements())
 			sb.append(constructStatement(s, varNames, bindings));
@@ -253,7 +252,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, Boolean evaluated) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
@@ -305,7 +304,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, AtomicBoolean evaluated) {
 
-		Set<String> varNames = new LinkedHashSet<String>();
+		Set<String> varNames = new LinkedHashSet<>();
 		StringBuilder res = new StringBuilder();
 
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
@@ -364,7 +363,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
@@ -382,85 +381,6 @@ public class QueryStringUtil {
 			res.append(" ?").append(var);
 
 		res.append(" WHERE {").append(unions).append(" }");
-
-		return res.toString();
-	}
-
-	/**
-	 * 
-	 * SELECT ?v_0 ?v_1 WHERE { { ?v_0 p1 o1 . } UNION { ?v_1 p2 o1 . } }
-	 * 
-	 * @param joinGroup
-	 * @param bindings
-	 * @return the SELECT query string
-	 */
-	public static String selectQueryStringIndependentJoinGroup(IndependentJoinGroup joinGroup, BindingSet bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		StringBuilder unions = new StringBuilder();
-		for (int i = 0; i < joinGroup.getMemberCount(); i++) {
-			StatementPattern stmt = (StatementPattern) joinGroup.getMembers().get(i);
-			String s = constructStatementId(stmt, Integer.toString(i), varNames, bindings);
-			if (i > 0)
-				unions.append(" UNION");
-			unions.append(" { ").append(s).append(" }");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames)
-			res.append(" ?").append(var);
-
-		res.append(" WHERE {");
-
-		res.append(unions);
-
-		res.append(" }");
-
-		return res.toString();
-	}
-
-	/**
-	 * Construct a select query representing a bound independent join group.
-	 * 
-	 * ?v_%stmt%_%bindingId$
-	 * 
-	 * SELECT ?v_0_0 ?v_0_1 ?v_1_0 ... WHERE { { ?v_0#0 p o UNION ?v_0_1 p o UNION ... } UNION { ?v_1_0 p o UNION ?v_1_1
-	 * p o UNION ... } UNION ... }
-	 * 
-	 * @param joinGroup
-	 * @param bindings
-	 * @return the SELECT query string
-	 */
-	public static String selectQueryStringIndependentJoinGroup(IndependentJoinGroup joinGroup,
-			List<BindingSet> bindings) {
-
-		Set<String> varNames = new HashSet<String>();
-
-		StringBuilder outerUnion = new StringBuilder();
-		for (int i = 0; i < joinGroup.getMemberCount(); i++) {
-			String innerUnion = constructInnerUnion((StatementPattern) joinGroup.getMembers().get(i), i, varNames,
-					bindings);
-			if (i > 0)
-				outerUnion.append(" UNION");
-			outerUnion.append(" { ").append(innerUnion).append("}");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames)
-			res.append(" ?").append(var);
-
-		res.append(" WHERE {");
-
-		res.append(outerUnion);
-
-		res.append(" }");
 
 		return res.toString();
 	}
@@ -490,7 +410,7 @@ public class QueryStringUtil {
 	 */
 	public static String askQueryString(StatementPattern stmt, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -511,7 +431,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -532,7 +452,7 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings) {
 
-		Set<String> varNames = new HashSet<String>();
+		Set<String> varNames = new HashSet<>();
 		StringBuilder res = new StringBuilder();
 
 		res.append("SELECT * WHERE { ");
@@ -777,20 +697,20 @@ public class QueryStringUtil {
 	 * @throws IOException
 	 */
 	public static List<String> loadQueries(String queryFile) throws FileNotFoundException, IOException {
-		ArrayList<String> res = new ArrayList<String>();
+		ArrayList<String> res = new ArrayList<>();
 		try (BufferedReader in = new BufferedReader(new FileReader(queryFile));) {
 			String tmp;
 			String tmpQuery = "";
 			while ((tmp = in.readLine()) != null) {
-				if (tmp.equals("")) {
-					if (!tmpQuery.equals(""))
+				if (tmp.isEmpty()) {
+					if (!tmpQuery.isEmpty())
 						res.add(tmpQuery);
 					tmpQuery = "";
 				} else {
 					tmpQuery = tmpQuery + tmp;
 				}
 			}
-			if (!tmpQuery.equals(""))
+			if (!tmpQuery.isEmpty())
 				res.add(tmpQuery);
 			return res;
 		}

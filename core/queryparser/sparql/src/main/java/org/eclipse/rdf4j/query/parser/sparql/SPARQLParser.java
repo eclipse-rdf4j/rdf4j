@@ -89,7 +89,7 @@ public class SPARQLParser implements QueryParser {
 				// try and use
 				// prefix declarations from a previous operation in this sequence.
 				List<ASTPrefixDecl> prefixDeclList = uc.getPrefixDeclList();
-				if (prefixDeclList == null || prefixDeclList.size() == 0) {
+				if (prefixDeclList == null || prefixDeclList.isEmpty()) {
 					if (sharedPrefixDeclarations != null) {
 						for (ASTPrefixDecl prefixDecl : sharedPrefixDeclarations) {
 							uc.jjtAppendChild(prefixDecl);
@@ -128,11 +128,7 @@ public class SPARQLParser implements QueryParser {
 			} // end for
 
 			return update;
-		} catch (ParseException e) {
-			throw new MalformedQueryException(e.getMessage(), e);
-		} catch (TokenMgrError e) {
-			throw new MalformedQueryException(e.getMessage(), e);
-		} catch (VisitorException e) {
+		} catch (ParseException | TokenMgrError | VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 
@@ -179,9 +175,7 @@ public class SPARQLParser implements QueryParser {
 			} else {
 				throw new IncompatibleOperationException("supplied string is not a query operation");
 			}
-		} catch (ParseException e) {
-			throw new MalformedQueryException(e.getMessage(), e);
-		} catch (TokenMgrError e) {
+		} catch (ParseException | TokenMgrError e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}

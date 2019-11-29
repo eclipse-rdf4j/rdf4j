@@ -109,9 +109,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 				request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 				request.setAttribute(REPOSITORY_KEY, repository);
-			} catch (RepositoryConfigException e) {
-				throw new ServerHTTPException(e.getMessage(), e);
-			} catch (RepositoryException e) {
+			} catch (RepositoryConfigException | RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
 			}
 		}

@@ -13,10 +13,8 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
-import org.eclipse.rdf4j.federated.algebra.IndependentJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
-import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -46,9 +44,9 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 	protected void handleBindings() throws Exception {
 
 		// XXX use something else as second check, e.g. an empty interface
-		if (!((rightArg instanceof StatementPattern) || (rightArg instanceof IndependentJoinGroup))) {
+		if (!((rightArg instanceof StatementPattern))) {
 			log.warn(
-					"Right argument is not a StatementPattern nor a IndependentJoinGroup. Fallback on SynchronousJoin implementation: "
+					"Right argument is not a StatementPattern. Fallback on SynchronousJoin implementation: "
 							+ rightArg.getClass().getCanonicalName());
 			super.handleBindings(); // fallback
 			return;
@@ -61,17 +59,13 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 		// optimization: if there is no free variable, we can avoid the bound-join
 		// first item is always sent in a non-bound way
 
-		// TODO independent join group!!!! (see ControlledWorkerBoundJoin)
-		if (rightArg instanceof IndependentJoinGroup)
-			throw new FedXRuntimeException("Synchronous Bound joins does not support Independent join group yet");
-
 		boolean hasFreeVars = true;
 		if (!closed && leftIter.hasNext()) {
 			BindingSet b = leftIter.next();
 			totalBindings++;
 			hasFreeVars = stmt.hasFreeVarsFor(b);
 			if (!hasFreeVars)
-				stmt = new CheckStatementPattern(stmt);
+				stmt = new CheckStatementPattern(stmt, queryInfo);
 			rightQueue.put(strategy.evaluate(stmt, b));
 		}
 
@@ -93,7 +87,7 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			else
 				nBindings = 3;
 
-			bindings = new ArrayList<BindingSet>(nBindings);
+			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
 			while (count < nBindings && leftIter.hasNext()) {

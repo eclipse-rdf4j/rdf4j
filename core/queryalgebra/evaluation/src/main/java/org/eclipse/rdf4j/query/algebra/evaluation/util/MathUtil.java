@@ -164,9 +164,7 @@ public class MathUtil {
 					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
 			}
-		} catch (NumberFormatException e) {
-			throw new ValueExprEvaluationException(e);
-		} catch (ArithmeticException e) {
+		} catch (NumberFormatException | ArithmeticException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}

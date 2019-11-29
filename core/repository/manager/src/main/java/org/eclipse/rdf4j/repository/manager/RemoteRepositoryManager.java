@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 /**
  * A manager for {@link Repository}s that reside on a remote server. This repository manager allows one to access
  * repositories over HTTP similar to how local repositories are accessed using the {@link LocalRepositoryManager}.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RemoteRepositoryManager extends RepositoryManager {
@@ -94,7 +94,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Creates a new RepositoryManager that operates on the specified base directory.
-	 * 
+	 *
 	 * @param serverURL The URL of the server.
 	 */
 	public RemoteRepositoryManager(String serverURL) {
@@ -152,7 +152,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Set the username and password for authenication with the remote server.
-	 * 
+	 *
 	 * @param username the username
 	 * @param password the password
 	 */
@@ -173,7 +173,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Gets the URL of the remote server, e.g. "http://localhost:8080/rdf4j-server/".
-	 * 
+	 *
 	 * @throws MalformedURLException If serverURL cannot be parsed
 	 */
 	@Override
@@ -190,7 +190,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Creates and initializes the repository with the specified ID.
-	 * 
+	 *
 	 * @param id A repository ID.
 	 * @return The created repository, or <tt>null</tt> if no such repository exists.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
@@ -239,43 +239,41 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
 				.createRDF4JProtocolSession(serverURL)) {
 			protocolSession.setUsernameAndPassword(username, password);
-			TupleQueryResult responseFromServer = protocolSession.getRepositoryList();
-			while (responseFromServer.hasNext()) {
-				BindingSet bindingSet = responseFromServer.next();
-				RepositoryInfo repInfo = new RepositoryInfo();
+			try (TupleQueryResult responseFromServer = protocolSession.getRepositoryList()) {
+				while (responseFromServer.hasNext()) {
+					BindingSet bindingSet = responseFromServer.next();
+					RepositoryInfo repInfo = new RepositoryInfo();
 
-				String id = Literals.getLabel(bindingSet.getValue("id"), null);
+					String id = Literals.getLabel(bindingSet.getValue("id"), null);
 
-				if (skipSystemRepo && id.equals(SystemRepository.ID)) {
-					continue;
-				}
-
-				Value uri = bindingSet.getValue("uri");
-				String description = Literals.getLabel(bindingSet.getValue("title"), null);
-				boolean readable = Literals.getBooleanValue(bindingSet.getValue("readable"), false);
-				boolean writable = Literals.getBooleanValue(bindingSet.getValue("writable"), false);
-
-				if (uri instanceof IRI) {
-					try {
-						repInfo.setLocation(new URL(uri.toString()));
-					} catch (MalformedURLException e) {
-						logger.warn("Server reported malformed repository URL: {}", uri);
+					if (skipSystemRepo && id.equals(SystemRepository.ID)) {
+						continue;
 					}
+
+					Value uri = bindingSet.getValue("uri");
+					String description = Literals.getLabel(bindingSet.getValue("title"), null);
+					boolean readable = Literals.getBooleanValue(bindingSet.getValue("readable"), false);
+					boolean writable = Literals.getBooleanValue(bindingSet.getValue("writable"), false);
+
+					if (uri instanceof IRI) {
+						try {
+							repInfo.setLocation(new URL(uri.toString()));
+						} catch (MalformedURLException e) {
+							logger.warn("Server reported malformed repository URL: {}", uri);
+						}
+					}
+
+					repInfo.setId(id);
+					repInfo.setDescription(description);
+					repInfo.setReadable(readable);
+					repInfo.setWritable(writable);
+
+					result.add(repInfo);
 				}
-
-				repInfo.setId(id);
-				repInfo.setDescription(description);
-				repInfo.setReadable(readable);
-				repInfo.setWritable(writable);
-
-				result.add(repInfo);
 			}
-		} catch (IOException ioe) {
+		} catch (IOException | QueryEvaluationException ioe) {
 			logger.warn("Unable to retrieve list of repositories", ioe);
 			throw new RepositoryException(ioe);
-		} catch (QueryEvaluationException qee) {
-			logger.warn("Unable to retrieve list of repositories", qee);
-			throw new RepositoryException(qee);
 		} catch (UnauthorizedException ue) {
 			logger.warn("Not authorized to retrieve list of repositories", ue);
 			throw new RepositoryException(ue);

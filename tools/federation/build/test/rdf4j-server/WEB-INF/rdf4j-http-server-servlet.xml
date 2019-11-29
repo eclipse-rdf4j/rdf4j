@@ -32,9 +32,9 @@ http://www.springframework.org/schema/aop http://www.springframework.org/schema/
 		</constructor-arg>
 	</bean>
 	
-	<!-- Inject the local repository manager as RepositoryResolver into FedX -->
+	<!-- Inject the local repository manager as RepositoryResolver into FedX for tests -->
 	<bean id="fedxRepositoryResolver"
-		class="org.eclipse.rdf4j.federated.repository.FedXRepositoryResolverBean"
+		class="org.eclipse.rdf4j.federated.server.FedXRepositoryResolverBean"
 		scope="singleton" init-method="init" destroy-method="destroy">
 		<property name="repositoryResolver" ref="rdf4jRepositoryManager" />
 	</bean>

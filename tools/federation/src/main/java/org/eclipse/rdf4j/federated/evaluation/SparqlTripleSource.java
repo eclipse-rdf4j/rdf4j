@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -58,8 +58,8 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	private boolean useASKQueries = true;
 
-	SparqlTripleSource(Endpoint endpoint) {
-		super(FederationManager.getMonitoringService(), endpoint);
+	SparqlTripleSource(Endpoint endpoint, FederationContext federationContext) {
+		super(federationContext, endpoint);
 		if (endpoint.getEndpointConfiguration() instanceof SparqlEndpointConfiguration) {
 			SparqlEndpointConfiguration c = (SparqlEndpointConfiguration) endpoint.getEndpointConfiguration();
 			this.useASKQueries = c.supportsASKQueries();
@@ -86,13 +86,14 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 			// apply filter and/or insert original bindings
 			if (filterExpr != null) {
 				if (bindings.size() > 0)
-					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res);
+					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+							SparqlTripleSource.this.strategy);
 				else
-					res = new FilteringIteration(filterExpr, res);
+					res = new FilteringIteration(filterExpr, res, SparqlTripleSource.this.strategy);
 				if (!res.hasNext()) {
 					Iterations.closeCloseable(res);
 					conn.close();
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 			} else if (bindings.size() > 0) {

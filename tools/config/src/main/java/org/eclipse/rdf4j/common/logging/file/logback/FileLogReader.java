@@ -198,7 +198,7 @@ public class FileLogReader extends AbstractLogReader {
 				}
 				// it may be a message line or a stacktrace line
 				else {
-					if (!lastLine.trim().equals("")) {
+					if (!lastLine.trim().isEmpty()) {
 						if (lastLine.startsWith("\t")) {
 							stackTrace.add(0, lastLine.trim());
 						} else {

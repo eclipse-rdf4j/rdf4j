@@ -15,19 +15,22 @@
 	<name>RDF4J Rio compliance test suite</name>
 	<description>Test suite for Rio</description>
 
-	<properties>
-		<rdf4j.memorystore.version>2.5.0</rdf4j.memorystore.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-sail</artifactId>
-			<version>${rdf4j.memorystore.version}</version>
+			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
-			<version>${rdf4j.memorystore.version}</version>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-queryparser-serql</artifactId>
+			<version>${project.version}</version>
+			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -36,8 +37,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  */
 public class SparqlFederationEvalStrategyWithValues extends SparqlFederationEvalStrategy {
 
-	public SparqlFederationEvalStrategyWithValues() {
-
+	public SparqlFederationEvalStrategyWithValues(FederationContext federationContext) {
+		super(federationContext);
 	}
 
 	@Override
@@ -64,9 +65,9 @@ public class SparqlFederationEvalStrategyWithValues extends SparqlFederationEval
 			// apply filter and/or convert to original bindings
 			if (filterExpr != null && !isEvaluated.get()) {
 				result = new BoundJoinVALUESConversionIteration(result, bindings); // apply conversion
-				result = new FilteringIteration(filterExpr, result); // apply filter
+				result = new FilteringIteration(filterExpr, result, this); // apply filter
 				if (!result.hasNext())
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 			} else {
 				result = new BoundJoinVALUESConversionIteration(result, bindings);
 			}

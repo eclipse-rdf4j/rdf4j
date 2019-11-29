@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -919,6 +920,7 @@ public abstract class ComplexSPARQLQueryTest {
 		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString())
 				.evaluate(new AbstractTupleQueryResultHandler() {
 
+					@Override
 					public void handleSolution(BindingSet bindingSet) {
 						fail("nobody is self published");
 					}
@@ -2191,6 +2193,56 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1405
+	 */
+	public void testBindScope() throws Exception {
+		String query = "SELECT * {\n" +
+				"  { BIND (\"a\" AS ?a) }\n" +
+				"  { BIND (?a AS ?b) } \n" +
+				"}";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertEquals(1, result.size());
+
+		assertEquals(conn.getValueFactory().createLiteral("a"), result.get(0).getValue("a"));
+		assertNull(result.get(0).getValue("b"));
+	}
+
+	@Test
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1642
+	 */
+	public void testBindScopeUnion() {
+
+		ValueFactory f = conn.getValueFactory();
+		String query = "prefix ex: <http://example.org/> \n" +
+				"select * {\n" +
+				"  bind(ex:v1 as ?v)\n" +
+				"  bind(strafter(str(?v),str(ex:)) as ?b)\n" +
+				"  {\n" +
+				"    bind(?b as ?b1)\n" +
+				"  } union {\n" +
+				"    bind(?b as ?b2)\n" +
+				"  }\n" +
+				"}";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertEquals(2, result.size());
+
+		IRI v1 = f.createIRI("http://example.org/v1");
+		Literal b = f.createLiteral("v1");
+		for (BindingSet bs : result) {
+			assertThat(bs.getValue("v")).isEqualTo(v1);
+			assertThat(bs.getValue("b1")).isNull();
+			assertThat(bs.getValue("b2")).isNull();
+		}
+
+	}
+
+	@Test
 	public void testSES2250BindErrors() throws Exception {
 		StringBuilder ub = new StringBuilder();
 		ub.append("insert data { <urn:test:subj> <urn:test:pred> _:blank }");
@@ -2249,11 +2301,11 @@ public abstract class ComplexSPARQLQueryTest {
 		ub.append("}");
 		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
 
-		StringBuilder qb = new StringBuilder();
-		qb.append("select ?s  {\n" + "    ?s a* <http://type> .\n" + "    FILTER EXISTS {?s <http://predicate> ?o}\n"
-				+ "} limit 100 values ?o {<http://obj1>}");
+		String query = "select ?s  {\n" + "    ?s a* <http://type> .\n"
+				+ "    FILTER EXISTS {?s <http://predicate> ?o}\n"
+				+ "} limit 100 values ?o {<http://obj1>}";
 
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		TupleQuery tq = conn.prepareTupleQuery(query);
 
 		List<BindingSet> result = QueryResults.asList(tq.evaluate());
 		assertEquals("single result expected", 1, result.size());

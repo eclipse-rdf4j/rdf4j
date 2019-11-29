@@ -66,13 +66,6 @@ public interface CacheEntry extends Serializable {
 	public CloseableIteration<? extends Statement, Exception> getStatements(Endpoint endpoint);
 
 	/**
-	 * Return the endpoints that are mirrored in the cache result
-	 * 
-	 * @return the endpoints
-	 */
-	public List<Endpoint> getEndpoints();
-
-	/**
 	 * Ask if this CacheResult is up2date
 	 * 
 	 * @return whether this entry is up to date

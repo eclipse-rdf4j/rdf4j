@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.logging.Level;
 
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Command;

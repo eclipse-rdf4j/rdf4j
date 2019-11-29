@@ -13,7 +13,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
@@ -40,11 +39,13 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	protected final StatementTupleExpr stmt;
 	protected final String id;
+	protected final QueryInfo queryInfo;
 
-	public CheckStatementPattern(StatementTupleExpr stmt) {
+	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
 		this.stmt = stmt;
 		this.id = NodeFactory.getNextId();
+		this.queryInfo = queryInfo;
 	}
 
 	public StatementPattern getStatementPattern() {
@@ -138,19 +139,19 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 		try {
 			// return true if at least one endpoint has a result for this binding set
 			for (StatementSource source : stmt.getStatementSources()) {
-				Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID());
+				Endpoint ownedEndpoint = queryInfo.getFederationContext()
+						.getEndpointManager()
+						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
 				if (t.hasStatements(st, bindings))
 					return new SingleBindingSetIteration(bindings);
 			}
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 
 		// XXX return NULL instead and add an additional check?
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 
 	@Override

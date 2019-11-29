@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -29,9 +26,12 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 /**
  * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
- * 
+ *
  * @author James Leigh
  */
 public abstract class SailIsolationLevelTest {
@@ -207,46 +207,40 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch uncommitted = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
-
-			public void run() {
-				try (SailConnection write = store.getConnection();) {
-					start.countDown();
-					start.await();
-					write.begin(level);
-					write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
-					begin.countDown();
-					uncommitted.await(1, TimeUnit.SECONDS);
-					write.rollback();
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
+		Thread writer = new Thread(() -> {
+			try (SailConnection write = store.getConnection();) {
+				start.countDown();
+				start.await();
+				write.begin(level);
+				write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
+				begin.countDown();
+				uncommitted.await(1, TimeUnit.SECONDS);
+				write.rollback();
+			} catch (Throwable e) {
+				fail("Writer failed", e);
 			}
 		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (SailConnection read = store.getConnection();) {
-					start.countDown();
-					start.await();
-					begin.await();
-					read.begin(level);
-					// must not read uncommitted changes
-					long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					uncommitted.countDown();
-					try {
-						read.commit();
-					} catch (SailException e) {
-						// it is okay to abort after a dirty read
-						// e.printStackTrace();
-						read.rollback();
-						return;
-					}
-					// not read if transaction is consistent
-					Assert.assertEquals(0, counted);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+		Thread reader = new Thread(() -> {
+			try (SailConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				// must not read uncommitted changes
+				long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				uncommitted.countDown();
+				try {
+					read.commit();
+				} catch (SailException e) {
+					// it is okay to abort after a dirty read
+					// e.printStackTrace();
+					read.rollback();
+					return;
 				}
+				// not read if transaction is consistent
+				Assert.assertEquals(0, counted);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -265,55 +259,49 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch observed = new CountDownLatch(1);
 		final CountDownLatch changed = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
+		Thread writer = new Thread(() -> {
+			try (SailConnection write = store.getConnection();) {
+				start.countDown();
+				start.await();
+				write.begin(level);
+				write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
+				write.commit();
 
-			public void run() {
-				try (SailConnection write = store.getConnection();) {
-					start.countDown();
-					start.await();
-					write.begin(level);
-					write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
-					write.commit();
+				begin.countDown();
+				observed.await(1, TimeUnit.SECONDS);
 
-					begin.countDown();
-					observed.await(1, TimeUnit.SECONDS);
-
-					write.begin(level);
-					write.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);
-					write.commit();
-					changed.countDown();
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
+				write.begin(level);
+				write.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);
+				write.commit();
+				changed.countDown();
+			} catch (Throwable e) {
+				fail("Writer failed", e);
 			}
 		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (SailConnection read = store.getConnection();) {
-					start.countDown();
-					start.await();
-					begin.await();
-					read.begin(level);
-					long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					Assert.assertEquals(1, first);
-					observed.countDown();
-					changed.await(1, TimeUnit.SECONDS);
-					// observed statements must continue to exist
-					long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-					try {
-						read.commit();
-					} catch (SailException e) {
-						// it is okay to abort on inconsistency
-						// e.printStackTrace();
-						read.rollback();
-						return;
-					}
-					// statement must continue to exist if transaction consistent
-					Assert.assertEquals(first, second);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+		Thread reader = new Thread(() -> {
+			try (SailConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				Assert.assertEquals(1, first);
+				observed.countDown();
+				changed.await(1, TimeUnit.SECONDS);
+				// observed statements must continue to exist
+				long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+				try {
+					read.commit();
+				} catch (SailException e) {
+					// it is okay to abort on inconsistency
+					// e.printStackTrace();
+					read.rollback();
+					return;
 				}
+				// statement must continue to exist if transaction consistent
+				Assert.assertEquals(first, second);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -368,54 +356,48 @@ public abstract class SailIsolationLevelTest {
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch observed = new CountDownLatch(1);
 		final CountDownLatch changed = new CountDownLatch(1);
-		Thread writer = new Thread(new Runnable() {
+		Thread writer = new Thread(() -> {
+			try (SailConnection write = store.getConnection();) {
+				start.countDown();
+				start.await();
+				write.begin(level);
+				insertTestStatement(write, 1);
+				write.commit();
 
-			public void run() {
-				try (SailConnection write = store.getConnection();) {
-					start.countDown();
-					start.await();
-					write.begin(level);
-					insertTestStatement(write, 1);
-					write.commit();
+				begin.countDown();
+				observed.await(1, TimeUnit.SECONDS);
 
-					begin.countDown();
-					observed.await(1, TimeUnit.SECONDS);
-
-					write.begin(level);
-					insertTestStatement(write, 2);
-					write.commit();
-					changed.countDown();
-				} catch (Throwable e) {
-					fail("Writer failed", e);
-				}
+				write.begin(level);
+				insertTestStatement(write, 2);
+				write.commit();
+				changed.countDown();
+			} catch (Throwable e) {
+				fail("Writer failed", e);
 			}
 		});
-		Thread reader = new Thread(new Runnable() {
-
-			public void run() {
-				try (SailConnection read = store.getConnection();) {
-					start.countDown();
-					start.await();
-					begin.await();
-					read.begin(level);
-					long first = count(read, null, null, null, false);
-					observed.countDown();
-					changed.await(1, TimeUnit.SECONDS);
-					// new statements must not be observed
-					long second = count(read, null, null, null, false);
-					try {
-						read.commit();
-					} catch (SailException e) {
-						// it is okay to abort on inconsistency
-						// e.printStackTrace();
-						read.rollback();
-						return;
-					}
-					// store must not change if transaction consistent
-					Assert.assertEquals(first, second);
-				} catch (Throwable e) {
-					fail("Reader failed", e);
+		Thread reader = new Thread(() -> {
+			try (SailConnection read = store.getConnection();) {
+				start.countDown();
+				start.await();
+				begin.await();
+				read.begin(level);
+				long first = count(read, null, null, null, false);
+				observed.countDown();
+				changed.await(1, TimeUnit.SECONDS);
+				// new statements must not be observed
+				long second = count(read, null, null, null, false);
+				try {
+					read.commit();
+				} catch (SailException e) {
+					// it is okay to abort on inconsistency
+					// e.printStackTrace();
+					read.rollback();
+					return;
 				}
+				// store must not change if transaction consistent
+				Assert.assertEquals(first, second);
+			} catch (Throwable e) {
+				fail("Reader failed", e);
 			}
 		});
 		reader.start();
@@ -461,28 +443,25 @@ public abstract class SailIsolationLevelTest {
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
 			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
-		return new Thread(new Runnable() {
-
-			public void run() {
-				try (SailConnection con = store.getConnection();) {
-					start.countDown();
-					start.await();
-					con.begin(level);
-					Literal o1 = readLiteral(con, subj, pred);
-					observed.countDown();
-					observed.await(1, TimeUnit.SECONDS);
-					con.removeStatements(subj, pred, o1);
-					con.addStatement(subj, pred, vf.createLiteral(o1.intValue() + by));
-					try {
-						con.commit();
-					} catch (SailException e) {
-						// it is okay to abort on conflict
-						// e.printStackTrace();
-						con.rollback();
-					}
-				} catch (Throwable e) {
-					fail("Increment " + by + " failed", e);
+		return new Thread(() -> {
+			try (SailConnection con = store.getConnection();) {
+				start.countDown();
+				start.await();
+				con.begin(level);
+				Literal o1 = readLiteral(con, subj, pred);
+				observed.countDown();
+				observed.await(1, TimeUnit.SECONDS);
+				con.removeStatements(subj, pred, o1);
+				con.addStatement(subj, pred, vf.createLiteral(o1.intValue() + by));
+				try {
+					con.commit();
+				} catch (SailException e) {
+					// it is okay to abort on conflict
+					// e.printStackTrace();
+					con.rollback();
 				}
+			} catch (Throwable e) {
+				fail("Increment " + by + " failed", e);
 			}
 		});
 	}
@@ -511,11 +490,13 @@ public abstract class SailIsolationLevelTest {
 	protected Literal readLiteral(SailConnection con, final IRI subj, final IRI pred) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, null,
 				false);) {
-			if (!stmts.hasNext())
+			if (!stmts.hasNext()) {
 				return null;
+			}
 			Value obj = stmts.next().getObject();
-			if (stmts.hasNext())
+			if (stmts.hasNext()) {
 				Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+			}
 			return (Literal) obj;
 		}
 	}

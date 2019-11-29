@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -23,9 +24,9 @@ public class FilteringInsertBindingsIteration extends FilteringIteration {
 	protected final BindingSet bindings;
 
 	public FilteringInsertBindingsIteration(FilterValueExpr filterExpr, BindingSet bindings,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter)
+			CloseableIteration<BindingSet, QueryEvaluationException> iter, FederationEvalStrategy strategy)
 			throws QueryEvaluationException {
-		super(filterExpr, iter);
+		super(filterExpr, iter, strategy);
 		this.bindings = bindings;
 	}
 

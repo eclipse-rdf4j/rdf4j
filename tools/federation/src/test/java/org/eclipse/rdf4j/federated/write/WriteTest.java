@@ -12,7 +12,6 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointBase;
@@ -46,7 +45,7 @@ public class WriteTest extends SPARQLBaseTest {
 	public void testSimpleWrite() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
 
-		Iterator<Endpoint> iter = EndpointManager.getEndpointManager().getAvailableEndpoints().iterator();
+		Iterator<Endpoint> iter = federationContext().getEndpointManager().getAvailableEndpoints().iterator();
 		EndpointBase ep1 = (EndpointBase) iter.next();
 		ep1.setWritable(true);
 		Endpoint ep2 = iter.next();
@@ -98,7 +97,7 @@ public class WriteTest extends SPARQLBaseTest {
 
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
 
-		Iterator<Endpoint> iter = EndpointManager.getEndpointManager().getAvailableEndpoints().iterator();
+		Iterator<Endpoint> iter = federationContext().getEndpointManager().getAvailableEndpoints().iterator();
 		EndpointBase ep1 = (EndpointBase) iter.next();
 		ep1.setWritable(true);
 
@@ -118,7 +117,7 @@ public class WriteTest extends SPARQLBaseTest {
 	public void testSimpleRemove() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
 
-		Iterator<Endpoint> iter = EndpointManager.getEndpointManager().getAvailableEndpoints().iterator();
+		Iterator<Endpoint> iter = federationContext().getEndpointManager().getAvailableEndpoints().iterator();
 		EndpointBase ep1 = (EndpointBase) iter.next();
 		ep1.setWritable(true);
 

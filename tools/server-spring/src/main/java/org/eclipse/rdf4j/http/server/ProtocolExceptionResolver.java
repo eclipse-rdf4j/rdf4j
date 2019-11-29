@@ -50,7 +50,7 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 		}
 
 		Map<String, Object> model = new HashMap<>();
-		model.put(SimpleResponseView.SC_KEY, Integer.valueOf(statusCode));
+		model.put(SimpleResponseView.SC_KEY, statusCode);
 		model.put(SimpleResponseView.CONTENT_KEY, errMsg);
 
 		return new ModelAndView(SimpleResponseView.getInstance(), model);

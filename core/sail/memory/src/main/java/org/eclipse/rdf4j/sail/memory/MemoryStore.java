@@ -37,11 +37,11 @@ import org.slf4j.LoggerFactory;
  * storage. This Sail implementation supports single, isolated transactions. This means that changes to the data are not
  * visible until a transaction is committed and that concurrent transactions are not possible. When another transaction
  * is active, calls to <tt>startTransaction()</tt> will block until the active transaction is committed or rolled back.
- * 
+ *
  * The MemoryStore is designed for datasets with fewer than 100,000 triples. The MemoryStore uses hash tables, and when
  * these hash tables fill up it copies the values to larger hash tables. This can cause strain on the garbage collector
  * due to lots of memory being allocated and freed.
- * 
+ *
  * @author Arjohn Kampman
  * @author jeen
  */
@@ -90,7 +90,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * The sync delay.
-	 * 
+	 *
 	 * @see #setSyncDelay
 	 */
 	private volatile long syncDelay = 0L;
@@ -139,7 +139,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Creates a new persistent MemoryStore. If the specified data directory contains an existing store, its contents
 	 * will be restored upon initialization.
-	 * 
+	 *
 	 * @param dataDir the data directory to be used for persistence.
 	 */
 	public MemoryStore(File dataDir) {
@@ -173,7 +173,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * one file sync.
 	 * <p>
 	 * The default value for this parameter is <tt>0</tt> (immediate synchronization).
-	 * 
+	 *
 	 * @param syncDelay The sync delay in milliseconds.
 	 */
 	public void setSyncDelay(long syncDelay) {
@@ -186,7 +186,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Gets the currently configured sync delay.
-	 * 
+	 *
 	 * @return syncDelay The sync delay in milliseconds.
 	 * @see #setSyncDelay
 	 */
@@ -228,7 +228,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
 	 * this instance is.
-	 * 
+	 *
 	 * @param resolver The SERVICE resolver to set.
 	 */
 	@Override
@@ -241,7 +241,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Initializes this repository. If a persistence file is defined for the store, the contents will be restored.
-	 * 
+	 *
 	 * @throws SailException when initialization of the store failed.
 	 */
 	@Override
@@ -306,20 +306,12 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					dirLock = locker.lockOrFail();
 
 					logger.debug("Initializing data file...");
-					SailDataset explicit = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
-					SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT);
-					try {
+					try (SailDataset explicit = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+							SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
-					} finally {
-						explicit.close();
-						inferred.close();
-
 					}
 					logger.debug("Data file initialized");
-				} catch (IOException e) {
-					logger.debug("Failed to initialize data file", e);
-					throw new SailException("Failed to initialize data file " + dataFile, e);
-				} catch (SailException e) {
+				} catch (IOException | SailException e) {
 					logger.debug("Failed to initialize data file", e);
 					throw new SailException("Failed to initialize data file " + dataFile, e);
 				}
@@ -449,13 +441,9 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 				logger.debug("syncing data to file...");
 				try {
 					IsolationLevels level = IsolationLevels.SNAPSHOT;
-					SailDataset explicit = store.getExplicitSailSource().dataset(level);
-					SailDataset inferred = store.getInferredSailSource().dataset(level);
-					try {
+					try (SailDataset explicit = store.getExplicitSailSource().dataset(level);
+							SailDataset inferred = store.getInferredSailSource().dataset(level)) {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
-					} finally {
-						explicit.close();
-						inferred.close();
 					}
 					contentsChanged = false;
 					logger.debug("Data synced to file");

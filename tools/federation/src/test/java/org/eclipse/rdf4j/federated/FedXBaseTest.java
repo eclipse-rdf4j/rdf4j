@@ -17,8 +17,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.FederationManager;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -53,7 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Lists;
 
-public class FedXBaseTest {
+public abstract class FedXBaseTest {
 
 	public static Logger log;
 
@@ -81,7 +79,7 @@ public class FedXBaseTest {
 
 		String queryString = readQueryString(queryFile);
 
-		Query query = QueryManager.prepareQuery(queryString);
+		Query query = queryManager().prepareQuery(queryString);
 
 		if (query instanceof TupleQuery) {
 			try (TupleQueryResult queryResult = ((TupleQuery) query).evaluate()) {
@@ -113,7 +111,7 @@ public class FedXBaseTest {
 	protected TupleQueryResult runSelectQueryFile(String queryFile) throws Exception {
 		String queryString = readQueryString(queryFile);
 
-		Query query = QueryManager.prepareQuery(queryString);
+		Query query = queryManager().prepareQuery(queryString);
 
 		if (query instanceof TupleQuery) {
 			return ((TupleQuery) query).evaluate();
@@ -124,7 +122,7 @@ public class FedXBaseTest {
 
 	protected void evaluateQueryPlan(String queryFile, String expectedPlanFile) throws Exception {
 
-		String actualQueryPlan = QueryManager.getQueryPlan(readQueryString(queryFile));
+		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(readQueryString(queryFile));
 		String expectedQueryPlan = readResourceAsString(expectedPlanFile);
 
 		// make sure the comparison works cross operating system
@@ -135,11 +133,6 @@ public class FedXBaseTest {
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
 
-	}
-
-	protected void prepareTest() throws RepositoryException {
-		// reset fedx
-		FederationManager.getInstance().getCache().clear();
 	}
 
 	/**
@@ -218,7 +211,7 @@ public class FedXBaseTest {
 			parser.setPreserveBNodeIDs(true);
 			parser.setValueFactory(SimpleValueFactory.getInstance());
 
-			Set<Statement> result = new LinkedHashSet<Statement>();
+			Set<Statement> result = new LinkedHashSet<>();
 			parser.setRDFHandler(new StatementCollector(result));
 
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
@@ -255,6 +248,18 @@ public class FedXBaseTest {
 
 	protected SimpleTupleQueryResultBuilder tupleQueryResultBuilder(List<String> bindingNames) {
 		return new SimpleTupleQueryResultBuilder(bindingNames);
+	}
+
+	/**
+	 * 
+	 * Note: metod can only be used after initialization phase
+	 * 
+	 * @return the current {@link FederationContext}
+	 */
+	protected abstract FederationContext federationContext();
+
+	protected QueryManager queryManager() {
+		return federationContext().getQueryManager();
 	}
 
 	/**
@@ -301,10 +306,10 @@ public class FedXBaseTest {
 
 			List<BindingSet> expectedBindings = Iterations.asList(expectedResultTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
 
-			List<BindingSet> unexpectedBindings = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
 			StringBuilder message = new StringBuilder(128);

@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.Ignore;
-import org.junit.Test;
 
 @Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
 public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnectionTest {

@@ -12,12 +12,11 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
 
 public class Demo3 {
 
@@ -28,7 +27,8 @@ public class Demo3 {
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://dbpedia", "http://dbpedia.org/sparql"));
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://swdf", "http://data.semanticweb.org/sparql"));
 
-		Repository repo = FedXFactory.initializeFederation(endpoints);
+		FedXRepository repo = FedXFactory.createFederation(endpoints);
+		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
@@ -36,7 +36,7 @@ public class Demo3 {
 				+ "?President rdf:type dbpedia-owl:President .\n"
 				+ "?President dbpedia-owl:party ?Party . }";
 
-		TupleQuery query = QueryManager.prepareTupleQuery(q);
+		TupleQuery query = repo.getQueryManager().prepareTupleQuery(q);
 		try (TupleQueryResult res = query.evaluate()) {
 
 			while (res.hasNext()) {

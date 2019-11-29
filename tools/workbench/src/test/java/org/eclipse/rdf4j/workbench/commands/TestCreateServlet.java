@@ -9,13 +9,10 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
-import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.HashMap;
 
 /**
  * @author Dale Visser

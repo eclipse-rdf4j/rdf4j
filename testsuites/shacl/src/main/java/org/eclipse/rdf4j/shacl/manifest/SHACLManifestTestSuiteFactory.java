@@ -52,7 +52,7 @@ import junit.framework.TestSuite;
 /**
  * Functionality for creating a JUnit test suite out of a W3C Working Group-style manifest for SHACL shape constraints
  * testsuite
- * 
+ *
  * @author James Leigh
  */
 public class SHACLManifestTestSuiteFactory {
@@ -82,7 +82,7 @@ public class SHACLManifestTestSuiteFactory {
 
 	/**
 	 * Creates a new {@link TestSuite} for executiong of {@link AbstractSHACLTest} s.
-	 * 
+	 *
 	 * @param factory                   a factory class that creates each individual test case.
 	 * @param officialWorkingGroupTests indicates whether to use the official W3C working group tests, or Sesame's own
 	 *                                  set of tests.
@@ -181,9 +181,7 @@ public class SHACLManifestTestSuiteFactory {
 		IRI manifest = vf.createIRI(baseIRI.toString());
 		int before = manifests.size();
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			RDFParser rdfParser = new TurtleParser();
 
 			ContextStatementCollector collection = new ContextStatementCollector(manifests, vf, manifest);
@@ -193,8 +191,6 @@ public class SHACLManifestTestSuiteFactory {
 			for (Map.Entry<String, String> e : collection.getNamespaces().entrySet()) {
 				manifests.setNamespace(e.getKey(), e.getValue());
 			}
-		} finally {
-			in.close();
 		}
 		if (before < manifests.size()) {
 			for (Value included : new LinkedHashSet<>(
@@ -210,7 +206,7 @@ public class SHACLManifestTestSuiteFactory {
 
 	/**
 	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
-	 * 
+	 *
 	 * @param subManifestFile the url of a sub-manifest
 	 * @param excludedSubdirs an array of directory names. May be null.
 	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match for the
@@ -220,9 +216,9 @@ public class SHACLManifestTestSuiteFactory {
 		boolean result = true;
 
 		if (excludedSubdirs != null && excludedSubdirs.length > 0) {
-			int index = subManifestFile.lastIndexOf("/");
+			int index = subManifestFile.lastIndexOf('/');
 			String path = subManifestFile.substring(0, index);
-			String sd = path.substring(path.lastIndexOf("/") + 1);
+			String sd = path.substring(path.lastIndexOf('/') + 1);
 
 			for (String subdir : excludedSubdirs) {
 				if (sd.equals(subdir)) {

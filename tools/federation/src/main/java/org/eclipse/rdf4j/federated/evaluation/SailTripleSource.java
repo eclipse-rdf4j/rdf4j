@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.federated.FederationManager;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -50,8 +50,8 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	private static final Logger log = LoggerFactory.getLogger(SailTripleSource.class);
 
-	SailTripleSource(Endpoint endpoint) {
-		super(FederationManager.getMonitoringService(), endpoint);
+	SailTripleSource(Endpoint endpoint, FederationContext federationContext) {
+		super(federationContext, endpoint);
 	}
 
 	@Override
@@ -73,12 +73,13 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			// apply filter and/or insert original bindings
 			if (filterExpr != null) {
 				if (bindings.size() > 0)
-					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res);
+					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+							SailTripleSource.this.strategy);
 				else
-					res = new FilteringIteration(filterExpr, res);
+					res = new FilteringIteration(filterExpr, res, SailTripleSource.this.strategy);
 				if (!res.hasNext()) {
 					Iterations.closeCloseable(res);
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 			} else if (bindings.size() > 0) {
@@ -114,10 +115,11 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 			// if filter is set, apply it
 			if (filterExpr != null) {
-				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get());
+				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
+						SailTripleSource.this.strategy);
 				if (!filteredRes.hasNext()) {
 					Iterations.closeCloseable(filteredRes);
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
 				resultHolder.set(filteredRes);

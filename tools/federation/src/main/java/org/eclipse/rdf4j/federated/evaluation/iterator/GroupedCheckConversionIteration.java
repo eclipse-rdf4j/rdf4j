@@ -39,7 +39,7 @@ public class GroupedCheckConversionIteration
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
 			String name = b.getName();
-			bIndex = Integer.parseInt(name.substring(name.lastIndexOf("_") + 1));
+			bIndex = Integer.parseInt(name.substring(name.lastIndexOf('_') + 1));
 		}
 		return bindings.get(bIndex);
 	}

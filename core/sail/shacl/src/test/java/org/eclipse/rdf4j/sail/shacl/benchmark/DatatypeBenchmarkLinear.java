@@ -97,6 +97,8 @@ public class DatatypeBenchmarkLinear {
 			}
 		}
 
+		repository.shutDown();
+
 	}
 
 	@Benchmark
@@ -118,6 +120,7 @@ public class DatatypeBenchmarkLinear {
 			}
 		}
 
+		repository.shutDown();
 	}
 
 }

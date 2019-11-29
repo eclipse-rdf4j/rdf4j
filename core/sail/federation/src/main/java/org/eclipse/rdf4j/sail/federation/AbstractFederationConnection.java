@@ -146,25 +146,12 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 	@Override
 	public void closeInternal() throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.close();
-			}
-		});
+		excute(RepositoryConnection::close);
 	}
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-		CloseableIteration<? extends Resource, SailException> cursor = union(new Function<Resource>() {
-
-			@Override
-			public CloseableIteration<? extends Resource, RepositoryException> call(RepositoryConnection member)
-					throws RepositoryException {
-				return member.getContextIDs();
-			}
-		});
+		CloseableIteration<? extends Resource, SailException> cursor = union(RepositoryConnection::getContextIDs);
 
 		cursor = new DistinctIteration<Resource, SailException>(cursor);
 
@@ -318,14 +305,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public CloseableIteration<? extends Statement, SailException> getStatementsInternal(final Resource subj,
 			final IRI pred, final Value obj, final boolean includeInferred, final Resource... contexts)
 			throws SailException {
-		CloseableIteration<? extends Statement, SailException> cursor = union(new Function<Statement>() {
-
-			@Override
-			public CloseableIteration<? extends Statement, RepositoryException> call(RepositoryConnection member)
-					throws RepositoryException {
-				return member.getStatements(subj, pred, obj, includeInferred, contexts);
-			}
-		});
+		CloseableIteration<? extends Statement, SailException> cursor = union(
+				(RepositoryConnection member) -> member.getStatements(subj, pred, obj, includeInferred, contexts));
 
 		if (!federation.isDistinct() && !isLocal(pred)) {
 			// Filter any duplicates

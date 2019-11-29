@@ -91,6 +91,20 @@
 			<artifactId>jetty-jsp</artifactId>
 			<version>${jetty.version}</version>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>org.glassfish</groupId>
+					<artifactId>javax.el</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+<!--		Jetty-jsp is including a snapshot version of javax.el, thid breaks the build-->
+		<dependency>
+			<groupId>org.glassfish</groupId>
+			<artifactId>javax.el</artifactId>
+			<version>3.0.0</version>
+			<scope>test</scope>
 		</dependency>
 
 		<dependency>
@@ -106,9 +120,9 @@
 		<dependency>
 			<groupId>com.opencsv</groupId>
 			<artifactId>opencsv</artifactId>
-			<version>3.2</version>
 			<scope>test</scope>
 		</dependency>
+
 	</dependencies>
 
 	<build>

@@ -197,13 +197,7 @@ public class DirectoryLockManager implements LockManager {
 			private Thread hook;
 			{
 				try {
-					Thread hook = new Thread(new Runnable() {
-
-						@Override
-						public void run() {
-							delete();
-						}
-					});
+					Thread hook = new Thread(this::delete);
 					Runtime.getRuntime().addShutdownHook(hook);
 					this.hook = hook;
 				} catch (AccessControlException e) {

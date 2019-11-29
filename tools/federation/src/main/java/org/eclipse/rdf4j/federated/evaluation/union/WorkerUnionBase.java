@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
  */
 public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 
-	protected List<ParallelTask<T>> tasks = new ArrayList<ParallelTask<T>>();
+	protected List<ParallelTask<T>> tasks = new ArrayList<>();
 
 	public WorkerUnionBase(FederationEvalStrategy strategy, QueryInfo queryInfo) {
 		super(strategy, queryInfo);

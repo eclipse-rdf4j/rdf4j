@@ -1,0 +1,24 @@
+name: PR unit test
+
+on: pull_request
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jdk: [1.8, 11]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ matrix.jdk }}
+    - name: Verify formatting
+      run: mvn -B formatter:validate
+    - name: Build
+      run: mvn -B clean install -DskipTests
+    - name: Run tests
+      run: mvn -B verify --file pom.xml

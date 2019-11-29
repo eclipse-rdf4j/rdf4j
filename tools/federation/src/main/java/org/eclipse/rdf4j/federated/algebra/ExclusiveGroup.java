@@ -15,9 +15,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -36,29 +35,33 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public class ExclusiveGroup extends AbstractQueryModelNode implements StatementTupleExpr, FilterTuple {
 	private static final long serialVersionUID = 9215353191021766797L;
 
-	protected final List<ExclusiveStatement> owned = new ArrayList<ExclusiveStatement>();
+	protected final List<ExclusiveStatement> owned = new ArrayList<>();
 	protected final ArrayList<StatementSource> owner;
-	protected final Set<String> freeVars = new HashSet<String>();
+	protected final Set<String> freeVars = new HashSet<>();
 	protected final String id;
 	protected final transient QueryInfo queryInfo;
 	protected FilterValueExpr filter = null;
 	protected transient Endpoint ownedEndpoint = null;
 
+	private final FederationEvalStrategy strategy;
+
 	public ExclusiveGroup(Collection<ExclusiveStatement> ownedNodes, StatementSource owner, QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
-		this.owner = new ArrayList<StatementSource>(1);
+		this.owner = new ArrayList<>(1);
 		this.owner.add(owner);
 		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
-		ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(owner.getEndpointID());
+		ownedEndpoint = queryInfo.getFederationContext().getEndpointManager().getEndpoint(owner.getEndpointID());
+
+		strategy = queryInfo.getFederationContext().getStrategy();
 	}
 
 	/**
 	 * Initialize free variables and filter expressions for owned children.
 	 */
 	protected void init() {
-		HashSet<FilterExpr> conjExpr = new HashSet<FilterExpr>();
+		HashSet<FilterExpr> conjExpr = new HashSet<>();
 		for (ExclusiveStatement o : owned) {
 			freeVars.addAll(o.getFreeVars());
 
@@ -136,7 +139,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 	@Override
 	public List<String> getFreeVars() {
-		return new ArrayList<String>(freeVars);
+		return new ArrayList<>(freeVars);
 	}
 
 	@Override
@@ -163,10 +166,8 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 		try {
 			// use the particular evaluation strategy for evaluation
-			return FederationManager.getInstance().getStrategy().evaluateExclusiveGroup(this, bindings);
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+			return strategy.evaluateExclusiveGroup(this, bindings);
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 

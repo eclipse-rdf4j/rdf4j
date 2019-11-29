@@ -41,7 +41,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and SPARQLResultsJSONWriter.
- * 
+ *
  * @author Peter Ansell
  */
 abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter {
@@ -122,11 +122,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeString(nextColumn);
 			}
 			jg.writeEndArray();
-		} catch (IOException e) {
-			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
-		} catch (QueryResultHandlerException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -162,11 +158,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			}
 
 			jg.writeEndObject();
-		} catch (IOException e) {
-			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
-		} catch (QueryResultHandlerException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -195,11 +187,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			// results braces
 			jg.writeEndObject();
 			endDocument();
-		} catch (IOException e) {
-			throw new TupleQueryResultHandlerException(e);
-		} catch (TupleQueryResultHandlerException e) {
-			throw e;
-		} catch (QueryResultHandlerException e) {
+		} catch (IOException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}

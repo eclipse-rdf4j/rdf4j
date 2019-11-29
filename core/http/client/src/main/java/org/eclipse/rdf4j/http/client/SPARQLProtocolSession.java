@@ -385,11 +385,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 		try {
 			executeNoContent(method);
-		} catch (RepositoryException e) {
-			throw e;
-		} catch (MalformedQueryException e) {
-			throw e;
-		} catch (QueryInterruptedException e) {
+		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
@@ -440,11 +436,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		try {
 			return getBoolean(method);
-		} catch (RepositoryException e) {
-			throw e;
-		} catch (MalformedQueryException e) {
-			throw e;
-		} catch (QueryInterruptedException e) {
+		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
@@ -549,7 +541,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		 */
 
 		if (query != null) {
-			if (baseURI != null && !baseURI.equals("")) {
+			if (baseURI != null && !baseURI.isEmpty()) {
 				// prepend query string with base URI declaration
 				query = "BASE <" + baseURI + "> \n" + query;
 			}
@@ -580,7 +572,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		List<NameValuePair> queryParams = new ArrayList<>();
 
 		if (update != null) {
-			if (baseURI != null && !baseURI.equals("")) {
+			if (baseURI != null && !baseURI.isEmpty()) {
 				// prepend update string with base URI declaration
 				update = "BASE <" + baseURI + "> \n" + update;
 			}

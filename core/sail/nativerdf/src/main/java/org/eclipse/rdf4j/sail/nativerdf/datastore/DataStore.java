@@ -7,17 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.zip.CRC32;
 
-import org.eclipse.rdf4j.common.io.ByteArrayUtil;
-
 /**
  * Class that provides indexed storage and retrieval of arbitrary length data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DataStore implements Closeable {
@@ -57,7 +57,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Gets the value for the specified ID.
-	 * 
+	 *
 	 * @param id A value ID, should be larger than 0.
 	 * @return The value for the ID, or <tt>null</tt> if no such value could be found.
 	 * @exception IOException If an I/O error occurred.
@@ -77,7 +77,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Gets the ID for the specified value.
-	 * 
+	 *
 	 * @param queryData The value to get the ID for, must not be <tt>null</tt>.
 	 * @return The ID for the specified value, or <tt>-1</tt> if no such ID could be found.
 	 * @exception IOException If an I/O error occurred.
@@ -109,7 +109,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Returns the maximum value-ID that is in use.
-	 * 
+	 *
 	 * @return The largest ID, or <tt>0</tt> if the store does not contain any values.
 	 * @throws IOException If an I/O error occurs.
 	 */
@@ -120,7 +120,7 @@ public class DataStore implements Closeable {
 	/**
 	 * Stores the supplied value and returns the ID that has been assigned to it. In case the data to store is already
 	 * present, the ID of this existing data is returned.
-	 * 
+	 *
 	 * @param data The data to store, must not be <tt>null</tt>.
 	 * @return The ID that has been assigned to the value.
 	 * @exception IOException If an I/O error occurred.
@@ -142,7 +142,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Synchronizes any recent changes to the data to disk.
-	 * 
+	 *
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
@@ -153,7 +153,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Removes all values from the DataStore.
-	 * 
+	 *
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
@@ -171,7 +171,7 @@ public class DataStore implements Closeable {
 	/**
 	 * Closes the DataStore, releasing any file references, etc. In case a transaction is currently open, it will be
 	 * rolled back. Once closed, the DataStore can no longer be used.
-	 * 
+	 *
 	 * @exception IOException If an I/O error occurred.
 	 */
 	@Override
@@ -189,7 +189,7 @@ public class DataStore implements Closeable {
 
 	/**
 	 * Gets a hash code for the supplied data.
-	 * 
+	 *
 	 * @param data The data to calculate the hash code for.
 	 * @return A hash code for the supplied data.
 	 */
@@ -215,13 +215,14 @@ public class DataStore implements Closeable {
 
 		System.out.println("Dumping DataStore contents...");
 		File dataDir = new File(args[0]);
-		DataStore dataStore = new DataStore(dataDir, args[1]);
+		DataFile.DataIterator iter;
+		try (DataStore dataStore = new DataStore(dataDir, args[1])) {
+			iter = dataStore.dataFile.iterator();
+			while (iter.hasNext()) {
+				byte[] data = iter.next();
 
-		DataFile.DataIterator iter = dataStore.dataFile.iterator();
-		while (iter.hasNext()) {
-			byte[] data = iter.next();
-
-			System.out.println(ByteArrayUtil.toHexString(data));
+				System.out.println(ByteArrayUtil.toHexString(data));
+			}
 		}
 	}
 }

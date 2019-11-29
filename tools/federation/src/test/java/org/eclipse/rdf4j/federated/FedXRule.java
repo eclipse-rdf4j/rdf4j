@@ -14,12 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.eclipse.rdf4j.federated.Config;
-import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
-import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -28,7 +25,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 
 	private final File configurationPreset;
 
-	protected Repository repository;
+	protected FedXRepository repository;
 
 	// settings that get applied in the actual config
 	protected Map<String, String> configSettings = new HashMap<>();
@@ -57,8 +54,9 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 			endpoints = EndpointFactory.loadFederationMembers(configurationPreset);
 		else
 			endpoints = Collections.<Endpoint>emptyList();
-		repository = FedXFactory.initializeFederation(endpoints);
-		FederationManager.getInstance().getCache().clear();
+		repository = FedXFactory.createFederation(endpoints);
+		repository.init();
+		getFederationContext().getCache().clear();
 	}
 
 	@Override
@@ -67,7 +65,11 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 	}
 
 	public void addEndpoint(Endpoint e) {
-		FederationManager.getInstance().addEndpoint(e);
+		getFederationContext().getManager().addEndpoint(e);
+	}
+
+	public void removeEndpoint(Endpoint e) {
+		getFederationContext().getManager().removeEndpoint(e, true);
 	}
 
 	public void enableDebug() {
@@ -78,8 +80,12 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 		Config.getConfig().set(key, value);
 	}
 
-	public Repository getRepository() {
+	public FedXRepository getRepository() {
 		return repository;
+	}
+
+	public FederationContext getFederationContext() {
+		return repository.getFederationContext();
 	}
 
 }

@@ -12,10 +12,10 @@ import java.io.File;
 import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 public class MonitoringDemo {
 
@@ -23,7 +23,7 @@ public class MonitoringDemo {
 
 		Config.initialize();
 		Config.getConfig().set("enableMonitoring", "true");
-		SailRepository repo = FedXFactory.initializeFederation(new File("local/dataSourceConfig.ttl"));
+		FedXRepository repo = FedXFactory.createFederation(new File("local/dataSourceConfig.ttl"));
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
@@ -41,7 +41,7 @@ public class MonitoringDemo {
 			}
 			System.out.println("# Done, " + count + " results");
 
-			MonitoringUtil.printMonitoringInformation();
+			MonitoringUtil.printMonitoringInformation(repo.getFederationContext());
 		}
 
 		repo.shutDown();

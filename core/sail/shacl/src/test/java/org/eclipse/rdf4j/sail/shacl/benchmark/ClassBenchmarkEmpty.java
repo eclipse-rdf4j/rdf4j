@@ -88,6 +88,7 @@ public class ClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -109,6 +110,7 @@ public class ClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 
@@ -135,6 +137,7 @@ public class ClassBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+		repository.shutDown();
 
 	}
 

@@ -70,7 +70,7 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> res = new LinkedHashSet<String>(16);
+		Set<String> res = new LinkedHashSet<>(16);
 		for (TupleExpr e : args) {
 			res.addAll(e.getAssuredBindingNames());
 		}
@@ -79,7 +79,7 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> res = new LinkedHashSet<String>(16);
+		Set<String> res = new LinkedHashSet<>(16);
 		for (TupleExpr e : args) {
 			res.addAll(e.getBindingNames());
 		}

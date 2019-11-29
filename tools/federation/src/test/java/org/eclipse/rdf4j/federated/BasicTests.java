@@ -91,45 +91,50 @@ public class BasicTests extends SPARQLBaseTest {
 		List<Endpoint> endpoints = prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl",
 				"/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		RepositoryConnection conn = fedxRule.getRepository().getConnection();
-		TupleQuery tq = conn.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
-		TupleQueryResult result = tq.evaluate();
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
+			TupleQueryResult result = tq.evaluate();
 
-		TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("person"))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
-				.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
-				.build();
+			TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("person"))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+					.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
+					.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
+					.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
+					.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
+					.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
+					.build();
 
-		compareTupleQueryResults(result, expected, false);
+			compareTupleQueryResults(result, expected, false);
 
-		// evaluate against ep 1 and ep 3 only
-		FedXDataset fedxDataset = new FedXDataset(tq.getDataset());
-		fedxDataset.addEndpoint(endpoints.get(0).getId());
-		fedxDataset.addEndpoint(endpoints.get(2).getId());
-		tq.setDataset(fedxDataset);
-		result = tq.evaluate();
+			// evaluate against ep 1 and ep 3 only
+			FedXDataset fedxDataset = new FedXDataset(tq.getDataset());
+			fedxDataset.addEndpoint(endpoints.get(0).getId());
+			fedxDataset.addEndpoint(endpoints.get(2).getId());
+			tq.setDataset(fedxDataset);
+			result = tq.evaluate();
 
-		expected = tupleQueryResultBuilder(Arrays.asList("person")).add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
-				.build();
+			expected = tupleQueryResultBuilder(Arrays.asList("person"))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+					.build();
 
-		compareTupleQueryResults(result, expected, false);
+			compareTupleQueryResults(result, expected, false);
+		}
 
 	}
 
 	@Test
 	public void testQueryBinding() throws Exception {
+
+		final QueryManager qm = federationContext().getQueryManager();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
@@ -139,7 +144,7 @@ public class BasicTests extends SPARQLBaseTest {
 				" ?person a foaf:Person .\r\n" +
 				" ?person foaf:name ?name .\r\n" +
 				"}";
-		TupleQuery query = QueryManager.prepareTupleQuery(queryString);
+		TupleQuery query = qm.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
 		TupleQueryResult actual = query.evaluate();
@@ -154,6 +159,8 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void testQueryWithLimit() throws Exception {
 
+		final QueryManager qm = federationContext().getQueryManager();
+
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
@@ -161,7 +168,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		evaluateQueryPlan("/tests/basic/query_limit01.rq", "/tests/basic/query_limit01.qp");
 
-		TupleQuery query = QueryManager.prepareTupleQuery(queryString);
+		TupleQuery query = qm.prepareTupleQuery(queryString);
 
 		try (TupleQueryResult actual = query.evaluate()) {
 			if (actual.hasNext()) {

@@ -64,47 +64,43 @@ class ArrangedWriter implements RDFWriter {
 
 	private final Model blankReferences = new LinkedHashModel();
 
-	private final Comparator<Statement> comparator = new Comparator<Statement>() {
-
-		@Override
-		public int compare(Statement s1, Statement s2) {
-			IRI p1 = s1.getPredicate();
-			IRI p2 = s2.getPredicate();
-			if (p1.equals(RDF.TYPE) && !p2.equals(RDF.TYPE)) {
-				return -1;
-			} else if (!p1.equals(RDF.TYPE) && p2.equals(RDF.TYPE)) {
-				return 1;
-			}
-			int cmp = p1.stringValue().compareTo(p2.stringValue());
-			if (cmp != 0)
-				return cmp;
-			Value o1 = s1.getObject();
-			Value o2 = s2.getObject();
-			if (o1.equals(o2)) {
-				return 0;
-			}
-			if (!(o1 instanceof BNode) && o2 instanceof BNode) {
-				return -1;
-			} else if (o1 instanceof BNode && !(o2 instanceof BNode)) {
-				return 1;
-			}
-			if (!(o1 instanceof IRI) && o2 instanceof IRI) {
-				return -1;
-			} else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
-				return 1;
-			}
-			int str_cmp = o1.stringValue().compareTo(o2.stringValue());
-			if (str_cmp != 0) {
-				return str_cmp;
-			}
-			Literal lit1 = (Literal) o1;
-			Literal lit2 = (Literal) o2;
-			int dt_cmp = lit1.getDatatype().stringValue().compareTo(lit2.getDatatype().stringValue());
-			if (dt_cmp != 0) {
-				return dt_cmp;
-			}
-			return lit1.getLanguage().orElse("").compareTo(lit2.getLanguage().orElse(""));
+	private final Comparator<Statement> comparator = (Statement s1, Statement s2) -> {
+		IRI p1 = s1.getPredicate();
+		IRI p2 = s2.getPredicate();
+		if (p1.equals(RDF.TYPE) && !p2.equals(RDF.TYPE)) {
+			return -1;
+		} else if (!p1.equals(RDF.TYPE) && p2.equals(RDF.TYPE)) {
+			return 1;
 		}
+		int cmp = p1.stringValue().compareTo(p2.stringValue());
+		if (cmp != 0)
+			return cmp;
+		Value o1 = s1.getObject();
+		Value o2 = s2.getObject();
+		if (o1.equals(o2)) {
+			return 0;
+		}
+		if (!(o1 instanceof BNode) && o2 instanceof BNode) {
+			return -1;
+		} else if (o1 instanceof BNode && !(o2 instanceof BNode)) {
+			return 1;
+		}
+		if (!(o1 instanceof IRI) && o2 instanceof IRI) {
+			return -1;
+		} else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
+			return 1;
+		}
+		int str_cmp = o1.stringValue().compareTo(o2.stringValue());
+		if (str_cmp != 0) {
+			return str_cmp;
+		}
+		Literal lit1 = (Literal) o1;
+		Literal lit2 = (Literal) o2;
+		int dt_cmp = lit1.getDatatype().stringValue().compareTo(lit2.getDatatype().stringValue());
+		if (dt_cmp != 0) {
+			return dt_cmp;
+		}
+		return lit1.getLanguage().orElse("").compareTo(lit2.getLanguage().orElse(""));
 	};
 
 	public ArrangedWriter(RDFWriter delegate) {

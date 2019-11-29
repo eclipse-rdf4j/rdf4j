@@ -26,27 +26,51 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 public class DelegateFederatedServiceResolver extends AbstractFederatedServiceResolver
 		implements FederatedServiceResolver {
 
-	private static DelegateFederatedServiceResolver instance = null;
+	private final EndpointManager endpointManager;
 
-	public static FederatedServiceResolver getInstance() {
-		if (instance == null)
-			throw new IllegalStateException("Not initialized, call #initialize() first");
-		return instance;
+	private SPARQLServiceResolver defaultImpl;
+	private FederatedServiceResolver delegate;
+
+	public DelegateFederatedServiceResolver(EndpointManager endpointManager) {
+		super();
+		this.endpointManager = endpointManager;
 	}
 
-	public static void initialize() {
-		instance = new DelegateFederatedServiceResolver();
+	public void initialize() {
+
+		if (delegate == null) {
+			// use a managed resolver if no explicit resolver is provided
+			defaultImpl = new SPARQLServiceResolver();
+			delegate = defaultImpl;
+		}
 	}
 
-	public static void shutdown() {
-		instance.defaultImpl.shutDown();
-		instance.shutDown();
-		instance = null;
+	@Override
+	public void shutDown() {
+		super.shutDown();
+
+		// shutdown the managed resolver
+		if (defaultImpl != null) {
+			defaultImpl.shutDown();
+		}
 
 	}
 
-	private final SPARQLServiceResolver defaultImpl = new SPARQLServiceResolver();
-	private FederatedServiceResolver delegate = defaultImpl;
+	public void setDelegate(FederatedServiceResolver federatedServiceResolver) {
+		if (delegate != null) {
+			throw new IllegalStateException("Delegate already initialized.");
+		}
+		this.delegate = federatedServiceResolver;
+	}
+
+	@Override
+	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+		if (isFedXEndpoint(serviceUrl)) {
+			return super.getService(serviceUrl);
+		} else {
+			return delegate.getService(serviceUrl);
+		}
+	}
 
 	@Override
 	protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
@@ -54,7 +78,11 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 		if (ep != null) {
 			return new RepositoryFederatedService(ep.getRepository(), false);
 		}
-		return delegate.getService(serviceUrl);
+		throw new IllegalStateException("External service URL should be managed by delegate.");
+	}
+
+	protected boolean isFedXEndpoint(String serviceUrl) {
+		return getFedXEndpoint(serviceUrl) != null;
 	}
 
 	/**
@@ -68,11 +96,10 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	 * @return
 	 */
 	private Endpoint getFedXEndpoint(String serviceUri) {
-		EndpointManager em = EndpointManager.getEndpointManager();
-		Endpoint e = em.getEndpointByUrl(serviceUri);
+		Endpoint e = endpointManager.getEndpointByUrl(serviceUri);
 		if (e != null)
 			return e;
-		e = em.getEndpointByName(serviceUri);
+		e = endpointManager.getEndpointByName(serviceUri);
 		return e;
 	}
 }

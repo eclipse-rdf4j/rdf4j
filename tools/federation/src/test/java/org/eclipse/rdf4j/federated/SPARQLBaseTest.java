@@ -46,14 +46,20 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 
 	protected Set<Statement> getStatements(Resource subj, IRI pred, Value obj) throws Exception {
 
-		Set<Statement> res = new HashSet<Statement>();
-		RepositoryResult<Statement> stmts = fedxRule.getRepository()
-				.getConnection()
-				.getStatements(subj, pred, obj, false);
-		while (stmts.hasNext()) {
-			res.add(stmts.next());
+		Set<Statement> res = new HashSet<>();
+		try (RepositoryConnection conn = fedxRule.getRepository()
+				.getConnection()) {
+			try (RepositoryResult<Statement> stmts = conn.getStatements(subj, pred, obj, false)) {
+				while (stmts.hasNext()) {
+					res.add(stmts.next());
+				}
+			}
 		}
-		stmts.close();
 		return res;
+	}
+
+	@Override
+	protected FederationContext federationContext() {
+		return fedxRule.getFederationContext();
 	}
 }

@@ -11,7 +11,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
@@ -49,7 +48,9 @@ public class ExclusiveStatement extends FedXStatementPattern {
 
 		try {
 
-			Endpoint ownedEndpoint = EndpointManager.getEndpointManager().getEndpoint(getOwner().getEndpointID());
+			Endpoint ownedEndpoint = queryInfo.getFederationContext()
+					.getEndpointManager()
+					.getEndpoint(getOwner().getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
 
 			/*
@@ -78,7 +79,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 						}
 						return res;
 					}
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 				}
 
 				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr));
@@ -95,9 +96,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 
 			return res;
 
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e);
-		} catch (MalformedQueryException e) {
+		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}

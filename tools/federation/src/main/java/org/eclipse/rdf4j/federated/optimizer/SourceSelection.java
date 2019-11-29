@@ -18,17 +18,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.EndpointManager;
-import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
-import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.cache.Cache;
+import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.cache.CacheEntry;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
-import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -69,7 +67,7 @@ public class SourceSelection {
 	/**
 	 * Map statements to their sources. Use synchronized access!
 	 */
-	protected Map<StatementPattern, List<StatementSource>> stmtToSources = new ConcurrentHashMap<StatementPattern, List<StatementSource>>();
+	protected Map<StatementPattern, List<StatementSource>> stmtToSources = new ConcurrentHashMap<>();
 
 	/**
 	 * Perform source selection for the provided statements using cache or remote ASK queries.
@@ -83,7 +81,7 @@ public class SourceSelection {
 	 */
 	public void doSourceSelection(List<StatementPattern> stmts) {
 
-		List<CheckTaskPair> remoteCheckTasks = new ArrayList<CheckTaskPair>();
+		List<CheckTaskPair> remoteCheckTasks = new ArrayList<>();
 
 		// for each statement determine the relevant sources
 		for (StatementPattern stmt : stmts) {
@@ -93,7 +91,7 @@ public class SourceSelection {
 				continue;
 			}
 
-			stmtToSources.put(stmt, new ArrayList<StatementSource>());
+			stmtToSources.put(stmt, new ArrayList<>());
 
 			SubQuery q = new SubQuery(stmt);
 
@@ -157,10 +155,11 @@ public class SourceSelection {
 	 * @return the relevant sources
 	 */
 	public Set<Endpoint> getRelevantSources() {
-		Set<Endpoint> endpoints = new HashSet<Endpoint>();
+		Set<Endpoint> endpoints = new HashSet<>();
 		for (List<StatementSource> sourceList : stmtToSources.values())
 			for (StatementSource source : sourceList)
-				endpoints.add(EndpointManager.getEndpointManager().getEndpoint(source.getEndpointID()));
+				endpoints
+						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
 		return endpoints;
 	}
 
@@ -192,13 +191,15 @@ public class SourceSelection {
 		}
 
 		private final SourceSelection sourceSelection;
-		private ControlledWorkerScheduler<BindingSet> scheduler = FederationManager.getInstance().getJoinScheduler();
+		private final ControlledWorkerScheduler<BindingSet> scheduler;
 		private CountDownLatch latch;
 		private boolean finished = false;
 		protected List<Exception> errors = new CopyOnWriteArrayList<>();
 
 		private SourceSelectionExecutorWithLatch(SourceSelection sourceSelection) {
 			this.sourceSelection = sourceSelection;
+			// TODO simpler access pattern
+			this.scheduler = sourceSelection.queryInfo.getFederationContext().getManager().getJoinScheduler();
 		}
 
 		/**
@@ -208,7 +209,7 @@ public class SourceSelection {
 		 * @param tasks
 		 */
 		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, Cache cache) {
-			if (tasks.size() == 0)
+			if (tasks.isEmpty())
 				return;
 
 			latch = new CountDownLatch(tasks.size());
