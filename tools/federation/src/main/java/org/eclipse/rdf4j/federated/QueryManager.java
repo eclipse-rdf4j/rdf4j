@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.optimizer.Optimizer;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -39,7 +40,6 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -57,25 +57,25 @@ public class QueryManager {
 
 	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);
 
-	protected final FederationManager federationManager;
-	protected final Repository repo;
-	protected RepositoryConnection conn;
-	protected final AtomicBigInteger nextQueryID;
-	protected Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
-	protected Map<String, String> prefixDeclarations = new HashMap<>();
+	private RepositoryConnection conn;
+	private final AtomicBigInteger nextQueryID;
+	private Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
+	private Map<String, String> prefixDeclarations = new HashMap<>();
 
-	public QueryManager(FederationManager federationManager, Repository repo) {
-		this.federationManager = federationManager;
-		this.repo = repo;
+	private FederationContext federationContext;
+
+	public QueryManager() {
 
 		BigInteger lastQueryId = new BigInteger("0");
 		this.nextQueryID = new AtomicBigInteger(lastQueryId);
 	}
 
-	public void init() {
+	public void init(FedXRepository repo, FederationContext federationContext) {
+
+		this.federationContext = federationContext;
 
 		// initialize prefix declarations, if any
-		String prefixFile = Config.getConfig().getPrefixDeclarations();
+		String prefixFile = federationContext.getConfig().getPrefixDeclarations();
 		if (prefixFile != null) {
 			Properties props = new Properties();
 			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {
@@ -282,13 +282,11 @@ public class QueryManager {
 		if (!(query instanceof ParsedQuery))
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		// we use a dummy query info object here
-		// TODO better way to get to the FederationContext is required
-		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				federationManager.federationContext);
+		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT, federationContext);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			tupleExpr = Optimizer.optimize(tupleExpr, new SimpleDataset(), EmptyBindingSet.getInstance(),
-					federationManager.getStrategy(), qInfo);
+					federationContext.getStrategy(), qInfo);
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());

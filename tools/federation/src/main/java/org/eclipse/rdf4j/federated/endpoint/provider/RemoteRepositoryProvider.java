@@ -45,8 +45,6 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 					.setHttpClientBuilder(httpClientBuilder);
 			try {
 				repo.init();
-
-				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {
 				repo.shutDown();
 			}

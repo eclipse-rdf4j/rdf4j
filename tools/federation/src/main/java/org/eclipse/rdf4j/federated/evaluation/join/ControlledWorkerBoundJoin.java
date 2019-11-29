@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
@@ -61,7 +61,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			return;
 		}
 
-		int nBindingsCfg = Config.getConfig().getBoundJoinBlockSize();
+		int nBindingsCfg = this.queryInfo.getFederationContext().getConfig().getBoundJoinBlockSize();
 		int totalBindings = 0; // the total number of bindings
 		TupleExpr expr = rightArg;
 
@@ -136,14 +136,14 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	 * {@link ControlledWorkerJoin#handleBindings()}. This is
 	 * 
 	 * a) if the expr is a {@link BoundJoinTupleExpr} (Mind the special handling for {@link FedXService} as defined in
-	 * b) b) if the expr is a {@link FedXService} and {@link Config#getEnableServiceAsBoundJoin()}
+	 * b) b) if the expr is a {@link FedXService} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
 	 * 
 	 * @return
 	 */
 	private boolean canApplyVectoredEvaluation(TupleExpr expr) {
 		if (expr instanceof BoundJoinTupleExpr) {
 			if (expr instanceof FedXService)
-				return Config.getConfig().getEnableServiceAsBoundJoin();
+				return this.queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();
 			return true;
 		}
 		return false;

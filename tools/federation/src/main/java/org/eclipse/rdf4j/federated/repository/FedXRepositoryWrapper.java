@@ -9,9 +9,7 @@ package org.eclipse.rdf4j.federated.repository;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
-import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -82,15 +80,6 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 		if (baseDir == null) {
 			baseDir = new File(".");
 		}
-		try {
-			if (fedXConfig.getFedxConfig() != null) {
-				Config.initialize(new File(baseDir, fedXConfig.getFedxConfig()));
-			} else {
-				Config.initialize();
-			}
-		} catch (FedXException e) {
-			throw new RepositoryException("Failed to initialize config: " + e.getMessage(), e);
-		}
 
 		// explicit federation members model
 		Model members = fedXConfig.getMembers();
@@ -99,8 +88,6 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 		File dataConfigFile = null;
 		if (fedXConfig.getDataConfig() != null) {
 			dataConfigFile = new File(baseDir, fedXConfig.getDataConfig());
-		} else if (Config.getConfig().getDataConfig() != null) {
-			dataConfigFile = new File(baseDir, Config.getConfig().getDataConfig());
 		}
 
 		if (members == null && dataConfigFile == null) {

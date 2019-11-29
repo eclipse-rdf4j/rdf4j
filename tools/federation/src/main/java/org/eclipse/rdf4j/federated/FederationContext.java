@@ -32,9 +32,11 @@ public class FederationContext {
 
 	private final DelegateFederatedServiceResolver serviceResolver;
 
+	private final FedXConfig fedXConfig;
+
 	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
 			Cache cache, DelegateFederatedServiceResolver federatedServiceResolver,
-			Monitoring monitoring) {
+			Monitoring monitoring, FedXConfig fedXConfig) {
 		super();
 		this.manager = manager;
 		this.endpointManager = endpointManager;
@@ -42,10 +44,11 @@ public class FederationContext {
 		this.cache = cache;
 		this.serviceResolver = federatedServiceResolver;
 		this.monitoring = monitoring;
+		this.fedXConfig = fedXConfig;
 	}
 
 	public FedX getFederation() {
-		return this.getManager().federation;
+		return this.manager.getFederation();
 	}
 
 	public Cache getCache() {
@@ -74,5 +77,9 @@ public class FederationContext {
 
 	public DelegateFederatedServiceResolver getFederatedServiceResolver() {
 		return this.serviceResolver;
+	}
+
+	public FedXConfig getConfig() {
+		return this.fedXConfig;
 	}
 }
