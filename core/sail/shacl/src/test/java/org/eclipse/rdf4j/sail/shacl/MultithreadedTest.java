@@ -33,6 +33,11 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public abstract class MultithreadedTest {
@@ -202,13 +207,14 @@ public abstract class MultithreadedTest {
 
 		Random r = new Random();
 
+		ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+
 		try {
 			for (int i = 0; i < 3; i++) {
 				list.stream()
 						.flatMap(Collection::stream)
 						.sorted(Comparator.comparingInt(System::identityHashCode))
-						.parallel()
-						.forEach(transaction -> {
+						.map(transaction -> (Runnable) () -> {
 							try (SailRepositoryConnection connection = repository.getConnection()) {
 
 								connection.begin(isolationLevel);
@@ -229,11 +235,22 @@ public abstract class MultithreadedTest {
 								}
 
 							}
-
+						})
+						.map(executorService::submit)
+						.collect(Collectors.toList()) // this terminates lazy evalutation, so that we can submit all our
+														// runnables before we start collecting them
+						.forEach(f -> {
+							try {
+								f.get();
+							} catch (InterruptedException | ExecutionException e) {
+								throw new RuntimeException(e);
+							}
 						});
+
 			}
 
 		} finally {
+			executorService.shutdown();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
 				((ShaclSailConnection) connection.getSailConnection()).revalidate();
