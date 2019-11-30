@@ -1,0 +1,26 @@
+name: compliance
+
+on:
+  push:
+    branches: 
+      - master
+      - develop
+
+jobs:
+  verify:
+
+    runs-on: ubuntu-latest    
+    strategy:
+      matrix:
+        jdk: [1.8, 11]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ matrix.jdk }}
+    - name: Build
+      run: mvn -B clean install -DskipTests
+    - name: Compliance tests
+      run: mvn -B verify -Pcompliance --file pom.xml
