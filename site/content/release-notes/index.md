@@ -3,6 +3,12 @@ title: "Eclipse RDF4J release notes"
 layout: "doc"
 ---
 
+# 3.0.3 
+
+RDF4J 3.0.3 is a patch release with a number of bug fixes.
+
+For a complete overview, see [all issues fixed in 3.0.3](https://github.com/eclipse/rdf4j/milestone/44?closed=1).
+
 # 3.0.2 
 
 RDF4J 3.0.2 is a patch release with a number of bug fixes.
