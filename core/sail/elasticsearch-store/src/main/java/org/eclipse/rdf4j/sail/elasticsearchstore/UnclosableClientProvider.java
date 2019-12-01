@@ -15,9 +15,9 @@ class UnclosableClientProvider implements ClientProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(UnclosableClientProvider.class);
 
-	private final SingletonClientProvider clientPool;
+	private final ClientProvider clientPool;
 
-	public UnclosableClientProvider(SingletonClientProvider clientPool) {
+	public UnclosableClientProvider(ClientProvider clientPool) {
 		this.clientPool = clientPool;
 	}
 

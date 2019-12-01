@@ -59,7 +59,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	private static final String MAPPING;
 
-	private static final int BUFFER_THRESHOLD = 1024 * 16;
+	private int BUFFER_THRESHOLD = 1024 * 16;
 	private final ClientProvider clientProvider;
 	private Set<Statement> addStatementBuffer = new HashSet<>();
 	private Set<ElasticsearchId> deleteStatementBuffer = new HashSet<>();
@@ -532,6 +532,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			clientProvider.getClient().admin().indices().create(request).actionGet();
 		}
 
+		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
+
 	}
 
 	void setElasticsearchScrollTimeout(int timeout) {
@@ -674,4 +676,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		return statement;
 	}
 
+	public void setElasticsearchBulkSize(int size) {
+		this.BUFFER_THRESHOLD = size;
+	}
 }

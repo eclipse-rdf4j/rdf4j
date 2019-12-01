@@ -75,7 +75,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	}
 
-	public ElasticsearchStore(SingletonClientProvider clientPool, String index) {
+	public ElasticsearchStore(ClientProvider clientPool, String index) {
 		this.clientProvider = new UnclosableClientProvider(clientPool);
 
 		dataStructure = new ElasticsearchDataStructure(this.clientProvider, index);
@@ -138,6 +138,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 				if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
 					logger.info("Elasticsearch started!");
+
 					return;
 
 				}
@@ -236,5 +237,10 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	public String getIndex() {
 		return index;
+	}
+
+	public void setElasticsearchBulkSize(int size) {
+		dataStructure.setElasticsearchBulkSize(size);
+		dataStructureInferred.setElasticsearchBulkSize(size);
 	}
 }
