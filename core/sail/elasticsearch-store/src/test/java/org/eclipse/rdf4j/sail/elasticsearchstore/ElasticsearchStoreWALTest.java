@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -23,6 +22,7 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +32,11 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+// Tests transaction failures that the Write-Ahead-Log should be able to recover from
 public class ElasticsearchStoreWALTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreWALTest.class);
@@ -102,13 +101,14 @@ public class ElasticsearchStoreWALTest {
 
 	}
 
+	@Ignore // No WAL implemented yet
 	@Test
 	public void testAddLargeDataset() {
 
 		boolean transactionFaild = false;
 		int count = 100000;
 		try {
-			failedTransaction(count);
+			failedTransactionAdd(count);
 		} catch (Exception e) {
 			System.out.println(e.getClass().getName());
 			transactionFaild = true;
@@ -129,7 +129,7 @@ public class ElasticsearchStoreWALTest {
 
 	}
 
-	private void failedTransaction(int count) {
+	private void failedTransactionAdd(int count) {
 		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
 				embeddedElastic.getTransportTcpPort(), "cluster1");
 
@@ -148,6 +148,87 @@ public class ElasticsearchStoreWALTest {
 			Thread thread = new Thread(() -> {
 				try {
 					while (clientProvider.getBulkCalls() < 3) {
+						Thread.sleep(1);
+					}
+					clientProvider.close();
+				} catch (Exception ignored) {
+
+				}
+			});
+			thread.start();
+
+			connection.commit();
+
+		}
+
+	}
+
+	@Ignore // No WAL implemented yet
+	@Test
+	public void testRemoveLargeDataset() {
+
+		int count = 100000;
+
+		fill(count);
+
+		boolean transactionFaild = false;
+		try {
+			failedTransactionRemove();
+		} catch (Exception e) {
+			System.out.println(e.getClass().getName());
+			transactionFaild = true;
+		}
+
+		assertTrue(transactionFaild);
+
+		SailRepository elasticsearchStore = new SailRepository(
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			long size = connection.size();
+			System.out.println(size);
+			assertEquals("Since transaction failed there should be no statements in the store", count, size);
+
+		}
+
+	}
+
+	private void fill(int count) {
+		SailRepository elasticsearchStore = new SailRepository(
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			for (int i = 0; i < count; i++) {
+				connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i));
+			}
+
+			connection.commit();
+
+		}
+	}
+
+	private void failedTransactionRemove() {
+		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
+				embeddedElastic.getTransportTcpPort(), "cluster1");
+
+		ElasticsearchStore es = new ElasticsearchStore(clientProvider, "testindex");
+		SailRepository elasticsearchStore = new SailRepository(es);
+
+		es.setElasticsearchBulkSize(1024);
+
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			connection.begin(IsolationLevels.READ_COMMITTED);
+
+			connection.clear();
+
+			long bulkCalls = clientProvider.getBulkCalls();
+			Thread thread = new Thread(() -> {
+				try {
+					while (clientProvider.getBulkCalls() < bulkCalls + 3) {
 						Thread.sleep(1);
 					}
 					clientProvider.close();
