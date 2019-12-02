@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -17,7 +18,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;
@@ -73,7 +73,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 
 		sailStore = new ExtensibleSailStore(Objects.requireNonNull(dataStructure),
-				Objects.requireNonNull(dataStructureInferred), Objects.requireNonNull(namespaceStore));
+				Objects.requireNonNull(dataStructureInferred), Objects.requireNonNull(namespaceStore), this);
 
 		sailStore.init();
 		namespaceStore.init();
@@ -140,4 +140,33 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		sailStore = null;
 	}
 
+	public WriteAheadLoggingInterface<T> writeAheadLoggingHandler() {
+		return new WriteAheadLoggingInterface<T>() {
+
+			@Override
+			public void init(T dataStructure) {
+
+			}
+
+			@Override
+			public void begin() {
+
+			}
+
+			@Override
+			public void commit() {
+
+			}
+
+			@Override
+			public void statementToAdd(Statement statement) {
+
+			}
+
+			@Override
+			public void statementToRemove(Statement statement) {
+
+			}
+		};
+	}
 }
