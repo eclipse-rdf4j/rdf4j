@@ -219,11 +219,8 @@ echo "";
 echo "SDK and onejar build takes several minutes, this is the last step and the script will complete by itself when you continue."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-# build one jar
+# build aggregate javadoc, SDK, and onejar
 mvn -Passembly clean install -DskipTests
-cd assembly
-mvn -Passembly install -DskipTests
-cd ..
 
 echo "Starting automated upload with sftp. Timeout is set to 1 hour!"
 
@@ -258,5 +255,7 @@ echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/maste
 echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
 echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
 echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
-echo " - Upload the javadocs " #TODO Where should they be uploaded and how?
+echo " - Upload the javadocs by adding them to rdf4j-doc project: site/static/javadoc/${MVN_VERSION_RELEASE}"
+echo "     - Aggregated javadoc can be found in target/site/apidocs or in the SDK zip file"
+echo "     - Make sure to also replace the site/static/javadoc/latest directory with a copy (don't use a symlink)"
 
