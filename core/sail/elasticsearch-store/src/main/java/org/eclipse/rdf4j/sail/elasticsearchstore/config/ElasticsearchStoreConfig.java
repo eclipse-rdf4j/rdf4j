@@ -41,7 +41,7 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
 
-		graph.setNamespace("ms", NAMESPACE);
+		graph.setNamespace(ElasticsearchStoreSchema.PREFIX, NAMESPACE);
 		if (hostname != null) {
 			graph.add(implNode, ElasticsearchStoreSchema.hostname, vf.createLiteral(hostname));
 		}

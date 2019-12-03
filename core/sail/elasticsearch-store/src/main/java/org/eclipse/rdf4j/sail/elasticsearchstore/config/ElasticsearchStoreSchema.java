@@ -24,6 +24,7 @@ public class ElasticsearchStoreSchema {
 
 	/** The ElasticsearchStore schema namespace (<code>http://rdf4j.org/config/sail/elasticsearchstore#</code>). */
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/elasticsearchstore#";
+	public static final String PREFIX = "ess";
 
 	public final static IRI hostname = vf.createIRI(NAMESPACE, "hostname");
 	public final static IRI port = vf.createIRI(NAMESPACE, "port");
