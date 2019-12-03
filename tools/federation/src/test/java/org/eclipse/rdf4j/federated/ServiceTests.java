@@ -185,7 +185,6 @@ public class ServiceTests extends SPARQLBaseTest {
 		// workaround for test: shutdown and re-initialize in order to set a custom federated service
 		FedXRepository repo = fedxRule.getRepository();
 		repo.shutDown();
-		Config.initialize();
 		repo.setFederatedServiceResolver(serviceResolver);
 		repo.init();
 

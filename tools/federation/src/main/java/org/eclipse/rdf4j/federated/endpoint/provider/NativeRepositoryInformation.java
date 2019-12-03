@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.federated.endpoint.provider;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.util.Vocabulary;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
  *  	fedx:store "NativeStore" ;
  *  	fedx:RepositoryLocation "%location%".
  * 
- * relative path (to {@link Config#getBaseDir()}) in a "repositories" subfolder
+ * relative path (to {@link FedXRepository#getDataDir()}) in a "repositories" subfolder
  * 
  * <http://DBpedia> a sd:Service ;
  *  	fedx:store "NativeStore" ;

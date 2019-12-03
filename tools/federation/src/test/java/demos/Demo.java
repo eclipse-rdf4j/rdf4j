@@ -9,7 +9,6 @@ package demos;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
@@ -22,7 +21,6 @@ public class Demo {
 	public static void main(String[] args) throws Exception {
 
 		File dataConfig = new File("local/dataSourceConfig.ttl");
-		Config.initialize();
 		FedXRepository repo = FedXFactory.createFederation(dataConfig);
 		repo.init();
 

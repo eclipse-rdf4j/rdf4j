@@ -45,7 +45,6 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 					.setHttpClientBuilder(httpClientBuilder);
 			try {
 				repo.init();
-				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {
 				repo.shutDown();
 			}

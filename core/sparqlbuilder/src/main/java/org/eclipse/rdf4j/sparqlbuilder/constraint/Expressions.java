@@ -56,7 +56,7 @@ public class Expressions {
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-bnode"> SPARQL BNODE Function</a>
 	 */
 	public static Expression<?> bnode() {
-		return function(BNODE, (Operand) null);
+		return function(BNODE);
 	}
 
 	/**

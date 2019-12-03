@@ -14,7 +14,7 @@ import java.util.concurrent.Executor;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
@@ -395,7 +395,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.
 	 * 
-	 * See {@link ControlledWorkerBoundJoin} and {@link Config#getEnableServiceAsBoundJoin()}
+	 * See {@link ControlledWorkerBoundJoin} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
 	 * 
 	 * @param service
 	 * @param bindings

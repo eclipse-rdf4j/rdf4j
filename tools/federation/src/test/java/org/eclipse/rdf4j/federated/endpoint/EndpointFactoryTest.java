@@ -12,11 +12,6 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
-import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.endpoint.EndpointBase;
-import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
-import org.eclipse.rdf4j.federated.endpoint.EndpointType;
-import org.eclipse.rdf4j.federated.endpoint.ManagedRepositoryEndpoint;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
@@ -56,13 +51,12 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 	@Test
 	public void testDataConfig() throws Exception {
 
-		fedxRule.setConfig("validateRepositoryConnections", "false");
-		fedxRule.setConfig("baseDir", "target/tmp/fedxTest");
+		File baseDir = new File("target/tmp/fedxTest");
 
 		File dataConfig = new File(
 				EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
 
-		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig);
+		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig, baseDir);
 
 		endpoints.sort((e1, e2) -> e1.getName().compareTo(e2.getName()));
 

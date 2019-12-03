@@ -44,6 +44,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.github.jsonldjava.shaded.com.google.common.collect.Lists;
+import com.github.jsonldjava.shaded.com.google.common.collect.Sets;
 
 public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
@@ -203,6 +204,64 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 		}
 
+	}
+
+	@Test
+	public void testMultipleFederationInstances() throws Exception {
+
+		addMemoryStore("repo1");
+		addMemoryStore("repo2");
+		addMemoryStore("repo3");
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		addData("repo1", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+		addData("repo2", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+		addData("repo3", Lists.newArrayList(
+				vf.createStatement(vf.createIRI("http://ex.org/p3"), RDF.TYPE, FOAF.PERSON)));
+
+		Model federation1 = new TreeModel();
+		federation1.add(vf.createIRI("http://ex.org/repo1"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		federation1.add(vf.createIRI("http://ex.org/repo1"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo1"));
+		federation1.add(vf.createIRI("http://ex.org/repo2"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		federation1.add(vf.createIRI("http://ex.org/repo2"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo2"));
+
+		FedXRepositoryConfig fedXRepo1Config = new FedXRepositoryConfig();
+		fedXRepo1Config.setMembers(federation1);
+
+		repoManager.addRepositoryConfig(new RepositoryConfig("federation1", fedXRepo1Config));
+
+		Model federation2 = new TreeModel();
+		federation2.add(vf.createIRI("http://ex.org/repo1"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		federation2.add(vf.createIRI("http://ex.org/repo1"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo1"));
+		federation2.add(vf.createIRI("http://ex.org/repo3"), FEDX.STORE, vf.createLiteral("ResolvableRepository"));
+		federation2.add(vf.createIRI("http://ex.org/repo3"), FEDX.REPOSITORY_NAME, vf.createLiteral("repo3"));
+
+		FedXRepositoryConfig fedXRepo2Config = new FedXRepositoryConfig();
+		fedXRepo2Config.setMembers(federation2);
+
+		repoManager.addRepositoryConfig(new RepositoryConfig("federation2", fedXRepo2Config));
+
+		// query federation 1 (contains person1 and person2)
+		Repository fedRepo1 = repoManager.getRepository("federation1");
+		try (RepositoryConnection conn = fedRepo1.getConnection()) {
+
+			Model m = new TreeModel(Iterations.asList(conn.getStatements(null, RDF.TYPE, FOAF.PERSON)));
+			Assertions.assertEquals(2, m.size()); // two persons
+			Assertions.assertEquals(Sets.newHashSet(vf.createIRI("http://ex.org/p1"), vf.createIRI("http://ex.org/p2")),
+					m.subjects());
+		}
+
+		// query federation 1 (contains person1 and person3)
+		Repository fedRepo2 = repoManager.getRepository("federation2");
+		try (RepositoryConnection conn = fedRepo2.getConnection()) {
+
+			Model m = new TreeModel(Iterations.asList(conn.getStatements(null, RDF.TYPE, FOAF.PERSON)));
+			Assertions.assertEquals(2, m.size()); // two persons
+			Assertions.assertEquals(Sets.newHashSet(vf.createIRI("http://ex.org/p1"), vf.createIRI("http://ex.org/p3")),
+					m.subjects());
+		}
 	}
 
 	protected void addMemoryStore(String repoId) throws Exception {

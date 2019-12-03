@@ -34,7 +34,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 				"/tests/medium/data4.ttl"));
 
 		fedxRule.enableDebug();
-		fedxRule.setConfig("enforceMaxQueryTime", "10");
+		fedxRule.setConfig(fedxConfig -> fedxConfig.withEnforceMaxQueryTime(10));
 		repoSettings(1).setLatencySimulator(latencySimulator(2000));
 		repoSettings(2).setLatencySimulator(latencySimulator(2000));
 		repoSettings(3).setLatencySimulator(latencySimulator(4000));
