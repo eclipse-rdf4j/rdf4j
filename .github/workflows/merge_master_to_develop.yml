@@ -1,0 +1,18 @@
+on:
+  push:
+    branches:
+    - "master"
+
+jobs:
+  pull-request:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: pull-request
+      uses: repo-sync/pull-request@v2
+      with:
+        source_branch: "masster"              # If blank, default: triggered branch
+        destination_branch: "develop"         # If blank, default: master
+        pr_title: "Merge ${{ github.ref }} into develop"
+        pr_body: "Automatically generated PR to keep develop in sync with master. See .github/workflows/merge_master_to_develop.yml"  # Full markdown support, requires pr_title to be set
+        github_token: ${{ secrets.GITHUB_TOKEN }}
