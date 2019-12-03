@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tests concurrent read and write access to a Sail implementation.
- * 
+ *
  * @author Arjohn Kampman
  */
 public abstract class SailConcurrencyTest {
@@ -142,7 +142,7 @@ public abstract class SailConcurrencyTest {
 	/**
 	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or errors. This
 	 * test may fail intermittently rather than consistently, given its dependency on multi-threading.
-	 * 
+	 *
 	 * @see https://github.com/eclipse/rdf4j/issues/693
 	 */
 	@Test

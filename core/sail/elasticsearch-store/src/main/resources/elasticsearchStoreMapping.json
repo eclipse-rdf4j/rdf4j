@@ -1,0 +1,46 @@
+{
+  "statement": {
+    "properties": {
+      "subject": {
+        "type": "keyword"
+      },
+      "subject_IRI": {
+        "type": "boolean"
+      },
+      "subject_BNode": {
+        "type": "boolean"
+      },
+      "predicate": {
+        "type": "keyword"
+      },
+      "object": {
+        "type": "text",
+        "index": false
+      },
+      "object_Hash": {
+        "type": "integer"
+      },
+      "object_IRI": {
+        "type": "boolean"
+      },
+      "object_BNode": {
+        "type": "boolean"
+      },
+      "object_Datatype": {
+        "type": "keyword"
+      },
+      "object_Lang": {
+        "type": "keyword"
+      },
+      "context": {
+        "type": "keyword"
+      },
+      "context_IRI": {
+        "type": "boolean"
+      },
+      "context_BNode": {
+        "type": "boolean"
+      }
+    }
+  }
+}

@@ -7,12 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -28,6 +22,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -47,6 +42,12 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
@@ -506,14 +507,28 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		public synchronized void deprecate(Statement statement) throws SailException {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
-			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-					explicit, nextSnapshot, ctx);) {
-				while (iter.hasNext()) {
-					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+			if (statement instanceof MemStatement) {
+				((MemStatement) statement).setTillSnapshot(nextSnapshot);
+			} else if (statement instanceof LinkedHashModel.ModelStatement
+					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
+				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
+				// original statement that can be retrieved here.
+				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
+				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
+					toDeprecate.setTillSnapshot(nextSnapshot);
+				}
+			} else {
+				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
+						statement.getSubject(),
+						statement.getPredicate(), statement.getObject(),
+						explicit, nextSnapshot, statement.getContext())) {
+					while (iter.hasNext()) {
+						MemStatement st = iter.next();
+						st.setTillSnapshot(nextSnapshot);
+					}
 				}
 			}
 		}
@@ -565,6 +580,24 @@ class MemorySailStore implements SailStore {
 			st.addToComponentLists();
 			return st;
 		}
+
+		@Override
+		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			acquireExclusiveTransactionLock();
+			boolean deprecated = false;
+			requireCleanup = true;
+			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
+					explicit, nextSnapshot, contexts)) {
+				while (iter.hasNext()) {
+					deprecated = true;
+					MemStatement st = iter.next();
+					st.setTillSnapshot(nextSnapshot);
+				}
+			}
+
+			return deprecated;
+		}
+
 	}
 
 	/**

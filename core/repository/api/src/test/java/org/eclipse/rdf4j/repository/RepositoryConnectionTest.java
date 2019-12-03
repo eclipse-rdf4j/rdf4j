@@ -98,7 +98,7 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parameters() {
+	public static IsolationLevel[] parameters() {
 		return IsolationLevels.values();
 	}
 
@@ -197,7 +197,6 @@ public abstract class RepositoryConnectionTest {
 	@Before
 	public void setUp() throws Exception {
 		testRepository = createRepository();
-		testRepository.initialize();
 
 		testCon = testRepository.getConnection();
 		testCon.clear();

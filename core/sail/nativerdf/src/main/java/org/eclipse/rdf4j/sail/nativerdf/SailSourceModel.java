@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,9 +28,16 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
- * 
+ *
  * @author James Leigh
  */
 class SailSourceModel extends AbstractModel {
@@ -57,8 +57,9 @@ class SailSourceModel extends AbstractModel {
 		@Override
 		public boolean hasNext() {
 			try {
-				if (stmts.hasNext())
+				if (stmts.hasNext()) {
 					return true;
+				}
 				stmts.close();
 				return false;
 			} catch (SailException e) {
@@ -81,8 +82,9 @@ class SailSourceModel extends AbstractModel {
 
 		@Override
 		public void remove() {
-			if (last == null)
+			if (last == null) {
 				throw new IllegalStateException("next() not yet called");
+			}
 			SailSourceModel.this.remove(last);
 			last = null;
 		}
@@ -131,8 +133,9 @@ class SailSourceModel extends AbstractModel {
 			for (int i = 0; i < 100; i++) {
 				Statement e = it.next();
 				sb.append(e == this ? "(this Collection)" : e);
-				if (!it.hasNext())
+				if (!it.hasNext()) {
 					return sb.append(']').toString();
+				}
 				sb.append(',').append(' ');
 			}
 			return sb.toString();
@@ -224,8 +227,9 @@ class SailSourceModel extends AbstractModel {
 	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
-			if (!isEmptyOrResourcePresent(contexts))
+			if (!isEmptyOrResourcePresent(contexts)) {
 				return false;
+			}
 			return contains(dataset(), subj, pred, obj, contexts);
 		} catch (SailException e) {
 			throw new ModelException(e);
@@ -234,8 +238,9 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		if (subj == null || pred == null || obj == null)
+		if (subj == null || pred == null || obj == null) {
 			throw new UnsupportedOperationException("Incomplete statement");
+		}
 		try {
 			if (contains(subj, pred, obj, contexts)) {
 				logger.trace("already contains statement {} {} {} {}", subj, pred, obj, contexts);
@@ -279,10 +284,13 @@ class SailSourceModel extends AbstractModel {
 				CloseableIteration<? extends Statement, SailException> stmts;
 				stmts = dataset().getStatements(subj, pred, obj, contexts);
 				try {
+
 					while (stmts.hasNext()) {
 						Statement st = stmts.next();
-						sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+
+						sink.deprecate(st);
 					}
+
 				} finally {
 					stmts.close();
 				}
@@ -305,8 +313,9 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
-		if (!isEmptyOrResourcePresent(contexts))
+		if (!isEmptyOrResourcePresent(contexts)) {
 			return new EmptyModel(this);
+		}
 		return new FilteredModel(this, subj, pred, obj, contexts) {
 
 			@Override
@@ -358,10 +367,12 @@ class SailSourceModel extends AbstractModel {
 			CloseableIteration<? extends Statement, SailException> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
 			try {
+
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
-					sink().deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+					sink.deprecate(st);
 				}
+
 			} finally {
 				stmts.close();
 			}
@@ -412,27 +423,34 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private boolean isEmptyOrResourcePresent(Value[] contexts) {
-		if (contexts instanceof Resource[])
+		if (contexts instanceof Resource[]) {
 			return true;
-		if (contexts == null)
+		}
+		if (contexts == null) {
 			return true;
-		if (contexts.length == 0)
+		}
+		if (contexts.length == 0) {
 			return true;
+		}
 		Resource[] result = new Resource[contexts.length];
 		for (int i = 0; i < result.length; i++) {
-			if (contexts[i] == null || contexts[i] instanceof Resource)
+			if (contexts[i] == null || contexts[i] instanceof Resource) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	Resource[] cast(Value[] contexts) {
-		if (contexts instanceof Resource[])
+		if (contexts instanceof Resource[]) {
 			return (Resource[]) contexts;
-		if (contexts == null)
+		}
+		if (contexts == null) {
 			return new Resource[] { null };
-		if (contexts.length == 0)
+		}
+		if (contexts.length == 0) {
 			return new Resource[0];
+		}
 		Resource[] result = new Resource[contexts.length];
 		for (int i = 0; i < result.length; i++) {
 			if (contexts[i] == null || contexts[i] instanceof Resource) {
