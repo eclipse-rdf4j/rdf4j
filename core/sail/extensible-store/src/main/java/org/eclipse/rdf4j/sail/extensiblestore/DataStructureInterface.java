@@ -33,8 +33,8 @@ public interface DataStructureInterface {
 			Value object,
 			Resource... context);
 
-	// flush this DataStructure, making added and removed data visible to read operations
-	void flush();
+	// flush this DataStructure to make added and removed data visible to read operations
+	void flushForReading();
 
 	void init();
 
@@ -48,7 +48,7 @@ public interface DataStructureInterface {
 	}
 
 	// flush through to any underlying storage, called by the likes of commit()
-	void flushThrough();
+	void flushForCommit();
 
 	default boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 

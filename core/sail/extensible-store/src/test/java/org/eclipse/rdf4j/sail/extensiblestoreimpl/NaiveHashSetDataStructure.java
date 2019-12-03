@@ -46,7 +46,7 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flush() {
+	public void flushForReading() {
 
 	}
 
@@ -56,7 +56,7 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushThrough() {
+	public void flushForCommit() {
 
 	}
 }

@@ -141,7 +141,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushThrough() {
+	public void flushForCommit() {
 		// no underlying store to flush to
 	}
 
@@ -286,7 +286,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flush() {
+	public void flushForReading() {
 
 		Client client = clientProvider.getClient();
 

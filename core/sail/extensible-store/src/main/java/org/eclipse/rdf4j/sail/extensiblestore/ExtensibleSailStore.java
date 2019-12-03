@@ -23,9 +23,9 @@ class ExtensibleSailStore implements SailStore {
 	private ExtensibleSailSource sailSourceInferred;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-			NamespaceStoreInterface namespaceStore, ExtensibleStore tnExtensibleStore) {
-		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, tnExtensibleStore, null);
-		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore, tnExtensibleStore, null);
+			NamespaceStoreInterface namespaceStore) {
+		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
+		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
 	}
 
 	@Override

@@ -33,15 +33,11 @@ class ExtensibleSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
 	private final NamespaceStoreInterface namespaceStore;
-	private final ExtensibleStore tnExtensibleStore;
-	private final WriteAheadLoggingInterface writeAheadLoggingInterface;
 
-	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore,
-			ExtensibleStore tnExtensibleStore, WriteAheadLoggingInterface writeAheadLoggingInterface) {
+	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
-		this.tnExtensibleStore = tnExtensibleStore;
-		this.writeAheadLoggingInterface = writeAheadLoggingInterface;
+
 	}
 
 	@Override
@@ -50,10 +46,7 @@ class ExtensibleSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		WriteAheadLoggingInterface writeAheadLoggingInterface = tnExtensibleStore.writeAheadLoggingHandler();
-		writeAheadLoggingInterface.init(dataStructure);
-		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore, tnExtensibleStore,
-				writeAheadLoggingInterface);
+		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore);
 	}
 
 	@Override
@@ -66,7 +59,7 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public void flush() throws SailException {
-				dataStructure.flush();
+				dataStructure.flushForReading();
 			}
 
 			@Override
@@ -218,9 +211,7 @@ class ExtensibleSailSource implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		writeAheadLoggingInterface.begin();
-		dataStructure.flushThrough();
-		writeAheadLoggingInterface.commit();
+		dataStructure.flushForCommit();
 	}
 
 	public void init() {

@@ -151,7 +151,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushThrough() {
+	public void flushForCommit() {
 
 		internalAdded
 				.stream()
@@ -163,12 +163,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		internalAdded = new HashSet<>(internalAdded.size());
 		internalRemoved = new HashSet<>(internalRemoved.size());
 
-		dataStructure.flush();
+		dataStructure.flushForReading();
 
 	}
 
 	@Override
-	public void flush() {
+	public void flushForReading() {
 	}
 
 	@Override

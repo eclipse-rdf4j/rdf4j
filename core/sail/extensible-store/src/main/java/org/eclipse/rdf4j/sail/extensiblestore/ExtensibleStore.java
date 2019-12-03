@@ -73,7 +73,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 
 		sailStore = new ExtensibleSailStore(Objects.requireNonNull(dataStructure),
-				Objects.requireNonNull(dataStructureInferred), Objects.requireNonNull(namespaceStore), this);
+				Objects.requireNonNull(dataStructureInferred), Objects.requireNonNull(namespaceStore));
 
 		sailStore.init();
 		namespaceStore.init();
@@ -140,33 +140,4 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		sailStore = null;
 	}
 
-	public WriteAheadLoggingInterface<T> writeAheadLoggingHandler() {
-		return new WriteAheadLoggingInterface<T>() {
-
-			@Override
-			public void init(T dataStructure) {
-
-			}
-
-			@Override
-			public void begin() {
-
-			}
-
-			@Override
-			public void commit() {
-
-			}
-
-			@Override
-			public void statementToAdd(Statement statement) {
-
-			}
-
-			@Override
-			public void statementToRemove(Statement statement) {
-
-			}
-		};
-	}
 }
