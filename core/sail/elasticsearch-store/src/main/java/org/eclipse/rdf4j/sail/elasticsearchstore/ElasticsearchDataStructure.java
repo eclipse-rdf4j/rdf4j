@@ -44,7 +44,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -162,14 +161,14 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 				Statement next = null;
 
-				while (iterator.hasNext() && next == null) {
+				while (next == null && iterator.hasNext()) {
 					SearchHit nextSearchHit = iterator.next();
 
 					Map<String, Object> sourceAsMap = nextSearchHit.getSourceAsMap();
 
 					String id = nextSearchHit.getId();
 
-					Statement statement = sourceToStatement(sourceAsMap, id);
+					Statement statement = sourceToStatement(sourceAsMap, id, subject, predicate, object);
 
 					// we use hash to lookup the object value because the object can be bigger than what elasticsearch
 					// allows as max for keyword (32766 bytes), so it needs to be stored in a text field that is not
@@ -398,7 +397,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 						// clean up addedStatements
 						workingBuffer = workingBuffer.stream()
 								.filter(statement -> failedIDs.contains(sha256(statement))) // we only want to retry
-																							// failed
+								// failed
 								// statements
 								// filter out duplicates
 								.filter(statement -> {
@@ -461,7 +460,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 				.get()
 				.getSource();
 
-		return sourceToStatement(source, sha256);
+		return sourceToStatement(source, sha256, null, null, null);
 
 	}
 
@@ -628,20 +627,21 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	private static Statement sourceToStatement(Map<String, Object> sourceAsMap, String id) {
+	private static Statement sourceToStatement(Map<String, Object> sourceAsMap, String id, Resource subject,
+			IRI predicate, Value object) {
 
-		Resource subjectRes;
-		if (sourceAsMap.containsKey("subject_IRI")) {
-			subjectRes = vf.createIRI(sourceAsMap.get("subject").toString());
-		} else {
-			subjectRes = vf.createBNode(sourceAsMap.get("subject").toString());
+		Resource subjectRes = subject;
+		if (subjectRes == null && sourceAsMap.containsKey("subject_IRI")) {
+			subjectRes = vf.createIRI((String) sourceAsMap.get("subject"));
+		} else if (subjectRes == null) {
+			subjectRes = vf.createBNode((String) sourceAsMap.get("subject"));
 		}
 
-		IRI predicateRes = vf.createIRI(sourceAsMap.get("predicate").toString());
+		IRI predicateRes = predicate != null ? predicate : vf.createIRI((String) sourceAsMap.get("predicate"));
 
 		Value objectRes;
 
-		String objectString = sourceAsMap.get("object").toString();
+		String objectString = (String) sourceAsMap.get("object");
 
 		if (sourceAsMap.containsKey("object_IRI")) {
 			objectRes = vf.createIRI(objectString);
@@ -649,21 +649,19 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			objectRes = vf.createBNode(objectString);
 		} else {
 			if (sourceAsMap.containsKey("object_Lang")) {
-				objectRes = vf.createLiteral(objectString, sourceAsMap.get("object_Lang").toString());
+				objectRes = vf.createLiteral(objectString, (String) sourceAsMap.get("object_Lang"));
 
 			} else {
 				objectRes = vf.createLiteral(objectString,
-						vf.createIRI(sourceAsMap.get("object_Datatype").toString()));
-
+						vf.createIRI((String) sourceAsMap.get("object_Datatype")));
 			}
-
 		}
 
 		Resource contextRes = null;
 		if (sourceAsMap.containsKey("context_IRI")) {
-			contextRes = vf.createIRI(sourceAsMap.get("context").toString());
+			contextRes = vf.createIRI((String) sourceAsMap.get("context"));
 		} else if (sourceAsMap.containsKey("context_BNode")) {
-			contextRes = vf.createBNode(sourceAsMap.get("context").toString());
+			contextRes = vf.createBNode((String) sourceAsMap.get("context"));
 		}
 
 		Statement statement;

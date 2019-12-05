@@ -115,13 +115,13 @@ class ReadCommittedWrapper implements DataStructureInterface {
 						} else if (right.hasNext()) {
 							tempNext = right.next();
 
-							if (internalAddedLocal.contains(tempNext)) {
+							if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
 								tempNext = null;
 							}
 						}
 
 						if (tempNext != null) {
-							if (!internalRemovedLocal.contains(tempNext)) {
+							if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
 								next = tempNext;
 							}
 						}
