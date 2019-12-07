@@ -49,8 +49,6 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private static final long serialVersionUID = 7893197431354524479L;
 
-	static final Resource[] NULL_CTX = new Resource[] { null };
-
 	static final IRI BEFORE = new SimpleIRI("urn:from");
 
 	static final IRI AFTER = new SimpleIRI("urn:to");
@@ -445,7 +443,6 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private StatementTree choose(Value subj, Value pred, Value obj, Value ctx) {
 		for (StatementTree tree : trees) {
-			Thread.yield();
 			if (tree.isIndexed(subj, pred, obj, ctx)) {
 				return tree;
 			}

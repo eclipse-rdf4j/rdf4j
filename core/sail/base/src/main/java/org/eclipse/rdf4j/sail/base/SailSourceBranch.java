@@ -190,9 +190,6 @@ class SailSourceBranch implements SailSource {
 
 			@Override
 			public Model createEmptyModel() {
-//				if (level == IsolationLevels.SERIALIZABLE) {
-//					return Models.synchronizedModel(modelFactory.createEmptyModel());
-//				}
 				return modelFactory.createEmptyModel();
 			}
 		};

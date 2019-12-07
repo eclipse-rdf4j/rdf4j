@@ -39,14 +39,9 @@ import java.util.Set;
  * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently, and at
  * least one of the threads modifies the model, it must be synchronized externally. This is typically accomplished by
  * synchronizing on some object that naturally encapsulates the model. If no such object exists, the set should be
- * "wrapped" using the Collections.synchronizedSet method. This is best done at creation time, to prevent accidental
- * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
- * via the Set interface methods):
+ * "wrapped" using the * Models.synchronizedModel method.
  * </p>
  *
- * <pre>
- * Set<Statement> s = Collections.synchronizedSet(new LinkedHashModel(...));
- * </pre>
  *
  * @author James Leigh
  */
