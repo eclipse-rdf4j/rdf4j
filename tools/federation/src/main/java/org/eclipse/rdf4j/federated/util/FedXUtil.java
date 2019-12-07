@@ -9,7 +9,8 @@ package org.eclipse.rdf4j.federated.util;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
+import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -75,15 +76,16 @@ public class FedXUtil {
 	}
 
 	/**
-	 * Set a maximum execution time corresponding to {@link Config#getEnforceMaxQueryTime()} to this operation.
+	 * Set a maximum execution time corresponding to {@link FedXConfig#getEnforceMaxQueryTime()} to this operation.
 	 * 
 	 * Note that this is an upper bound only as FedX applies other means for evaluation the maximum query execution
 	 * time.
 	 * 
-	 * @param operation the {@link Operation}
+	 * @param operation         the {@link Operation}
+	 * @param federationContext the {@link FederationContext}
 	 */
-	public static void applyMaxQueryExecutionTime(Operation operation) {
-		int maxExecutionTime = Config.getConfig().getEnforceMaxQueryTime();
+	public static void applyMaxQueryExecutionTime(Operation operation, FederationContext federationContext) {
+		int maxExecutionTime = federationContext.getConfig().getEnforceMaxQueryTime();
 		if (maxExecutionTime <= 0) {
 			return;
 		}

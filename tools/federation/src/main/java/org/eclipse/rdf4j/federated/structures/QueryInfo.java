@@ -12,7 +12,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
@@ -59,7 +58,7 @@ public class QueryInfo {
 	 * @param query
 	 * @param queryType
 	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
-	 *                          {@link Config#getEnforceMaxQueryTime()}
+	 *                          {@link FedXConfig#getEnforceMaxQueryTime())
 	 * @param federationContext the {@link FederationContext}
 	 */
 	public QueryInfo(String query, QueryType queryType, int maxExecutionTime, FederationContext federationContext) {
@@ -71,7 +70,8 @@ public class QueryInfo {
 		this.query = query;
 		this.queryType = queryType;
 
-		int _maxExecutionTime = maxExecutionTime <= 0 ? Config.getConfig().getEnforceMaxQueryTime() : maxExecutionTime;
+		int _maxExecutionTime = maxExecutionTime <= 0 ? federationContext.getConfig().getEnforceMaxQueryTime()
+				: maxExecutionTime;
 		this.maxExecutionTimeMs = _maxExecutionTime * 1000;
 		this.start = System.currentTimeMillis();
 	}

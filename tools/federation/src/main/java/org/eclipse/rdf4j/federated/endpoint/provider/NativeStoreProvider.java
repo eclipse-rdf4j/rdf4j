@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.endpoint.ManagedRepositoryEndpoint;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -38,6 +37,13 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 	private static final Logger log = LoggerFactory.getLogger(NativeStoreProvider.class);
 
+	private final File baseDir;
+
+	public NativeStoreProvider(File baseDir) {
+		super();
+		this.baseDir = baseDir;
+	}
+
 	@Override
 	public Endpoint loadEndpoint(NativeRepositoryInformation repoInfo) throws FedXException {
 
@@ -53,12 +59,17 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			log.debug("Loading Native store from " + store.getAbsolutePath());
 		} else {
 
-			store = FileUtil.fileInBaseDir("repositories/" + repoInfo.getLocation());
+			if (baseDir == null) {
+				throw new FedXException(
+						"Base directory not defined. Use FedXFactory for base directory initialization.");
+			}
+
+			store = new File(baseDir, "repositories/" + repoInfo.getLocation());
 			if (store.isDirectory()) {
 				log.debug("Loading existing native store from " + store.getAbsolutePath());
 			} else {
 				log.info("Creating and loading native store from " + store.getAbsolutePath());
-				FileUtil.mkdirs(store);
+				store.mkdirs();
 			}
 		}
 
@@ -68,13 +79,9 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 			try {
 				repo.init();
-
-				ProviderUtil.checkConnectionIfConfigured(repo);
 			} finally {
 				repo.shutDown();
 			}
-
-			ProviderUtil.checkConnectionIfConfigured(repo);
 
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, repoInfo.getLocation(),
 					EndpointClassification.Local, repo);

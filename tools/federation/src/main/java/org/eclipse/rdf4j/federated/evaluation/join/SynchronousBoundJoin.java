@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
@@ -52,7 +51,7 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			return;
 		}
 
-		int nBindingsCfg = Config.getConfig().getBoundJoinBlockSize();
+		int nBindingsCfg = this.queryInfo.getFederationContext().getConfig().getBoundJoinBlockSize();
 		int totalBindings = 0; // the total number of bindings
 		StatementTupleExpr stmt = (StatementTupleExpr) rightArg;
 

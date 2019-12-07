@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -35,10 +35,12 @@ public class MonitoringImpl implements MonitoringService {
 	 */
 	private final Map<Endpoint, MonitoringInformation> requestMap = new ConcurrentHashMap<>();
 	private final QueryLog queryLog;
+	private final FedXConfig config;
 
-	MonitoringImpl() {
+	MonitoringImpl(FedXConfig config) {
 
-		if (Config.getConfig().isLogQueries()) {
+		this.config = config;
+		if (config.isLogQueries()) {
 			try {
 				queryLog = new QueryLog();
 			} catch (IOException e) {
@@ -108,6 +110,8 @@ public class MonitoringImpl implements MonitoringService {
 
 	@Override
 	public void logQueryPlan(TupleExpr tupleExpr) {
-		QueryPlanLog.setQueryPlan(tupleExpr);
+		if (config.isLogQueryPlan()) {
+			QueryPlanLog.setQueryPlan(tupleExpr);
+		}
 	}
 }

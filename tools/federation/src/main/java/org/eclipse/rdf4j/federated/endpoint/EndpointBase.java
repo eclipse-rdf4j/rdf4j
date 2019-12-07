@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.provider.RepositoryInformation;
@@ -166,10 +165,9 @@ public abstract class EndpointBase implements Endpoint {
 	 * </p>
 	 * 
 	 * @return indicator whether a single connection should be used
-	 * @see Config#useSingletonConnectionPerEndpoint()
 	 */
 	protected boolean useSingleConnection() {
-		return Config.getConfig().useSingletonConnectionPerEndpoint();
+		return false;
 	}
 
 	@Override

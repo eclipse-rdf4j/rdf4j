@@ -22,6 +22,6 @@ public class NativeStoreProvideTest {
 	 * @return
 	 */
 	public static NativeStore createNativeStore(File store) {
-		return new NativeStoreProvider().createNativeStore(store);
+		return new NativeStoreProvider(null).createNativeStore(store);
 	}
 }

@@ -35,12 +35,6 @@ public class WriteTest extends SPARQLBaseTest {
 		assumeNativeStore();
 	}
 
-	@BeforeEach
-	public void configure() {
-		// allow empty federation members
-		fedxRule.setConfig("validateRepositoryConnections", "false");
-	}
-
 	@Test
 	public void testSimpleWrite() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));

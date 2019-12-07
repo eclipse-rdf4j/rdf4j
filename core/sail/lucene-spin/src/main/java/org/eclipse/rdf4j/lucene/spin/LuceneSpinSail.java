@@ -17,6 +17,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -39,7 +41,11 @@ import org.slf4j.LoggerFactory;
  * connection from baseSail by wrapped which modify SearchIndex.
  *
  * @author jacek grzebyta
+ * 
+ * @deprecated since 3.0. The experimental LuceneSpinSail is scheduled to be removed by the next major release.
  */
+@Deprecated
+@Experimental
 public class LuceneSpinSail extends NotifyingSailWrapper {
 
 	private final Logger log = LoggerFactory.getLogger(LuceneSpinSail.class);

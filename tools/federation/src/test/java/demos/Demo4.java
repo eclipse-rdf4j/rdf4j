@@ -9,7 +9,6 @@ package demos;
 
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -19,7 +18,6 @@ public class Demo4 {
 
 	public static void main(String[] args) throws Exception {
 
-		Config.initialize();
 		FedXRepository repo = FedXFactory.createSparqlFederation(Arrays.asList(
 				"http://dbpedia.org/sparql",
 				"http://data.semanticweb.org/sparql"));

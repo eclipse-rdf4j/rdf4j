@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.federated.monitoring;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,8 +23,8 @@ import org.slf4j.LoggerFactory;
  * </p>
  * 
  * <ul>
- * <li>{@link Config#isEnableMonitoring()}</li>
- * <li>{@link Config#isLogQueries()}</li>
+ * <li>{@link FedXConfig#isEnableMonitoring()}</li>
+ * <li>{@link FedXConfig#isLogQueries()}</li>
  * </ul>
  * 
  * @author Andreas Schwarte

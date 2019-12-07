@@ -32,7 +32,8 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@Parameters(name = "{0}")
 	public static final IsolationLevel[] parametersREAD_COMMITTED() {
-		return new IsolationLevel[] { IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+		return new IsolationLevel[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
+				IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
 	}
 

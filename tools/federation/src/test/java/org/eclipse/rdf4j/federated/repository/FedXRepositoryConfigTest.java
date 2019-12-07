@@ -33,7 +33,6 @@ public class FedXRepositoryConfigTest {
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
 		config.parse(model, implNode(model));
 
-		Assertions.assertEquals("fedxConfig.prop", config.getFedxConfig());
 		Assertions.assertNull(config.getDataConfig());
 
 		Model members = config.getMembers();
@@ -55,7 +54,6 @@ public class FedXRepositoryConfigTest {
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
 		config.parse(model, implNode(model));
 
-		Assertions.assertEquals("fedxConfig.prop", config.getFedxConfig());
 		Assertions.assertEquals("dataConfig.ttl", config.getDataConfig());
 
 		Assertions.assertNull(config.getMembers());

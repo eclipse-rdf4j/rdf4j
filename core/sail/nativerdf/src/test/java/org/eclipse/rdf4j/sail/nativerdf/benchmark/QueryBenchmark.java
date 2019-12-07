@@ -132,6 +132,21 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
+	public boolean removeByQueryReadCommitted() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.commit();
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.add(statementList);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
 	public boolean simpleUpdateQueryIsolationReadCommitted() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

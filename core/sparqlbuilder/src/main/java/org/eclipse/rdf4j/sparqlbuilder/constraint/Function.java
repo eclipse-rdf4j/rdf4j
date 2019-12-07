@@ -18,6 +18,7 @@ class Function extends Expression<Function> {
 	Function(SparqlFunction function) {
 		super(function, ", ");
 		parenthesize();
+		printBodyIfEmpty(true);
 		setOperatorName(operator.getQueryString(), false);
 	}
 }

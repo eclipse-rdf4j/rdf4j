@@ -149,7 +149,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * @param operation the operation
 	 */
 	protected void applyMaxExecutionTimeUpperBound(Operation operation) {
-		FedXUtil.applyMaxQueryExecutionTime(operation);
+		FedXUtil.applyMaxQueryExecutionTime(operation, federationContext);
 	}
 
 	private <T> CloseableIteration<T, QueryEvaluationException> closeConn(RepositoryConnection dependentConn,

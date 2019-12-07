@@ -15,7 +15,6 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.NativeStoreProvider;
@@ -29,6 +28,7 @@ import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLProvider;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.Vocabulary;
 import org.eclipse.rdf4j.model.Model;
@@ -161,17 +161,18 @@ public class EndpointFactory {
 	 * </p>
 	 * 
 	 * @param name     a descriptive name, e.g. http://dbpedia
-	 * @param location the location of the data store, either absolute or relative in a "repositories" subfolder of
-	 *                 {@link Config#getBaseDir()}
+	 * @param location the location of the data store, either absolute or relative in a "repositories" subfolder
+	 *                 {@link FedXRepository#getDataDir()}
 	 * 
 	 * @return an initialized endpoint containing the repository
 	 * 
 	 * @throws Exception
 	 */
-	public static Endpoint loadNativeEndpoint(String name, String location) throws FedXException {
+	public static Endpoint loadNativeEndpoint(String name, File location) throws FedXException {
 
-		NativeStoreProvider repProvider = new NativeStoreProvider();
-		return repProvider.loadEndpoint(new NativeRepositoryInformation(name, location));
+		File baseDir = null; // not required
+		NativeStoreProvider repProvider = new NativeStoreProvider(baseDir);
+		return repProvider.loadEndpoint(new NativeRepositoryInformation(name, location.getAbsolutePath()));
 	}
 
 	/**
@@ -182,15 +183,14 @@ public class EndpointFactory {
 	 * path is used, the repository is created on the fly (if necessary).
 	 * </p>
 	 * 
-	 * @param location the location of the data store, either absolute or relative in a "repositories" subfolder of
-	 *                 {@link Config#getBaseDir()}
+	 * @param location the location of the data store
 	 * 
 	 * @return an initialized endpoint containing the repository
 	 * 
 	 * @throws Exception
 	 */
-	public static Endpoint loadNativeEndpoint(String location) throws FedXException {
-		return loadNativeEndpoint("http://" + new File(location).getName(), location);
+	public static Endpoint loadNativeEndpoint(File location) throws FedXException {
+		return loadNativeEndpoint("http://" + location.getName(), location);
 	}
 
 	/**
@@ -210,7 +210,7 @@ public class EndpointFactory {
 	 * @throws IOException
 	 * @throws Exception
 	 */
-	public static List<Endpoint> loadFederationMembers(File dataConfig) throws FedXException {
+	public static List<Endpoint> loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
 
 		if (!dataConfig.exists())
 			throw new FedXRuntimeException("File does not exist: " + dataConfig.getAbsolutePath());
@@ -225,7 +225,7 @@ public class EndpointFactory {
 			throw new FedXException("Unable to parse dataconfig " + dataConfig + ":" + e.getMessage());
 		}
 
-		return loadFederationMembers(graph);
+		return loadFederationMembers(graph, fedXBaseDir);
 	}
 
 	/**
@@ -237,25 +237,27 @@ public class EndpointFactory {
 	 * </p>
 	 * 
 	 * @param members
+	 * @param baseDirw
 	 * @return
 	 * @throws FedXException
 	 */
-	public static List<Endpoint> loadFederationMembers(Model members) throws FedXException {
+	public static List<Endpoint> loadFederationMembers(Model members, File baseDir) throws FedXException {
 
 		List<Endpoint> res = new ArrayList<>();
 		for (Statement st : members.filter(null, Vocabulary.FEDX.STORE, null)) {
-			Endpoint e = loadEndpoint(members, st.getSubject(), st.getObject());
+			Endpoint e = loadEndpoint(members, st.getSubject(), st.getObject(), baseDir);
 			res.add(e);
 		}
 
 		return res;
 	}
 
-	private static Endpoint loadEndpoint(Model graph, Resource repNode, Value repType) throws FedXException {
+	private static Endpoint loadEndpoint(Model graph, Resource repNode, Value repType, File baseDir)
+			throws FedXException {
 
 		// NativeStore => RDF4J native store implementation
 		if (repType.equals(FedXUtil.literal("NativeStore"))) {
-			NativeStoreProvider repProvider = new NativeStoreProvider();
+			NativeStoreProvider repProvider = new NativeStoreProvider(baseDir);
 			return repProvider.loadEndpoint(new NativeRepositoryInformation(graph, repNode));
 		}
 

@@ -7,19 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.monitoring;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 
 public class MonitoringFactory {
 
 	/**
-	 * Create a new monitoring instance depending on {@link Config#isEnableMonitoring()}
+	 * Create a new monitoring instance depending on {@link FedXConfig#isEnableMonitoring()}
 	 * 
 	 * @return the {@link Monitoring} instance
 	 */
-	public static Monitoring createMonitoring() {
+	public static Monitoring createMonitoring(FedXConfig config) {
 
-		if (Config.getConfig().isEnableMonitoring())
-			return new MonitoringImpl();
+		if (config.isEnableMonitoring())
+			return new MonitoringImpl(config);
 		return new NoopMonitoringImpl();
 	}
 }

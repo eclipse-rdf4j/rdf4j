@@ -9,9 +9,9 @@ package org.eclipse.rdf4j.federated.repository;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
-import org.eclipse.rdf4j.federated.util.FileUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -43,6 +42,8 @@ public class FedXRepository extends SailRepository {
 
 	private final FedX federation;
 
+	private final FedXConfig fedXConfig;
+
 	private FederationContext federationContext;
 
 	/**
@@ -50,9 +51,10 @@ public class FedXRepository extends SailRepository {
 	 */
 	private FederatedServiceResolver serviceResolver = null;
 
-	public FedXRepository(FedX federation) {
+	public FedXRepository(FedX federation, FedXConfig config) {
 		super(federation);
 		this.federation = federation;
+		this.fedXConfig = config;
 	}
 
 	@Override
@@ -69,18 +71,22 @@ public class FedXRepository extends SailRepository {
 
 		log.info("Initializing federation ...");
 
-		Monitoring monitoring = MonitoringFactory.createMonitoring();
+		Monitoring monitoring = MonitoringFactory.createMonitoring(fedXConfig);
 
 		EndpointManager endpointManager = EndpointManager.initialize(federation.getMembers());
 
-		String location = Config.getConfig().getCacheLocation();
-		File cacheLocation = FileUtil.getFileLocation(location);
+		String location = fedXConfig.getCacheLocation();
+
+		File cacheLocation = new File(location);
+		if (!cacheLocation.isAbsolute()) {
+			cacheLocation = new File(getDataDir(), location);
+		}
 		Cache cache = new MemoryCache(cacheLocation);
 		cache.initialize();
 
 		FederationManager federationManager = new FederationManager();
 
-		QueryManager queryManager = new QueryManager(federationManager, this);
+		QueryManager queryManager = new QueryManager();
 
 		DelegateFederatedServiceResolver fedxServiceResolver = new DelegateFederatedServiceResolver(
 				endpointManager);
@@ -89,16 +95,16 @@ public class FedXRepository extends SailRepository {
 		}
 
 		federationContext = new FederationContext(federationManager, endpointManager, queryManager, cache,
-				fedxServiceResolver, monitoring);
+				fedxServiceResolver, monitoring, fedXConfig);
 		federation.setFederationContext(federationContext);
 
 		super.initializeInternal();
 
-		queryManager.init();
 		federationManager.init(federation, federationContext);
+		queryManager.init(this, federationContext);
 		fedxServiceResolver.initialize();
 
-		if (Config.getConfig().isEnableJMX()) {
+		if (fedXConfig.isEnableJMX()) {
 			try {
 				MonitoringUtil.initializeJMXMonitoring(federationContext);
 			} catch (Exception e1) {

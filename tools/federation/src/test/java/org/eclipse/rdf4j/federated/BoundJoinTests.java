@@ -20,7 +20,8 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testSimpleUnion() throws Exception {
 		/* test a simple bound join */
-		fedxRule.setConfig("sparqlEvaluationStrategy", SparqlFederationEvalStrategy.class.getName());
+		fedxRule.setConfig(
+				fedxConfig -> fedxConfig.withSparqlEvaluationStrategy(SparqlFederationEvalStrategy.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 		execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false);
 	}
@@ -28,7 +29,9 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testSimpleValues() throws Exception {
 		/* test with VALUES clause based bound join */
-		fedxRule.setConfig("sparqlEvaluationStrategy", SparqlFederationEvalStrategyWithValues.class.getName());
+		fedxRule.setConfig(
+				fedxConfig -> fedxConfig
+						.withSparqlEvaluationStrategy(SparqlFederationEvalStrategyWithValues.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 		execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false);
 	}
@@ -36,7 +39,8 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testBoundJoin_FailingEndpoint() throws Exception {
 		/* test a simple bound join */
-		fedxRule.setConfig("sparqlEvaluationStrategy", SparqlFederationEvalStrategy.class.getName());
+		fedxRule.setConfig(
+				fedxConfig -> fedxConfig.withSparqlEvaluationStrategy(SparqlFederationEvalStrategy.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 
 		repoSettings(2).setFailAfter(5);

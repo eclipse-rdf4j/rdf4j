@@ -125,6 +125,12 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	@Override
+	public boolean add(Statement st) {
+		checkMemoryOverflow();
+		return getDelegate().add(st);
+	}
+
+	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().remove(subj, pred, obj, contexts);
 	}

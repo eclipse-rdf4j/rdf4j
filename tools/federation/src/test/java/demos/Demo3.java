@@ -10,7 +10,6 @@ package demos;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.Config;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
@@ -22,7 +21,6 @@ public class Demo3 {
 
 	public static void main(String[] args) throws Exception {
 
-		Config.initialize();
 		List<Endpoint> endpoints = new ArrayList<>();
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://dbpedia", "http://dbpedia.org/sparql"));
 		endpoints.add(EndpointFactory.loadSPARQLEndpoint("http://swdf", "http://data.semanticweb.org/sparql"));

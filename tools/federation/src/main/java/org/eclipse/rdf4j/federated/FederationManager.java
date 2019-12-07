@@ -73,14 +73,14 @@ public class FederationManager {
 	}
 
 	/* Instance variables */
-	protected FederationContext federationContext;
-	protected FedX federation;
-	protected ExecutorService executor;
-	protected FederationEvalStrategy strategy;
-	protected FederationType type;
-	protected ControlledWorkerScheduler<BindingSet> joinScheduler;
-	protected ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
-	protected ControlledWorkerScheduler<BindingSet> unionScheduler;
+	private FederationContext federationContext;
+	private FedX federation;
+	private ExecutorService executor;
+	private FederationEvalStrategy strategy;
+	private FederationType type;
+	private ControlledWorkerScheduler<BindingSet> joinScheduler;
+	private ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
+	private ControlledWorkerScheduler<BindingSet> unionScheduler;
 
 	public FederationManager() {
 
@@ -105,23 +105,27 @@ public class FederationManager {
 
 		if (joinScheduler != null)
 			joinScheduler.abort();
-		joinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getJoinWorkerThreads(),
+		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
 				"Join Scheduler");
 
 		if (unionScheduler != null)
 			unionScheduler.abort();
-		unionScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getUnionWorkerThreads(),
+		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
 				"Union Scheduler");
 
 		if (leftJoinScheduler != null)
 			leftJoinScheduler.abort();
-		leftJoinScheduler = new ControlledWorkerScheduler<>(Config.getConfig().getLeftJoinWorkerThreads(),
+		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
 				"Left Join Scheduler");
 
 	}
 
 	public Executor getExecutor() {
 		return executor;
+	}
+
+	public FedX getFederation() {
+		return this.federation;
 	}
 
 	public FederationEvalStrategy getStrategy() {
@@ -266,7 +270,6 @@ public class FederationManager {
 		}
 		federationContext.getFederatedServiceResolver().shutDown();
 		federationContext.getCache().persist();
-		Config.reset();
 	}
 
 	/**

@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -37,7 +38,11 @@ import org.eclipse.rdf4j.sail.lucene.SearchIndex;
  * @author sauermann
  * @author christian.huetter
  * @author jacek grzebyta
+ * 
+ * @deprecated since 3.0. The experimental LuceneSpinSail is scheduled to be removed by the next major release.
  */
+@Deprecated
+@Experimental
 public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(LuceneSpinSailConnection.class);

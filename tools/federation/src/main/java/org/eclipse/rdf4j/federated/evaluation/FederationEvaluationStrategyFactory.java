@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager.FederationType;
 
@@ -21,7 +21,7 @@ public class FederationEvaluationStrategyFactory {
 	/**
 	 * Return an instance of {@link FederationEvalStrategy} which is used for evaluating the query. The type depends on
 	 * the {@link FederationType} as well as on the actual implementations given by the configuration, in particular
-	 * this is {@link Config#getSailEvaluationStrategy()} and {@link Config#getSPARQLEvaluationStrategy()}.
+	 * this is {@link FedXConfig#getSailEvaluationStrategy()} and {@link FedXConfig#getSPARQLEvaluationStrategy()}.
 	 * 
 	 * @param federationType
 	 * @param federationContext
@@ -32,24 +32,22 @@ public class FederationEvaluationStrategyFactory {
 
 		switch (federationType) {
 		case LOCAL:
-			return instantiate(Config.getConfig().getSailEvaluationStrategy(), federationContext);
+			return instantiate(federationContext.getConfig().getSailEvaluationStrategy(), federationContext);
 		case REMOTE:
 		case HYBRID:
 		default:
-			return instantiate(Config.getConfig().getSPARQLEvaluationStrategy(), federationContext);
+			return instantiate(federationContext.getConfig().getSPARQLEvaluationStrategy(), federationContext);
 		}
 	}
 
-	private static FederationEvalStrategy instantiate(String evalStrategyClass, FederationContext federationContext) {
+	private static FederationEvalStrategy instantiate(Class<? extends FederationEvalStrategy> evalStrategyClass,
+			FederationContext federationContext) {
 		try {
-			return (FederationEvalStrategy) Class.forName(evalStrategyClass)
+			return (FederationEvalStrategy) evalStrategyClass
 					.getDeclaredConstructor(FederationContext.class)
 					.newInstance(federationContext);
 		} catch (InstantiationException e) {
 			throw new IllegalStateException("Class " + evalStrategyClass + " could not be instantiated.", e);
-		} catch (ClassNotFoundException e) {
-			throw new IllegalStateException(
-					"Class " + evalStrategyClass + " could not be found, check whether the name is correct.", e);
 		} catch (Exception e) {
 			throw new IllegalStateException("Unexpected error while instantiating " + evalStrategyClass + ":", e);
 		}

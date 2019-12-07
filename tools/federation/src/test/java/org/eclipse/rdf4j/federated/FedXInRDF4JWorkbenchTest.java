@@ -45,7 +45,6 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 		fedXDataDir.mkdirs();
 
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/config.ttl"), new File(fedXDataDir, "config.ttl"));
-		FileUtils.copyFile(toFile("/tests/rdf4jserver/fedxConfig.prop"), new File(fedXDataDir, "fedxConfig.prop"));
 
 		String fedXSparqlUrl = rdf4jServer.getRepositoryUrl(repositoryId);
 		SPARQLRepository repo = new SPARQLRepository(fedXSparqlUrl);
@@ -94,7 +93,6 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/config-withDataConfig.ttl"), new File(fedXDataDir, "config.ttl"));
 		FileUtils.copyFile(toFile("/tests/rdf4jserver/dataConfig.ttl"), new File(fedXDataDir, "dataConfig.ttl"));
-		FileUtils.copyFile(toFile("/tests/rdf4jserver/fedxConfig.prop"), new File(fedXDataDir, "fedxConfig.prop"));
 
 		String fedXSparqlUrl = rdf4jServer.getRepositoryUrl(repositoryId);
 		SPARQLRepository repo = new SPARQLRepository(fedXSparqlUrl);

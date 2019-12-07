@@ -9,7 +9,7 @@ package demos;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.federated.Config;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -21,10 +21,11 @@ public class QueryPlanLogDemo {
 
 	public static void main(String[] args) throws Exception {
 
-		Config.initialize();
-		Config.getConfig().set("enableMonitoring", "true");
-		Config.getConfig().set("monitoring.logQueryPlan", "true");
-		SailRepository repo = FedXFactory.createFederation(new File("local/dataSourceConfig.ttl"));
+		FedXConfig config = new FedXConfig().withEnableMonitoring(true).withLogQueryPlan(true);
+		SailRepository repo = FedXFactory.newFederation()
+				.withMembers(new File("local/dataSourceConfig.ttl"))
+				.withConfig(config)
+				.create();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"

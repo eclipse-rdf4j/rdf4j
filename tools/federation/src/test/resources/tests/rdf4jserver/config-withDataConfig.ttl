@@ -8,7 +8,6 @@
 [] a rep:Repository ;
    rep:repositoryImpl [
       rep:repositoryType "fedx:FedXRepository" ;
-      fedx:fedxConfig "fedxConfig.prop" ;
       fedx:dataConfig "dataConfig.ttl" ;
    ];
    rep:repositoryID "my-federation" ;

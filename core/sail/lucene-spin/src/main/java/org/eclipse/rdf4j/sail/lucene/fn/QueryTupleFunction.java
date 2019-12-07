@@ -47,7 +47,10 @@ import org.eclipse.rdf4j.sail.lucene.SearchQueryEvaluator;
  * <li>score is included if the scorePredicate is search:score else omitted.</li>
  * <li>snippet is included if the snippetPredicate is search:snippet else omitted.</li>
  * </ol>
+ * 
+ * @deprecated since 3.0. The LucenSpinSail is to be removed in the next major release.
  */
+@Deprecated
 public class QueryTupleFunction implements TupleFunction {
 
 	@Override
