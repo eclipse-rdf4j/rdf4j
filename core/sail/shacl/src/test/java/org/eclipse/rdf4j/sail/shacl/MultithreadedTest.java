@@ -50,6 +50,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testDataAndShapes() {
+		System.out.println("testDataAndShapes");
 
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		Properties.setLockTrackingEnabled(true);
@@ -323,6 +324,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSnapshot() throws IOException {
+		System.out.println("testLotsOfValidationFailuresSnapshot");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -337,6 +339,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
+		System.out.println("testLotsOfValidationFailuresSerializableValidation");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -351,20 +354,25 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
-		ShaclSail sail = new ShaclSail(getBaseSail());
+		System.out.println("testLotsOfValidationFailuresSerializable");
+		for (int i = 0; i < 100; i++) {
+			System.out.println("i = " + i);
+			ShaclSail sail = new ShaclSail(getBaseSail());
 
-		sail.setParallelValidation(true);
-		sail.setLogValidationPlans(false);
-		sail.setGlobalLogValidationExecution(false);
-		sail.setLogValidationViolations(false);
-		sail.setSerializableValidation(false);
+			sail.setParallelValidation(true);
+			sail.setLogValidationPlans(false);
+			sail.setGlobalLogValidationExecution(false);
+			sail.setLogValidationViolations(false);
+			sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 2000);
+			runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 500);
+		}
 
 	}
 
 	@Test
 	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
+		System.out.println("testLotsOfValidationFailuresReadCommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -379,6 +387,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
+		System.out.println("testLotsOfValidationFailuresReadUncommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
