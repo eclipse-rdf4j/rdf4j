@@ -359,7 +359,7 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 200);
+		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 2000);
 
 	}
 
