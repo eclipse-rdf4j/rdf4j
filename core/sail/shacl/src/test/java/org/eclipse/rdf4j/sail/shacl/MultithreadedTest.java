@@ -355,7 +355,6 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializable");
-		System.out.println("i = " + i);
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
