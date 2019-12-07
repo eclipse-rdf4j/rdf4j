@@ -33,9 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the estimated
- * memory usage is more than the amount of free memory available. Once the threshold is cross this implementation
- * seamlessly changes to a disk based {@link SailSourceModel}.
+ * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the
+ * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
+ * implementation seamlessly changes to a disk based {@link SailSourceModel}.
  *
  * @author James Leigh
  */
