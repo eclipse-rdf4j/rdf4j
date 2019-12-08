@@ -7,11 +7,14 @@ jobs:
   pull-request:
     runs-on: ubuntu-latest
     steps:
-    - name: pull-request
-      uses: repo-sync/pull-request@v2
-      with:
-        source_branch: "master"               # If blank, default: triggered branch
-        destination_branch: "develop"         # If blank, default: master
-        pr_title: "Merge ${{ github.ref }} into develop"
-        pr_body: "Automatically generated PR to keep develop in sync with master. See .github/workflows/merge_master_to_develop.yml"  # Full markdown support, requires pr_title to be set
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout source branch
+        uses: actions/checkout@v1
+      - name: Initialize Pull Request
+        uses: gha-utilities/init-pull-request@v0.0.2
+        with:
+          pull_request_token: ${{ secrets.GITHUB_TOKEN }}
+          head: master
+          base: develop
+          title: 'Merge master into develop'
+          body: '' 
+    
