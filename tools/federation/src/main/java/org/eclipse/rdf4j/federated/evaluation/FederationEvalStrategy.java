@@ -14,6 +14,7 @@ import java.util.concurrent.Executor;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
@@ -46,7 +47,14 @@ import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.optimizer.Optimizer;
+import org.eclipse.rdf4j.federated.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.GenericInfoOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.LimitOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.ServiceOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.SourceSelection;
+import org.eclipse.rdf4j.federated.optimizer.StatementGroupOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
+import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -57,12 +65,16 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
@@ -127,8 +139,107 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		FederationEvaluationStatistics stats = (FederationEvaluationStatistics) evaluationStatistics;
-		return Optimizer.optimize(expr, stats.getDataset(), bindings, this,
-				stats.getQueryInfo());
+		QueryInfo queryInfo = stats.getQueryInfo();
+		Dataset dataset = stats.getDataset();
+
+		FederationContext federationContext = queryInfo.getFederationContext();
+		List<Endpoint> members;
+		if (dataset instanceof FedXDataset) {
+			// run the query against a selected set of endpoints
+			FedXDataset ds = (FedXDataset) dataset;
+			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());
+		} else {
+			// evaluate against entire federation
+			FedX fed = federationContext.getFederation();
+			members = fed.getMembers();
+		}
+
+		// if the federation has a single member only, evaluate the entire query there
+		if (members.size() == 1 && queryInfo.getQuery() != null)
+			return new SingleSourceQuery(expr, members.get(0), queryInfo);
+
+		// Clone the tuple expression to allow for more aggressive optimizations
+		TupleExpr query = new QueryRoot(expr.clone());
+
+		Cache cache = federationContext.getCache();
+
+		if (log.isTraceEnabled()) {
+			log.trace("Query before Optimization: " + query);
+		}
+
+		/* original sesame optimizers */
+		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
+
+		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);
+
+		/*
+		 * TODO add some generic optimizers: - FILTER ?s=1 && ?s=2 => EmptyResult - Remove variables that are not
+		 * occuring in query stmts from filters
+		 */
+
+		/* custom optimizers, execute only when needed */
+
+		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
+
+		// collect information and perform generic optimizations
+		info.optimize(query);
+
+		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
+		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
+		if (relevantSources.size() == 1 && !info.hasService())
+			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
+
+		if (info.hasService())
+			new ServiceOptimizer(queryInfo).optimize(query);
+
+		// optimize unions, if available
+		if (info.hasUnion()) {
+			new UnionOptimizer(queryInfo).optimize(query);
+		}
+
+		// optimize statement groups and join order
+		new StatementGroupOptimizer(queryInfo).optimize(query);
+
+		// potentially push limits (if applicable)
+		if (info.hasLimit()) {
+			new LimitOptimizer().optimize(query);
+		}
+
+		// optimize Filters, if available
+		// Note: this is done after the join order is determined to ease filter pushing
+		if (info.hasFilter())
+			new FilterOptimizer().optimize(query);
+
+		if (log.isTraceEnabled()) {
+			log.trace("Query after Optimization: " + query);
+		}
+
+		return query;
+	}
+
+	/**
+	 * Perform source selection for all statements of the query. As a result of this method all statement nodes are
+	 * annotated with their relevant sources.
+	 * 
+	 * @param members
+	 * @param cache
+	 * @param queryInfo
+	 * @param info
+	 * @return the set of relevant endpoints for the entire query
+	 */
+	protected Set<Endpoint> performSourceSelection(List<Endpoint> members, Cache cache, QueryInfo queryInfo,
+			GenericInfoOptimizer info) {
+
+		// Source Selection: all nodes are annotated with their source
+		SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);
+		sourceSelection.doSourceSelection(info.getStatements());
+
+		return sourceSelection.getRelevantSources();
+	}
+
+	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
+		// optimize statement groups and join order
+		new StatementGroupOptimizer(queryInfo).optimize(query);
 	}
 
 	@Override
