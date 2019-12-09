@@ -1,3 +1,5 @@
+name: merge master to develop
+
 on:
   push:
     branches:
