@@ -25,8 +25,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.nativerdf.LimitedSizeNativeStore;
-import org.eclipse.rdf4j.sail.nativerdf.LimitedSizeNativeStoreConnection;
 import org.junit.Test;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
@@ -59,12 +57,14 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		ValueFactory vf = testCon.getValueFactory();
 		IRI context1 = vf.createIRI("http://my.context.1");
 		IRI context2 = vf.createIRI("http://my.context.2");
+		IRI context3 = vf.createIRI("http://my.context.3");
 		IRI predicate = vf.createIRI("http://my.predicate");
 		IRI object = vf.createIRI("http://my.object");
 
 		for (int j = 0; j < 1000; j++) {
 			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context1);
 			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context2);
+			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context3);
 		}
 		assertEquals(1000, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
 		assertEquals(1000, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
@@ -73,6 +73,8 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		testCon.clear(context1);
 		assertEquals(0, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
 		assertEquals(1000, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
+		assertEquals(2000,
+				Iterations.asList(testCon.getStatements(null, null, null, false, context2, context3)).size());
 		testCon.commit();
 
 		// check context content using fresh connection
