@@ -1,8 +1,11 @@
-# Welcome to the Eclipse rdf4j repository
+# Welcome to the Eclipse RDF4J repository
 
-This is the main code repository for the Eclipse rdf4j project. 
+This is the main code repository for the Eclipse RDF4J project. 
 
-user documentation and [downloads of the latest release](http://rdf4j.org/download).
+![](https://github.com/eclipse/rdf4j/workflows/master%20status/badge.svg)
+![](https://github.com/eclipse/rdf4j/workflows/develop%20status/badge.svg)
+
+Visit the [project website](https://rdf4j.org/) for news, documentation, and downloadable releases.
 
 ## Keen to contribute?
 
@@ -23,7 +26,3 @@ The short version:
 
 These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md).
-
-## Release
-
-Run `./release.sh` and follow the prompts to create a release.
