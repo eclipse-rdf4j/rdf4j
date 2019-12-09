@@ -261,7 +261,7 @@ class SailDatasetImpl implements SailDataset {
 		} else if (contexts.length > 0 && deprecatedContexts != null) {
 			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
 			remaining.removeAll(deprecatedContexts);
-			iter = derivedFrom.getStatements(subj, pred, obj, (Resource[]) remaining.toArray());
+			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(Resource[]::new));
 		} else {
 			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
 		}
