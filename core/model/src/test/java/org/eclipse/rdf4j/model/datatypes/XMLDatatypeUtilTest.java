@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.model.datatypes;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
+import junit.textui.TestRunner;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Test;
@@ -19,7 +22,7 @@ import org.junit.Test;
  * 
  * @author Jeen Broekstra
  */
-public class XMLDatatypeUtilTest {
+public class XMLDatatypeUtilTest extends TestCase {
 
 	private static final String[] VALID_FLOATS = { "1", "1.0", "1.0E6", "-1.0E6", "15.00001E2", "1500000000000",
 			"1E104", "0.1E105", "INF", "-INF", "NaN" };
@@ -44,6 +47,14 @@ public class XMLDatatypeUtilTest {
 	/** invalid xsd:time values */
 	private static final String[] INVALID_TIMES = { "foo", "21:32", "9:15:16", "09:15:10.", "09:15:10.x",
 			"2001-10-10:10:10:10", "-10:00:00", "25:25:25" };
+
+	/** valid xsd:dateTimeStamp values */
+	private static final String[] VALID_DATETIMESTAMPS = { "2001-01-01T11:11:11Z", "2001-01-01T10:00:01+06:00",
+			"2001-01-01T10:01:58-06:00" };
+
+	/** valid xsd:dateTimeStamp values */
+	private static final String[] INVALID_DATETIMESTAMPS = { "2001-01-01T13:00:00", "2001-01-01T09:15:10",
+			"2001-01-01T09:15:10.01", "2001-01-01T09:15:10.12345" };
 
 	/** valid xsd:gYear values */
 	private static final String[] VALID_GYEAR = { "2001", "2001+02:00", "2001Z", "-2001", "-20000", "20000" };
@@ -117,6 +128,10 @@ public class XMLDatatypeUtilTest {
 		assertEquals("-1.011E2", XMLDatatypeUtil.normalize("-101.1", XMLSchema.DOUBLE));
 	}
 
+	public static void main(String[] args) {
+		TestRunner.run(new TestSuite(XMLDatatypeUtilTest.class));
+	}
+
 	/**
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil#isValidValue(java.lang.String, org.eclipse.rdf4j.model.IRI)}
@@ -133,6 +148,9 @@ public class XMLDatatypeUtilTest {
 
 		testValidation(VALID_TIMES, XMLSchema.TIME, true);
 		testValidation(INVALID_TIMES, XMLSchema.TIME, false);
+
+		testValidation(VALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, true);
+		testValidation(INVALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, false);
 
 		testValidation(VALID_GDAY, XMLSchema.GDAY, true);
 		testValidation(INVALID_GDAY, XMLSchema.GDAY, false);
