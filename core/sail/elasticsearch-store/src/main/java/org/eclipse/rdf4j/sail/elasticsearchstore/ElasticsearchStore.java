@@ -58,6 +58,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	private String index;
 
 	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
+		this(hostname, port, clusterName, index, true);
+	}
+
+	public ElasticsearchStore(String hostname, int port, String clusterName, String index, boolean cacheEnabled) {
+		super(cacheEnabled);
 		this.hostname = hostname;
 		this.port = port;
 		this.clusterName = clusterName;
@@ -76,6 +81,12 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	public ElasticsearchStore(ClientProvider clientPool, String index) {
+		this(clientPool, index, true);
+
+	}
+
+	public ElasticsearchStore(ClientProvider clientPool, String index, boolean cacheEnabled) {
+		super(cacheEnabled);
 		this.clientProvider = new UnclosableClientProvider(clientPool);
 
 		dataStructure = new ElasticsearchDataStructure(this.clientProvider, index);
