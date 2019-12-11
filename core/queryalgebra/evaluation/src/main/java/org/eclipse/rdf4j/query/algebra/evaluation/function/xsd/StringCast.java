@@ -66,7 +66,7 @@ public class StringCast extends CastFunction {
 				return valueFactory.createLiteral(literal.getLabel(), XMLSchema.STRING);
 			} else if (!Literals.isLanguageLiteral(literal)) {
 				if (XMLDatatypeUtil.isNumericDatatype(datatype) || datatype.equals(XMLSchema.BOOLEAN)
-						|| datatype.equals(XMLSchema.DATETIME)) {
+						|| datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATETIMESTAMP)) {
 					// FIXME Slightly simplified wrt the spec, we just always use the
 					// canonical value of the
 					// source literal as the target lexical value. This is not 100%
