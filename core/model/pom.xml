@@ -24,7 +24,7 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava-testlib</artifactId>
-			<version>21.0</version>
+			<version>${guava.version}</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

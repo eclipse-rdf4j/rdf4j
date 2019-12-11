@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -125,7 +127,11 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		if (nextHttpClientBuilder != null) {
 			return nextHttpClientBuilder.build();
 		}
-		return HttpClientBuilder.create().useSystemProperties().disableAutomaticRetries().build();
+		return HttpClientBuilder.create()
+				.useSystemProperties()
+				.disableAutomaticRetries()
+				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+				.build();
 	}
 
 	@Override

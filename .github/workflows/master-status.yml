@@ -1,11 +1,14 @@
-name: PR unit test
+name: master status
 
-on: pull_request
+on:
+  push:
+    branches: 
+      - master
 
 jobs:
-  build:
+  verify:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest    
     strategy:
       matrix:
         jdk: [1.8, 11]
@@ -16,9 +19,7 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: ${{ matrix.jdk }}
-    - name: Verify formatting
-      run: mvn -B formatter:validate
     - name: Build
       run: mvn -B clean install -DskipTests
-    - name: Run tests
-      run: mvn -B verify --file pom.xml
+    - name: Compliance tests
+      run: mvn -B verify -Pcompliance --file pom.xml

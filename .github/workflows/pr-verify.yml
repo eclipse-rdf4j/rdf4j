@@ -1,15 +1,11 @@
-name: compliance
+name: pull request verify
 
-on:
-  push:
-    branches: 
-      - master
-      - develop
+on: pull_request
 
 jobs:
-  verify:
+  build:
 
-    runs-on: ubuntu-latest    
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         jdk: [1.8, 11]
@@ -20,7 +16,9 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: ${{ matrix.jdk }}
+    - name: Verify formatting
+      run: mvn -B formatter:validate
     - name: Build
       run: mvn -B clean install -DskipTests
-    - name: Compliance tests
+    - name: Run tests
       run: mvn -B verify -Pcompliance --file pom.xml
