@@ -285,6 +285,8 @@ public class MemValueFactory extends AbstractValueFactory {
 						memLiteral = new BooleanMemLiteral(this, label, literal.booleanValue());
 					} else if (datatype.equals(XMLSchema.DATETIME)) {
 						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
+					} else if (datatype.equals(XMLSchema.DATETIMESTAMP)) {
+						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
 					} else {
 						memLiteral = new MemLiteral(this, label, datatype);
 					}
