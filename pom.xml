@@ -259,7 +259,7 @@
     <jackson.version>2.9.9</jackson.version>
     <jsonldjava.version>0.12.5</jsonldjava.version>
     <last.japicmp.compare.version>2.0</last.japicmp.compare.version>
-    <jaxb.version>2.3.0</jaxb.version>
+    <jaxb.version>2.3.1</jaxb.version>
     <solr.version>7.5.0</solr.version>
     <elasticsearch.version>6.5.4</elasticsearch.version>
 	<servlet.version>3.1.0</servlet.version>
