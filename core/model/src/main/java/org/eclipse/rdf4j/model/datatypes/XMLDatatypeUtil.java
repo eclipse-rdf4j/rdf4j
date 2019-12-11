@@ -84,7 +84,8 @@ public class XMLDatatypeUtil {
 				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
 				|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
 				|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE)
-				|| datatype.equals(XMLSchema.DAYTIMEDURATION) || datatype.equals(XMLSchema.YEARMONTHDURATION);
+				|| datatype.equals(XMLSchema.DAYTIMEDURATION) || datatype.equals(XMLSchema.YEARMONTHDURATION)
+				|| datatype.equals(XMLSchema.DATETIMESTAMP);
 	}
 
 	/**
@@ -140,7 +141,7 @@ public class XMLDatatypeUtil {
 		return datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATE) || datatype.equals(XMLSchema.TIME)
 				|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GMONTHDAY)
 				|| datatype.equals(XMLSchema.GYEAR) || datatype.equals(XMLSchema.GMONTH)
-				|| datatype.equals(XMLSchema.GDAY);
+				|| datatype.equals(XMLSchema.GDAY) || datatype.equals(XMLSchema.DATETIMESTAMP);
 
 	}
 
@@ -213,6 +214,8 @@ public class XMLDatatypeUtil {
 			result = isValidBoolean(value);
 		} else if (datatype.equals(XMLSchema.DATETIME)) {
 			result = isValidDateTime(value);
+		} else if (datatype.equals(XMLSchema.DATETIMESTAMP)) {
+			result = isValidDateTimeStamp(value);
 		} else if (datatype.equals(XMLSchema.DATE)) {
 			result = isValidDate(value);
 		} else if (datatype.equals(XMLSchema.TIME)) {
@@ -426,6 +429,17 @@ public class XMLDatatypeUtil {
 			@SuppressWarnings("unused")
 			XMLDateTime dt = new XMLDateTime(value);
 			return true;
+		} catch (IllegalArgumentException e) {
+			return false;
+		}
+	}
+
+	public static boolean isValidDateTimeStamp(String value) {
+		try {
+			@SuppressWarnings("unused")
+			XMLDateTime dt = new XMLDateTime(value);
+			String timeZoneRegex = ".*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$";
+			return value.matches(timeZoneRegex);
 		} catch (IllegalArgumentException e) {
 			return false;
 		}
