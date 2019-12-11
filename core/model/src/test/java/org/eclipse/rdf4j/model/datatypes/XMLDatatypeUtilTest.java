@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.datatypes;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -200,5 +201,20 @@ public class XMLDatatypeUtilTest {
 		for (String value : VALID_FLOATS) {
 			XMLDatatypeUtil.parseFloat(value);
 		}
+	}
+
+	@Test
+	public void testCompareDateTimeStamp() {
+		int sameOffset = XMLDatatypeUtil.compare("2019-12-06T00:00:00Z", "2019-12-06T00:00:00+00:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Not the same", sameOffset == 0);
+
+		int offset1 = XMLDatatypeUtil.compare("2019-12-06T14:00:00+02:00", "2019-12-06T13:00:00+02:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Wrong order", offset1 > 0);
+
+		int offset2 = XMLDatatypeUtil.compare("2019-12-06T12:00:00+02:00", "2019-12-06T13:00:00-04:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Wrong order", offset2 < 0);
 	}
 }

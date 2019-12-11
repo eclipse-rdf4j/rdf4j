@@ -1276,7 +1276,7 @@ public class XMLDatatypeUtil {
 			return compareFloats(value1, value2);
 		} else if (datatype.equals(XMLSchema.DOUBLE)) {
 			return compareDoubles(value1, value2);
-		} else if (datatype.equals(XMLSchema.DATETIME)) {
+		} else if (datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATETIMESTAMP)) {
 			return compareDateTime(value1, value2);
 		} else {
 			throw new IllegalArgumentException("datatype is not ordered");
@@ -1823,8 +1823,9 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema URI for the corresponding datatype.
-	 * This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}.
+	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema 1.0 URI for the corresponding
+	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}. Note that Java 8 /
+	 * 11 do not have constants for XML Schema 1.0 datatypes like xsd:dateTimeStamp.
 	 * 
 	 * @param qname One of the XML Schema qnames from {@link DatatypeConstants}.
 	 * @return A URI for the specified datatype.
