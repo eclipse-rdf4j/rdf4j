@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.BNode;
@@ -54,8 +55,12 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
 /**
  * @author Håvard Mikkelsen Ottestad
+ *
+ *         For internal use only
  */
-class ElasticsearchDataStructure implements DataStructureInterface {
+@InternalUseOnly
+@Deprecated
+public class ElasticsearchDataStructure implements DataStructureInterface {
 
 	private static final String MAPPING;
 
@@ -605,7 +610,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	String sha256(Statement statement) {
+	public static String sha256(Statement statement) {
 
 		String originalString = statement.toString();
 
