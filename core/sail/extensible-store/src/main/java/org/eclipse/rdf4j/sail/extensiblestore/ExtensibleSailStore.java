@@ -14,18 +14,22 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 class ExtensibleSailStore implements SailStore {
+
+	AtomicLong transactionCounter = new AtomicLong();
 
 	private ExtensibleSailSource sailSource;
 	private ExtensibleSailSource sailSourceInferred;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
 			NamespaceStoreInterface namespaceStore) {
-		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
-		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
+		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, transactionCounter);
+		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore, transactionCounter);
 	}
 
 	@Override

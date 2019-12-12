@@ -37,18 +37,18 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public void addStatement(Statement statement) {
+	public void addStatement(long transactionId, Statement statement) {
 		internalAdded.add(statement);
 		internalRemoved.remove(statement);
 	}
 
 	@Override
-	public void removeStatement(Statement statement) {
+	public void removeStatement(long transactionId, Statement statement) {
 		internalRemoved.add(statement);
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends Statement, SailException> getStatements(long transactionId, Resource subject,
 			IRI predicate, Value object, Resource... context) {
 
 		synchronized (dataStructure) {
@@ -63,7 +63,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 					if (internalRemoved.contains(statement)) {
 						return new EmptyIteration<>();
 					} else {
-						return dataStructure.getStatements(subject, predicate, object, context);
+						return dataStructure.getStatements(transactionId, subject, predicate, object, context);
 					}
 				}
 
@@ -96,7 +96,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 							.iterator();
 
 					CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
-							subject, predicate, object, context);
+							transactionId, subject, predicate, object, context);
 
 					@Override
 					protected void handleClose() throws SailException {
@@ -153,27 +153,27 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushForCommit() {
+	public void flushForCommit(long transactionId) {
 
 		synchronized (dataStructure) {
 
 			internalAdded
 					.stream()
 					.filter(statement -> !internalRemoved.contains(statement))
-					.forEach(dataStructure::addStatement);
+					.forEach(statement1 -> dataStructure.addStatement(transactionId, statement1));
 
-			internalRemoved.forEach(dataStructure::removeStatement);
+			internalRemoved.forEach(statement -> dataStructure.removeStatement(transactionId, statement));
 
 			internalAdded = new HashSet<>(internalAdded.size());
 			internalRemoved = new HashSet<>(internalRemoved.size());
 
-			dataStructure.flushForReading();
+			dataStructure.flushForReading(transactionId);
 		}
 
 	}
 
 	@Override
-	public void flushForReading() {
+	public void flushForReading(long transactionId) {
 	}
 
 	@Override

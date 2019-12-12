@@ -87,7 +87,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void addStatement(Statement statement) {
+	synchronized public void addStatement(long transactionId, Statement statement) {
 		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
 			flushAddStatementBuffer();
 		}
@@ -97,7 +97,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void removeStatement(Statement statement) {
+	synchronized public void removeStatement(long transactionId, Statement statement) {
 
 		ElasticsearchId elasticsearchIdStatement;
 
@@ -128,7 +128,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	synchronized public void clear(Resource[] contexts) {
+	synchronized public void clear(long transactionId, Resource[] contexts) {
 
 		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientProvider.getClient())
 				.filter(getQueryBuilder(null, null, null, contexts))
@@ -140,12 +140,12 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushForCommit() {
+	public void flushForCommit(long transactionId) {
 		// no underlying store to flush to
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
+	public CloseableIteration<? extends Statement, SailException> getStatements(long transactionId, Resource subject,
 			IRI predicate,
 			Value object, Resource... context) {
 
@@ -285,7 +285,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushForReading() {
+	public void flushForReading(long transactionId) {
 
 		Client client = clientProvider.getClient();
 
@@ -540,7 +540,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	@Override
-	public synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
+	public synchronized boolean removeStatementsByQuery(long transactionId, Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
 
 		// delete single statement
@@ -566,7 +566,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 				// don't actually delete it just yet, we can just call remove and it will be removed at some point
 				// before or during flush
-				removeStatement(statement);
+				removeStatement(transactionId, statement);
 			}
 			return exists;
 
@@ -575,7 +575,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		// Elasticsearch delete by query is slow. It's still faster when deleting a lot of data. We assume that
 		// getStatement and bulk delete is faster up to 1000 statements. If there are more, then we instead use
 		// elasticsearch delete by query.
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(transactionId, subj,
+				pred, obj,
 				contexts)) {
 			List<Statement> statementsToDelete = new ArrayList<>();
 			for (int i = 0; i < 1000 && statements.hasNext(); i++) {
@@ -584,7 +585,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			if (!statements.hasNext()) {
 				for (Statement statement : statementsToDelete) {
-					removeStatement(statement);
+					removeStatement(transactionId, statement);
 				}
 
 				return !statementsToDelete.isEmpty();

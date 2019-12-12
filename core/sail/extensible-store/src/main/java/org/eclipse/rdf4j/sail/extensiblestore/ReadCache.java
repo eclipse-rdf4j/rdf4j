@@ -47,19 +47,20 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public void addStatement(Statement statement) {
-		delegate.addStatement(statement);
+	public void addStatement(long transactionId, Statement statement) {
+		delegate.addStatement(transactionId, statement);
 		clearCache();
 	}
 
 	@Override
-	public void removeStatement(Statement statement) {
-		delegate.removeStatement(statement);
+	public void removeStatement(long transactionId, Statement statement) {
+		delegate.removeStatement(transactionId, statement);
 		clearCache();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject, IRI predicate,
+	public CloseableIteration<? extends Statement, SailException> getStatements(long transactionId, Resource subject,
+			IRI predicate,
 			Value object, Resource... context) {
 
 		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, context);
@@ -73,7 +74,8 @@ public class ReadCache implements DataStructureInterface {
 
 		return new CloseableIteration<Statement, SailException>() {
 
-			CloseableIteration<? extends Statement, SailException> statements = delegate.getStatements(subject,
+			CloseableIteration<? extends Statement, SailException> statements = delegate.getStatements(transactionId,
+					subject,
 					predicate, object, context);
 			List<Statement> cache = new ArrayList<>();
 
@@ -141,8 +143,8 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public void flushForReading() {
-		delegate.flushForReading();
+	public void flushForReading(long transactionId) {
+		delegate.flushForReading(transactionId);
 	}
 
 	@Override
@@ -151,20 +153,21 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public void clear(Resource[] contexts) {
-		delegate.clear(contexts);
+	public void clear(long transactionId, Resource[] contexts) {
+		delegate.clear(transactionId, contexts);
 		clearCache();
 	}
 
 	@Override
-	public void flushForCommit() {
-		delegate.flushForCommit();
+	public void flushForCommit(long transactionId) {
+		delegate.flushForCommit(transactionId);
 		clearCache();
 	}
 
 	@Override
-	public boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		boolean removed = delegate.removeStatementsByQuery(subj, pred, obj, contexts);
+	public boolean removeStatementsByQuery(long transactionId, Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+		boolean removed = delegate.removeStatementsByQuery(transactionId, subj, pred, obj, contexts);
 		clearCache();
 		return removed;
 	}

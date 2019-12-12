@@ -23,40 +23,43 @@ import org.eclipse.rdf4j.sail.SailException;
 @Experimental
 public interface DataStructureInterface {
 
-	void addStatement(Statement statement);
+	void addStatement(long transactionId, Statement statement);
 
-	void removeStatement(Statement statement);
+	void removeStatement(long transactionId, Statement statement);
 
 	CloseableIteration<? extends Statement, SailException> getStatements(
-			Resource subject,
+			long transactionId, Resource subject,
 			IRI predicate,
 			Value object,
 			Resource... context);
 
 	// flush this DataStructure to make added and removed data visible to read operations
-	void flushForReading();
+	void flushForReading(long transactionId);
 
 	void init();
 
-	default void clear(Resource[] contexts) {
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null,
+	default void clear(long transactionId, Resource[] contexts) {
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(transactionId, null,
+				null, null,
 				contexts)) {
 			while (statements.hasNext()) {
-				removeStatement(statements.next());
+				removeStatement(transactionId, statements.next());
 			}
 		}
 	}
 
 	// flush through to any underlying storage, called by the likes of commit()
-	void flushForCommit();
+	void flushForCommit(long transactionId);
 
-	default boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	default boolean removeStatementsByQuery(long transactionId, Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
 
 		boolean deleted = false;
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
+		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(transactionId, subj,
+				pred, obj,
 				contexts)) {
 			while (statements.hasNext()) {
-				removeStatement(statements.next());
+				removeStatement(transactionId, statements.next());
 				deleted = true;
 			}
 		}
