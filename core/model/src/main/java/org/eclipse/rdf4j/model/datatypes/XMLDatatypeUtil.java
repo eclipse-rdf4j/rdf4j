@@ -54,6 +54,9 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
+	 * 
+	 * @param datatype
+	 * @return true if the datatype is a primitive type
 	 */
 	public static boolean isPrimitiveDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DATETIME)
@@ -70,6 +73,9 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a derived XML Schema datatype.
+	 * 
+	 * @param datatype
+	 * @return true if the datatype is a derived type
 	 */
 	public static boolean isDerivedDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.NORMALIZEDSTRING) || datatype.equals(XMLSchema.TOKEN)
@@ -90,14 +96,20 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a built-in XML Schema datatype.
+	 * 
+	 * @param datatype
+	 * @return true if it is a primitive or derived XML Schema type
 	 */
 	public static boolean isBuiltInDatatype(IRI datatype) {
 		return isPrimitiveDatatype(datatype) || isDerivedDatatype(datatype);
 	}
 
 	/**
-	 * Checks whether the supplied datatype is a numeric datatype, i.e. if it is equal to xsd:float, xsd:double,
-	 * xsd:decimal or one of the datatypes derived from xsd:decimal.
+	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, 
+	 * xsd:double, xsd:decimal or one of the datatypes derived from xsd:decimal.
+	 * 
+	 * @param datatype
+	 * @return true of it is a decimal or floating point type
 	 */
 	public static boolean isNumericDatatype(IRI datatype) {
 		return isDecimalDatatype(datatype) || isFloatingPointDatatype(datatype);
@@ -106,6 +118,9 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
 	 * from xsd:decimal.
+	 * 
+	 * @param datatype
+	 * @return true if it is a decimal datatype
 	 */
 	public static boolean isDecimalDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DECIMAL) || isIntegerDatatype(datatype);
@@ -114,6 +129,9 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
 	 * from xsd:integer.
+	 * 
+	 * @param datatype
+	 * @return true if it is an integer type
 	 */
 	public static boolean isIntegerDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG) || datatype.equals(XMLSchema.INT)
@@ -126,6 +144,9 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
+	 * 
+	 * @param datatype
+	 * @return true if it is a floating point type
 	 */
 	public static boolean isFloatingPointDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.FLOAT) || datatype.equals(XMLSchema.DOUBLE);
@@ -133,9 +154,11 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth, xsd:gMonthDay,
-	 * xsd:gYear, xsd:gMonth or xsd:gDay. These are the primitive datatypes that represent dates and/or times.
+	 * xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates and/or times.
 	 * 
 	 * @see XMLGregorianCalendar
+	 * @param datatype
+	 * @return true if it is a calendar type
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATE) || datatype.equals(XMLSchema.TIME)
@@ -146,10 +169,12 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration. These
-	 * are the datatypes that represents durations.
+	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
+	 * These are the datatypes that represents durations.
 	 *
 	 * @see Duration
+	 * @param datatype
+	 * @return true if it is a duration type
 	 */
 	public static boolean isDurationDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DAYTIMEDURATION)
@@ -157,8 +182,11 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Checks whether the supplied datatype is ordered. The values of an ordered datatype can be compared to eachother
+	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other 
 	 * using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
+	 * 
+	 * @param datatype
+	 * @return true if the datatype is ordered
 	 */
 	public static boolean isOrderedDatatype(IRI datatype) {
 		return isNumericDatatype(datatype) || isCalendarDatatype(datatype);
@@ -247,6 +275,12 @@ public class XMLDatatypeUtil {
 		return result;
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid decimal or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDecimal(String value) {
 		try {
 			normalizeDecimal(value);
@@ -256,6 +290,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidInteger(String value) {
 		try {
 			normalizeInteger(value);
@@ -265,6 +305,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid negative integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidNegativeInteger(String value) {
 		try {
 			normalizeNegativeInteger(value);
@@ -274,6 +320,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid non-positive integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidNonPositiveInteger(String value) {
 		try {
 			normalizeNonPositiveInteger(value);
@@ -283,6 +335,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid non-negative integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidNonNegativeInteger(String value) {
 		try {
 			normalizeNonNegativeInteger(value);
@@ -292,6 +350,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid positive integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidPositiveInteger(String value) {
 		try {
 			normalizePositiveInteger(value);
@@ -301,6 +365,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid long or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidLong(String value) {
 		try {
 			normalizeLong(value);
@@ -310,6 +380,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid integer or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidInt(String value) {
 		try {
 			normalizeInt(value);
@@ -319,6 +395,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid short or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidShort(String value) {
 		try {
 			normalizeShort(value);
@@ -328,6 +410,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid byte or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidByte(String value) {
 		try {
 			normalizeByte(value);
@@ -337,6 +425,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid unsigned long or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidUnsignedLong(String value) {
 		try {
 			normalizeUnsignedLong(value);
@@ -346,6 +440,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid unsigned int.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidUnsignedInt(String value) {
 		try {
 			normalizeUnsignedInt(value);
@@ -355,6 +455,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid unsigned short or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidUnsignedShort(String value) {
 		try {
 			normalizeUnsignedShort(value);
@@ -364,6 +470,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid unsigned byte or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidUnsignedByte(String value) {
 		try {
 			normalizeUnsignedByte(value);
@@ -373,6 +485,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid float or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidFloat(String value) {
 		try {
 			normalizeFloat(value);
@@ -382,6 +500,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid double or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDouble(String value) {
 		try {
 			normalizeDouble(value);
@@ -391,6 +515,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid boolean or not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidBoolean(String value) {
 		try {
 			normalizeBoolean(value);
@@ -400,22 +530,38 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid duration.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDuration(String value) {
-
 		// voodoo regex for checking valid xsd:duration string. See
 		// http://www.w3.org/TR/xmlschema-2/#duration for details.
 		String regex = "-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?";
 		return value.length() > 1 && value.matches(regex);
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid day-time duration ot not.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDayTimeDuration(String value) {
-
 		// regex for checking valid xsd:dayTimeDuration string. See
 		// http://www.schemacentral.com/sc/xsd/t-xsd_dayTimeDuration.html
 		String regex = "-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?";
 		return value.length() > 1 && value.matches(regex);
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid year-month duration.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidYearMonthDuration(String value) {
 
 		// regex for checking valid xsd:yearMontheDuration string. See
@@ -424,6 +570,12 @@ public class XMLDatatypeUtil {
 		return value.length() > 1 && value.matches(regex);
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid date-time.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDateTime(String value) {
 		try {
 			@SuppressWarnings("unused")
@@ -434,6 +586,12 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	/**
+	 * Verifies if the supplied lexical value is a valid date-timestamp.
+	 * 
+	 * @param value
+	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 */
 	public static boolean isValidDateTimeStamp(String value) {
 		try {
 			@SuppressWarnings("unused")
