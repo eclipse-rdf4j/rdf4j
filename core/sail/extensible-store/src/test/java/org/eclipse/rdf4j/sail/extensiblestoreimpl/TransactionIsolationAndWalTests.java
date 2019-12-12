@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,35 +25,53 @@ public class TransactionIsolationAndWalTests {
 	 * transaction should see either nothing added or everything added. Nothing in between.
 	 */
 	@Test
-	@Ignore
 	public void testReadCommittedLargeTransaction() throws InterruptedException {
 		SailRepository repository = new SailRepository(new ExtensibleStoreImplForTests());
 
 		int count = 100000;
 
-		AtomicBoolean failure = new AtomicBoolean(false);
+		AtomicBoolean failure1 = new AtomicBoolean(false);
+		AtomicBoolean failure2 = new AtomicBoolean(false);
 
-		Runnable runnable = () -> {
+		Thread thread1 = new Thread(() -> {
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection2 = repository.getConnection()) {
 				while (true) {
-					connection.begin(IsolationLevels.READ_COMMITTED);
-					long size = connection.size();
-					connection.commit();
-					if (size != 0) {
-						if (size != count) {
-							System.out.println("Size was " + size + ". Expected " + count);
-							failure.set(true);
+					connection2.begin(IsolationLevels.READ_COMMITTED);
+					long size1 = connection2.size();
+					connection2.commit();
+					if (size1 != 0) {
+						if (size1 != count) {
+							System.out.println("Size was " + size1 + ". Expected " + count);
+							failure1.set(true);
 						}
 						break;
 					}
 					Thread.yield();
 				}
 			}
-		};
+		});
+		thread1.start();
 
-		Thread thread = new Thread(runnable);
-		thread.start();
+		Thread thread2 = new Thread(() -> {
+
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+				while (true) {
+					connection1.begin(IsolationLevels.READ_COMMITTED);
+					long size = connection1.size();
+					connection1.commit();
+					if (size != 0) {
+						if (size != count) {
+							System.out.println("Size was " + size + ". Expected " + count);
+							failure2.set(true);
+						}
+						break;
+					}
+					Thread.yield();
+				}
+			}
+		});
+		thread2.start();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -67,9 +84,11 @@ public class TransactionIsolationAndWalTests {
 
 		}
 
-		thread.join();
+		thread1.join();
+		thread2.join();
 
-		assertFalse(failure.get());
+		assertFalse(failure1.get());
+		assertFalse(failure2.get());
 
 	}
 
