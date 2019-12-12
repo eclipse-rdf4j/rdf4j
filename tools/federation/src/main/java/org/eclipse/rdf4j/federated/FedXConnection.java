@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.RepositoryExceptionConver
 import org.eclipse.rdf4j.federated.evaluation.iterator.StopRemainingExecutionsOnCloseIteration;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
-import org.eclipse.rdf4j.federated.optimizer.Optimizer;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
@@ -65,7 +64,6 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  * @see FederationEvalStrategy
  * @see WriteStrategy
- * @see Optimizer
  */
 public class FedXConnection extends AbstractSailConnection {
 

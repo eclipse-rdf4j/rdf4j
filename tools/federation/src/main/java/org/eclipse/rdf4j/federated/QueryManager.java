@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
-import org.eclipse.rdf4j.federated.optimizer.Optimizer;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
@@ -285,8 +285,10 @@ public class QueryManager {
 		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT, federationContext);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
-			tupleExpr = Optimizer.optimize(tupleExpr, new SimpleDataset(), EmptyBindingSet.getInstance(),
-					federationContext.getStrategy(), qInfo);
+			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
+					new SimpleDataset());
+			tupleExpr = federationContext.getStrategy()
+					.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());
