@@ -126,14 +126,14 @@
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
 			<artifactId>jmh-core</artifactId>
-			<version>1.19</version>
+            <version>${jmhVersion}</version>
 			<scope>test</scope>
 		</dependency>
 
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
 			<artifactId>jmh-generator-annprocess</artifactId>
-			<version>1.19</version>
+            <version>${jmhVersion}</version>
 			<scope>test</scope>
 		</dependency>
 
