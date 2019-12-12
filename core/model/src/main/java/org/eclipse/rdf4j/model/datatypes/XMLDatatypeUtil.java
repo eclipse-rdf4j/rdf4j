@@ -49,8 +49,10 @@ public class XMLDatatypeUtil {
 		}
 	}
 
-	private final static Pattern P_DURATION = Pattern.compile("-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
-	private final static Pattern P_DAYTIMEDURATION = Pattern.compile("-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
+	private final static Pattern P_DURATION = Pattern.compile(
+			"-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
+	private final static Pattern P_DAYTIMEDURATION = Pattern.compile(
+			"-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
 	private final static Pattern P_YEARMONTHDURATION = Pattern.compile("-?P((\\d)+Y)?((\\d)+M)?");
 	private final static Pattern P_TIMEZONE = Pattern.compile(".*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$");
 	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
@@ -60,7 +62,7 @@ public class XMLDatatypeUtil {
 	private final static Pattern P_GMONTHDAY = Pattern.compile("--\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
 	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?");
 	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	
+
 	/*-------------------*
 	 * Datatype checking *
 	 *-------------------*/
@@ -118,8 +120,8 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, 
-	 * xsd:double, xsd:decimal or one of the datatypes derived from xsd:decimal.
+	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
+	 * xsd:decimal or one of the datatypes derived from xsd:decimal.
 	 * 
 	 * @param datatype
 	 * @return true of it is a decimal or floating point type
@@ -182,8 +184,8 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
-	 * These are the datatypes that represents durations.
+	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration. These
+	 * are the datatypes that represents durations.
 	 *
 	 * @see Duration
 	 * @param datatype
@@ -195,7 +197,7 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other 
+	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other
 	 * using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
 	 * 
 	 * @param datatype
@@ -624,7 +626,7 @@ public class XMLDatatypeUtil {
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
 	public static boolean isValidTime(String value) {
-		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value): false;
+		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value) : false;
 	}
 
 	/**
