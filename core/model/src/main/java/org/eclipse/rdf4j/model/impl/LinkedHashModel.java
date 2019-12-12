@@ -39,14 +39,9 @@ import java.util.Set;
  * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently, and at
  * least one of the threads modifies the model, it must be synchronized externally. This is typically accomplished by
  * synchronizing on some object that naturally encapsulates the model. If no such object exists, the set should be
- * "wrapped" using the Collections.synchronizedSet method. This is best done at creation time, to prevent accidental
- * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
- * via the Set interface methods):
+ * "wrapped" using the * Models.synchronizedModel method.
  * </p>
  *
- * <pre>
- * Set<Statement> s = Collections.synchronizedSet(new LinkedHashModel(...));
- * </pre>
  *
  * @author James Leigh
  */
@@ -57,7 +52,7 @@ public class LinkedHashModel extends AbstractModel {
 
 	static final Resource[] NULL_CTX = new Resource[] { null };
 
-	Set<Namespace> namespaces = new LinkedHashSet<>();
+	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	transient Map<Value, ModelNode> values;
 
@@ -134,9 +129,7 @@ public class LinkedHashModel extends AbstractModel {
 	@Override
 	public Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> result = getNamespace(prefix);
-		if (result.isPresent()) {
-			namespaces.remove(result.get());
-		}
+		result.ifPresent(namespace -> namespaces.remove(namespace));
 		return result;
 	}
 
@@ -216,7 +209,7 @@ public class LinkedHashModel extends AbstractModel {
 			return false;
 		}
 
-		Iterator iter = matchPattern(subj, pred, obj, contexts);
+		Iterator<ModelStatement> iter = matchPattern(subj, pred, obj, contexts);
 		if (!iter.hasNext()) {
 			return false;
 		}
@@ -251,7 +244,7 @@ public class LinkedHashModel extends AbstractModel {
 		Set<ModelStatement> owner = ((ModelIterator) iterator).getOwner();
 		Set<ModelStatement> chosen = choose(subj, pred, obj, contexts);
 		Iterator<ModelStatement> iter = chosen.iterator();
-		iter = new PatternIterator(iter, subj, pred, obj, contexts);
+		iter = new PatternIterator<>(iter, subj, pred, obj, contexts);
 		while (iter.hasNext()) {
 			ModelStatement last = iter.next();
 			if (statements == owner) {
@@ -414,6 +407,9 @@ public class LinkedHashModel extends AbstractModel {
 
 		@Override
 		public Resource getContext() {
+			if (ctx == null) {
+				return null;
+			}
 			return ctx.getValue();
 		}
 
@@ -469,7 +465,7 @@ public class LinkedHashModel extends AbstractModel {
 		Set<ModelStatement> set = choose(subj, pred, obj, contexts);
 		Iterator<ModelStatement> it = set.iterator();
 		Iterator<ModelStatement> iter;
-		iter = new PatternIterator(it, subj, pred, obj, contexts);
+		iter = new PatternIterator<>(it, subj, pred, obj, contexts);
 		return new ModelIterator(iter, set);
 	}
 
@@ -514,7 +510,7 @@ public class LinkedHashModel extends AbstractModel {
 		return contexts;
 	}
 
-	private Iterator find(Statement st) {
+	private Iterator<ModelStatement> find(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -551,7 +547,7 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	private <V extends Value> ModelNode<V> asNode(V value) {
-		ModelNode node = values.get(value);
+		ModelNode<V> node = values.get(value);
 		if (node != null) {
 			return node;
 		}

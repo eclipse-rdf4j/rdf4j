@@ -365,16 +365,20 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public synchronized NotifyingSailConnection getConnection() throws SailException {
+	public NotifyingSailConnection getConnection() throws SailException {
 
 		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
 				super.getConnection(), super.getConnection(), super.getConnection(),
 				shapesRepo.getConnection());
 
-		if (currentConnection == null) {
-			currentConnection = shaclSailConnection;
-		} else {
-			multipleConcurrentConnections = true;
+		// don't synchronize the entire method, because this can cause a deadlock when trying to get a new connection
+		// while at the same time closing another connection
+		synchronized (this) {
+			if (currentConnection == null) {
+				currentConnection = shaclSailConnection;
+			} else {
+				multipleConcurrentConnections = true;
+			}
 		}
 
 		return shaclSailConnection;

@@ -721,4 +721,14 @@ public class Models {
 	public static Supplier<ModelException> modelException(String message) {
 		return () -> new ModelException(message);
 	}
+
+	/**
+	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
+	 *
+	 * @param toSynchronize the model that should be synchronized
+	 * @return Synchronized Model
+	 */
+	public static Model synchronizedModel(Model toSynchronize) {
+		return new SynchronizedModel(toSynchronize);
+	}
 }

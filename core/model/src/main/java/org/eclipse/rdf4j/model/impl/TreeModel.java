@@ -37,12 +37,10 @@ import java.util.TreeSet;
  * This implementation provides guaranteed log(n) time cost for filtered access by any number of terms. If an index is
  * not yet available for a set of positions, it is created at runtime using a {@link TreeSet}.
  * <p>
- * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently, and at
- * least one of the threads modifies the model, it must be synchronized externally. This is typically accomplished by
- * synchronizing on some object that naturally encapsulates the model. If no such object exists, the set should be
- * "wrapped" using the Collections.synchronizedSet method. This is best done at creation time, to prevent accidental
- * unsynchronized access to the LinkedHashModel instance (though the synchronization guarantee is only when accessing
- * via the Set interface methods):
+ * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently, even if
+ * all of them are read operations, it must be synchronized externally. This is typically accomplished by synchronizing
+ * on some object that naturally encapsulates the model. If no such object exists, the set should be "wrapped" using the
+ * Models.synchronizedModel method.
  * </p>
  *
  * @author James Leigh
@@ -50,8 +48,6 @@ import java.util.TreeSet;
 public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private static final long serialVersionUID = 7893197431354524479L;
-
-	static final Resource[] NULL_CTX = new Resource[] { null };
 
 	static final IRI BEFORE = new SimpleIRI("urn:from");
 
@@ -119,9 +115,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 	@Override
 	public Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> result = getNamespace(prefix);
-		if (result.isPresent()) {
-			namespaces.remove(result.get());
-		}
+		result.ifPresent(namespaces::remove);
 		return result;
 	}
 
@@ -484,6 +478,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 			index[idx++] = 's';
 		}
 		StatementTree tree = new StatementTree(index);
+
 		tree.addAll(trees.get(0));
 		trees.add(tree);
 		return tree;
