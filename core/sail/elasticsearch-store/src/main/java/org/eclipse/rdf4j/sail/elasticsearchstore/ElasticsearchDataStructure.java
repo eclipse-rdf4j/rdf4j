@@ -36,6 +36,7 @@ import org.elasticsearch.search.SearchHit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.xml.bind.DatatypeConverter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -610,18 +611,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-
 			byte[] hash = digest.digest(originalString.getBytes(StandardCharsets.UTF_8));
-
-			StringBuilder hexString = new StringBuilder();
-			for (byte b : hash) {
-				String hex = Integer.toHexString(0xff & b);
-				if (hex.length() == 1) {
-					hexString.append('0');
-				}
-				hexString.append(hex);
-			}
-			return hexString.toString();
+			return DatatypeConverter.printHexBinary(hash);
 		} catch (NoSuchAlgorithmException e) {
 			throw new RuntimeException(e);
 		}
