@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -59,7 +58,14 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	protected T dataStructure;
 	protected T dataStructureInferred;
 
+	final boolean cacheEnabled;
+
 	public ExtensibleStore() {
+		this(true);
+	}
+
+	public ExtensibleStore(boolean cacheEnabled) {
+		this.cacheEnabled = cacheEnabled;
 	}
 
 	ExtensibleSailStore getSailStore() {
@@ -72,8 +78,16 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 			sailStore.close();
 		}
 
-		sailStore = new ExtensibleSailStore(Objects.requireNonNull(dataStructure),
-				Objects.requireNonNull(dataStructureInferred), Objects.requireNonNull(namespaceStore));
+		DataStructureInterface dataStructure = Objects.requireNonNull(this.dataStructure);
+		DataStructureInterface dataStructureInferred = Objects.requireNonNull(this.dataStructureInferred);
+
+		if (cacheEnabled) {
+			dataStructure = new ReadCache(dataStructure);
+			dataStructureInferred = new ReadCache(dataStructureInferred);
+		}
+
+		sailStore = new ExtensibleSailStore(dataStructure, dataStructureInferred,
+				Objects.requireNonNull(namespaceStore));
 
 		sailStore.init();
 		namespaceStore.init();

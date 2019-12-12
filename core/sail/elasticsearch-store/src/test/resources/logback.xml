@@ -14,7 +14,7 @@
 		<appender-ref ref="CONSOLE"/>
 	</root>
 
-    <logger name="org.eclipse.rdf4j.sail.extensiblestore" level="DEBUG"/>
+    <logger name="org.eclipse.rdf4j.sail.extensiblestore" level="INFO"/>
 
 
 

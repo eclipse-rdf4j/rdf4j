@@ -58,7 +58,8 @@ public class AddBenchmark {
 				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
 
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+						false));
 
 		System.gc();
 

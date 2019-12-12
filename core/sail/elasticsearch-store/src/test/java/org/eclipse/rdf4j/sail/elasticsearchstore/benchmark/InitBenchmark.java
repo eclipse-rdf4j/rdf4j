@@ -71,7 +71,8 @@ public class InitBenchmark {
 	public void initWithElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+						false));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -87,7 +88,7 @@ public class InitBenchmark {
 	public void initWithoutElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore(clientPool, "testindex"));
+				new ElasticsearchStore(clientPool, "testindex", false));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
