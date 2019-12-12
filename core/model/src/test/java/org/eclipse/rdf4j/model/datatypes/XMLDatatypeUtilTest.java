@@ -217,4 +217,10 @@ public class XMLDatatypeUtilTest {
 				XMLSchema.DATETIMESTAMP);
 		assertTrue("Wrong order", offset2 < 0);
 	}
+
+	@Test
+	public void testToStringNaN() {
+		Double d = Double.NaN;
+		assertEquals(XMLDatatypeUtil.toString(d), XMLDatatypeUtil.NaN);
+	}
 }

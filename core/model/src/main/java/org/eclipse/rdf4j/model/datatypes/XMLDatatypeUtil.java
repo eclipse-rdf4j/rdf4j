@@ -2005,7 +2005,7 @@ public class XMLDatatypeUtil {
 			return XMLDatatypeUtil.POSITIVE_INFINITY;
 		} else if (Double.NEGATIVE_INFINITY == d) {
 			return XMLDatatypeUtil.NEGATIVE_INFINITY;
-		} else if (Double.NaN == d) {
+		} else if (Double.isNaN(d)) {
 			return XMLDatatypeUtil.NaN;
 		} else {
 			return value.toString();
