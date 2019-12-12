@@ -1824,7 +1824,8 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema 1.0 URI for the corresponding
-	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}. 
+	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}.
+	 * 
 	 * Note that Java 8 / 11 do not have constants for XML Schema 1.1 datatypes like xsd:dateTimeStamp.
 	 * 
 	 * @param qname One of the XML Schema qnames from {@link DatatypeConstants}.
