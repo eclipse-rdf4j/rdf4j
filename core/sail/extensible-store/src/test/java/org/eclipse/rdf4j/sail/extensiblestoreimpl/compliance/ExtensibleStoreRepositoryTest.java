@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.ExtensibleStoreImplForTests;
 
 public class ExtensibleStoreRepositoryTest extends RepositoryTest {
 
