@@ -8,13 +8,19 @@
 package org.eclipse.rdf4j.sail.extensiblestoreimpl;
 
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.NaiveHashSetDataStructure;
 import org.junit.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -90,6 +96,90 @@ public class TransactionIsolationAndWalTests {
 
 		assertFalse(failure1.get());
 		assertFalse(failure2.get());
+
+	}
+
+	ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@Test
+	public void testWalAdditions() {
+		ExtensibleStoreImplForTests sail = new ExtensibleStoreImplForTests();
+		SailRepository repository = new SailRepository(sail);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin();
+
+			AtomicInteger i = new AtomicInteger();
+			NaiveHashSetDataStructure.added = statement -> {
+				i.getAndIncrement();
+				if (i.get() > 10) {
+					NaiveHashSetDataStructure.halt = true;
+				}
+			};
+
+			for (int j = 0; j < 100; j++) {
+				connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+			}
+			connection.commit();
+
+		} catch (Throwable e) {
+			e.printStackTrace();
+			NaiveHashSetDataStructure.halt = false;
+		}
+
+		sail.forceValidateAndRecover();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			long size = connection.size();
+			System.out.println(size);
+			assertEquals(0, size);
+
+		}
+
+	}
+
+	@Test
+	public void testWalRemovals() {
+		ExtensibleStoreImplForTests sail = new ExtensibleStoreImplForTests();
+		SailRepository repository = new SailRepository(sail);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			for (int j = 0; j < 100; j++) {
+				connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+			}
+			connection.commit();
+
+			connection.begin();
+
+			AtomicInteger i = new AtomicInteger();
+			NaiveHashSetDataStructure.removed = statement -> {
+				i.getAndIncrement();
+				if (i.get() > 10) {
+					NaiveHashSetDataStructure.halt = true;
+				}
+			};
+
+			connection.remove((Resource) null, null, null);
+
+			connection.commit();
+
+		} catch (Throwable e) {
+			e.printStackTrace();
+			NaiveHashSetDataStructure.halt = false;
+		}
+
+		sail.forceValidateAndRecover();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			long size = connection.size();
+			System.out.println(size);
+			assertEquals(100, size);
+
+		}
 
 	}
 

@@ -20,20 +20,34 @@ import org.eclipse.rdf4j.sail.extensiblestore.FilteringIteration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {
 
 	Set<Statement> statements = new HashSet<>();
 
+	public static Consumer<Statement> added = (a) -> {
+	};
+	public static Consumer<Statement> removed = (a) -> {
+	};
+	public static volatile boolean halt = false;
+
 	@Override
 	synchronized public void addStatement(long transactionId, Statement statement) {
+		if (halt)
+			throw new RuntimeException("Halted");
 		statements.add(statement);
+		added.accept(statement);
 
 	}
 
 	@Override
 	synchronized public void removeStatement(long transactionId, Statement statement) {
+		if (halt)
+			throw new RuntimeException("Halted");
 		statements.remove(statement);
+		removed.accept(statement);
 
 	}
 
@@ -42,6 +56,8 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 			Resource subject,
 			IRI predicate,
 			Value object, Resource... context) {
+		if (halt)
+			throw new RuntimeException("Halted");
 		return new FilteringIteration<>(
 				new IteratorIteration<Statement, SailException>(new ArrayList<>(statements).iterator()), subject,
 				predicate, object, context);
@@ -49,16 +65,22 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 
 	@Override
 	public void flushForReading(long transactionId) {
+		if (halt)
+			throw new RuntimeException("Halted");
 
 	}
 
 	@Override
 	public void init() {
+		if (halt)
+			throw new RuntimeException("Halted");
 
 	}
 
 	@Override
 	public void flushForCommit(long transactionId) {
+		if (halt)
+			throw new RuntimeException("Halted");
 
 	}
 }

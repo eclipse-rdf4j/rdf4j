@@ -154,4 +154,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		sailStore = null;
 	}
 
+	public void forceValidateAndRecover() {
+		// optional method for validating and recovering from a failure used by the Write-Ahead-Log.
+	}
 }
