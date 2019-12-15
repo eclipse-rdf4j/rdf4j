@@ -833,6 +833,27 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@Test
+	public void testGetStatementsIterable() throws Exception {
+		testCon.add(bob, name, nameBob);
+
+		assertTrue("Repository should contain statement", testCon.hasStatement(bob, name, nameBob, false));
+
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false);) {
+			assertThat(result).isNotNull();
+			assertThat(result).isNotEmpty();
+
+			for (Statement st : result) {
+				assertThat(st.getContext()).isNull();
+				assertThat(st.getPredicate()).isEqualTo(name);
+			}
+
+			assertThat(result).isEmpty();
+			assertThat(result.isClosed()).isTrue();
+		}
+
+	}
+
+	@Test
 	public void testGetStatementsMalformedTypedLiteral() throws Exception {
 		Literal invalidIntegerLiteral = vf.createLiteral("the number four", XMLSchema.INTEGER);
 		try {
