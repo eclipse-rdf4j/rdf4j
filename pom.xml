@@ -265,7 +265,8 @@
 	<servlet.version>3.1.0</servlet.version>
 	<spring.version>5.2.1.RELEASE</spring.version>
 	<guava.version>18.0</guava.version>
-  </properties>
+	  <jmhVersion>1.21</jmhVersion>
+	</properties>
 
   <dependencyManagement>
     <dependencies>
