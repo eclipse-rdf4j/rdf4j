@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import com.github.jsonldjava.core.DocumentLoader;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
@@ -31,6 +32,13 @@ public class JSONLDSettings {
 			"org.eclipse.rdf4j.rio.jsonld.compact_arrays", "Compact arrays", Boolean.TRUE);
 
 	/**
+	 * If specified, it is used to retrieve remote documents and contexts; otherwise the processor's built-in loader is
+	 * used.
+	 */
+	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<DocumentLoader>(
+			"org.eclipse.rdf4j.rio.jsonld.document_loader", "Document loader", null);
+
+	/**
 	 * If set to true, the JSON-LD processor is allowed to optimize the output of the
 	 * <a href= "http://json-ld.org/spec/latest/json-ld-api/#compaction-algorithm" >Compaction algorithm</a> to produce
 	 * even compacter representations.
@@ -43,6 +51,21 @@ public class JSONLDSettings {
 	 */
 	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
 			"Optimize output", Boolean.FALSE);
+
+	/**
+	 * If set to true, the JSON-LD processor may emit blank nodes for triple predicates, otherwise they will be omitted.
+	 * 
+	 * Note: the use of blank node identifiers to label properties is obsolete, and may be removed in a future version
+	 * of JSON-LD,
+	 * <p>
+	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf}.
+	 * 
+	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
+	 */
+	public static final RioSetting<Boolean> PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf", "Produce generalized RDF", Boolean.FALSE);
 
 	/**
 	 * If set to true, the JSON-LD processor will try to convert typed values to JSON native types instead of using the

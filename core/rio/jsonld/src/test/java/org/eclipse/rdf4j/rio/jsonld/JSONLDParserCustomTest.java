@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import static org.junit.Assert.*;
 
 import java.io.Reader;
@@ -34,6 +35,11 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.github.jsonldjava.core.DocumentLoader;
+import com.github.jsonldjava.core.RemoteDocument;
+import com.github.jsonldjava.utils.JsonUtils;
+import java.io.IOException;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -417,4 +423,24 @@ public class JSONLDParserCustomTest {
 		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
+	@Test
+	public void testDocumentLoader() throws Exception {
+		DocumentLoader loader = new DocumentLoader() {
+			@Override
+			public RemoteDocument loadDocument(String url) {
+				System.err.println(url);
+				try {
+					RemoteDocument doc = new RemoteDocument(url,
+							JsonUtils.fromString("{ \"@context\": {\"name\": \"http://schema.org/name\"} }"));
+					return doc;
+				} catch (IOException jpe) {
+					return null;
+				}
+			}
+		};
+
+		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, loader);
+		parser.parse(new StringReader(""), "");
+		model.forEach(s -> System.err.println(s));
+	}
 }

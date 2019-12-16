@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
+import com.github.jsonldjava.core.DocumentLoader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
@@ -112,15 +114,18 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 			final JsonLdOptions opts = new JsonLdOptions();
 			// opts.addBlankNodeIDs =
 			// getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS);
-			opts.setUseRdfType(getWriterConfig().get(JSONLDSettings.USE_RDF_TYPE));
-			opts.setUseNativeTypes(getWriterConfig().get(JSONLDSettings.USE_NATIVE_TYPES));
+			WriterConfig writerConfig = getWriterConfig();
+			opts.setCompactArrays(writerConfig.get(JSONLDSettings.COMPACT_ARRAYS));
+			opts.setProduceGeneralizedRdf(writerConfig.get(JSONLDSettings.PRODUCE_GENERALIZED_RDF));
+			opts.setUseRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE));
+			opts.setUseNativeTypes(writerConfig.get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
 
-			if (getWriterConfig().get(JSONLDSettings.HIERARCHICAL_VIEW)) {
+			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {
 				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
 			}
 
-			if (baseURI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
+			if (baseURI != null && writerConfig.get(BasicWriterSettings.BASE_DIRECTIVE)) {
 				opts.setBase(baseURI);
 			}
 			if (mode == JSONLDMode.EXPAND) {
@@ -139,7 +144,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 				output = JsonLdProcessor.compact(output, localCtx, opts);
 			}
-			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+			if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 				JsonUtils.writePrettyPrint(writer, output);
 			} else {
 				JsonUtils.write(writer, output);

@@ -21,12 +21,14 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.github.jsonldjava.core.DocumentLoader;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
 import com.github.jsonldjava.core.JsonLdProcessor;
@@ -85,42 +87,49 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	public void parse(final InputStream in, final String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
 		clear();
-
-		try {
-			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
-					() -> createNode());
-
-			final JsonLdOptions options = new JsonLdOptions(baseURI);
-			options.useNamespaces = true;
-
-			final JsonFactory nextJsonFactory = configureNewJsonFactory();
-
-			final JsonParser nextParser = nextJsonFactory.createParser(in);
-
-			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
-
-			JsonLdProcessor.toRDF(parsedJson, callback, options);
-		} catch (final JsonLdError e) {
-			throw new RDFParseException("Could not parse JSONLD", e);
-		} catch (final JsonProcessingException e) {
-			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
-					e.getLocation().getColumnNr());
-		} catch (final RuntimeException e) {
-			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
-				throw (RDFParseException) e.getCause();
-			}
-			throw e;
-		} finally {
-			clear();
-		}
+		parse(getJsonParser(in), baseURI);
 	}
 
 	@Override
 	public void parse(final Reader reader, final String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
 		clear();
+		parse(getJsonParser(reader), baseURI);
+	}
 
+	/**
+	 * Create JsonParser from input stream
+	 * 
+	 * @param in
+	 * @return JsonParser
+	 * @throws IOException
+	 */
+	private JsonParser getJsonParser(InputStream in) throws IOException {
+		return configureNewJsonFactory().createParser(in);
+	}
+
+	/**
+	 * Create JsonParser from reader
+	 * 
+	 * @param reader
+	 * @return JsonParser
+	 * @throws IOException
+	 */
+	private JsonParser getJsonParser(Reader reader) throws IOException {
+		return configureNewJsonFactory().createParser(reader);
+	}
+
+	/**
+	 * Parse
+	 * 
+	 * @param nextParser
+	 * @param baseURI
+	 * @throws IOException
+	 * @throws RDFParseException
+	 * @throws RDFHandlerException
+	 */
+	private void parse(JsonParser nextParser, String baseURI)
+			throws IOException, RDFParseException, RDFHandlerException {
 		try {
 			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
 					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
@@ -129,18 +138,18 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			final JsonLdOptions options = new JsonLdOptions(baseURI);
 			options.useNamespaces = true;
 
-			final JsonFactory nextJsonFactory = configureNewJsonFactory();
-
-			final JsonParser nextParser = nextJsonFactory.createParser(reader);
+			System.err.println("get loader");
+			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);
+			if (loader != null) {
+				System.err.println("set loader");
+				options.setDocumentLoader(loader);
+			}
 
 			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
 
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
 		} catch (final JsonLdError e) {
 			throw new RDFParseException("Could not parse JSONLD", e);
-		} catch (final JsonProcessingException e) {
-			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
-					e.getLocation().getColumnNr());
 		} catch (final RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
 				throw (RDFParseException) e.getCause();
