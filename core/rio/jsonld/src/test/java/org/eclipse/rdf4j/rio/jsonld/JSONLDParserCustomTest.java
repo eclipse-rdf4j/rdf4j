@@ -148,8 +148,8 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		// 11 supported in JSONLDParser + 12 from AbstractRDFParser
-		assertEquals(23, parser.getSupportedSettings().size());
+		// 12 supported in JSONLDParser + 12 from AbstractRDFParser
+		assertEquals(24, parser.getSupportedSettings().size());
 	}
 
 	@Test
