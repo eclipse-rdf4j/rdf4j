@@ -37,6 +37,8 @@ import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
 import com.github.jsonldjava.core.JsonLdProcessor;
 import com.github.jsonldjava.utils.JsonUtils;
+import java.util.Collection;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * An RDFWriter that links to {@link JSONLDInternalRDFParser}.
@@ -167,6 +169,20 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.JSONLD;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		Collection<RioSetting<?>> result = super.getSupportedSettings();
+
+		result.add(JSONLDSettings.COMPACT_ARRAYS);
+		result.add(JSONLDSettings.HIERARCHICAL_VIEW);
+		result.add(JSONLDSettings.JSONLD_MODE);
+		result.add(JSONLDSettings.PRODUCE_GENERALIZED_RDF);
+		result.add(JSONLDSettings.USE_RDF_TYPE);
+		result.add(JSONLDSettings.USE_NATIVE_TYPES);
+
+		return result;
 	}
 
 	/**

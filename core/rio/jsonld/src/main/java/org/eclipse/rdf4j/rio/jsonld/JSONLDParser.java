@@ -14,6 +14,7 @@ import java.util.Collection;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -79,43 +80,21 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 		result.add(JSONSettings.INCLUDE_SOURCE_IN_LOCATION);
 		result.add(JSONSettings.STRICT_DUPLICATE_DETECTION);
 
+		result.add(JSONLDSettings.DOCUMENT_LOADER);
+
 		return result;
 	}
 
 	@Override
 	public void parse(final InputStream in, final String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
-		clear();
-		parse(getJsonParser(in), baseURI);
+		parse(in, null, baseURI);
 	}
 
 	@Override
 	public void parse(final Reader reader, final String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
-		clear();
-		parse(getJsonParser(reader), baseURI);
-	}
-
-	/**
-	 * Create JsonParser from input stream
-	 * 
-	 * @param in
-	 * @return JsonParser
-	 * @throws IOException
-	 */
-	private JsonParser getJsonParser(InputStream in) throws IOException {
-		return configureNewJsonFactory().createParser(in);
-	}
-
-	/**
-	 * Create JsonParser from reader
-	 * 
-	 * @param reader
-	 * @return JsonParser
-	 * @throws IOException
-	 */
-	private JsonParser getJsonParser(Reader reader) throws IOException {
-		return configureNewJsonFactory().createParser(reader);
+		parse(null, reader, baseURI);
 	}
 
 	/**
@@ -127,8 +106,10 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	 * @throws RDFParseException
 	 * @throws RDFHandlerException
 	 */
-	private void parse(JsonParser nextParser, String baseURI)
+	private void parse(InputStream in, Reader reader, String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
+		clear();
+
 		try {
 			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
 					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
@@ -139,15 +120,17 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);
 			if (loader != null) {
+				System.err.println(loader);
 				options.setDocumentLoader(loader);
 			}
-
+			JsonFactory factory = configureNewJsonFactory();
+			JsonParser nextParser = (in != null) ? factory.createParser(in) : factory.createParser(reader);
 			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
 
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
-		} catch (final JsonLdError e) {
+		} catch (JsonLdError e) {
 			throw new RDFParseException("Could not parse JSONLD", e);
-		} catch (final RuntimeException e) {
+		} catch (RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
 				throw (RDFParseException) e.getCause();
 			}
@@ -164,50 +147,51 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	 */
 	private JsonFactory configureNewJsonFactory() {
 		final JsonFactory nextJsonFactory = new JsonFactory(JSON_MAPPER);
+		ParserConfig parserConfig = getParserConfig();
 
-		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
-					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
+					parserConfig.get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
+					parserConfig.get(JSONSettings.ALLOW_COMMENTS));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
-					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
+					parserConfig.get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
-					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
+					parserConfig.get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
-					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
+					parserConfig.get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
+					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
+					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
+					parserConfig.get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
-		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
+		if (parserConfig.isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
-					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
+					parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
-		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
+		if (parserConfig.isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
 			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
-					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
+					parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
-		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
+		if (parserConfig.isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
-					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
+					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
 		return nextJsonFactory;
 	}
