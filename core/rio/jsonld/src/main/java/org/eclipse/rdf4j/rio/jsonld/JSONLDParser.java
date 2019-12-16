@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.github.jsonldjava.core.DocumentLoader;
@@ -130,6 +131,9 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
 		} catch (JsonLdError e) {
 			throw new RDFParseException("Could not parse JSONLD", e);
+		} catch (JsonProcessingException e) {
+			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
+					e.getLocation().getColumnNr());
 		} catch (RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
 				throw (RDFParseException) e.getCause();
