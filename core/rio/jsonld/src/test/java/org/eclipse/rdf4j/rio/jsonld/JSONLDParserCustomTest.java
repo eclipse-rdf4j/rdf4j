@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import com.fasterxml.jackson.core.JsonParseException;
 import static org.junit.Assert.*;
 
 import java.io.Reader;
@@ -47,6 +46,10 @@ import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
  * @author Peter Ansell
  */
 public class JSONLDParserCustomTest {
+	/**
+	 * Backslash escaped
+	 */
+	private static final String ESCAPED_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
 	 * Backslash escaped "h" in "http"
@@ -440,7 +443,7 @@ public class JSONLDParserCustomTest {
 		};
 
 		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, loader);
-		parser.parse(new StringReader(""), "");
+		parser.parse(new StringReader(ESCAPED_TEST_STRING), "");
 		model.forEach(s -> System.err.println(s));
 	}
 }

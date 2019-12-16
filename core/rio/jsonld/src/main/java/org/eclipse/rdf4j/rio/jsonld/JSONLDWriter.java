@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import com.github.jsonldjava.core.DocumentLoader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -67,6 +66,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
 	 *
 	 * @param outputStream The OutputStream to write to.
+	 * @param baseURI      base URI
 	 */
 	public JSONLDWriter(OutputStream outputStream, String baseURI) {
 		this(new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)), baseURI);

@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.github.jsonldjava.core.DocumentLoader;
@@ -138,10 +137,8 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			final JsonLdOptions options = new JsonLdOptions(baseURI);
 			options.useNamespaces = true;
 
-			System.err.println("get loader");
 			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);
 			if (loader != null) {
-				System.err.println("set loader");
 				options.setDocumentLoader(loader);
 			}
 
@@ -214,5 +211,4 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 		}
 		return nextJsonFactory;
 	}
-
 }
