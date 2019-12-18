@@ -121,7 +121,6 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);
 			if (loader != null) {
-				System.err.println(loader);
 				options.setDocumentLoader(loader);
 			}
 			JsonFactory factory = configureNewJsonFactory();
