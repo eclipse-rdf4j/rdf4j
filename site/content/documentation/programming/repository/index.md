@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 ...
 Repository repo = new SailRepository(new MemoryStore());
-repo.init();
 {{< / highlight >}}
 
 The constructor of the SailRepository class accepts any object of type Sail, so we simply pass it a new main-memory store object (which is, of course, a Sail implementation). Following this, the repository needs to be initialized to prepare the Sail(s) that it operates on.
@@ -48,7 +47,6 @@ Different types of Sail objects take parameters in their constructor that change
 {{< highlight java "linenos=table" >}}
 File dataDir = new File("C:\\temp\\myRepository\\");
 Repository repo = new SailRepository( new MemoryStore(dataDir) );
-repo.init();
 {{< / highlight >}}
 
 As you can see, we can fine-tune the configuration of our repository by passing parameters to the constructor of the Sail object. Some Sail types may offer additional configuration methods, all of which need to be called before the repository is initialized. The MemoryStore currently has one such method: `setSyncDelay(long)`, which can be used to control the strategy that is used for writing to the data file, e.g.:
@@ -58,7 +56,6 @@ File dataDir = new File("C:\\temp\\myRepository\\");
 MemoryStore memStore = new MemoryStore(dataDir);
 memStore.setSyncDelay(1000L);
 Repository repo = new SailRepository(memStore);
-repo.init();
 {{< / highlight >}}
 
 ### Creating a Native RDF Repository
@@ -74,7 +71,6 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 ...
 File dataDir = new File("/path/to/datadir/");
 Repository repo = new SailRepository(new NativeStore(dataDir));
-repo.init();
 {{< / highlight >}}
 
 By default, the Native store creates a set of two indexes. To configure which indexes it should create, we can either use the `NativeStore.setTripleIndexes(String)` method, or we can directly supply a index configuration string to the constructor:
@@ -87,8 +83,37 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 File dataDir = new File("/path/to/datadir/");
 String indexes = "spoc,posc,cosp";
 Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
-repo.init();
 {{< / highlight >}}
+
+### Creating an Elasticserch RDF Repository
+
+> Experimental! New in RDF4J 3.1
+
+The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with the ElasticsearchSail which uses Elasticsearch for enhanced search. 
+
+The ElasticsearchStore is experimental and future releases may be incompatible with the current version. Write-ahead-logging is not supported. 
+This means that a write operation can appear to have partially succeeded if the ElasticsearchStore looses its connection to Elasticsearch during a commit. 
+
+Transaction isolation is not as strong as for the other stores. The highest supported level is READ_COMMITTED, and even this 
+level is only guaranteed when all other transactions also use READ_COMMITTED.
+
+Performance for the NativeStore is in most cases considerably better than for the ElasticsearchStore. 
+The read cache in the ElasticsearchStore makes workloads with repetitive reads fast. Storing small, infrequently updated, datasets such as a 
+reference library or an ontology is a good usecase for the ElasticsearchStore.    
+
+The code for creation of an ElasticsearchStore is almost identical to other repositories:
+
+{{< highlight java "linenos=table" >}}
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+...
+// ElasticsearchStore(String hostname, int port, String clusterName, String index)
+Repository repo = new SailRepository(new ElasticsearchStore("localhost", 9300, "elasticsearch", "rdf4j_index"));
+{{< / highlight >}}
+
+Remember to call `repo.shutdown()` when you are done with your ElasticsearchStore. This will close the underlying Elasticsearch Client.
+
 
 ### Creating a repository with RDF Schema inferencing
 
@@ -103,7 +128,6 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 Repository repo = new SailRepository(
 			  new SchemaCachingRDFSInferencer(
 			  new MemoryStore()));
-repo.init();
 {{< / highlight >}}
 
 Each layer in the Sail stack is created by a constructor that takes the underlying Sail as a parameter. Finally, we create the SailRepository object as a functional wrapper around the Sail stack.
@@ -163,7 +187,6 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 String rdf4jServer = "http://example.org/rdf4j-server/";
 String repositoryID = "example-db";
 Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
-repo.init();
 {{< / highlight >}}
 
 Note: some OpenJDK 8 JVMs have a ScheduledThreadPoolExecutor bug, causing high processor load even when idling. Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug` will use 1 core thread (instead of 0) for clients to remediate this.  
@@ -178,7 +201,6 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 ...
 String sparqlEndpoint = "http://example.org/sparql";
 Repository repo = new SPARQLRepository(sparqlEndpoint);
-repo.init();
 {{< / highlight >}}
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
