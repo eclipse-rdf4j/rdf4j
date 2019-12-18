@@ -9,16 +9,19 @@ package org.eclipse.rdf4j.sail.extensiblestoreimpl;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.ExtensibleStoreImplForTests;
 import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.NaiveHashSetDataStructure;
 import org.junit.Test;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -26,6 +29,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 public class TransactionIsolationAndWalTests {
+
+	static final ValueFactory vf = SimpleValueFactory.getInstance();
+
 
 	/*
 	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
@@ -99,7 +105,130 @@ public class TransactionIsolationAndWalTests {
 
 	}
 
-	ValueFactory vf = SimpleValueFactory.getInstance();
+
+	/*
+	* Tests that a partially committed transaction doesn't leak into other transactions.
+	* READ_COMMITTED should either read the entire transaction or none of the transaction.
+	 */
+	@Test
+	public void testReadCommittedLargeTransaction2() throws InterruptedException {
+		ExtensibleStoreImplForTests sail = new ExtensibleStoreImplForTests(false);
+		SailRepository repository = new SailRepository(sail);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		AtomicBoolean failed = new AtomicBoolean(false);
+
+		CountDownLatch countDownLatch = new CountDownLatch(1);
+
+		int size = 100;
+		Thread thread = new Thread(() -> {
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+
+				try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
+
+					statements.hasNext();
+					countDownLatch.await();
+
+					int count = 0;
+					while (statements.hasNext()) {
+						statements.next();
+						count++;
+					}
+
+					System.out.println(count);
+					if (count != 1 && count != size) {
+						failed.set(true);
+					}
+
+
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+
+				connection.commit();
+
+			}
+
+		});
+
+		Thread thread2 = new Thread(() -> {
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				countDownLatch.await();
+
+				try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
+
+					statements.hasNext();
+
+					int count = 0;
+					while (statements.hasNext()) {
+						statements.next();
+						count++;
+					}
+
+					System.out.println(count);
+					if (count != 1 && count != size) {
+						failed.set(true);
+					}
+
+					connection.commit();
+
+				}
+
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		});
+
+		thread.start();
+		thread2.start();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin();
+
+			AtomicInteger i = new AtomicInteger();
+			NaiveHashSetDataStructure.added = statement -> {
+				i.getAndIncrement();
+				if (i.get() == 10) {
+					countDownLatch.countDown();
+
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+
+				}
+			};
+
+			connection.clear();
+
+			for (int j = 0; j < size; j++) {
+				connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+			}
+			connection.commit();
+
+		} catch (
+			Throwable e) {
+			e.printStackTrace();
+		}
+
+
+		thread.join();
+		thread2.join();
+
+
+		assertFalse(failed.get());
+
+
+	}
 
 	@Test
 	public void testWalAdditions() {

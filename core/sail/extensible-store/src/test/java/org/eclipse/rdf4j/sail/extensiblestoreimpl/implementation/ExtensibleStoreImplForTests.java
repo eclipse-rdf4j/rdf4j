@@ -21,6 +21,13 @@ public class ExtensibleStoreImplForTests
 		dataStructureInferred = new NaiveHashSetDataStructure();
 	}
 
+	public ExtensibleStoreImplForTests(boolean readCache) {
+		super(readCache);
+		namespaceStore = new SimpleMemoryNamespaceStore();
+		dataStructure = new NaiveHashSetDataStructure();
+		dataStructureInferred = new NaiveHashSetDataStructure();
+	}
+
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new ExtensibleStoreConnectionImplForTests(this);
