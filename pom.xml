@@ -241,10 +241,19 @@
     <profile>
       <id>doclint-java8-disable</id>
       <activation>
-        <jdk>[1.8,9,)</jdk>
+        <jdk>1.8</jdk>
       </activation>
       <properties>
         <javadoc.opts>-Xdoclint:none</javadoc.opts>
+      </properties>
+    </profile>
+    <profile>
+      <id>doclint-java9-disable</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
+      <properties>
+        <javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
       </properties>
     </profile>
   </profiles>
