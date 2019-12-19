@@ -82,7 +82,6 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	public ElasticsearchStore(ClientProvider clientPool, String index) {
 		this(clientPool, index, true);
-
 	}
 
 	public ElasticsearchStore(ClientProvider clientPool, String index, boolean cacheEnabled) {
@@ -93,6 +92,14 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		dataStructureInferred = new ElasticsearchDataStructure(this.clientProvider, index + "_inferred");
 		namespaceStore = new ElasticsearchNamespaceStore(this.clientProvider, index + "_namespaces");
 
+	}
+
+	public ElasticsearchStore(Client client, String index) {
+		this(client, index, true);
+	}
+
+	public ElasticsearchStore(Client client, String index, boolean cacheEnabled) {
+		this(new UnclosableClientProvider(new UserProvidedClientProvider(client)), index, cacheEnabled);
 	}
 
 	@Override
