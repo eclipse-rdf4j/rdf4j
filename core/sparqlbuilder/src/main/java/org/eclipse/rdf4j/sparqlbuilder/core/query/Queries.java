@@ -137,6 +137,30 @@ public class Queries {
 	}
 
 	/**
+	 * Convenience method, creates a SPARQL DELETE query using ModifyQuery.
+	 * 
+	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+	 * @return a new {@link ModifyQuery}
+	 * 
+	 * @see <a href="https://www.w3.org/TR/sparql11-update/#delete"> SPARQL DELETE Query</a>
+	 */
+	public static ModifyQuery DELETE(TriplePattern... triples) {
+		return new ModifyQuery().delete(triples);
+	}
+
+	/**
+	 * Convenience method, creates a SPARQL INSERT query using ModifyQuery.
+	 *
+	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+	 * @return a new {@link ModifyQuery}
+	 * 
+	 * @see <a href="https://www.w3.org/TR/sparql11-update/#insert"> SPARQL INSERT Query</a>
+	 */
+	public static ModifyQuery INSERT(TriplePattern... triples) {
+		return new ModifyQuery().insert(triples);
+	}
+
+	/**
 	 * Creates a SPARQL LOAD query
 	 * 
 	 * @return a new {@link LoadQuery}
