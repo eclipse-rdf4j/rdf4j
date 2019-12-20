@@ -8,11 +8,15 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class BenchmarkConfigs {
+	{
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 	public static final int NUMBER_OF_TRANSACTIONS = 30;
 	public static final int NUMBER_OF_EMPTY_TRANSACTIONS = 10;
 

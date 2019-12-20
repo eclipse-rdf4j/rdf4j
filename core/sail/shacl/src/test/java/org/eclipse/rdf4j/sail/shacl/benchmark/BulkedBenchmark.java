@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
@@ -55,6 +56,9 @@ import java.util.stream.Collectors;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class BulkedBenchmark {
+	{
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	private final static int SIZE = 10000;
 	private static final String QUERY = "?a <" + RDFS.LABEL + "> ?c";

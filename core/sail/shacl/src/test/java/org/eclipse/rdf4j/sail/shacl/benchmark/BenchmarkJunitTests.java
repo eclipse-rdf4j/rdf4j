@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.junit.Test;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -19,6 +20,10 @@ import org.openjdk.jmh.runner.options.TimeValue;
  * @author Håvard Ottestad
  */
 public class BenchmarkJunitTests {
+
+	{
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	@Test
 	public void test() throws RunnerException {

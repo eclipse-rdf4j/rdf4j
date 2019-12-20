@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -50,6 +51,9 @@ import java.util.concurrent.TimeUnit;
 public class AddRemoveBenchmarkEmpty {
 
 	private List<List<Statement>> allStatements;
+	{
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	@Setup(Level.Iteration)
 	public void setUp() {
