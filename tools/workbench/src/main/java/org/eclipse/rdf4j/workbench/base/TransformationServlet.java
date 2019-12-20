@@ -54,10 +54,11 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		cookies = new CookieHandler(config, this);
-		if (config.getInitParameter(TRANSFORMATIONS) == null) {
-			throw new MissingInitParameterException(TRANSFORMATIONS);
-		}
+
 		if (config != null) {
+			if (config.getInitParameter(TRANSFORMATIONS) == null) {
+				throw new MissingInitParameterException(TRANSFORMATIONS);
+			}
 			final Enumeration<?> names = config.getInitParameterNames();
 			while (names.hasMoreElements()) {
 				final String name = (String) names.nextElement();
