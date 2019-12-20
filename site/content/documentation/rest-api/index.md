@@ -17,6 +17,7 @@ The following is an overview of the resources that are available from rdf4j serv
        /repositories     : overview of available repositories (GET)
        /<REP_ID>         : query evaluation and administration tasks on a repository
                            (GET/POST/PUT/DELETE)
+           /config       : repository configuration (GET/POST)
            /statements   : repository statements (GET/POST/PUT/DELETE)
            /contexts     : context overview (GET)
            /size         : # statements in repository (GET)
@@ -32,7 +33,7 @@ The following is an overview of the resources that are available from rdf4j serv
 
 # Protocol version
 
-The version of the protocol that the server uses to communicate over HTTP is available at: `<RDF4J_URL>/protocol`. The version described by this chapter is “8”.
+The version of the protocol that the server uses to communicate over HTTP is available at: `<RDF4J_URL>/protocol`. The version described by this chapter is "10".
 
 Supported methods on this URL are:
 
@@ -213,11 +214,11 @@ Response:
 
     true
 
-# Repository creation and reconfiguration
+# Repository creation
 
-A specific repository with ID `<ID>` can be deleted from the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `PUT` method should be used for this.
+A new repository with ID `<ID>` can be created on the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `PUT` method should be used for this.
 
-The payload supplied with this request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. If the repository with the specified id previously existed, the Server will attempt to reconfigure it using the supplied configuration. If it does not exist, a new, empty, repository will be created.
+The payload supplied with this request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. If the repository with the specified id previously existed, the Server will refuse the request. If it does not exist, a new, empty, repository will be created.
 
 An example payload, containing a repository configuration for an in-memory store:
 
@@ -239,8 +240,6 @@ An example payload, containing a repository configuration for an in-memory store
           ]
        ].
 
-Care should be taken with the use of this method: the result of this operation on an existing repository risks wiping that repository's data, if the configuration is not compatible with existing repository.
-
 # Repository removal
 
 A specific repository with ID `<ID>` can be deleted from the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `DELETE` method should be used for this, and the request accepts no parameters.
@@ -259,6 +258,41 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
+# Repository configuration
+
+The configuration for a specific repositroy with ID `<ID>` is available at: `<RDF4J_URL>/repositories/<ID>/config`.
+
+Supported methods on this URL are:
+
+- `GET`: Retrieves the current configuration of the repository.
+- `POST`: Updates the configuration of the repository. Care should be taken as this operation may result in data loss if the new configuration is not compatible with the existing configuration.
+
+Request headers:
+
+-    `Accept`: Relevant values for GET requests are the MIME types of supported RDF formats.
+-    `Content-Type`: Must specify the encoding of any request data that is sent to a server. Relevant values are the MIME types of supported RDF formats.
+
+The payload supplied with POST request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. The Server will attempt to reconfigure the existing repository with the supplied configuration data. 
+
+An example payload, containing a repository configuration for an in-memory store:
+
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+    @prefix rep: <http://www.openrdf.org/config/repository#>.
+    @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+    @prefix sail: <http://www.openrdf.org/config/sail#>.
+    @prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+
+    [] a rep:Repository ;
+       rep:repositoryID "test" ;
+       rdfs:label "test memory store" ;
+       rep:repositoryImpl [
+          rep:repositoryType "openrdf:SailRepository" ;
+          sr:sailImpl [
+             sail:sailType "openrdf:MemoryStore" ;
+             ms:persist true ;
+             ms:syncDelay 120
+          ]
+       ].
 # Repository statements
 
 The statements for a specific repository with ID `<ID>` are available at: `<RDF4J_URL>/repositories/<ID>/statements`

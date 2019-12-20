@@ -18,6 +18,11 @@ The rdf4j **Memory Store** is a transactional RDF database using main memory wit
 
 The rdf4j **Native Store** is a transactional RDF database using direct disk IO for persistence. It is a more scalable solution than the memory store, with a smaller memory footprint, and also offers better consistency and durability. It is currently aimed at medium-sized datasets in the order of 100 million triples.
 
+The rdf4j **ElasticsearchStore** is an experimental RDF database that uses Elasticsearch for storage. 
+This is useful if you are already using Elasticsearch for other things in your project and you want to add some small scale graph data. 
+A good usecase is if you need reference data or an ontology for your application. The built-in read cache makes it a good choice for data that updates infrequently, 
+though for most usecases the NativeStore will be considerably faster.
+
 On top of these core databases, rdf4j offers a number of functional extensions. These extensions add functionality such as improved full-text search, RDFS inferencing, rule-based reasoning using SHACL/SPIN, and geospatial querying support. For more information see the rdf4j documentation.
 
 The core databases are mainly intended for small to medium-sized datasets. However, rdf4j-compatible databases are developed by several third parties, both open-source/free and commercial, and they often offer better scalability or other extended features. Because these triplestores are compatible with the rdf4j APIs, you will be able to switch your project to a different database with a minimal amount of code changes.
