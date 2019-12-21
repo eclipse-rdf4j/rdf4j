@@ -63,7 +63,7 @@ public class TransactionParallelBenchmark {
 	public void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home");
+				"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
 
 		repository = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
@@ -129,6 +129,31 @@ public class TransactionParallelBenchmark {
 
 					try (SailRepositoryConnection connection = repository.getConnection()) {
 						connection.begin(IsolationLevels.READ_COMMITTED);
+						connection.add(list);
+						connection.commit();
+					}
+				});
+
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean transaction100ParallelTransactionsIsolationNone() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		IntStream
+				.range(0, 100)
+				.mapToObj(k -> IntStream
+						.range(0, 10)
+						.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+						.collect(Collectors.toList()))
+				.collect(Collectors.toList())
+				.parallelStream()
+				.forEach(list -> {
+
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						connection.begin(IsolationLevels.NONE);
 						connection.add(list);
 						connection.commit();
 					}
