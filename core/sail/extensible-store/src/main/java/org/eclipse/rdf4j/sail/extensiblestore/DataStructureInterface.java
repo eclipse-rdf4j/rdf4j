@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.Collection;
+
 /**
  * An interface to implement a base data structure for the ExtensibleStore. The data structure needs to be thread safe.
  *
@@ -26,6 +28,18 @@ public interface DataStructureInterface {
 	void addStatement(Statement statement);
 
 	void removeStatement(Statement statement);
+
+	default void addStatement(Collection<Statement> statements) {
+		for (Statement statement : statements) {
+			addStatement(statement);
+		}
+	}
+
+	default void removeStatement(Collection<Statement> statements) {
+		for (Statement statement : statements) {
+			removeStatement(statement);
+		}
+	}
 
 	CloseableIteration<? extends Statement, SailException> getStatements(
 			Resource subject,
