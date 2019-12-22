@@ -72,14 +72,14 @@ public class FederateTest extends AbstractCommandTest {
 	@InjectMocks
 	private Federate federate;
 
-	private Level originalLevel;
+//	private Level originalLevel;
 
 	@Before
 	public void setUp() throws Exception {
-		originalLevel = ((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+//		originalLevel = ((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 
 		// Start all tests assuming a base of Debug logging, then revert after the test
-		((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(Level.DEBUG);
+//		((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(Level.DEBUG);
 
 		manager = new LocalRepositoryManager(tempDir.newFolder("federate-test-repository-manager"));
 		manager.initialize();
@@ -95,7 +95,7 @@ public class FederateTest extends AbstractCommandTest {
 		try {
 			super.tearDown();
 		} finally {
-			((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
+//			((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
 		}
 	}
 

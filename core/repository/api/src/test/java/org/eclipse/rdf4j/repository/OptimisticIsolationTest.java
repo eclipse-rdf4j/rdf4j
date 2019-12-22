@@ -31,7 +31,7 @@ import org.junit.runners.Suite.SuiteClasses;
  * @author James Leigh
  */
 @RunWith(Suite.class)
-@SuiteClasses({MonotonicTest.class})
+@SuiteClasses({ MonotonicTest.class })
 //@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
 //		RemoveIsolationTest.class, SailIsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
 //		SerializableTest.class })
