@@ -212,7 +212,7 @@ public abstract class FilteredModel extends AbstractModel {
 		if (!matches(c, contexts)) {
 			return false;
 		}
-		return (s == null || s instanceof Resource) && (p == null || p instanceof IRI);
+		return true;
 	}
 
 	private boolean matches(Resource[] stContext, Resource... contexts) {
@@ -230,7 +230,7 @@ public abstract class FilteredModel extends AbstractModel {
 	private boolean matches(Resource stContext, Resource... contexts) {
 		if (contexts != null && contexts.length == 0) {
 			// Any context matches
-			return stContext == null || stContext instanceof Resource;
+			return true;
 		} else {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			// Accept if one of the contexts from the pattern matches
