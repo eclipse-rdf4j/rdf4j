@@ -612,7 +612,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			if (count == 0) {
-				return vf.createLiteral(0.0d);
+				return vf.createLiteral("0", XMLSchema.INTEGER);
 			}
 
 			Literal sizeLit = vf.createLiteral(count);
