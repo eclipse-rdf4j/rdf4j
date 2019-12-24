@@ -66,7 +66,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Create a new SPARQLREpository using the supplied query endpoint URL for queries, and the supplied update endpoint
+	 * Create a new SPARQLRepository using the supplied query endpoint URL for queries, and the supplied update endpoint
 	 * URL for updates.
 	 * 
 	 * @param queryEndpointUrl  a SPARQL endpoint URL for queries. May not be null.
