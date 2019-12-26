@@ -308,14 +308,14 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	private boolean flushAddStatementBuffer() {
+	private void flushAddStatementBuffer() {
 
 		Set<Statement> workingBuffer = null;
 
 		try {
 			synchronized (this) {
 				if (addStatementBuffer.isEmpty()) {
-					return false;
+					return;
 				}
 				workingBuffer = new HashSet<>(addStatementBuffer);
 				addStatementBuffer = new HashSet<>(Math.min(addStatementBuffer.size(), BUFFER_THRESHOLD));
@@ -461,7 +461,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			}
 		}
 
-		return true;
+		return;
 
 	}
 
@@ -484,10 +484,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		return bulkItemResponses;
 	}
 
-	synchronized private boolean flushRemoveStatementBuffer() {
+	synchronized private void flushRemoveStatementBuffer() {
 
 		if (deleteStatementBuffer.isEmpty()) {
-			return false;
+			return;
 		}
 
 		BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
@@ -524,7 +524,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
 
-		return true;
+		return;
 
 	}
 
