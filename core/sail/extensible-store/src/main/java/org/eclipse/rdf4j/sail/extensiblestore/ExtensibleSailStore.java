@@ -42,8 +42,7 @@ class ExtensibleSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new EvaluationStatistics() {
-		};
+		return new ExtensibleEvaluationStatistics(this);
 	}
 
 	@Override
