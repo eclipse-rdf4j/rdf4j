@@ -70,6 +70,8 @@ public class TransactionIsolationAndWalTests {
 
 		assertFalse(failure.get());
 
+		repository.shutDown();
+
 	}
 
 }
