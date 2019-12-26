@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -58,11 +59,14 @@ public class Select implements PlanNode {
 						.get(QueryLanguage.SPARQL)
 						.get();
 
-				ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-
-				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-						new MapBindingSet(), true);
-
+				try {
+					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+							new MapBindingSet(), true);
+				} catch (MalformedQueryException e) {
+					logger.error("Malformed query: \n{}", query);
+					throw e;
+				}
 			}
 
 			@Override

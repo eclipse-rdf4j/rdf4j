@@ -36,6 +36,7 @@ import java.util.stream.Stream;
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
  * nodeShapes, which are the restrictions for everything that matches the NodeShape.
  *
+ * @author Håvard Mikkelsen Ottestad
  * @author Heshan Jayasinghe
  */
 public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
@@ -56,22 +57,29 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
-		throw new UnsupportedOperationException();
+
+		PlanNode node = new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?c");
+
+		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
@@ -138,7 +146,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return subjectVariable + " ?b " + objectVariable;
+		return subjectVariable + " ?fj42798yfhf2j4 " + objectVariable + " .";
 	}
 
 	public Resource getId() {
