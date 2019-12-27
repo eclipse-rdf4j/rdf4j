@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -20,6 +22,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 public class TransactionIsolationAndWalTests {
+
+	private static final Logger logger = LoggerFactory.getLogger(TransactionIsolationAndWalTests.class);
 
 	/*
 	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
@@ -42,7 +46,7 @@ public class TransactionIsolationAndWalTests {
 					connection.commit();
 					if (size != 0) {
 						if (size != count) {
-							System.out.println("Size was " + size + ". Expected " + count);
+							logger.error("Size was " + size + ". Expected " + count);
 							failure.set(true);
 						}
 						break;
