@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
@@ -25,7 +26,7 @@ import java.io.File;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the class
- * {@link org.eclipse.rdf4j.sail.extensiblestore.ElasticsearchStore}.
+ * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
 public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest {
 
@@ -64,7 +65,7 @@ public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest
 	}
 
 	@Override
-	public void testReadCommittedLargeTransaction() throws InterruptedException {
-		// this level of isolation is not implemented fully yet
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+		// this kind of isolation is not implemented fully yet
 	}
 }

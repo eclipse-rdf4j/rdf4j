@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,6 +29,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -158,14 +160,37 @@ public abstract class SailIsolationLevelTest {
 		}
 	}
 
+	@Test
+	public void testLargeTransactionReadCommitted() throws InterruptedException {
+		testLargeTransaction(IsolationLevels.READ_COMMITTED, 100000);
+	}
+
+	@Test
+	public void testLargeTransactionSnapshot() throws InterruptedException {
+		testLargeTransaction(IsolationLevels.SNAPSHOT, 100000);
+	}
+
+	@Test
+	public void testLargeTransactionSnapshotRead() throws InterruptedException {
+		testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 100000);
+	}
+
+	@Test
+	public void testLargeTransactionSerializable() throws InterruptedException {
+		testLargeTransaction(IsolationLevels.SERIALIZABLE, 100000);
+	}
+
 	/*
 	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
 	 * transaction should see either nothing added or everything added. Nothing in between.
 	 */
-	@Test
-	public void testReadCommittedLargeTransaction() throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
 
-		int count = 100000;
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+		}
 
 		AtomicBoolean failure = new AtomicBoolean(false);
 
@@ -173,16 +198,28 @@ public abstract class SailIsolationLevelTest {
 
 			try (SailConnection connection = store.getConnection()) {
 				while (true) {
-					connection.begin(IsolationLevels.READ_COMMITTED);
-					long size = connection.size();
-					connection.commit();
-					if (size != 0) {
-						if (size != count) {
-							logger.error("Size was " + size + ". Expected " + count);
-							failure.set(true);
+					try {
+						connection.begin(isolationLevel);
+						List<Statement> statements = Iterations
+								.asList(connection.getStatements(null, null, null, false));
+						connection.commit();
+						if (statements.size() != 0) {
+							if (statements.size() != count) {
+								logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
+								logger.error("\n[\n\t{}\n]",
+										statements.stream()
+												.map(Object::toString)
+												.reduce((a, b) -> a + " , \n\t" + b)
+												.get());
+
+								failure.set(true);
+							}
+							break;
 						}
-						break;
+					} catch (SailConflictException ignored) {
+						connection.rollback();
 					}
+
 					Thread.yield();
 				}
 			}
@@ -194,16 +231,18 @@ public abstract class SailIsolationLevelTest {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		try (SailConnection connection = store.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.begin(isolationLevel);
 			for (int i = 0; i < count; i++) {
 				connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));
 			}
+			logger.debug("Commit");
 			connection.commit();
 
 			assertEquals(count, connection.size());
 
 		}
 
+		logger.debug("Joining thread");
 		thread.join();
 
 		assertFalse(failure.get());
