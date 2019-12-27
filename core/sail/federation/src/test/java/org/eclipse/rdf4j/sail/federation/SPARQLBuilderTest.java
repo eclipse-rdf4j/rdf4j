@@ -62,7 +62,6 @@ public class SPARQLBuilderTest {
 		Federation federation = new Federation();
 		federation.addMember(new SailRepository(new MemoryStore()));
 		repository = new SailRepository(federation);
-		repository.initialize();
 		con = repository.getConnection();
 		valueFactory = con.getValueFactory();
 		IRI subj = valueFactory.createIRI("urn:test:subj");
