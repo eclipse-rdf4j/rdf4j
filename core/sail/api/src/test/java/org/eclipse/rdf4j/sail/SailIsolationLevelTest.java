@@ -16,7 +16,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.After;
 import org.junit.Assert;
@@ -28,6 +30,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 /**
  * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
@@ -37,7 +43,7 @@ import java.util.concurrent.TimeUnit;
 public abstract class SailIsolationLevelTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -150,6 +156,58 @@ public abstract class SailIsolationLevelTest {
 		} else {
 			logger.warn("{} does not support {}", store, IsolationLevels.SERIALIZABLE);
 		}
+	}
+
+	/*
+	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
+	 * transaction should see either nothing added or everything added. Nothing in between.
+	 */
+	@Test
+	public void testReadCommittedLargeTransaction() throws InterruptedException {
+
+		int count = 100000;
+
+		AtomicBoolean failure = new AtomicBoolean(false);
+
+		Runnable runnable = () -> {
+
+			try (SailConnection connection = store.getConnection()) {
+				while (true) {
+					connection.begin(IsolationLevels.READ_COMMITTED);
+					long size = connection.size();
+					connection.commit();
+					if (size != 0) {
+						if (size != count) {
+							logger.error("Size was " + size + ". Expected " + count);
+							failure.set(true);
+						}
+						break;
+					}
+					Thread.yield();
+				}
+			}
+		};
+
+		Thread thread = new Thread(runnable);
+		thread.start();
+
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			for (int i = 0; i < count; i++) {
+				connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));
+			}
+			connection.commit();
+
+			assertEquals(count, connection.size());
+
+		}
+
+		thread.join();
+
+		assertFalse(failure.get());
+
 	}
 
 	/**
