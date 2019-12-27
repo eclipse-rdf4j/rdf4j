@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,7 +50,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	 */
 	private volatile boolean closed;
 
-	private final org.eclipse.rdf4j.query.impl.QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new org.eclipse.rdf4j.query.impl.QueueCursor<>(
+	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
 			1024);
 
 	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();
