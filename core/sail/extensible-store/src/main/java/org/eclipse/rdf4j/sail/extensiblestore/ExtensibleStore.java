@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -94,12 +94,12 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
+	public List<IsolationLevels> getSupportedIsolationLevels() {
 		return Arrays.asList(IsolationLevels.NONE, IsolationLevels.READ_UNCOMMITTED, IsolationLevels.READ_COMMITTED);
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
+	public IsolationLevels getDefaultIsolationLevel() {
 		return IsolationLevels.READ_COMMITTED;
 	}
 

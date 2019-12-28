@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemoryStoreConnectionTest extends RepositoryConnectionTest {
 
-	public MemoryStoreConnectionTest(IsolationLevel level) {
+	public MemoryStoreConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

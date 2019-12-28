@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -771,14 +771,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
+	public void begin(IsolationLevels level)
 			throws SailException {
 
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
 		}
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
+		IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(

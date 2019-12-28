@@ -13,7 +13,7 @@ import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -30,7 +30,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 
 	private static HTTPMemServer server;
 
-	public HTTPStoreConnectionTest(IsolationLevel level) {
+	public HTTPStoreConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

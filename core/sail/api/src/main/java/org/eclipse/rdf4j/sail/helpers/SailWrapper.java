@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.io.File;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
 /**
  * An implementation of the StackableSail interface that wraps another Sail object and forwards any relevant calls to
  * the wrapped Sail.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailWrapper implements StackableSail, FederatedServiceResolverClient {
@@ -121,13 +121,13 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
+	public List<IsolationLevels> getSupportedIsolationLevels() {
 		verifyBaseSailSet();
 		return baseSail.getSupportedIsolationLevels();
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
+	public IsolationLevels getDefaultIsolationLevel() {
 		verifyBaseSailSet();
 		return baseSail.getDefaultIsolationLevel();
 	}

@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Combines two sources to act as a single {@link SailSource}. This is useful to provide a combined view of both
  * explicit and inferred statements.
- * 
+ *
  * @author James Leigh
  */
 class UnionSailSource implements SailSource {
@@ -30,7 +30,7 @@ class UnionSailSource implements SailSource {
 
 	/**
 	 * An {@link SailSource} that combines two other {@link SailSource}es.
-	 * 
+	 *
 	 * @param primary    delegates all calls to the given {@link SailSource}.
 	 * @param additional delegate all call except {@link #sink(IsolationLevel)}.
 	 */
@@ -69,12 +69,12 @@ class UnionSailSource implements SailSource {
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
+	public SailSink sink(IsolationLevels level) throws SailException {
 		return primary.sink(level);
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level) throws SailException {
+	public SailDataset dataset(IsolationLevels level) throws SailException {
 		return new UnionSailDataset(primary.dataset(level), additional.dataset(level));
 	}
 

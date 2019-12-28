@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
@@ -22,7 +22,7 @@ public class RDFSchemaNativeRepositoryConnectionTest extends RDFSchemaRepository
 
 	private File dataDir;
 
-	public RDFSchemaNativeRepositoryConnectionTest(IsolationLevel level) {
+	public RDFSchemaNativeRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

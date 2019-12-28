@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -155,7 +155,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
+	public SailSink sink(IsolationLevels level) throws SailException {
 		Changeset changeset = new Changeset() {
 
 			private boolean prepared;
@@ -202,7 +202,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level) throws SailException {
+	public SailDataset dataset(IsolationLevels level) throws SailException {
 		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
 
 			@Override
@@ -356,7 +356,7 @@ class SailSourceBranch implements SailSource {
 				|| change.getObservations() != null;
 	}
 
-	private SailDataset derivedFromSerializable(IsolationLevel level) throws SailException {
+	private SailDataset derivedFromSerializable(IsolationLevels level) throws SailException {
 		try {
 			semaphore.lock();
 			if (serializable == null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
@@ -373,7 +373,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
+	private SailDataset derivedFromSnapshot(IsolationLevels level) throws SailException {
 		try {
 			semaphore.lock();
 			SailDataset derivedFrom;

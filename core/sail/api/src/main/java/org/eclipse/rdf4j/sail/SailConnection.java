@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -143,7 +143,7 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()} to be called to close the transaction.
-	 * The transaction will use the default {@link IsolationLevel} level for the SAIL, as returned by
+	 * The transaction will use the default {@link IsolationLevels} level for the SAIL, as returned by
 	 * {@link Sail#getDefaultIsolationLevel()}.
 	 *
 	 * @throws SailException If the connection could not start a transaction or if a transaction is already active on
@@ -152,16 +152,16 @@ public interface SailConnection extends AutoCloseable {
 	public void begin() throws SailException;
 
 	/**
-	 * Begins a transaction with the specified {@link IsolationLevel} level, requiring {@link #commit()} or
+	 * Begins a transaction with the specified {@link IsolationLevels} level, requiring {@link #commit()} or
 	 * {@link #rollback()} to be called to close the transaction.
 	 *
 	 * @param level the transaction isolation level on which this transaction operates.
-	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation
+	 * @throws UnknownSailTransactionStateException If the IsolationLevels is not supported by this implementation
 	 * @throws SailException                        If the connection could not start a transaction, if the supplied
 	 *                                              transaction isolation level is not supported, or if a transaction is
 	 *                                              already active on this connection.
 	 */
-	public void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
+	public void begin(IsolationLevels level) throws UnknownSailTransactionStateException, SailException;
 
 	/**
 	 * Flushes any pending updates and notify changes to listeners as appropriate. This is an optional call; calling or

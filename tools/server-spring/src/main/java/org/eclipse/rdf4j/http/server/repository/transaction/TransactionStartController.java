@@ -18,7 +18,7 @@ import java.util.concurrent.ExecutionException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -38,7 +38,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for transaction creation on a repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TransactionStartController extends AbstractController {
@@ -74,14 +74,14 @@ public class TransactionStartController extends AbstractController {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
-		IsolationLevel isolationLevel = null;
+		IsolationLevels isolationLevel = null;
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
 		if (isolationLevelString != null) {
 			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
 
 			// FIXME this needs to be adapted to accommodate custom isolation levels
 			// from third party stores.
-			for (IsolationLevel standardLevel : IsolationLevels.values()) {
+			for (IsolationLevels standardLevel : IsolationLevels.values()) {
 				if (standardLevel.getURI().equals(level)) {
 					isolationLevel = standardLevel;
 					break;

@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.optimistic;
 
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -34,7 +34,7 @@ public class DeleteInsertTest {
 
 	private RepositoryConnection con;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private IsolationLevels level = IsolationLevels.SNAPSHOT_READ;
 
 	private ClassLoader cl = getClass().getClassLoader();
 

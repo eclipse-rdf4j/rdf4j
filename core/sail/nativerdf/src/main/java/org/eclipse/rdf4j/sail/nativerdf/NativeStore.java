@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.io.FileUtils;
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
  * The NativeStore is designed for datasets between 100,000 and 100 million triples. On most operating systems, if there
  * is sufficient physical memory, the NativeStore will act like the MemoryStore, because the read/write commands will be
  * cached by the OS. This technique allows the NativeStore to operate quite well for millions of triples.
- * 
+ *
  * @author Arjohn Kampman
  * @author jeen
  */
@@ -135,7 +135,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Sets the triple indexes for the native store, must be called before initialization.
-	 * 
+	 *
 	 * @param tripleIndexes An index strings, e.g. <tt>spoc,posc</tt>.
 	 */
 	public void setTripleIndexes(String tripleIndexes) {
@@ -213,7 +213,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
 	 * this instance is.
-	 * 
+	 *
 	 * @param resolver The SERVICE resolver to set.
 	 */
 	@Override
@@ -226,7 +226,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Initializes this NativeStore.
-	 * 
+	 *
 	 * @exception SailException If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
@@ -343,12 +343,12 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * {@link IsolationLevels#NONE} isolation. Store is either exclusively in {@link IsolationLevels#NONE} isolation
 	 * with potentially zero or more transactions, or exclusively in higher isolation mode with potentially zero or more
 	 * transactions.
-	 * 
+	 *
 	 * @param level indicating desired mode {@link IsolationLevels#NONE} or higher
 	 * @return Lock used to prevent Store from switching isolation modes
 	 * @throws SailException
 	 */
-	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
+	protected Lock getTransactionLock(IsolationLevels level) throws SailException {
 		txnLockManager.lock();
 		try {
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -372,7 +372,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Checks if any {@link IsolationLevels#NONE} isolation transactions are active.
-	 * 
+	 *
 	 * @return <code>true</code> if at least one transaction has direct access to the indexes
 	 */
 	boolean isIsolationDisabled() {

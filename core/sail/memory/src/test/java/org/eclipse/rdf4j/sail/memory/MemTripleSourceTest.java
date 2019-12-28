@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Unit Test for {@link TripleSource}
- * 
+ *
  * @author Peter Ansell
  */
 public class MemTripleSourceTest {
@@ -835,12 +835,12 @@ public class MemTripleSourceTest {
 	/**
 	 * Helper method to avoid writing this constructor multiple times. It needs to be created after statements are added
 	 * and committed.
-	 * 
+	 *
 	 * @return
 	 * @throws SailException
 	 */
 	private TripleSource getTripleSourceCommitted() throws SailException {
-		IsolationLevel level = store.getDefaultIsolationLevel();
+		IsolationLevels level = store.getDefaultIsolationLevel();
 		source = store.getSailStore().getExplicitSailSource().fork();
 		snapshot = source.dataset(level);
 		final ValueFactory vf = store.getValueFactory();

@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.spin;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.repository.Repository;
@@ -25,7 +25,7 @@ import org.junit.Ignore;
 @Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
 public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnectionTest {
 
-	public SpinRDFSMemoryRepositoryConnectionTest(IsolationLevel level) {
+	public SpinRDFSMemoryRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

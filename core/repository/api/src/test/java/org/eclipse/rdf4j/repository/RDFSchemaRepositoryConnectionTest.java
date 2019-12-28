@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -31,8 +31,8 @@ import org.junit.runners.Parameterized.Parameters;
 public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnectionTest {
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parametersREAD_COMMITTED() {
-		return new IsolationLevel[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
+	public static final IsolationLevels[] parametersREAD_COMMITTED() {
+		return new IsolationLevels[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
 				IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
 	}
@@ -41,7 +41,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	private IRI man;
 
-	public RDFSchemaRepositoryConnectionTest(IsolationLevel level) {
+	public RDFSchemaRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

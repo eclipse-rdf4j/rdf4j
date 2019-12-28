@@ -13,7 +13,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 /**
  * Delegates all calls to the delegate RepositoryConnection. Conditionally processes add/remove/read to common base
  * method to make them easier to override.
- * 
+ *
  * @author James Leigh
  * @see #isDelegatingAdd()
  * @see #isDelegatingRemove()
@@ -75,7 +75,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	/**
 	 * If false then the following add methods will call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
-	 * 
+	 *
 	 * @see #add(Iterable, Resource...)
 	 * @see #add(Iteration, Resource...)
 	 * @see #add(Statement, Resource...)
@@ -95,7 +95,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	/**
 	 * If false then the following has/export/isEmpty methods will call
 	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}.
-	 * 
+	 *
 	 * @see #exportStatements(Resource, IRI, Value, boolean, RDFHandler, Resource...)
 	 * @see #hasStatement(Statement, boolean, Resource...)
 	 * @see #hasStatement(Resource, IRI, Value, boolean, Resource...)
@@ -111,7 +111,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	/**
 	 * If false then the following remove methods will call
 	 * {@link #removeWithoutCommit(Resource, IRI, Value, Resource[])}.
-	 * 
+	 *
 	 * @see #clear(Resource...)
 	 * @see #remove(Iterable, Resource...)
 	 * @see #remove(Iteration, Resource...)
@@ -454,17 +454,17 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws RepositoryException {
+	public void begin(IsolationLevels level) throws RepositoryException {
 		getDelegate().begin(level);
 	}
 
 	@Override
-	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException {
+	public void setIsolationLevel(IsolationLevels level) throws IllegalStateException {
 		getDelegate().setIsolationLevel(level);
 	}
 
 	@Override
-	public IsolationLevel getIsolationLevel() {
+	public IsolationLevels getIsolationLevel() {
 		return getDelegate().getIsolationLevel();
 	}
 }

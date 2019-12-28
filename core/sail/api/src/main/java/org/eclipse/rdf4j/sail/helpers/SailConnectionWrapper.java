@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 /**
  * An implementation of the SailConnection interface that wraps another SailConnection object and forwards any method
  * calls to the wrapped connection.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SailConnectionWrapper implements SailConnection, FederatedServiceResolverClient {
@@ -59,7 +59,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	/**
 	 * Gets the connection that is wrapped by this object.
-	 * 
+	 *
 	 * @return The SailConnection object that was supplied to the constructor of this class.
 	 */
 	public SailConnection getWrappedConnection() {
@@ -196,7 +196,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevels level) throws SailException {
 		wrappedCon.begin(level);
 	}
 

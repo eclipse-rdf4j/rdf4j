@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.http;
 
 import static org.junit.Assert.fail;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
@@ -25,7 +25,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 
 	private static HTTPMemServer server;
 
-	public RDFSchemaHTTPRepositoryConnectionTest(IsolationLevel level) {
+	public RDFSchemaHTTPRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -155,7 +155,7 @@ public abstract class SailIsolationLevelTest {
 	/**
 	 * Every connection must support reading it own changes
 	 */
-	private void readPending(IsolationLevel level) throws SailException {
+	private void readPending(IsolationLevels level) throws SailException {
 		clear(store);
 		try (SailConnection con = store.getConnection();) {
 			con.begin(level);
@@ -169,7 +169,7 @@ public abstract class SailIsolationLevelTest {
 	/**
 	 * Every connection must support reading its own changes while another iteration is active.
 	 */
-	private void readPendingWhileActive(IsolationLevel level) throws SailException {
+	private void readPendingWhileActive(IsolationLevels level) throws SailException {
 		clear(store);
 		try (SailConnection con = store.getConnection();) {
 			// open an iteration outside the transaction and leave it open while another transaction is begun and
@@ -188,7 +188,7 @@ public abstract class SailIsolationLevelTest {
 	/**
 	 * Supports rolling back added triples
 	 */
-	private void rollbackTriple(IsolationLevel level) throws SailException {
+	private void rollbackTriple(IsolationLevels level) throws SailException {
 		clear(store);
 
 		try (SailConnection con = store.getConnection();) {
@@ -202,7 +202,7 @@ public abstract class SailIsolationLevelTest {
 	/**
 	 * Read operations must not see uncommitted changes
 	 */
-	private void readCommitted(final IsolationLevel level) throws Exception {
+	private void readCommitted(final IsolationLevels level) throws Exception {
 		clear(store);
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch begin = new CountDownLatch(1);
@@ -314,7 +314,7 @@ public abstract class SailIsolationLevelTest {
 	/**
 	 * Query results must not include statements added after the first result is read
 	 */
-	private void snapshotRead(IsolationLevel level) throws SailException {
+	private void snapshotRead(IsolationLevels level) throws SailException {
 		clear(store);
 		try (SailConnection con = store.getConnection();) {
 			con.begin(level);

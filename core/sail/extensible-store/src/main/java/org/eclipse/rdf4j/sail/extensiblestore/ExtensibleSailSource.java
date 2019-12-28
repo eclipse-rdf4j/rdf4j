@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -50,7 +50,7 @@ class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public SailSink sink(IsolationLevel level) throws SailException {
+	public SailSink sink(IsolationLevels level) throws SailException {
 		return new SailSink() {
 			@Override
 			public void prepare() throws SailException {
@@ -121,7 +121,7 @@ class ExtensibleSailSource implements SailSource {
 	}
 
 	@Override
-	public SailDataset dataset(IsolationLevel level) throws SailException {
+	public SailDataset dataset(IsolationLevels level) throws SailException {
 		return new SailDataset() {
 			@Override
 			public void close() throws SailException {

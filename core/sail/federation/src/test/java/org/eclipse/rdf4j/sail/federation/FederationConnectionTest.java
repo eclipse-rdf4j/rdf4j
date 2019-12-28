@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.federation;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
@@ -23,12 +23,12 @@ import org.junit.runners.Parameterized.Parameters;
 public class FederationConnectionTest extends RepositoryConnectionTest {
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parametersNONE() {
+	public static final IsolationLevels[] parametersNONE() {
 		// isolation is not supported
-		return new IsolationLevel[] { IsolationLevels.NONE };
+		return new IsolationLevels[] { IsolationLevels.NONE };
 	}
 
-	public FederationConnectionTest(IsolationLevel level) {
+	public FederationConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

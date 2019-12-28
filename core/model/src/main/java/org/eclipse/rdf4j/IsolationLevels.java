@@ -7,23 +7,23 @@
  *******************************************************************************/
 package org.eclipse.rdf4j;
 
-import java.util.Arrays;
-import java.util.List;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
- * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
- * support all levels, consult the documentatation for the specific SAIL implementation you are using to find out which
- * levels are supported.
- * 
+ * Enumeration of Transaction isolation levels supported by RDF4J. Note that RDF4J stores are not required to support
+ * all levels, consult the documentation for the specific SAIL implementation you are using to find out which levels are
+ * supported.
+ *
  * @author Jeen Broekstra
  * @author James Leigh
  */
-public enum IsolationLevels implements IsolationLevel {
+public enum IsolationLevels {
 
 	/**
 	 * None: the lowest isolation level; transactions can see their own changes, but may not be able to roll them back
@@ -70,23 +70,22 @@ public enum IsolationLevels implements IsolationLevel {
 		this.compatibleLevels = Arrays.asList(compatibleLevels);
 	}
 
-	@Override
-	public boolean isCompatibleWith(IsolationLevel otherLevel) {
+	public boolean isCompatibleWith(IsolationLevels otherLevel) {
 		return this.equals(otherLevel) || compatibleLevels.contains(otherLevel);
 	}
 
 	/**
 	 * Determines the first compatible isolation level in the list of supported levels, for the given level. Returns the
 	 * level itself if it is in the list of supported levels. Returns null if no compatible level can be found.
-	 * 
-	 * @param level           the {@link IsolationLevel} for which to determine a compatible level.
+	 *
+	 * @param level           the {@link IsolationLevels} for which to determine a compatible level.
 	 * @param supportedLevels a list of supported isolation levels from which to select the closest compatible level.
 	 * @return the given level if it occurs in the list of supported levels. Otherwise, the first compatible level in
 	 *         the list of supported isolation levels, or <code>null</code> if no compatible level can be found.
 	 * @throws IllegalArgumentException if either one of the input parameters is <code>null</code>.
 	 */
-	public static IsolationLevel getCompatibleIsolationLevel(IsolationLevel level,
-			List<? extends IsolationLevel> supportedLevels) {
+	public static IsolationLevels getCompatibleIsolationLevel(IsolationLevels level,
+			List<? extends IsolationLevels> supportedLevels) {
 		if (supportedLevels == null) {
 			throw new IllegalArgumentException("list of supported levels may not be null");
 		}
@@ -94,9 +93,9 @@ public enum IsolationLevels implements IsolationLevel {
 			throw new IllegalArgumentException("level may not be null");
 		}
 		if (!supportedLevels.contains(level)) {
-			IsolationLevel compatibleLevel = null;
+			IsolationLevels compatibleLevel = null;
 			// see we if we can find a compatible level that is supported
-			for (IsolationLevel supportedLevel : supportedLevels) {
+			for (IsolationLevels supportedLevel : supportedLevels) {
 				if (supportedLevel.isCompatibleWith(level)) {
 					compatibleLevel = supportedLevel;
 					break;
@@ -109,7 +108,6 @@ public enum IsolationLevels implements IsolationLevel {
 		}
 	}
 
-	@Override
 	public IRI getURI() {
 		final ValueFactory f = SimpleValueFactory.getInstance();
 		return f.createIRI(SESAME.NAMESPACE, this.name());

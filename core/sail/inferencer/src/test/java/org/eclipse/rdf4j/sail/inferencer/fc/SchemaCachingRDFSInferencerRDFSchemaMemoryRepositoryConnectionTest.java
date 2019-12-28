@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,7 +32,7 @@ import static org.junit.Assert.assertThat;
 public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		extends RDFSchemaRepositoryConnectionTest {
 
-	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
+	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

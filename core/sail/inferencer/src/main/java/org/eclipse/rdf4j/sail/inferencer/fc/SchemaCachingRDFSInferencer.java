@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -588,21 +588,21 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		IsolationLevel level = super.getDefaultIsolationLevel();
+	public IsolationLevels getDefaultIsolationLevel() {
+		IsolationLevels level = super.getDefaultIsolationLevel();
 		if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
 			return level;
 		} else {
-			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
+			List<IsolationLevels> supported = this.getSupportedIsolationLevels();
 			return IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED, supported);
 		}
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<>(supported.size());
-		for (IsolationLevel level : supported) {
+	public List<IsolationLevels> getSupportedIsolationLevels() {
+		List<IsolationLevels> supported = super.getSupportedIsolationLevels();
+		List<IsolationLevels> levels = new ArrayList<>(supported.size());
+		for (IsolationLevels level : supported) {
 			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
 				levels.add(level);
 			}

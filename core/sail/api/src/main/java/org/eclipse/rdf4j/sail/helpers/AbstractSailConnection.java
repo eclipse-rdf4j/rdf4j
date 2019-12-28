@@ -18,7 +18,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.BNode;
@@ -101,7 +101,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	private final BNode wildContext = SimpleValueFactory.getInstance().createBNode();
 
-	private IsolationLevel transactionIsolationLevel;
+	private IsolationLevels transactionIsolationLevel;
 
 	private boolean pendingAdds;
 
@@ -149,12 +149,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevels level) throws SailException {
 		if (level == null) {
 			level = this.sailBase.getDefaultIsolationLevel();
 		}
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
+		IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				this.sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
@@ -184,11 +184,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * Retrieve the currently set {@link IsolationLevel}.
+	 * Retrieve the currently set {@link IsolationLevels}.
 	 *
-	 * @return the current {@link IsolationLevel}. If no transaction is active, this may be <code>null</code>.
+	 * @return the current {@link IsolationLevels}. If no transaction is active, this may be <code>null</code>.
 	 */
-	protected IsolationLevel getTransactionIsolation() {
+	protected IsolationLevels getTransactionIsolation() {
 		return this.transactionIsolationLevel;
 	}
 

@@ -9,7 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -150,10 +150,10 @@ abstract public class AbstractShaclTest {
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
-	final IsolationLevel isolationLevel;
+	final IsolationLevels isolationLevel;
 
 	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+			IsolationLevels isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -208,7 +208,7 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
+					for (IsolationLevels isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
 							IsolationLevels.SERIALIZABLE)) {
 						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
 						ret.add(temp);
@@ -222,7 +222,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel, boolean preloadWithDummyData) {
+			IsolationLevels isolationLevel, boolean preloadWithDummyData) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -361,7 +361,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+			IsolationLevels isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -431,7 +431,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+			IsolationLevels isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";

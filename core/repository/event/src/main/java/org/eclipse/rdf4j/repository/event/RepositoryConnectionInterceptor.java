@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 /**
  * Interceptor interface for connection modification.
- * 
+ *
  * @author Herko ter Horst
  */
 public interface RepositoryConnectionInterceptor {
@@ -29,7 +29,7 @@ public interface RepositoryConnectionInterceptor {
 
 	/**
 	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#begin()} or
-	 *             {@link RepositoryConnection#begin(org.eclipse.rdf4j.IsolationLevel)} operation on.
+	 *             {@link RepositoryConnection#begin(org.eclipse.rdf4j.IsolationLevels)} operation on.
 	 * @return true if the interceptor has been denied access to the begin operation, false otherwise.
 	 */
 	public abstract boolean begin(RepositoryConnection conn);

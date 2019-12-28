@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 /**
  * An abstract Sail implementation that takes care of common sail tasks, including proper closing of active connections
  * and a grace period for active connections during shutdown of the store.
- * 
+ *
  * @author Herko ter Horst
  * @author jeen
  * @author Arjohn Kampman
@@ -46,14 +46,14 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * default transaction isolation level, set to {@link IsolationLevels#READ_COMMITTED }.
 	 */
-	private IsolationLevel defaultIsolationLevel = IsolationLevels.READ_COMMITTED;
+	private IsolationLevels defaultIsolationLevel = IsolationLevels.READ_COMMITTED;
 
 	/**
 	 * list of supported isolation levels. By default set to include {@link IsolationLevels#READ_UNCOMMITTED} and
 	 * {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are expected to alter this list according to
 	 * their specific capabilities.
 	 */
-	private List<IsolationLevel> supportedIsolationLevels = new ArrayList<>();
+	private List<IsolationLevels> supportedIsolationLevels = new ArrayList<>();
 
 	/**
 	 * default value for the Iteration item sync threshold
@@ -131,7 +131,7 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Set connection timeout on shutdown (in ms).
-	 * 
+	 *
 	 * @param connectionTimeOut timeout (in ms)
 	 */
 	public void setConnectionTimeOut(long connectionTimeOut) {
@@ -164,7 +164,7 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize() initialization}
 	 * until {@link #shutDown() shutdown}.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt> otherwise.
 	 */
 	protected boolean isInitialized() {
@@ -284,7 +284,7 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Returns a store-specific SailConnection object.
-	 * 
+	 *
 	 * @return A connection to the store.
 	 */
 	protected abstract SailConnection getConnectionInternal() throws SailException;
@@ -292,7 +292,7 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Signals to the store that the supplied connection has been closed; called by
 	 * {@link AbstractSailConnection#close()}.
-	 * 
+	 *
 	 * @param connection The connection that has been closed.
 	 */
 	protected void connectionClosed(SailConnection connection) {
@@ -313,7 +313,7 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Appends the provided {@link IsolationLevels} to the SAIL's list of supported isolation levels.
-	 * 
+	 *
 	 * @param level a supported IsolationLevel.
 	 */
 	protected void addSupportedIsolationLevel(IsolationLevels level) {
@@ -322,10 +322,10 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Removes all occurrences of the provided {@link IsolationLevels} in the list of supported Isolation levels.
-	 * 
+	 *
 	 * @param level the isolation level to remove.
 	 */
-	protected void removeSupportedIsolationLevel(IsolationLevel level) {
+	protected void removeSupportedIsolationLevel(IsolationLevels level) {
 		while (this.supportedIsolationLevels.remove(level)) {
 		}
 	}
@@ -333,39 +333,39 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered in
 	 * increasing complexity.
-	 * 
+	 *
 	 * @param supportedIsolationLevels a list of supported isolation levels.
 	 */
-	protected void setSupportedIsolationLevels(List<IsolationLevel> supportedIsolationLevels) {
+	protected void setSupportedIsolationLevels(List<IsolationLevels> supportedIsolationLevels) {
 		this.supportedIsolationLevels = supportedIsolationLevels;
 	}
 
 	/**
 	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered in
 	 * increasing complexity.
-	 * 
+	 *
 	 * @param supportedIsolationLevels a list of supported isolation levels.
 	 */
-	protected void setSupportedIsolationLevels(IsolationLevel... supportedIsolationLevels) {
+	protected void setSupportedIsolationLevels(IsolationLevels... supportedIsolationLevels) {
 		this.supportedIsolationLevels = Arrays.asList(supportedIsolationLevels);
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
+	public List<IsolationLevels> getSupportedIsolationLevels() {
 		return Collections.unmodifiableList(supportedIsolationLevels);
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
+	public IsolationLevels getDefaultIsolationLevel() {
 		return defaultIsolationLevel;
 	}
 
 	/**
-	 * Sets the default {@link IsolationLevel} on which transactions in this Sail operate.
-	 * 
+	 * Sets the default {@link IsolationLevels} on which transactions in this Sail operate.
+	 *
 	 * @param defaultIsolationLevel The defaultIsolationLevel to set.
 	 */
-	public void setDefaultIsolationLevel(IsolationLevel defaultIsolationLevel) {
+	public void setDefaultIsolationLevel(IsolationLevels defaultIsolationLevel) {
 		if (defaultIsolationLevel == null) {
 			throw new IllegalArgumentException("default isolation level may not be null");
 		}
@@ -374,7 +374,7 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Retrieves the currently configured threshold for syncing query evaluation iteration caches to disk.
-	 * 
+	 *
 	 * @return Returns the iterationCacheSyncThreshold.
 	 */
 	public long getIterationCacheSyncThreshold() {
@@ -383,7 +383,7 @@ public abstract class AbstractSail implements Sail {
 
 	/**
 	 * Set the threshold for syncing query evaluation iteration caches to disk.
-	 * 
+	 *
 	 * @param iterationCacheSyncThreshold The iterationCacheSyncThreshold to set.
 	 */
 	public void setIterationCacheSyncThreshold(long iterationCacheSyncThreshold) {

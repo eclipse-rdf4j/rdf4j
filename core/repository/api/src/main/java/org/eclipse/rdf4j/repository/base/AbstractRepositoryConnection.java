@@ -14,7 +14,7 @@ import java.io.Reader;
 import java.net.URL;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Open connections are automatically closed when being garbage collected. A warning message will be logged when the
  * system property <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt> value.
- * 
+ *
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
@@ -65,7 +65,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	private final AtomicBoolean isOpen = new AtomicBoolean(true);
 
-	private volatile IsolationLevel isolationLevel;
+	private volatile IsolationLevels isolationLevel;
 
 	// private volatile boolean active;
 
@@ -94,13 +94,13 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws RepositoryException {
+	public void begin(IsolationLevels level) throws RepositoryException {
 		setIsolationLevel(level);
 		begin();
 	}
 
 	@Override
-	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException {
+	public void setIsolationLevel(IsolationLevels level) throws IllegalStateException {
 		try {
 			if (isActive()) {
 				throw new IllegalStateException(
@@ -118,7 +118,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public IsolationLevel getIsolationLevel() {
+	public IsolationLevels getIsolationLevel() {
 		return this.isolationLevel;
 	}
 
@@ -299,7 +299,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	/**
 	 * Starts a new transaction if one is not already active.
-	 * 
+	 *
 	 * @return <code>true</code> if a new transaction was started, <code>false</code> if a transaction was already
 	 *         active.
 	 * @throws RepositoryException
@@ -314,7 +314,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	/**
 	 * Invokes {@link #commit()} if supplied boolean condition is <code>true</code>.
-	 * 
+	 *
 	 * @param condition a boolean condition.
 	 * @throws RepositoryException
 	 */
@@ -326,7 +326,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	/**
 	 * Invokes {@link #rollback()} if supplied boolean condition is <code>true</code>.
-	 * 
+	 *
 	 * @param condition a boolean condition.
 	 * @throws RepositoryException
 	 */

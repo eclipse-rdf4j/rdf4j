@@ -13,7 +13,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -46,7 +46,7 @@ public class SnapshotTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT;
+	private IsolationLevels level = IsolationLevels.SNAPSHOT;
 
 	private String NS = "http://rdf.example.org/";
 

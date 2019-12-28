@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -26,7 +26,7 @@ public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 
 	private File dataDir;
 
-	public NativeStoreConnectionTest(IsolationLevel level) {
+	public NativeStoreConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

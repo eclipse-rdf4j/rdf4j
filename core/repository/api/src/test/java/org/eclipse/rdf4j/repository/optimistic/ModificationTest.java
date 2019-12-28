@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository.optimistic;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -35,7 +35,7 @@ public class ModificationTest {
 
 	private RepositoryConnection con;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private IsolationLevels level = IsolationLevels.SNAPSHOT_READ;
 
 	private String NS = "http://rdf.example.org/";
 

@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockingIteration;
@@ -338,12 +338,12 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public SailSink sink(IsolationLevel level) throws SailException {
+		public SailSink sink(IsolationLevels level) throws SailException {
 			return new MemorySailSink(explicit, level.isCompatibleWith(IsolationLevels.SERIALIZABLE));
 		}
 
 		@Override
-		public MemorySailDataset dataset(IsolationLevel level) throws SailException {
+		public MemorySailDataset dataset(IsolationLevels level) throws SailException {
 			if (level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
 				return new MemorySailDataset(explicit, currentSnapshot);
 			} else {

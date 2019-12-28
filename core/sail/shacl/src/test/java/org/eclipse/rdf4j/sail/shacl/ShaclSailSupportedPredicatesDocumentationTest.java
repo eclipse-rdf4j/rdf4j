@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -36,7 +36,7 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 
 	public ShaclSailSupportedPredicatesDocumentationTest(String testCasePath, String path,
-			ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+			ExpectedResult expectedResult, IsolationLevels isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 

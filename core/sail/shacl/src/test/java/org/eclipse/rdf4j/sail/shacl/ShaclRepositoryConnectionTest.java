@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class ShaclRepositoryConnectionTest extends RepositoryConnectionTest {
 
-	public ShaclRepositoryConnectionTest(IsolationLevel level) {
+	public ShaclRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

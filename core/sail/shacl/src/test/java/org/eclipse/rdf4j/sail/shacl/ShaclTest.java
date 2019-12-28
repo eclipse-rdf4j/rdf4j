@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -19,7 +19,7 @@ import org.junit.runners.Parameterized;
 @RunWith(Parameterized.class)
 public class ShaclTest extends AbstractShaclTest {
 
-	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevels isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 

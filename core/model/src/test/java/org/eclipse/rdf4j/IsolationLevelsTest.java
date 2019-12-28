@@ -25,7 +25,7 @@ import org.junit.Test;
 public class IsolationLevelsTest {
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.IsolationLevel)} .
+	 * Test method for {@link org.eclipse.rdf4j.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.IsolationLevels)} .
 	 */
 	@Test
 	public void testIsCompatibleWith() {
@@ -37,7 +37,7 @@ public class IsolationLevelsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.IsolationLevels#getCompatibleIsolationLevel(org.eclipse.rdf4j.IsolationLevel, java.util.List)}
+	 * {@link org.eclipse.rdf4j.IsolationLevels#getCompatibleIsolationLevel(org.eclipse.rdf4j.IsolationLevels, java.util.List)}
 	 * .
 	 */
 	@Test
@@ -47,7 +47,7 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.NONE);
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED,
+		IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED,
 				supportedLevels);
 		assertNotNull(compatibleLevel);
 		assertEquals(IsolationLevels.SERIALIZABLE, compatibleLevel);
@@ -61,7 +61,7 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.READ_UNCOMMITTED);
 		supportedLevels.add(IsolationLevels.READ_COMMITTED);
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SERIALIZABLE,
+		IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SERIALIZABLE,
 				supportedLevels);
 		assertNull(compatibleLevel);
 
@@ -70,7 +70,7 @@ public class IsolationLevelsTest {
 	@Test
 	public void testGetCompatibleIsolationLevelNullParams() {
 		try {
-			IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SNAPSHOT,
+			IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SNAPSHOT,
 					null);
 			fail("should have resulted in an IllegalArgumentException");
 		} catch (IllegalArgumentException e) {
@@ -83,7 +83,7 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);
 
 		try {
-			IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(null, supportedLevels);
+			IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(null, supportedLevels);
 			fail("should have resulted in an IllegalArgumentException");
 		} catch (IllegalArgumentException e) {
 			// do nothing, expected.

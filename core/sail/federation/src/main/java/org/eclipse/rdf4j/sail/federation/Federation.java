@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
@@ -349,12 +349,12 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return Arrays.asList(new IsolationLevel[] { IsolationLevels.NONE });
+	public List<IsolationLevels> getSupportedIsolationLevels() {
+		return Arrays.asList(new IsolationLevels[] { IsolationLevels.NONE });
 	}
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
+	public IsolationLevels getDefaultIsolationLevel() {
 		return IsolationLevels.NONE;
 	}
 }

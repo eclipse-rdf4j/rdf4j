@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
@@ -36,21 +36,21 @@ public abstract class AbstractForwardChainingInferencer extends NotifyingSailWra
 	 *---------*/
 
 	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		IsolationLevel level = super.getDefaultIsolationLevel();
+	public IsolationLevels getDefaultIsolationLevel() {
+		IsolationLevels level = super.getDefaultIsolationLevel();
 		if (level.isCompatibleWith(READ_COMMITTED)) {
 			return level;
 		} else {
-			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
+			List<IsolationLevels> supported = this.getSupportedIsolationLevels();
 			return IsolationLevels.getCompatibleIsolationLevel(READ_COMMITTED, supported);
 		}
 	}
 
 	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<>(supported.size());
-		for (IsolationLevel level : supported) {
+	public List<IsolationLevels> getSupportedIsolationLevels() {
+		List<IsolationLevels> supported = super.getSupportedIsolationLevels();
+		List<IsolationLevels> levels = new ArrayList<>(supported.size());
+		for (IsolationLevels level : supported) {
 			if (level.isCompatibleWith(READ_COMMITTED)) {
 				levels.add(level);
 			}

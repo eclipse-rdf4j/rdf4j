@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
@@ -142,7 +142,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws RepositoryException {
+	public void begin(IsolationLevels level) throws RepositoryException {
 		try {
 			sailConnection.begin(level);
 		} catch (SailException e) {

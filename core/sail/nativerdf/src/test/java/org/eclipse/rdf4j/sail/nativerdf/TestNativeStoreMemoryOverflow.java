@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -38,7 +38,7 @@ import org.junit.runners.Parameterized.Parameters;
 public class TestNativeStoreMemoryOverflow {
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parameters() {
+	public static final IsolationLevels[] parameters() {
 		return IsolationLevels.values();
 	}
 
@@ -50,9 +50,9 @@ public class TestNativeStoreMemoryOverflow {
 
 	private RepositoryConnection testCon2;
 
-	private IsolationLevel level;
+	private IsolationLevels level;
 
-	public TestNativeStoreMemoryOverflow(IsolationLevel level) {
+	public TestNativeStoreMemoryOverflow(IsolationLevels level) {
 		this.level = level;
 	}
 

@@ -16,7 +16,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -44,7 +44,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	private static HTTPMemServer server;
 
-	public SPARQLStoreConnectionTest(IsolationLevel level) {
+	public SPARQLStoreConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

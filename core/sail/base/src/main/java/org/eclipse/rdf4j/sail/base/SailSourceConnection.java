@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -94,9 +94,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private final SailStore store;
 
 	/**
-	 * The default {@link IsolationLevel} when not otherwise specified.
+	 * The default {@link IsolationLevels} when not otherwise specified.
 	 */
-	private final IsolationLevel defaultIsolationLevel;
+	private final IsolationLevels defaultIsolationLevel;
 
 	/**
 	 * An {@link SailSource} of only explicit statements when in an isolated transaction.
@@ -318,7 +318,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		assert explicitOnlyBranch == null;
 		assert inferredOnlyBranch == null;
 		assert includeInferredBranch == null;
-		IsolationLevel level = getTransactionIsolation();
+		IsolationLevels level = getTransactionIsolation();
 		if (!IsolationLevels.NONE.isCompatibleWith(level)) {
 			// only create transaction branches if transaction is isolated
 			explicitOnlyBranch = store.getExplicitSailSource().fork();
@@ -418,7 +418,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	public void startUpdate(UpdateContext op) throws SailException {
 		if (op != null) {
-			IsolationLevel level = getIsolationLevel();
+			IsolationLevels level = getIsolationLevel();
 			flush();
 			synchronized (datasets) {
 				assert !datasets.containsKey(op);
@@ -536,7 +536,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
-		IsolationLevel level = getIsolationLevel();
+		IsolationLevels level = getIsolationLevel();
 		synchronized (datasets) {
 			if (inferredSink == null) {
 				SailSource branch = branch(true);
@@ -600,7 +600,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
-			IsolationLevel level = getIsolationLevel();
+			IsolationLevels level = getIsolationLevel();
 			if (inferredSink == null) {
 				SailSource branch = branch(true);
 				inferredDataset = branch.dataset(level);
@@ -659,7 +659,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		verifyIsActive();
 		synchronized (datasets) {
 			if (inferredSink == null) {
-				IsolationLevel level = getIsolationLevel();
+				IsolationLevels level = getIsolationLevel();
 				SailSource branch = branch(true);
 				inferredDataset = branch.dataset(level);
 				inferredSink = branch.sink(level);
@@ -747,7 +747,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * Inner class MemEvaluationStatistics *
 	 *-------------------------------------*/
 
-	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
+	private IsolationLevels getIsolationLevel() throws UnknownSailTransactionStateException {
 		if (isActive()) {
 			return getTransactionIsolation();
 		} else {
@@ -761,7 +761,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 */
 	private SailSource branch(boolean includeinferred) throws SailException {
 		boolean active = isActive();
-		IsolationLevel level = getIsolationLevel();
+		IsolationLevels level = getIsolationLevel();
 		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);
 		if (includeinferred && active && isolated) {
 			// use the transaction branch

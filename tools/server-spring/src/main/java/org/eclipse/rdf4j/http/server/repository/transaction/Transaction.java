@@ -19,7 +19,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -116,11 +117,11 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Start the transaction.
 	 *
-	 * @param level the {@link IsolationLevel} to use for this transction.
+	 * @param level the {@link IsolationLevels} to use for this transction.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while starting the transaction.
 	 */
-	void begin(IsolationLevel level) throws InterruptedException, ExecutionException {
+	void begin(IsolationLevels level) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			txnConnection.begin(level);
 			return true;
@@ -157,10 +158,10 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Prepares a query for evaluation on this transaction.
 	 *
-	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
-	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
-	 *                the query does not contain any relative URIs.
+	 * @param queryLn  The {@link QueryLanguage query language} in which the query is formulated.
+	 * @param queryStr The query string.
+	 * @param baseURI  The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 *                 the query does not contain any relative URIs.
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.

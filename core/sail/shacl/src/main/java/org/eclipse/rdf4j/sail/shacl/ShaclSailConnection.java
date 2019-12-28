@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -86,7 +85,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
 	private boolean connectionListenerActive = false;
 
-	private IsolationLevel currentIsolationLevel = null;
+	private IsolationLevels currentIsolationLevel = null;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			NotifyingSailConnection previousStateConnection, NotifyingSailConnection serializableConnection,
@@ -108,7 +107,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevels level) throws SailException {
 		currentIsolationLevel = level;
 		assert addedStatements == null;
 		assert removedStatements == null;
@@ -525,7 +524,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private IsolationLevel getIsolationLevel() {
+	private IsolationLevels getIsolationLevel() {
 		return currentIsolationLevel;
 	}
 

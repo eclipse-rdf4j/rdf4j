@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -118,12 +118,12 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevels level) throws SailException {
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
 		}
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
+		IsolationLevels compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(

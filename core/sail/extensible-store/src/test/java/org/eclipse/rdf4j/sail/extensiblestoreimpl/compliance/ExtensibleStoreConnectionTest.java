@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
@@ -17,13 +17,13 @@ import org.junit.runners.Parameterized;
 
 public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
 
-	public ExtensibleStoreConnectionTest(IsolationLevel level) {
+	public ExtensibleStoreConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 
 	@Parameterized.Parameters(name = "{0}")
-	public static IsolationLevel[] parameters() {
-		return new IsolationLevel[] {
+	public static IsolationLevels[] parameters() {
+		return new IsolationLevels[] {
 				IsolationLevels.NONE,
 				IsolationLevels.READ_UNCOMMITTED,
 				IsolationLevels.READ_COMMITTED

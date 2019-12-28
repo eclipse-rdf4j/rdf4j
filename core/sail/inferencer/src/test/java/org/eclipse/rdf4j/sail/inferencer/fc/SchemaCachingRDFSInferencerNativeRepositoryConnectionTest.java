@@ -11,7 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -37,7 +37,7 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends R
 
 	private File dataDir;
 
-	public SchemaCachingRDFSInferencerNativeRepositoryConnectionTest(IsolationLevel level) {
+	public SchemaCachingRDFSInferencerNativeRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

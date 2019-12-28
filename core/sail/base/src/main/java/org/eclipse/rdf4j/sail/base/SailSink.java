@@ -35,7 +35,7 @@ public interface SailSink extends SailClosable {
 
 	/**
 	 * Once this method returns successfully, changes that were made to this {@link SailSink} will be visible to
-	 * subsequent {@link SailSource#dataset(org.eclipse.rdf4j.IsolationLevel)}.
+	 * subsequent {@link SailSource#dataset(org.eclipse.rdf4j.IsolationLevels)}.
 	 *
 	 * @throws SailException
 	 */

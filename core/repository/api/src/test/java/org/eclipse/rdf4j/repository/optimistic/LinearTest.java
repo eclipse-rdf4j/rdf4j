@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -46,7 +46,7 @@ public class LinearTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.READ_COMMITTED;
+	private IsolationLevels level = IsolationLevels.READ_COMMITTED;
 
 	private String NS = "http://rdf.example.org/";
 

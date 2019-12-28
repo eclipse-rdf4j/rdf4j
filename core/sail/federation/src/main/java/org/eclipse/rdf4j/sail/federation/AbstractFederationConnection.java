@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -72,7 +72,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Unions the results from multiple {@link RepositoryConnection} into one {@link SailConnection}.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -121,12 +121,12 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			}
 
 			@Override
-			public List<IsolationLevel> getSupportedIsolationLevels() {
-				return Arrays.asList(new IsolationLevel[] { IsolationLevels.NONE });
+			public List<IsolationLevels> getSupportedIsolationLevels() {
+				return Arrays.asList(new IsolationLevels[] { IsolationLevels.NONE });
 			}
 
 			@Override
-			public IsolationLevel getDefaultIsolationLevel() {
+			public IsolationLevels getDefaultIsolationLevel() {
 				return IsolationLevels.NONE;
 			}
 		});

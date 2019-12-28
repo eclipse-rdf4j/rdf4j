@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class CustomGraphQueryInferencerRepositoryConnectionTest extends RepositoryConnectionTest {
 
-	public CustomGraphQueryInferencerRepositoryConnectionTest(IsolationLevel level) {
+	public CustomGraphQueryInferencerRepositoryConnectionTest(IsolationLevels level) {
 		super(level);
 	}
 

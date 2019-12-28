@@ -14,7 +14,7 @@ import static org.junit.Assert.fail;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -47,7 +47,7 @@ public class SerializableTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SERIALIZABLE;
+	private IsolationLevels level = IsolationLevels.SERIALIZABLE;
 
 	private String NS = "http://rdf.example.org/";
 

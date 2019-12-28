@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -43,7 +43,7 @@ public class MonotonicTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private IsolationLevels level = IsolationLevels.SNAPSHOT_READ;
 
 	private String NS = "http://rdf.example.org/";
 

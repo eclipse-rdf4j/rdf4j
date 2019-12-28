@@ -18,7 +18,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -320,12 +320,12 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public SailSink sink(IsolationLevel level) throws SailException {
+		public SailSink sink(IsolationLevels level) throws SailException {
 			return new NativeSailSink(explicit);
 		}
 
 		@Override
-		public NativeSailDataset dataset(IsolationLevel level) throws SailException {
+		public NativeSailDataset dataset(IsolationLevels level) throws SailException {
 			return new NativeSailDataset(explicit);
 		}
 

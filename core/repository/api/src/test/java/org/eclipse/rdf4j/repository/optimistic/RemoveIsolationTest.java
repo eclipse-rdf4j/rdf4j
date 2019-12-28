@@ -11,7 +11,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.Collections;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -38,7 +38,7 @@ public class RemoveIsolationTest {
 
 	private ValueFactory f;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private IsolationLevels level = IsolationLevels.SNAPSHOT_READ;
 
 	@Before
 	public void setUp() throws Exception {

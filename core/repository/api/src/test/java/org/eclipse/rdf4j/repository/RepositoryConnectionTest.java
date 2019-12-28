@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -98,7 +98,7 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@Parameters(name = "{0}")
-	public static IsolationLevel[] parameters() {
+	public static IsolationLevels[] parameters() {
 		return IsolationLevels.values();
 	}
 
@@ -188,9 +188,9 @@ public abstract class RepositoryConnectionTest {
 
 	protected Literal Александър;
 
-	protected IsolationLevel level;
+	protected IsolationLevels level;
 
-	public RepositoryConnectionTest(IsolationLevel level) {
+	public RepositoryConnectionTest(IsolationLevels level) {
 		this.level = level;
 	}
 
