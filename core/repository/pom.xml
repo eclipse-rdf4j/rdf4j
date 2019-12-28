@@ -17,6 +17,7 @@
 	<modules>
 		<module>api</module>
 		<module>manager</module>
+		<module>manager-tests</module>
 		<module>sail</module>
 		<module>dataset</module>
 		<module>event</module>
