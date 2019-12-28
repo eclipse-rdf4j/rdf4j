@@ -49,6 +49,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+//@formatter:off
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
  * <p>
@@ -77,64 +78,72 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * public class ShaclSampleCode {
  *
- * 	public static void main(String[] args) throws IOException {
+ *  	public static void main(String[] args) throws IOException {
  *
- * 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+ *  		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
  *
- * 		// Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
- * 		// root.setLevel(Level.INFO);
+ *  		// Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+ *  		// root.setLevel(Level.INFO);
  *
- * 		// shaclSail.setLogValidationPlans(true);
- * 		// shaclSail.setGlobalLogValidationExecution(true);
- * 		// shaclSail.setLogValidationViolations(true);
+ *  		// shaclSail.setLogValidationPlans(true);
+ *  		// shaclSail.setGlobalLogValidationExecution(true);
+ *  		// shaclSail.setLogValidationViolations(true);
  *
- * 		SailRepository sailRepository = new SailRepository(shaclSail);
- * 		sailRepository.init();
+ *  		SailRepository sailRepository = new SailRepository(shaclSail);
+ *  		sailRepository.init();
  *
- * 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+ *  		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
  *
- * 			connection.begin();
+ *  			connection.begin();
  *
- * 			StringReader shaclRules = new StringReader(String.join(&quot;\n&quot;, &quot;&quot;,
- * 					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;, &quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
- * 					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
- * 					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ *  			StringReader shaclRules = new StringReader(String.join("\n", "",
+ *  				"@prefix ex: <http://example.com/ns#> .",
+ *  				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+ *  				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+ *  				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
  *
- * 					&quot;ex:PersonShape&quot;, &quot;	a sh:NodeShape  ;&quot;, &quot;	sh:targetClass foaf:Person ;&quot;,
- * 					&quot;	sh:property ex:PersonShapeProperty .&quot;,
+ *  				"ex:PersonShape",
+ *  				"	a sh:NodeShape  ;",
+ *  				"	sh:targetClass foaf:Person ;",
+ *  				"	sh:property ex:PersonShapeProperty .",
  *
- * 					&quot;ex:PersonShapeProperty &quot;, &quot;	sh:path foaf:age ;&quot;, &quot;	sh:datatype xsd:int ;&quot;,
- * 					&quot;	sh:maxCount 1 ;&quot;, &quot;	sh:minCount 1 .&quot;));
+ *  				"ex:PersonShapeProperty ",
+ *  				"	sh:path foaf:age ;",
+ *  				"	sh:datatype xsd:int ;",
+ *  				"  sh:maxCount 1 ;",
+ *  				"  sh:minCount 1 ."));
  *
- * 			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
- * 			connection.commit();
+ *  			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+ *  			connection.commit();
  *
- * 			connection.begin();
+ *  			connection.begin();
  *
- * 			StringReader invalidSampleData = new StringReader(String.join(&quot;\n&quot;, &quot;&quot;,
- * 					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;, &quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
- * 					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ *  			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+ *  				"@prefix ex: <http://example.com/ns#> .",
+ *  				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+ *  				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
  *
- * 					&quot;ex:peter a foaf:Person ;&quot;, &quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
+ *  				"ex:peter a foaf:Person ;",
+ *  				"	foaf:age 20, \"30\"^^xsd:int  ."
  *
- * 			));
+ *  			));
  *
- * 			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
- * 			try {
- * 				connection.commit();
- * 			} catch (RepositoryException exception) {
- * 				Throwable cause = exception.getCause();
- * 				if (cause instanceof ShaclSailValidationException) {
- * 					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
- * 					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
- * 					// use validationReport or validationReportModel to understand validation violations
+ *  			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+ *  			try {
+ *  				connection.commit();
+ *  			} catch (RepositoryException exception) {
+ *  				Throwable cause = exception.getCause();
+ *  				if (cause instanceof ShaclSailValidationException) {
+ *  					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
+ *  					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+ *  					// use validationReport or validationReportModel to understand validation violations
  *
- * 					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- * 				}
- * 				throw exception;
- * 			}
- * 		}
- * 	}
+ *  					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
+ *  				}
+ *  				throw exception;
+ *  			}
+ *  		}
+ *  	}
  * }
  * </pre>
  *
@@ -142,6 +151,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @author Håvard Ottestad
  * @see <a href="https://www.w3.org/TR/shacl/">SHACL W3C Recommendation</a>
  */
+//@formatter:on
 public class ShaclSail extends NotifyingSailWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
