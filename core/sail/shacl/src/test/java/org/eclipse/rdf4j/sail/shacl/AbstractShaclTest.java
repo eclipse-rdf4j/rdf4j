@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.AfterClass;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,6 +59,8 @@ import static org.junit.Assert.assertFalse;
  */
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
+
+	private static final Logger logger = LoggerFactory.getLogger(AbstractShaclTest.class);
 
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
@@ -233,7 +237,7 @@ abstract public class AbstractShaclTest {
 		}
 
 		String shaclFile = shaclPath + "shacl.ttl";
-		System.out.println(shaclFile);
+		logger.debug(shaclFile);
 
 		printFile(shaclFile);
 
@@ -281,7 +285,7 @@ abstract public class AbstractShaclTest {
 						throw sailException;
 					}
 					exception = true;
-					System.out.println(sailException.getMessage());
+					logger.debug(sailException.getMessage());
 
 					printResults(sailException);
 				}
@@ -393,7 +397,7 @@ abstract public class AbstractShaclTest {
 				}
 
 				ran = true;
-				System.out.println(name);
+				logger.debug(name);
 
 				try {
 					String query = IOUtil.readString(resourceAsStream);
@@ -412,7 +416,7 @@ abstract public class AbstractShaclTest {
 					throw sailException;
 				}
 				exception = true;
-				System.out.println(sailException.getMessage());
+				logger.debug(sailException.getMessage());
 
 				printResults(sailException);
 			}
