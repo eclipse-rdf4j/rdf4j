@@ -13,20 +13,34 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.DynamicStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStisticsWrapper;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleEvaluationStatistics;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ExtensibleSailStore implements SailStore {
+public class ExtensibleSailStore implements SailStore {
 
 	private ExtensibleSailSource sailSource;
 	private ExtensibleSailSource sailSourceInferred;
+	private ExtensibleEvaluationStatistics evaluationStatistics;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-			NamespaceStoreInterface namespaceStore) {
+							   NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsType) {
+		evaluationStatistics = evaluationStatisticsType.getInstance(this);
+
+		if (evaluationStatistics instanceof DynamicStatistics) {
+			dataStructure = new EvaluationStisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics, false);
+			dataStructureInferred = new EvaluationStisticsWrapper(dataStructureInferred, (DynamicStatistics) evaluationStatistics, true);
+		}
+
 		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
 		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
 	}
+
 
 	@Override
 	public void close() throws SailException {
@@ -42,7 +56,7 @@ class ExtensibleSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new ExtensibleEvaluationStatistics(this);
+		return evaluationStatistics;
 	}
 
 	@Override
