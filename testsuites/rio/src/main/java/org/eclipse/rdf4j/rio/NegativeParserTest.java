@@ -34,7 +34,7 @@ public class NegativeParserTest extends TestCase {
 	protected FailureMode failureMode;
 
 	protected boolean didIgnoreFailure;
-	
+
 	private static final Logger logger = LoggerFactory.getLogger(NegativeParserTest.class);
 
 	/*--------------*
