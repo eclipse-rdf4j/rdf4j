@@ -53,7 +53,7 @@ public abstract class TriGParserTestCase {
 	private static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TriGTests/manifest.ttl#";
 
 	private static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TriGTests/";
-	
+
 	private static final Logger logger = LoggerFactory.getLogger(TriGParserTestCase.class);
 
 	/*--------------------*
