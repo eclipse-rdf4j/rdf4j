@@ -20,6 +20,7 @@
 		<module>rio</module>
 		<module>sparql</module>
 		<module>serql</module>
+		<module>repository</module>
 		<module>sail</module>
 		<module>shacl</module>
 		<module>lucene</module>
