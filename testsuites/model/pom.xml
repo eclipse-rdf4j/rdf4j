@@ -6,34 +6,25 @@
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j-core</artifactId>
+		<artifactId>rdf4j-testsuites</artifactId>
 		<version>3.0.4-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>rdf4j-model</artifactId>
+	<artifactId>rdf4j-model-testsuite</artifactId>
 
-	<name>RDF4J: Model</name>
-	<description>RDF model interfaces and implementations.</description>
+	<name>RDF4J: Model API testsuite</name>
+	<description>Reusable tests for Model API implementations</description>
 
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
+			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>com.google.guava</groupId>
-			<artifactId>guava-testlib</artifactId>
-			<version>21.0</version>
-			<scope>test</scope>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<scope>compile</scope>
 		</dependency>
 	</dependencies>
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>com.github.siom79.japicmp</groupId>
-				<artifactId>japicmp-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
-	</build>
 </project>
