@@ -51,9 +51,7 @@
 		</dependency>
 				<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-rio-api</artifactId>
-			<classifier>tests</classifier>
-			<type>test-jar</type>
+			<artifactId>rdf4j-rio-testsuite</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
