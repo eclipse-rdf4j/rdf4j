@@ -167,13 +167,10 @@ class ReadCommittedWrapper implements DataStructureInterface {
 				.collect(Collectors.toList());
 
 		synchronized (dataStructure) {
-
 			internalAddedEffective.forEach(dataStructure::addStatement);
 			internalRemoved.forEach(dataStructure::removeStatement);
-
+			dataStructure.flushForReading();
 		}
-
-		dataStructure.flushForReading();
 
 		internalAdded = new HashSet<>(internalAdded.size());
 		internalRemoved = new HashSet<>(internalRemoved.size());

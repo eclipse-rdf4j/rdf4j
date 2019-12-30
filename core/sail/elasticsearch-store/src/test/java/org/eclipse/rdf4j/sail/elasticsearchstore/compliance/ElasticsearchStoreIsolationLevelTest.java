@@ -64,8 +64,4 @@ public class ElasticsearchStoreIsolationLevelTest extends SailIsolationLevelTest
 		return sail;
 	}
 
-	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// this kind of isolation is not implemented fully yet
-	}
 }

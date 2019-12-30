@@ -162,22 +162,30 @@ public abstract class SailIsolationLevelTest {
 
 	@Test
 	public void testLargeTransactionReadCommitted() throws InterruptedException {
-		testLargeTransaction(IsolationLevels.READ_COMMITTED, 100000);
+		if (isSupported(IsolationLevels.READ_COMMITTED)) {
+			testLargeTransaction(IsolationLevels.READ_COMMITTED, 1000);
+		}
 	}
 
 	@Test
 	public void testLargeTransactionSnapshot() throws InterruptedException {
-		testLargeTransaction(IsolationLevels.SNAPSHOT, 100000);
+		if (isSupported(IsolationLevels.SNAPSHOT)) {
+			testLargeTransaction(IsolationLevels.SNAPSHOT, 1000);
+		}
 	}
 
 	@Test
 	public void testLargeTransactionSnapshotRead() throws InterruptedException {
-		testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 100000);
+		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
+			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 1000);
+		}
 	}
 
 	@Test
 	public void testLargeTransactionSerializable() throws InterruptedException {
-		testLargeTransaction(IsolationLevels.SERIALIZABLE, 100000);
+		if (isSupported(IsolationLevels.SERIALIZABLE)) {
+			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1000);
+		}
 	}
 
 	/*
