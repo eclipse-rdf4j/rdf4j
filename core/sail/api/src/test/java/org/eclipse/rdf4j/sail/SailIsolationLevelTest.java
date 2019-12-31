@@ -164,6 +164,8 @@ public abstract class SailIsolationLevelTest {
 	public void testLargeTransactionReadCommitted() throws InterruptedException {
 		if (isSupported(IsolationLevels.READ_COMMITTED)) {
 			testLargeTransaction(IsolationLevels.READ_COMMITTED, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
 		}
 	}
 
@@ -171,6 +173,8 @@ public abstract class SailIsolationLevelTest {
 	public void testLargeTransactionSnapshot() throws InterruptedException {
 		if (isSupported(IsolationLevels.SNAPSHOT)) {
 			testLargeTransaction(IsolationLevels.SNAPSHOT, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
 		}
 	}
 
@@ -178,6 +182,8 @@ public abstract class SailIsolationLevelTest {
 	public void testLargeTransactionSnapshotRead() throws InterruptedException {
 		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
 			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
 		}
 	}
 
@@ -185,6 +191,8 @@ public abstract class SailIsolationLevelTest {
 	public void testLargeTransactionSerializable() throws InterruptedException {
 		if (isSupported(IsolationLevels.SERIALIZABLE)) {
 			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
 		}
 	}
 

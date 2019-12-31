@@ -64,8 +64,8 @@ class UnionSailSource implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		additional.flush();
 		primary.flush();
+		additional.flush();
 	}
 
 	@Override

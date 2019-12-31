@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
@@ -25,5 +26,10 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 	protected Sail createSail() throws SailException {
 		// TODO we are testing the inferencer, not the store. We should use a mock here instead of a real memory store.
 		return new SchemaCachingRDFSInferencer(new MemoryStore());
+	}
+
+	@Override
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+		// See: https://github.com/eclipse/rdf4j/issues/1795
 	}
 }
