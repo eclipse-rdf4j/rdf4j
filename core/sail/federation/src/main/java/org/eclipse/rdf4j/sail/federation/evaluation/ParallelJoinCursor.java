@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -17,11 +14,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Iterate the left side and evaluate the right side in separate thread, only iterate the right side in the controlling
  * thread.
- * 
+ *
  * @author James Leigh
  */
 public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException> implements Runnable {
@@ -75,11 +76,17 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	public void run() {
 		evaluationThread = Thread.currentThread();
 		try {
-			while (!isClosed() && leftIter.hasNext()) {
-				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(rightArg,
-						leftIter.next());
-				toCloseList.add(evaluate);
-				rightQueue.put(evaluate);
+			while (true) {
+				synchronized (this) {
+					if (!closed && !isClosed() && leftIter.hasNext()) {
+						CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(rightArg,
+								leftIter.next());
+						toCloseList.add(evaluate);
+						rightQueue.put(evaluate);
+					} else {
+						break;
+					}
+				}
 			}
 		} catch (RuntimeException e) {
 			rightQueue.toss(e);
@@ -116,7 +123,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	public synchronized void handleClose() throws QueryEvaluationException {
 		closed = true;
 		try {
 			super.handleClose();
