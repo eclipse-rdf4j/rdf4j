@@ -31,9 +31,10 @@ import org.junit.runners.Suite.SuiteClasses;
  * @author James Leigh
  */
 @RunWith(Suite.class)
-@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
-		RemoveIsolationTest.class, SailIsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
-		SerializableTest.class })
+@SuiteClasses({ MonotonicTest.class })
+//@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
+//		RemoveIsolationTest.class, SailIsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
+//		SerializableTest.class })
 public abstract class OptimisticIsolationTest {
 
 	@BeforeClass

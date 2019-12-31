@@ -571,6 +571,7 @@ public class MonotonicTest {
 				NS).execute();
 		assertEquals(5, size(b, null, RDF.TYPE, PAINTING, false));
 		b.commit();
+		a.commit();
 		assertEquals(12, size(a, null, null, null, false));
 	}
 
@@ -749,17 +750,12 @@ public class MonotonicTest {
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry) throws Exception {
-		TupleQueryResult result;
-		result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate()) {
 			List<Value> list = new ArrayList<>();
 			while (result.hasNext()) {
 				list.add(result.next().getValue(var));
 			}
 			return list;
-		} finally {
-			result.close();
 		}
 	}
-
 }

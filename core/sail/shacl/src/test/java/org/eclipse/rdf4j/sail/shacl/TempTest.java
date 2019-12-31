@@ -281,6 +281,159 @@ public class TempTest {
 
 	}
 
+	@Test(expected = ShaclSailValidationException.class)
+	public void testUndefinedTargetClassValidatesAllSubjects() throws Throwable {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"	a sh:NodeShape  ;",
+					// " sh:targetClass foaf:Person ;",
+					"	sh:property ex:PersonShapeProperty .",
+
+					"ex:PersonShapeProperty ",
+					"	sh:path foaf:age ;",
+					"	sh:datatype xsd:int ;",
+					"  sh:maxCount 1 ;",
+					"  sh:minCount 1 ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			connection.begin();
+
+			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+
+					"ex:peter a foaf:Person ;",
+					"	foaf:age 20, \"30\"^^xsd:int  ."
+
+			));
+			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				if (e.getCause() != null) {
+					throw e.getCause();
+				}
+				throw e;
+			}
+		}
+
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void testUndefinedTargetClassValidatesAllSubjects2() throws Throwable {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"	a sh:NodeShape  ;",
+					// " sh:targetClass foaf:Person ;",
+					"	sh:property ex:PersonShapeProperty .",
+
+					"ex:PersonShapeProperty ",
+					"	sh:path foaf:age ;",
+					"	sh:datatype xsd:int ;",
+					"  sh:maxCount 1 ;",
+					"  sh:minCount 1 ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+
+					"ex:peter a foaf:Person ;",
+					"	foaf:age 20, \"30\"^^xsd:int  ."
+
+			));
+			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				if (e.getCause() != null) {
+					throw e.getCause();
+				}
+				throw e;
+			}
+		}
+
+	}
+
+	@Test
+	public void testUndefinedTargetClassValidatesAllSubjects3() throws Throwable {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", false);
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"	a sh:NodeShape  ;",
+					// " sh:targetClass foaf:Person ;",
+					"	sh:property ex:PersonShapeProperty .",
+
+					"ex:PersonShapeProperty ",
+					"	sh:path foaf:age ;",
+					"	sh:datatype xsd:int ;",
+					"  sh:maxCount 1 ;",
+					"  sh:minCount 1 ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			connection.begin();
+
+			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+
+					"ex:peter a foaf:Person ;",
+					"	foaf:age 20, \"30\"^^xsd:int  ."
+
+			));
+			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+
+			connection.commit();
+
+		}
+
+	}
+
 	@Test
 	@Ignore // this method is used to produce the log examples in the documentation
 	public void doc() throws IOException {
