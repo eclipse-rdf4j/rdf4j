@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -46,6 +47,8 @@ public class SPARQLBuilderTest {
 
 	private final String pattern, prefix, namespace;
 
+	Repository repository;
+
 	public SPARQLBuilderTest(String name, String pattern, String prefix, String namespace) {
 		super();
 		assert !name.isEmpty();
@@ -58,8 +61,7 @@ public class SPARQLBuilderTest {
 	public void setUp() throws Exception {
 		Federation federation = new Federation();
 		federation.addMember(new SailRepository(new MemoryStore()));
-		Repository repository = new SailRepository(federation);
-		repository.initialize();
+		repository = new SailRepository(federation);
 		con = repository.getConnection();
 		valueFactory = con.getValueFactory();
 		IRI subj = valueFactory.createIRI("urn:test:subj");
@@ -68,13 +70,23 @@ public class SPARQLBuilderTest {
 		con.add(subj, pred, obj);
 	}
 
+	@After
+	public void tearDown() {
+		con.close();
+		repository.shutDown();
+
+	}
+
 	@Test
 	public void test() throws RDF4JException { // NOPMD
 		// Thrown exceptions are the only failure path.
-		TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);
-		if (!(prefix.isEmpty() || namespace.isEmpty())) {
-			tupleQuery.setBinding(prefix, valueFactory.createIRI(namespace));
+
+		for (int i = 0; i < 100; i++) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);
+			if (!(prefix.isEmpty() || namespace.isEmpty())) {
+				tupleQuery.setBinding(prefix, valueFactory.createIRI(namespace));
+			}
+			tupleQuery.evaluate().close();
 		}
-		tupleQuery.evaluate().close();
 	}
 }

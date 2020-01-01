@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PositiveParserTest extends TestCase {
 
@@ -37,6 +39,8 @@ public class PositiveParserTest extends TestCase {
 	private RDFParser ntriplesParser;
 
 	protected IRI testUri;
+
+	private static final Logger logger = LoggerFactory.getLogger(PositiveParserTest.class);
 
 	/*--------------*
 	 * Constructors *
@@ -71,7 +75,7 @@ public class PositiveParserTest extends TestCase {
 		InputStream in = this.getClass().getResourceAsStream(inputURL);
 		assertNotNull("Test resource was not found: inputURL=" + inputURL, in);
 
-		System.err.println("test: " + inputURL);
+		logger.debug("test: " + inputURL);
 
 		ParseErrorCollector el = new ParseErrorCollector();
 		targetParser.setParseErrorListener(el);
@@ -82,18 +86,15 @@ public class PositiveParserTest extends TestCase {
 			in.close();
 
 			if (!el.getFatalErrors().isEmpty()) {
-				System.err.println("[Turtle] Input file had fatal parsing errors: ");
-				System.err.println(el.getFatalErrors());
+				logger.error("[Turtle] Input file had fatal parsing errors: \n" + el.getFatalErrors());
 			}
 
 			if (!el.getErrors().isEmpty()) {
-				System.err.println("[Turtle] Input file had parsing errors: ");
-				System.err.println(el.getErrors());
+				logger.error("[Turtle] Input file had parsing errors: \n" + el.getErrors());
 			}
 
 			if (!el.getWarnings().isEmpty()) {
-				System.err.println("[Turtle] Input file had parsing warnings: ");
-				System.err.println(el.getWarnings());
+				logger.warn("[Turtle] Input file had parsing warnings: \n" + el.getWarnings());
 			}
 		}
 
@@ -114,10 +115,10 @@ public class PositiveParserTest extends TestCase {
 
 			// Check equality of the two models
 			if (!Models.isomorphic(inputCollection, outputCollection)) {
-				System.err.println("===models not equal===");
-				System.err.println("Expected: " + outputCollection);
-				System.err.println("Actual  : " + inputCollection);
-				System.err.println("======================");
+				logger.error("===models not equal===\n"
+						+ "Expected: " + outputCollection + "\n"
+						+ "Actual  : " + inputCollection + "\n"
+						+ "======================");
 
 				fail("models not equal");
 			}

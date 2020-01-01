@@ -41,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -125,6 +126,14 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		deleteStatementBuffer.add(elasticsearchIdStatement);
 
+	}
+
+	@Override
+	public void addStatement(Collection<Statement> statements) {
+		addStatementBuffer.addAll(statements);
+		if (addStatementBuffer.size() >= BUFFER_THRESHOLD) {
+			flushAddStatementBuffer();
+		}
 	}
 
 	@Override
@@ -452,6 +461,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			}
 		}
 
+		return;
+
 	}
 
 	private Statement getStatementById(String sha256) {
@@ -512,6 +523,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		logger.debug("Removed {} statements", deleteStatementBuffer.size());
 
 		deleteStatementBuffer = Collections.synchronizedSet(new HashSet<>(BUFFER_THRESHOLD));
+
+		return;
 
 	}
 

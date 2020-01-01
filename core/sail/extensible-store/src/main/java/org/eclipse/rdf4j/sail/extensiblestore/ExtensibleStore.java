@@ -147,6 +147,9 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	synchronized protected void shutDownInternal() throws SailException {
 		sailStore.close();
 		sailStore = null;
+		dataStructure = null;
+		dataStructureInferred = null;
+		namespaceStore = null;
 	}
 
 	// override this method to change which evaluation statistics to use
