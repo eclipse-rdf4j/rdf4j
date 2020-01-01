@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -83,7 +84,8 @@ public class EvaluationStatisticsTest {
 
 			TupleQuery tupleQuery = connection.prepareTupleQuery(getQuery("evaluation-statistics/query1.rq"));
 			System.out.println(tupleQuery.toString());
-			TupleQueryResult evaluate = tupleQuery.evaluate();
+			IteratingTupleQueryResult evaluate = (IteratingTupleQueryResult) tupleQuery.evaluate();
+			System.out.println(evaluate.toString());
 			evaluate.hasNext();
 			evaluate.close();
 

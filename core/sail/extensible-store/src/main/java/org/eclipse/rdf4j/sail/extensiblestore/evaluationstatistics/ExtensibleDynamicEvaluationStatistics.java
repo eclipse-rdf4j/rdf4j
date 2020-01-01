@@ -56,6 +56,14 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 			min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
 			min = Math.min(min, getObjectCardinality(sp.getObjectVar()));
 
+			if(sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null){
+				System.out.println("SP: "+sp.getSubjectVar().getValue()+ " : "+sp.getPredicateVar().getValue());
+			}
+
+			if(sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null){
+				System.out.println("PO: " +sp.getPredicateVar().getValue()+ " : "+sp.getObjectVar().getValue());
+			}
+
 			return min;
 
 		}
