@@ -177,8 +177,8 @@ public abstract class SailConcurrencyTest {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
-			assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
-			assertEquals("upload into context 2 should have been fully committed", runner2.getSize(), size2);
+			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
+			Assert.assertEquals("upload into context 2 should have been fully committed", runner2.getSize(), size2);
 		} finally {
 			conn.close();
 		}
@@ -225,8 +225,8 @@ public abstract class SailConcurrencyTest {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
-			assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
-			assertEquals("upload into context 2 should have been rolled back", 0, size2);
+			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
+			Assert.assertEquals("upload into context 2 should have been rolled back", 0, size2);
 		} finally {
 			conn.close();
 		}
@@ -280,7 +280,7 @@ public abstract class SailConcurrencyTest {
 							try {
 								while (contextIter.hasNext()) {
 									Resource context = contextIter.next();
-									assertNotNull(context);
+									Assert.assertNotNull(context);
 								}
 							} finally {
 								contextIter.close();

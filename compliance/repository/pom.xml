@@ -42,9 +42,7 @@
 
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-api</artifactId>
-			<classifier>tests</classifier>
-			<type>test-jar</type>
+			<artifactId>rdf4j-repository-testsuite</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
