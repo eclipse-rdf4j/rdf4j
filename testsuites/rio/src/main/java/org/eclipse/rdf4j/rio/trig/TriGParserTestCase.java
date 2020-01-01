@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.rio.PositiveParserTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JUnit test for the TriG parser that uses the tests that are available
@@ -51,6 +53,8 @@ public abstract class TriGParserTestCase {
 	private static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TriGTests/manifest.ttl#";
 
 	private static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TriGTests/";
+
+	private static final Logger logger = LoggerFactory.getLogger(TriGParserTestCase.class);
 
 	/*--------------------*
 	 * Static initializer *
@@ -179,12 +183,12 @@ public abstract class TriGParserTestCase {
 			if (nextTestName.contains("CARRIAGE_RETURN")) {
 				// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
 				// right now
-				System.err.println("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
+				logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
 				continue;
 			} else if (nextTestName.contains("UTF8_boundaries")
 					|| nextTestName.contains("PN_CHARS_BASE_character_boundaries")) {
 				// FIXME: UTF8 support not implemented yet
-				System.err.println("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
+				logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
 				continue;
 			}
 
