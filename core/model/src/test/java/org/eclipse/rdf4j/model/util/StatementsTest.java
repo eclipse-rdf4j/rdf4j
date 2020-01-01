@@ -7,12 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
@@ -43,6 +45,21 @@ public class StatementsTest {
 		Model m = Statements.create(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY, new TreeModel());
 		assertFalse(m.isEmpty());
 		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY));
+	}
+
+	@Test
+	public void stripContextWithContextInput() {
+		Resource c1 = vf.createIRI("urn:c1");
+		Statement st = vf.createStatement(FOAF.AGE, RDF.TYPE, RDF.PROPERTY, c1);
+
+		assertThat(Statements.stripContext(st).getContext()).isNull();
+	}
+
+	@Test
+	public void stripContextWithNoContextInput() {
+		Statement st = vf.createStatement(FOAF.AGE, RDF.TYPE, RDF.PROPERTY);
+
+		assertThat(Statements.stripContext(st)).isEqualTo(st);
 	}
 
 	@Test
