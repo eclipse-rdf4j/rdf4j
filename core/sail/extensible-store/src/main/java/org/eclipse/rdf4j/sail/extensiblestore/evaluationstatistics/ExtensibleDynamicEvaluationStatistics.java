@@ -30,12 +30,23 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	HyperLogLogCollector[] contextIndex = new HyperLogLogCollector[1024];
 	HyperLogLogCollector defaultContext = HyperLogLogCollector.makeLatestCollector();
 
+	HyperLogLogCollector[][] subjectPredicateIndex = new HyperLogLogCollector[128][128];
+	HyperLogLogCollector[][] predicateObjectIndex = new HyperLogLogCollector[128][128];
+
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
 
 		Stream.of(subjectIndex, predicateIndex, objectIndex, contextIndex).parallel().forEach(index -> {
 			for (int i = 0; i < index.length; i++) {
 				index[i] = HyperLogLogCollector.makeLatestCollector();
+			}
+		});
+
+		Stream.of(subjectPredicateIndex, predicateObjectIndex).parallel().forEach(index -> {
+			for (int i = 0; i < index.length; i++) {
+				for (int j = 0; j < index[i].length; j++) {
+					index[i][j] = HyperLogLogCollector.makeLatestCollector();
+				}
 			}
 		});
 
@@ -56,12 +67,14 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 			min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
 			min = Math.min(min, getObjectCardinality(sp.getObjectVar()));
 
-			if(sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null){
-				System.out.println("SP: "+sp.getSubjectVar().getValue()+ " : "+sp.getPredicateVar().getValue());
+			if (sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null) {
+				min = Math.min(min, getHllCardinality(subjectPredicateIndex, sp.getSubjectVar().getValue(),
+						sp.getPredicateVar().getValue()));
 			}
 
-			if(sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null){
-				System.out.println("PO: " +sp.getPredicateVar().getValue()+ " : "+sp.getObjectVar().getValue());
+			if (sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null) {
+				min = Math.min(min, getHllCardinality(predicateObjectIndex, sp.getPredicateVar().getValue(),
+						sp.getObjectVar().getValue()));
 			}
 
 			return min;
@@ -106,6 +119,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	};
 
+	private double getHllCardinality(HyperLogLogCollector[][] index, Value value1, Value value2) {
+		return index[Math.abs(value1.hashCode() % index.length)][Math.abs(value2.hashCode() % index.length)]
+				.estimateCardinality();
+	}
+
 	private double getHllCardinality(HyperLogLogCollector[] index, Value value) {
 		return index[Math.abs(value.hashCode() % index.length)].estimateCardinality();
 	}
@@ -124,6 +142,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		indexSingleValue(statementHash, predicateIndex, predicateHash);
 		indexSingleValue(statementHash, objectIndex, objectHash);
 
+		indexDoubleValue(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
+		indexDoubleValue(statementHash, predicateObjectIndex, predicateHash, objectHash);
+
 		if (statement.getContext() == null) {
 			defaultContext.add(statementHash);
 		} else {
@@ -131,6 +152,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 
 		// logger.info("added: {} : {} ", statement, inferred ? "INFERRED" : "REAL");
+	}
+
+	private void indexDoubleValue(byte[] statementHash, HyperLogLogCollector[][] index, int indexHash, int indexHash2) {
+		index[Math.abs(indexHash % index.length)][Math.abs(indexHash2 % index.length)].add(statementHash);
+
 	}
 
 	private void indexSingleValue(byte[] statementHash, HyperLogLogCollector[] index, int indexHash) {

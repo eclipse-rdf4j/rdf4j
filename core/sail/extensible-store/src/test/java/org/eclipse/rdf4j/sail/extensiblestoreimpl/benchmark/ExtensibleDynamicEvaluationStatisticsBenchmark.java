@@ -6,15 +6,16 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
+package org.eclipse.rdf4j.sail.extensiblestoreimpl.benchmark;
 
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
-import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -27,9 +28,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
@@ -40,68 +39,43 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class AddBenchmark {
+public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 
-	private static EmbeddedElastic embeddedElastic;
+	Model parse;
 
-	private static File installLocation = Files.newTemporaryFolder();
+	@Setup(Level.Iteration)
+	public void beforeClassIteration() throws IOException, InterruptedException {
 
-	private SailRepository elasticsearchStore;
+		System.gc();
+		Thread.sleep(100);
+		System.gc();
+		Thread.sleep(100);
+
+	}
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
-		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
-		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
-						false));
-
+		parse = Rio.parse(getResourceAsStream("bsbm-100.ttl"), "", RDFFormat.TURTLE);
 		System.gc();
 
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return AddBenchmark.class.getClassLoader().getResourceAsStream(name);
-	}
-
-	@TearDown(Level.Trial)
-	public void afterClass() {
-
-		elasticsearchStore.shutDown();
-		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+		return ExtensibleDynamicEvaluationStatisticsBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 	@Benchmark
 	public void clearAndAddLargeFile() throws IOException {
+		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
+				null);
 
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.commit();
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
-	}
-
-	@Benchmark
-	public void clearAndAddLargeFileReadCommitted() throws IOException {
-
-		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.commit();
-
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
 	}
 
 }

@@ -91,9 +91,9 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	@Override
 	public String toString() {
 		return "ProjectionIterator{" +
-			"projection=" + projection +
-			", parentBindings=" + parentBindings +
-			", isOuterProjection=" + isOuterProjection +
-			'}';
+				"projection=" + projection +
+				", parentBindings=" + parentBindings +
+				", isOuterProjection=" + isOuterProjection +
+				'}';
 	}
 }

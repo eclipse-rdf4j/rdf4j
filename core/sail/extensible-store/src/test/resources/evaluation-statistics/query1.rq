@@ -14,7 +14,9 @@ PREFIX dataFromRatingSite1: <http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/inst
 
 select * where {
 
+        ?b bsbm:productFeature ?a.
+
         ?a rdf:type ?type;
-            rdfs:label ?tabel, "fumaroles puled".
+            rdfs:label "fumaroles puled".
 
 }
