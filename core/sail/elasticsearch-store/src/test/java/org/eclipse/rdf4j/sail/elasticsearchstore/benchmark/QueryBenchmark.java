@@ -87,7 +87,7 @@ public class QueryBenchmark {
 	public void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-			"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
+				"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
 
 		repository = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",

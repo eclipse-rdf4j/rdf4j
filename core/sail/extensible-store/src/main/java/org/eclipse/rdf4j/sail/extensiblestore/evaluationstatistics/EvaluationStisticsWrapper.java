@@ -14,7 +14,8 @@ public class EvaluationStisticsWrapper implements DataStructureInterface {
 	private final boolean inferred;
 	private final DataStructureInterface delegate;
 
-	public EvaluationStisticsWrapper(DataStructureInterface delegate, DynamicStatistics dynamicStatistics, boolean inferred) {
+	public EvaluationStisticsWrapper(DataStructureInterface delegate, DynamicStatistics dynamicStatistics,
+			boolean inferred) {
 		this.delegate = delegate;
 		this.dynamicStatistics = dynamicStatistics;
 		this.inferred = inferred;
@@ -34,7 +35,8 @@ public class EvaluationStisticsWrapper implements DataStructureInterface {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject, IRI predicate, Value object, Resource... context) {
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject, IRI predicate,
+			Value object, Resource... context) {
 		return delegate.getStatements(subject, predicate, object, context);
 	}
 

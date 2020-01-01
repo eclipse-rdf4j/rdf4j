@@ -5,7 +5,6 @@ import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleSailStore;
 
 public abstract class ExtensibleEvaluationStatistics extends EvaluationStatistics {
 
-
 	final ExtensibleSailStore extensibleSailStore;
 
 	public ExtensibleEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {

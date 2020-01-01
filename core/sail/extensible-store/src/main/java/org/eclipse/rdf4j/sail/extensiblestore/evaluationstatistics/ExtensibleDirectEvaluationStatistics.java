@@ -34,13 +34,15 @@ public class ExtensibleDirectEvaluationStatistics extends ExtensibleEvaluationSt
 			IRI predicate = (IRI) sp.getPredicateVar().getValue();
 			Value object = sp.getObjectVar().getValue();
 
-			if(sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
-				try (Stream<? extends Statement> stream = Iterations.stream(dataset.getStatements(subject, predicate, object))) {
+			if (sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
+				try (Stream<? extends Statement> stream = Iterations
+						.stream(dataset.getStatements(subject, predicate, object))) {
 					return stream.count();
 				}
-			}else{
-				Resource[] context = new Resource[]{(Resource) sp.getContextVar().getValue()};
-				try (Stream<? extends Statement> stream = Iterations.stream(dataset.getStatements(subject, predicate, object, context))) {
+			} else {
+				Resource[] context = new Resource[] { (Resource) sp.getContextVar().getValue() };
+				try (Stream<? extends Statement> stream = Iterations
+						.stream(dataset.getStatements(subject, predicate, object, context))) {
 					return stream.count();
 				}
 			}

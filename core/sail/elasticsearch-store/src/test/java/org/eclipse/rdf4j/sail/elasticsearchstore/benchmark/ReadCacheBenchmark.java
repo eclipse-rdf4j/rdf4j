@@ -82,7 +82,7 @@ public class ReadCacheBenchmark {
 	public void beforeClass() throws IOException, InterruptedException {
 
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-			"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
+				"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
 
 		repoWithoutCache = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex1",

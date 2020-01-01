@@ -28,6 +28,14 @@
             <artifactId>commons-collections4</artifactId>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/org.apache.druid/druid-hll -->
+        <dependency>
+            <groupId>org.apache.druid</groupId>
+            <artifactId>druid-hll</artifactId>
+            <version>0.16.1-incubating</version>
+        </dependency>
+
+
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-sail-memory</artifactId>

@@ -65,7 +65,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	private SPARQLServiceResolver dependentServiceResolver;
 	private FederatedServiceResolver serviceResolver;
 
-
 	public ExtensibleStore() {
 		this(true);
 	}
@@ -119,7 +118,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		return SimpleValueFactory.getInstance();
 	}
 
-
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
 		if (evalStratFactory == null) {
 			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
@@ -153,8 +151,8 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	}
 
 	// override this method to change which evaluation statistics to use
-	public EvaluationStatisticsEnum getEvaluationStatisticsType(){
-		return EvaluationStatisticsEnum.constant;
+	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
+		return EvaluationStatisticsEnum.dynamic;
 	}
 
 }

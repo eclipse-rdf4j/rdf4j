@@ -29,18 +29,19 @@ public class ExtensibleSailStore implements SailStore {
 	private ExtensibleEvaluationStatistics evaluationStatistics;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-							   NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsType) {
+			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsType) {
 		evaluationStatistics = evaluationStatisticsType.getInstance(this);
 
 		if (evaluationStatistics instanceof DynamicStatistics) {
-			dataStructure = new EvaluationStisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics, false);
-			dataStructureInferred = new EvaluationStisticsWrapper(dataStructureInferred, (DynamicStatistics) evaluationStatistics, true);
+			dataStructure = new EvaluationStisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics,
+					false);
+			dataStructureInferred = new EvaluationStisticsWrapper(dataStructureInferred,
+					(DynamicStatistics) evaluationStatistics, true);
 		}
 
 		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
 		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
 	}
-
 
 	@Override
 	public void close() throws SailException {
