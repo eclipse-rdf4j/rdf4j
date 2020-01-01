@@ -22,7 +22,8 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * An extension of RDFStoreTest for testing the class {@link NativeStore}.
+ * An extension of RDFStoreTest for testing the class
+ * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
 public class ElasticsearchStoreContextTest extends RDFNotifyingStoreTest {
 

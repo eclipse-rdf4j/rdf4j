@@ -7,29 +7,49 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
+
+import java.io.IOException;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the {@link SchemaCachingRDFSInferencer}.
  */
-public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolationLevelTest {
+public class SchemaCachingRDFSInferencerNativeIsolationLevelTest extends SailIsolationLevelTest {
+
+	/*-----------*
+	 * Variables *
+	 *-----------*/
+
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	/*---------*
 	 * Methods *
 	 *---------*/
 
 	@Override
-	protected Sail createSail() throws SailException {
-		// TODO we are testing the inferencer, not the store. We should use a mock here instead of a real memory store.
-		return new SchemaCachingRDFSInferencer(new MemoryStore());
+	protected NotifyingSail createSail() throws SailException {
+		try {
+			return new SchemaCachingRDFSInferencer(new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc"));
+		} catch (IOException e) {
+			throw new AssertionError(e);
+		}
 	}
 
 	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// See: https://github.com/eclipse/rdf4j/issues/1795
+	public void testLargeTransactionSerializable() throws InterruptedException {
+		// ignored since test is slow
+	}
+
+	@Override
+	public void testSnapshot() throws Exception {
+		// see: https://github.com/eclipse/rdf4j/issues/1794
 	}
 }

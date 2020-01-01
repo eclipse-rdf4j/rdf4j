@@ -10,13 +10,16 @@ package org.eclipse.rdf4j.sail;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.After;
 import org.junit.Assert;
@@ -26,8 +29,13 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 /**
  * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
@@ -37,7 +45,7 @@ import java.util.concurrent.TimeUnit;
 public abstract class SailIsolationLevelTest {
 
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
@@ -150,6 +158,111 @@ public abstract class SailIsolationLevelTest {
 		} else {
 			logger.warn("{} does not support {}", store, IsolationLevels.SERIALIZABLE);
 		}
+	}
+
+	@Test
+	public void testLargeTransactionReadCommitted() throws InterruptedException {
+		if (isSupported(IsolationLevels.READ_COMMITTED)) {
+			testLargeTransaction(IsolationLevels.READ_COMMITTED, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
+		}
+	}
+
+	@Test
+	public void testLargeTransactionSnapshot() throws InterruptedException {
+		if (isSupported(IsolationLevels.SNAPSHOT)) {
+			testLargeTransaction(IsolationLevels.SNAPSHOT, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
+		}
+	}
+
+	@Test
+	public void testLargeTransactionSnapshotRead() throws InterruptedException {
+		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
+			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
+		}
+	}
+
+	@Test
+	public void testLargeTransactionSerializable() throws InterruptedException {
+		if (isSupported(IsolationLevels.SERIALIZABLE)) {
+			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1000);
+		} else {
+			logger.warn("Isolation level not supporter.");
+		}
+	}
+
+	/*
+	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
+	 * transaction should see either nothing added or everything added. Nothing in between.
+	 */
+	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+		}
+
+		AtomicBoolean failure = new AtomicBoolean(false);
+
+		Runnable runnable = () -> {
+
+			try (SailConnection connection = store.getConnection()) {
+				while (true) {
+					try {
+						connection.begin(isolationLevel);
+						List<Statement> statements = Iterations
+								.asList(connection.getStatements(null, null, null, false));
+						connection.commit();
+						if (statements.size() != 0) {
+							if (statements.size() != count) {
+								logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
+								logger.error("\n[\n\t{}\n]",
+										statements.stream()
+												.map(Object::toString)
+												.reduce((a, b) -> a + " , \n\t" + b)
+												.get());
+
+								failure.set(true);
+							}
+							break;
+						}
+					} catch (SailConflictException ignored) {
+						connection.rollback();
+					}
+
+					Thread.yield();
+				}
+			}
+		};
+
+		Thread thread = new Thread(runnable);
+		thread.start();
+
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(isolationLevel);
+			for (int i = 0; i < count; i++) {
+				connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));
+			}
+			logger.debug("Commit");
+			connection.commit();
+
+			assertEquals(count, connection.size());
+
+		}
+
+		logger.debug("Joining thread");
+		thread.join();
+
+		assertFalse(failure.get());
+
 	}
 
 	/**

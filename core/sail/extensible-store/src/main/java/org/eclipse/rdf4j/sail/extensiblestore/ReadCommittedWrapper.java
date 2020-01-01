@@ -20,14 +20,16 @@ import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 class ReadCommittedWrapper implements DataStructureInterface {
 
-	private DataStructureInterface dataStructure;
+	private final DataStructureInterface dataStructure;
 
 	private Set<Statement> internalAdded = new HashSet<>(1000);
 	private Set<Statement> internalRemoved = new HashSet<>(100);
@@ -40,11 +42,13 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	public void addStatement(Statement statement) {
 		internalAdded.add(statement);
 		internalRemoved.remove(statement);
+
 	}
 
 	@Override
 	public void removeStatement(Statement statement) {
 		internalRemoved.add(statement);
+
 	}
 
 	@Override
@@ -62,78 +66,82 @@ class ReadCommittedWrapper implements DataStructureInterface {
 				if (internalRemoved.contains(statement)) {
 					return new EmptyIteration<>();
 				} else {
-					return dataStructure.getStatements(subject, predicate, object, context);
+					synchronized (dataStructure) {
+						return dataStructure.getStatements(subject, predicate, object, context);
+					}
 				}
 			}
 
 		} else {
+			synchronized (dataStructure) {
 
-			return new LookAheadIteration<Statement, SailException>() {
+				return new LookAheadIteration<Statement, SailException>() {
 
-				Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
-				Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
+					Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
+					Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
 
-				Iterator<Statement> left = internalAddedLocal.stream()
-						.filter(statement -> {
+					Iterator<Statement> left = internalAddedLocal.stream()
+							.filter(statement -> {
 
-							if (subject != null && !statement.getSubject().equals(subject)) {
-								return false;
+								if (subject != null && !statement.getSubject().equals(subject)) {
+									return false;
+								}
+								if (predicate != null && !statement.getPredicate().equals(predicate)) {
+									return false;
+								}
+								if (object != null && !statement.getObject().equals(object)) {
+									return false;
+								}
+								if (context != null && context.length > 0
+										&& !containsContext(context, statement.getContext())) {
+									return false;
+								}
+
+								return true;
+							})
+							.iterator();
+
+					CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
+							subject, predicate, object, context);
+
+					@Override
+					protected void handleClose() throws SailException {
+						super.handleClose();
+						right.close();
+					}
+
+					@Override
+					protected Statement getNextElement() throws SailException {
+
+						Statement next = null;
+
+						do {
+							Statement tempNext = null;
+							if (left.hasNext()) {
+								tempNext = left.next();
+							} else if (right.hasNext()) {
+								tempNext = right.next();
+
+								if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
+									tempNext = null;
+								}
 							}
-							if (predicate != null && !statement.getPredicate().equals(predicate)) {
-								return false;
-							}
-							if (object != null && !statement.getObject().equals(object)) {
-								return false;
-							}
-							if (context != null && context.length > 0
-									&& !containsContext(context, statement.getContext())) {
-								return false;
+
+							if (tempNext != null) {
+								if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
+									next = tempNext;
+								}
 							}
 
-							return true;
-						})
-						.iterator();
+						} while (next == null && (left.hasNext() || right.hasNext()));
 
-				CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
-						subject, predicate, object, context);
+						return next;
 
-				@Override
-				protected void handleClose() throws SailException {
-					super.handleClose();
-					right.close();
-				}
+					}
 
-				@Override
-				protected Statement getNextElement() throws SailException {
+				};
 
-					Statement next = null;
-
-					do {
-						Statement tempNext = null;
-						if (left.hasNext()) {
-							tempNext = left.next();
-						} else if (right.hasNext()) {
-							tempNext = right.next();
-
-							if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
-								tempNext = null;
-							}
-						}
-
-						if (tempNext != null) {
-							if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
-								next = tempNext;
-							}
-						}
-
-					} while (next == null && (left.hasNext() || right.hasNext()));
-
-					return next;
-
-				}
-
-			};
-
+			}
 		}
 
 	}
@@ -153,17 +161,19 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	@Override
 	public void flushForCommit() {
 
-		internalAdded
+		List<Statement> internalAddedEffective = internalAdded
 				.stream()
 				.filter(statement -> !internalRemoved.contains(statement))
-				.forEach(statement -> dataStructure.addStatement(statement));
+				.collect(Collectors.toList());
 
-		internalRemoved.forEach(statement -> dataStructure.removeStatement(statement));
+		synchronized (dataStructure) {
+			internalAddedEffective.forEach(dataStructure::addStatement);
+			internalRemoved.forEach(dataStructure::removeStatement);
+			dataStructure.flushForReading();
+		}
 
 		internalAdded = new HashSet<>(internalAdded.size());
 		internalRemoved = new HashSet<>(internalRemoved.size());
-
-		dataStructure.flushForReading();
 
 	}
 

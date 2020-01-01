@@ -16,9 +16,14 @@ public class ExtensibleStoreImplForTests
 		extends ExtensibleStore<NaiveHashSetDataStructure, SimpleMemoryNamespaceStore> {
 
 	public ExtensibleStoreImplForTests() {
+	}
+
+	@Override
+	protected synchronized void initializeInternal() throws SailException {
 		namespaceStore = new SimpleMemoryNamespaceStore();
 		dataStructure = new NaiveHashSetDataStructure();
 		dataStructureInferred = new NaiveHashSetDataStructure();
+		super.initializeInternal();
 	}
 
 	@Override
