@@ -32,7 +32,6 @@ public class TransactionIsolationAndWalTests {
 
 	static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-
 	/*
 	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
 	 * transaction should see either nothing added or everything added. Nothing in between.
@@ -105,10 +104,9 @@ public class TransactionIsolationAndWalTests {
 
 	}
 
-
 	/*
-	* Tests that a partially committed transaction doesn't leak into other transactions.
-	* READ_COMMITTED should either read the entire transaction or none of the transaction.
+	 * Tests that a partially committed transaction doesn't leak into other transactions. READ_COMMITTED should either
+	 * read the entire transaction or none of the transaction.
 	 */
 	@Test
 	public void testReadCommittedLargeTransaction2() throws InterruptedException {
@@ -144,7 +142,6 @@ public class TransactionIsolationAndWalTests {
 					if (count != 1 && count != size) {
 						failed.set(true);
 					}
-
 
 				} catch (InterruptedException e) {
 					e.printStackTrace();
@@ -215,18 +212,14 @@ public class TransactionIsolationAndWalTests {
 			}
 			connection.commit();
 
-		} catch (
-			Throwable e) {
+		} catch (Throwable e) {
 			e.printStackTrace();
 		}
-
 
 		thread.join();
 		thread2.join();
 
-
 		assertFalse(failed.get());
-
 
 	}
 

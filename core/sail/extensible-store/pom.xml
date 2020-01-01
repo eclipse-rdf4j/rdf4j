@@ -41,30 +41,16 @@
             <scope>test</scope>
         </dependency>
 
-
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>rdf4j-sail-api</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
+            <artifactId>rdf4j-sail-testsuite</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>rdf4j-repository-api</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>rdf4j-sail-base</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
+            <artifactId>rdf4j-repository-testsuite</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
@@ -75,7 +61,6 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
-
 
         <dependency>
             <groupId>junit</groupId>
@@ -97,6 +82,4 @@
 
 
     </dependencies>
-
-
 </project>

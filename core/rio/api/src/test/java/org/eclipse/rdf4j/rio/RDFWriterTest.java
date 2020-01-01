@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
-import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -60,12 +59,16 @@ import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Arjohn Kampman
  * @author Peter Ansell
  */
 public abstract class RDFWriterTest {
+
+	private static Logger logger = LoggerFactory.getLogger(RDFWriterTest.class);
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
@@ -424,7 +427,7 @@ public abstract class RDFWriterTest {
 		}
 		assertTrue("missing statement with datatype: st12", model.contains(st12));
 		if (rdfParser.getRDFFormat().equals(RDFFormat.RDFXML)) {
-			System.out.println(
+			logger.warn(
 					"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
 		} else {
 			assertTrue("missing statement with literal ending with newline: st13", model.contains(st13));
@@ -649,12 +652,10 @@ public abstract class RDFWriterTest {
 		Model parsedModel = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedModel));
 		rdfParser.parse(new ByteArrayInputStream(output.toByteArray()), "");
-		// if(potentialObjects.size() != parsedModel.size()) {
-		if (count != parsedModel.size()) {
-			Rio.write(parsedModel, System.out, RDFFormat.NQUADS);
-		}
+//		if (count != parsedModel.size()) {
+//			Rio.write(parsedModel, System.out, RDFFormat.NQUADS);
+//		}
 		assertEquals(count, parsedModel.size());
-		// assertEquals(potentialObjects.size(), parsedModel.size());
 	}
 
 	/**
@@ -697,8 +698,8 @@ public abstract class RDFWriterTest {
 			model.add(potentialSubjects.get(prng.nextInt(potentialSubjects.size())),
 					potentialPredicates.get(prng.nextInt(potentialPredicates.size())), obj);
 		}
-		System.out.println("Test class: " + this.getClass().getName());
-		System.out.println("Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat() + ")");
+		logger.debug("Test class: " + this.getClass().getName());
+		logger.debug("Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat() + ")");
 		assertFalse("Did not generate any test statements", model.isEmpty());
 
 		File testFile = tempDir.newFile("performancetest." + rdfWriterFactory.getRDFFormat().getDefaultFileExtension());
@@ -722,9 +723,9 @@ public abstract class RDFWriterTest {
 
 			rdfWriter.endRDF();
 			long endWrite = System.currentTimeMillis();
-			System.out.println(
+			logger.debug(
 					"Write took: " + (endWrite - startWrite) + " ms (" + rdfWriterFactory.getRDFFormat() + ")");
-			System.out.println("File size (bytes): " + testFile.length());
+			logger.debug("File size (bytes): " + testFile.length());
 
 		}
 
@@ -740,7 +741,7 @@ public abstract class RDFWriterTest {
 			long startParse = System.currentTimeMillis();
 			rdfParser.parse(in, "foo:bar");
 			long endParse = System.currentTimeMillis();
-			System.out.println(
+			logger.debug(
 					"Parse took: " + (endParse - startParse) + " ms (" + rdfParserFactory.getRDFFormat() + ")");
 
 			if (storeParsedStatements) {
@@ -748,13 +749,13 @@ public abstract class RDFWriterTest {
 					if (model.size() < 1000) {
 						boolean originalIsSubset = Models.isSubset(model, parsedModel);
 						boolean parsedIsSubset = Models.isSubset(parsedModel, model);
-						System.out.println("originalIsSubset=" + originalIsSubset);
-						System.out.println("parsedIsSubset=" + parsedIsSubset);
+						logger.debug("originalIsSubset=" + originalIsSubset);
+						logger.debug("parsedIsSubset=" + parsedIsSubset);
 
-						System.out.println("Written statements=>");
-						IOUtils.writeLines(IOUtils.readLines(new FileInputStream(testFile)), "\n", System.out);
-						System.out.println("Parsed statements=>");
-						Rio.write(parsedModel, System.out, RDFFormat.NQUADS);
+//						System.out.println("Written statements=>");
+//						IOUtils.writeLines(IOUtils.readLines(new FileInputStream(testFile)), "\n", System.out);
+//						System.out.println("Parsed statements=>");
+//						Rio.write(parsedModel, System.out, RDFFormat.NQUADS);
 					}
 				}
 				assertEquals(
@@ -1204,7 +1205,7 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
+		logger.debug(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1721,7 +1722,7 @@ public abstract class RDFWriterTest {
 			rdfWriter.handleStatement(st);
 		}
 		rdfWriter.endRDF();
-		System.out.println(new String(outputWriter.toByteArray()));
+		logger.debug(new String(outputWriter.toByteArray()));
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());

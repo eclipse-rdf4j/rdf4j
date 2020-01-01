@@ -20,7 +20,9 @@ import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -40,11 +42,13 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	public void addStatement(long transactionId, Statement statement) {
 		internalAdded.add(statement);
 		internalRemoved.remove(statement);
+
 	}
 
 	@Override
 	public void removeStatement(long transactionId, Statement statement) {
 		internalRemoved.add(statement);
+
 	}
 
 	@Override
@@ -63,81 +67,85 @@ class ReadCommittedWrapper implements DataStructureInterface {
 					if (internalRemoved.contains(statement)) {
 						return new EmptyIteration<>();
 					} else {
-						return dataStructure.getStatements(transactionId, subject, predicate, object, context);
+						synchronized (dataStructure) {
+							return dataStructure.getStatements(transactionId, subject, predicate, object, context);
+						}
 					}
 				}
 
 			} else {
+				synchronized (dataStructure) {
 
-				return new LookAheadIteration<Statement, SailException>() {
+					return new LookAheadIteration<Statement, SailException>() {
 
-					Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
-					Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
+						Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
+						Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
 
-					Iterator<Statement> left = internalAddedLocal.stream()
-							.filter(statement -> {
+						Iterator<Statement> left = internalAddedLocal.stream()
+								.filter(statement -> {
 
-								if (subject != null && !statement.getSubject().equals(subject)) {
-									return false;
+									if (subject != null && !statement.getSubject().equals(subject)) {
+										return false;
+									}
+									if (predicate != null && !statement.getPredicate().equals(predicate)) {
+										return false;
+									}
+									if (object != null && !statement.getObject().equals(object)) {
+										return false;
+									}
+									if (context != null && context.length > 0
+											&& !containsContext(context, statement.getContext())) {
+										return false;
+									}
+
+									return true;
+								})
+								.iterator();
+
+						CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
+								transactionId, subject, predicate, object, context);
+
+						@Override
+						protected void handleClose() throws SailException {
+							super.handleClose();
+							right.close();
+						}
+
+						@Override
+						protected Statement getNextElement() throws SailException {
+
+							Statement next = null;
+
+							do {
+								Statement tempNext = null;
+								if (left.hasNext()) {
+									tempNext = left.next();
+								} else if (right.hasNext()) {
+									tempNext = right.next();
+
+									if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
+										tempNext = null;
+									}
 								}
-								if (predicate != null && !statement.getPredicate().equals(predicate)) {
-									return false;
-								}
-								if (object != null && !statement.getObject().equals(object)) {
-									return false;
-								}
-								if (context != null && context.length > 0
-										&& !containsContext(context, statement.getContext())) {
-									return false;
+
+								if (tempNext != null) {
+									if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
+										next = tempNext;
+									}
 								}
 
-								return true;
-							})
-							.iterator();
+							} while (next == null && (left.hasNext() || right.hasNext()));
 
-					CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
-							transactionId, subject, predicate, object, context);
+							return next;
 
-					@Override
-					protected void handleClose() throws SailException {
-						super.handleClose();
-						right.close();
-					}
+						}
 
-					@Override
-					protected Statement getNextElement() throws SailException {
+					};
 
-						Statement next = null;
-
-						do {
-							Statement tempNext = null;
-							if (left.hasNext()) {
-								tempNext = left.next();
-							} else if (right.hasNext()) {
-								tempNext = right.next();
-
-								if (!internalAddedLocal.isEmpty() && internalAddedLocal.contains(tempNext)) {
-									tempNext = null;
-								}
-							}
-
-							if (tempNext != null) {
-								if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {
-									next = tempNext;
-								}
-							}
-
-						} while (next == null && (left.hasNext() || right.hasNext()));
-
-						return next;
-
-					}
-
-				};
-
+				}
 			}
-		}
 
+		}
 	}
 
 	private static boolean containsContext(Resource[] haystack, Resource needle) {
@@ -155,20 +163,19 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	@Override
 	public void flushForCommit(long transactionId) {
 
+		List<Statement> internalAddedEffective = internalAdded
+				.stream()
+				.filter(statement -> !internalRemoved.contains(statement))
+				.collect(Collectors.toList());
+
 		synchronized (dataStructure) {
-
-			internalAdded
-					.stream()
-					.filter(statement -> !internalRemoved.contains(statement))
-					.forEach(statement1 -> dataStructure.addStatement(transactionId, statement1));
-
+			internalAddedEffective.forEach(statement1 -> dataStructure.addStatement(transactionId, statement1));
 			internalRemoved.forEach(statement -> dataStructure.removeStatement(transactionId, statement));
-
-			internalAdded = new HashSet<>(internalAdded.size());
-			internalRemoved = new HashSet<>(internalRemoved.size());
-
 			dataStructure.flushForReading(transactionId);
 		}
+
+		internalAdded = new HashSet<>(internalAdded.size());
+		internalRemoved = new HashSet<>(internalRemoved.size());
 
 	}
 

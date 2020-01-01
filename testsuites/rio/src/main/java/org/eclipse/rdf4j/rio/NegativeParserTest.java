@@ -10,13 +10,13 @@ package org.eclipse.rdf4j.rio;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 
-import junit.framework.TestCase;
-
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
 
 public class NegativeParserTest extends TestCase {
 
@@ -34,6 +34,8 @@ public class NegativeParserTest extends TestCase {
 	protected FailureMode failureMode;
 
 	protected boolean didIgnoreFailure;
+
+	private static final Logger logger = LoggerFactory.getLogger(NegativeParserTest.class);
 
 	/*--------------*
 	 * Constructors *
@@ -66,7 +68,7 @@ public class NegativeParserTest extends TestCase {
 			InputStream in = this.getClass().getResourceAsStream(inputURL);
 			assertNotNull("Test resource was not found: inputURL=" + inputURL, in);
 
-			System.err.println("test: " + inputURL);
+			logger.debug("test: " + inputURL);
 
 			targetParser.setParseErrorListener(el);
 
@@ -75,7 +77,7 @@ public class NegativeParserTest extends TestCase {
 
 			if (failureMode.ignoreFailure()) {
 				this.didIgnoreFailure = true;
-				System.err.println("Ignoring Negative Parser Test that does not report an expected error: " + inputURL);
+				logger.warn("Ignoring Negative Parser Test that does not report an expected error: " + inputURL);
 			} else {
 				this.didIgnoreFailure = false;
 				fail("Parser parses erroneous data without reporting errors");

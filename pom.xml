@@ -49,6 +49,7 @@
     <module>core</module>
     <module>tools</module>
     <module>testsuites</module>
+    <module>compliance</module>
     <module>bom</module>
   </modules>
 
@@ -126,9 +127,6 @@
     </profile>
     <profile>
       <id>compliance</id>
-      <modules>
-        <module>compliance</module>
-      </modules>
     </profile>
     <profile>
       <id>assembly</id>
@@ -241,10 +239,19 @@
     <profile>
       <id>doclint-java8-disable</id>
       <activation>
-        <jdk>[1.8,9,)</jdk>
+        <jdk>1.8</jdk>
       </activation>
       <properties>
         <javadoc.opts>-Xdoclint:none</javadoc.opts>
+      </properties>
+    </profile>
+    <profile>
+      <id>doclint-java9-disable</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
+      <properties>
+        <javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
       </properties>
     </profile>
   </profiles>
@@ -511,11 +518,6 @@
         <version>${slf4j.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.slf4j</groupId>
-        <artifactId>slf4j-simple</artifactId>
-        <version>${slf4j.version}</version>
-      </dependency>
-      <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-core</artifactId>
         <version>${logback.version}</version>
@@ -543,6 +545,12 @@
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
         <version>2.23.4</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.github.tomakehurst</groupId>
+        <artifactId>wiremock-jre8</artifactId>
+        <version>2.23.2</version>
         <scope>test</scope>
       </dependency>
       <dependency>

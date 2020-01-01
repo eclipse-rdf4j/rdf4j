@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -17,6 +18,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 public class Main {
+
+	{
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder().include("")

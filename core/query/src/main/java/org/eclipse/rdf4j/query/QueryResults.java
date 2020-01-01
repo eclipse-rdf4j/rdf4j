@@ -71,8 +71,9 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
-	 * Returns a single element from the query result. The QueryResult is automatically closed by this method.
+	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
 	 * 
+	 * @param result
 	 * @return a single query result element.
 	 * @throws QueryEvaluationException
 	 */
@@ -89,8 +90,9 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
-	 * Returns a single element from the query result. The QueryResult is automatically closed by this method.
+	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
 	 * 
+	 * @param result
 	 * @return a single query result element.
 	 * @throws QueryEvaluationException
 	 */
@@ -191,8 +193,22 @@ public class QueryResults extends Iterations {
 	 */
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
 			throws UnsupportedRDFormatException {
-		RDFParser parser = Rio.createParser(format);
+		return parseGraphBackground(in, baseURI, Rio.createParser(format));
+	}
 
+	/**
+	 * Parses an RDF document and returns it as a GraphQueryResult object, with parsing done on a separate thread in the
+	 * background.<br>
+	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the resulting
+	 * GraphQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
+	 * 
+	 * @param in      The {@link InputStream} containing the RDF document.
+	 * @param baseURI The base URI for the RDF document.
+	 * @param parser  The {@link RDFParser}.
+	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
+	 */
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser) {
+		RDFFormat format = parser.getRDFFormat();
 		BackgroundGraphResult result = new BackgroundGraphResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
 				parser, in, format.getCharset(), baseURI);
 		boolean allGood = false;
@@ -264,13 +280,14 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
-	 * Compares two tuple query results and returns {@code true} if they are equal. Tuple query results are equal if
-	 * they contain the same set of {@link BindingSet}s and have the same headers. Blank nodes identifiers are not
-	 * relevant for equality, they are matched by trying to find compatible mappings between BindingSets. Note that the
-	 * method consumes both query results fully.
+	 * Compares two tuple query results and returns {@code true} if they are equal.Tuple query results are equal if they
+	 * contain the same set of {@link BindingSet}s and have the same headers. Blank nodes identifiers are not relevant
+	 * for equality, they are matched by trying to find compatible mappings between BindingSets. Note that the method
+	 * consumes both query results fully.
 	 * 
 	 * @param tqr1 the first {@link TupleQueryResult} to compare.
 	 * @param tqr2 the second {@link TupleQueryResult} to compare.
+	 * @return true if equal
 	 * @throws QueryEvaluationException
 	 */
 	public static boolean equals(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
@@ -303,7 +320,7 @@ public class QueryResults extends Iterations {
 	 * 
 	 * @param result1 the first query result to compare
 	 * @param result2 the second query result to compare.
-	 * @return {@code true} iff the supplied graph query results are isomorphic graphs, {@code false} otherwise.
+	 * @return {@code true} if the supplied graph query results are isomorphic graphs, {@code false} otherwise.
 	 * @throws QueryEvaluationException
 	 * @see {@link Models#isomorphic(Iterable, Iterable)}
 	 */
@@ -458,8 +475,12 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
-	 * Check whether two {@link BindingSet}s are compatible. Two binding sets are compatible if they have equal values
+	 * Check whether two {@link BindingSet}s are compatible.Two binding sets are compatible if they have equal values
 	 * for each binding name that occurs in both binding sets.
+	 * 
+	 * @param bs1
+	 * @param bs2
+	 * @return true if compatible
 	 */
 	public static boolean bindingSetsCompatible(BindingSet bs1, BindingSet bs2) {
 		Set<String> sharedBindings = new HashSet<>(bs1.getBindingNames());

@@ -23,7 +23,8 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * An extension of {@link SailConcurrencyTest} for testing the class {@link NativeStore}.
+ * An extension of {@link SailConcurrencyTest} for testing the class
+ * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
 public class ElasticsearchStoreInterruptTest extends SailInterruptTest {
 

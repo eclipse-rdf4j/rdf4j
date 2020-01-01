@@ -34,6 +34,9 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.github.jsonldjava.core.DocumentLoader;
+
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -41,7 +44,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
  * @author Peter Ansell
  */
 public class JSONLDParserCustomTest {
-
 	/**
 	 * Backslash escaped "h" in "http"
 	 */
@@ -92,6 +94,12 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String STRICT_DUPLICATE_DETECTION_TEST_STRING = "[{\"@context\": {}, \"@context\": {}, \"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
+	/**
+	 * Used for custom document loader
+	 */
+	private static final String LOADER_CONTEXT = "{ \"@context\": {\"prop\": \"http://example.com/prop1\"} }";
+	private static final String LOADER_JSONLD = "{ \"@context\": \"http://example.com/context.jsonld\", \"@id\": \"http://example.com/Subj1\", \"prop\": \"Property\" }";
+
 	private RDFParser parser;
 
 	@Rule
@@ -101,22 +109,15 @@ public class JSONLDParserCustomTest {
 
 	private Model model;
 
-	private final IRI testSubjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Subj1");
+	private final SimpleValueFactory F = SimpleValueFactory.getInstance();
 
-	private final IRI testPredicate = SimpleValueFactory.getInstance().createIRI("http://example.com/prop1");
+	private final IRI testSubjectIRI = F.createIRI("http://example.com/Subj1");
+	private final IRI testPredicate = F.createIRI("http://example.com/prop1");
+	private final IRI testObjectIRI = F.createIRI("http://example.com/Obj1");
 
-	private final IRI testObjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
-
-	private final Literal testObjectLiteralNotANumber = SimpleValueFactory.getInstance()
-			.createLiteral("NaN",
-					XMLSchema.DOUBLE);
-
-	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance()
-			.createLiteral("42",
-					XMLSchema.INTEGER);
-
-	private final Literal testObjectLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
-			.createLiteral("42\u0009", XMLSchema.STRING);
+	private final Literal testObjectLiteralNotANumber = F.createLiteral("NaN", XMLSchema.DOUBLE);
+	private final Literal testObjectLiteralNumber = F.createLiteral("42", XMLSchema.INTEGER);
+	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XMLSchema.STRING);
 
 	@Before
 	public void setUp() throws Exception {
@@ -124,7 +125,7 @@ public class JSONLDParserCustomTest {
 		errors = new ParseErrorCollector();
 		model = new LinkedHashModel();
 		parser.setParseErrorListener(errors);
-		parser.setRDFHandler(new ContextStatementCollector(model, SimpleValueFactory.getInstance()));
+		parser.setRDFHandler(new ContextStatementCollector(model, F));
 	}
 
 	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject) throws Exception {
@@ -139,8 +140,8 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		// 11 supported in JSONLDParser + 12 from AbstractRDFParser
-		assertEquals(23, parser.getSupportedSettings().size());
+		// 12 supported in JSONLDParser + 12 from AbstractRDFParser
+		assertEquals(24, parser.getSupportedSettings().size());
 	}
 
 	@Test
@@ -417,4 +418,13 @@ public class JSONLDParserCustomTest {
 		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
+	@Test
+	public void testDocumentLoader() throws Exception {
+		DocumentLoader loader = new DocumentLoader();
+		loader.addInjectedDoc("http://example.com/context.jsonld", LOADER_CONTEXT);
+
+		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, loader);
+		parser.parse(new StringReader(LOADER_JSONLD), "");
+		assertTrue(model.predicates().contains(testPredicate));
+	}
 }

@@ -17,9 +17,13 @@
 	<description>Test suites for Eclipse RDF4J modules</description>
 
 	<modules>
+		<module>model</module>
 		<module>rio</module>
+		<module>queryresultio</module>
 		<module>sparql</module>
 		<module>serql</module>
+		<module>repository</module>
+		<module>sail</module>
 		<module>shacl</module>
 		<module>lucene</module>
 		<module>geosparql</module>

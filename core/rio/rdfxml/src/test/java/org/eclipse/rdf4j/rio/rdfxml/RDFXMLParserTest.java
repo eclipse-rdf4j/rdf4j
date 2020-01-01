@@ -113,32 +113,12 @@ public class RDFXMLParserTest {
 
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
-		// Temporarily override System.err to verify that nothing is being
-		// printed to it for this test
-		PrintStream oldErr = System.err;
-		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
-		System.setErr(new PrintStream(tempErr));
-		PrintStream oldOut = System.out;
-		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
-		System.setOut(new PrintStream(tempOut));
-
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf");) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external general entity");
-		} finally {
-			// Reset System Error output to ensure that we don't interfere with
-			// other tests
-			System.setErr(oldErr);
-			// Reset System Out output to ensure that we don't interfere with
-			// other tests
-			System.setOut(oldOut);
 		}
-		// Verify nothing was printed to System.err during test
-		assertEquals(0, tempErr.size());
-		// Verify nothing was printed to System.out during test
-		assertEquals(0, tempOut.size());
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(0, el.getFatalErrors().size());
@@ -147,21 +127,13 @@ public class RDFXMLParserTest {
 
 		Statement st = sc.getStatements().iterator().next();
 
-		// literal value should be empty string as it should not have processed the external entity
+		// literal value should be empty string as it should not have processed the
+		// external entity
 		assertThat(st.getObject().stringValue()).isEqualTo("");
 	}
 
 	@Test
 	public void testFatalErrorDoctypeDecl() throws Exception {
-		// Temporarily override System.err to verify that nothing is being
-		// printed to it for this test
-		PrintStream oldErr = System.err;
-		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
-		System.setErr(new PrintStream(tempErr));
-		PrintStream oldOut = System.out;
-		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
-		System.setOut(new PrintStream(tempOut));
-
 		// configure parser to disallow doctype declarations
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, true);
 
@@ -174,19 +146,7 @@ public class RDFXMLParserTest {
 			assertEquals(
 					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
 					e.getMessage());
-		} finally {
-			// Reset System Error output to ensure that we don't interfere with
-			// other tests
-			System.setErr(oldErr);
-			// Reset System Out output to ensure that we don't interfere with
-			// other tests
-			System.setOut(oldOut);
 		}
-
-		// Verify nothing was printed to System.err during test
-		assertEquals(0, tempErr.size());
-		// Verify nothing was printed to System.out during test
-		assertEquals(0, tempOut.size());
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(1, el.getFatalErrors().size());
@@ -197,15 +157,6 @@ public class RDFXMLParserTest {
 
 	@Test
 	public void testIgnoreExternalParamEntity() throws Exception {
-		// Temporarily override System.err to verify that nothing is being
-		// printed to it for this test
-		PrintStream oldErr = System.err;
-		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
-		System.setErr(new PrintStream(tempErr));
-		PrintStream oldOut = System.out;
-		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
-		System.setOut(new PrintStream(tempOut));
-
 		// configure parser to allow doctype declarations
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
@@ -214,18 +165,7 @@ public class RDFXMLParserTest {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external parameter entity");
-		} finally {
-			// Reset System Error output to ensure that we don't interfere with
-			// other tests
-			System.setErr(oldErr);
-			// Reset System Out output to ensure that we don't interfere with
-			// other tests
-			System.setOut(oldOut);
 		}
-		// Verify nothing was printed to System.err during test
-		assertEquals(0, tempErr.size());
-		// Verify nothing was printed to System.out during test
-		assertEquals(0, tempOut.size());
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(0, el.getFatalErrors().size());
@@ -245,31 +185,12 @@ public class RDFXMLParserTest {
 
 	@Test
 	public void testFatalErrorPrologContent() throws Exception {
-		// Temporarily override System.err to verify that nothing is being
-		// printed to it for this test
-		PrintStream oldErr = System.err;
-		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
-		System.setErr(new PrintStream(tempErr));
-		PrintStream oldOut = System.out;
-		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
-		System.setOut(new PrintStream(tempOut));
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/not-an-rdfxml-file.rdf");) {
 			parser.parse(in, "");
 		} catch (RDFParseException e) {
 			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
-		} finally {
-			// Reset System Error output to ensure that we don't interfere with
-			// other tests
-			System.setErr(oldErr);
-			// Reset System Out output to ensure that we don't interfere with
-			// other tests
-			System.setOut(oldOut);
 		}
-		// Verify nothing was printed to System.err during test
-		assertEquals(0, tempErr.size());
-		// Verify nothing was printed to System.out during test
-		assertEquals(0, tempOut.size());
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(1, el.getFatalErrors().size());

@@ -15,7 +15,7 @@ public interface SearchQueryEvaluator {
 	QueryModelNode getParentQueryModelNode();
 
 	/**
-	 * @param bsa if null or empty then there're no results for the query
+	 * @param bsa binding sets, pass null or empty when there are no results for the query
 	 */
 	void replaceQueryPatternsWithResults(final BindingSetAssignment bsa);
 

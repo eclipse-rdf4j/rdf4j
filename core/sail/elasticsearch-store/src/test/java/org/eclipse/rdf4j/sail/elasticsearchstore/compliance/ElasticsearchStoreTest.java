@@ -23,7 +23,8 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * An extension of RDFStoreTest for testing the class <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
+ * An extension of RDFStoreTest for testing the class
+ * <tt>org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore</tt>.
  */
 public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
 

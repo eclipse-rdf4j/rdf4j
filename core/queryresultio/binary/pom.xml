@@ -34,23 +34,10 @@
 
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryresultio-api</artifactId>
+			<artifactId>rdf4j-queryresultio-testsuite</artifactId>
 			<version>${project.version}</version>
-			<classifier>tests</classifier>
-			<type>test-jar</type>
-			<scope>test</scope>
-		</dependency>
-		
-		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
 			<scope>test</scope>
 		</dependency>
 
-		<dependency>
-			<groupId>ch.qos.logback</groupId>
-			<artifactId>logback-classic</artifactId>
-			<scope>test</scope>
-		</dependency>
 	</dependencies>
 </project>
