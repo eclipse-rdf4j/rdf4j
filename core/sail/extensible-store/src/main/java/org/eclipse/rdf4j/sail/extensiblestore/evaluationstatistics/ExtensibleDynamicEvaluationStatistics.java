@@ -20,29 +20,29 @@ import java.util.stream.Stream;
 public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 
-	HashFunction hashFunction = Hashing.murmur3_128();
+	private final HashFunction hashFunction = Hashing.murmur3_128();
 
-	HyperLogLogCollector size = HyperLogLogCollector.makeLatestCollector();
+	private final HyperLogLogCollector size = HyperLogLogCollector.makeLatestCollector();
 
-	HyperLogLogCollector[] subjectIndex = new HyperLogLogCollector[1024];
-	HyperLogLogCollector[] predicateIndex = new HyperLogLogCollector[1024];
-	HyperLogLogCollector[] objectIndex = new HyperLogLogCollector[1024];
-	HyperLogLogCollector[] contextIndex = new HyperLogLogCollector[1024];
-	HyperLogLogCollector defaultContext = HyperLogLogCollector.makeLatestCollector();
+	private final HyperLogLogCollector[] subjectIndex = new HyperLogLogCollector[1024];
+	private final HyperLogLogCollector[] predicateIndex = new HyperLogLogCollector[1024];
+	private final HyperLogLogCollector[] objectIndex = new HyperLogLogCollector[1024];
+	private final HyperLogLogCollector[] contextIndex = new HyperLogLogCollector[1024];
+	private final HyperLogLogCollector defaultContext = HyperLogLogCollector.makeLatestCollector();
 
-	HyperLogLogCollector[][] subjectPredicateIndex = new HyperLogLogCollector[128][128];
-	HyperLogLogCollector[][] predicateObjectIndex = new HyperLogLogCollector[128][128];
+	private final HyperLogLogCollector[][] subjectPredicateIndex = new HyperLogLogCollector[64][64];
+	private final HyperLogLogCollector[][] predicateObjectIndex = new HyperLogLogCollector[64][64];
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
 
-		Stream.of(subjectIndex, predicateIndex, objectIndex, contextIndex).parallel().forEach(index -> {
+		Stream.of(subjectIndex, predicateIndex, objectIndex, contextIndex).forEach(index -> {
 			for (int i = 0; i < index.length; i++) {
 				index[i] = HyperLogLogCollector.makeLatestCollector();
 			}
 		});
 
-		Stream.of(subjectPredicateIndex, predicateObjectIndex).parallel().forEach(index -> {
+		Stream.of(subjectPredicateIndex, predicateObjectIndex).forEach(index -> {
 			for (int i = 0; i < index.length; i++) {
 				for (int j = 0; j < index[i].length; j++) {
 					index[i][j] = HyperLogLogCollector.makeLatestCollector();

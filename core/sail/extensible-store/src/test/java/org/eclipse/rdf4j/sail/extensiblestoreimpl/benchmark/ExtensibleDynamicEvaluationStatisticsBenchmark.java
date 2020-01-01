@@ -70,7 +70,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Benchmark
-	public void clearAndAddLargeFile() throws IOException {
+	public void addStatements() throws IOException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 

@@ -12,6 +12,7 @@ import com.google.common.hash.Hashing;
 import org.apache.commons.io.IOUtils;
 import org.apache.druid.hll.HyperLogLogCollector;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -84,10 +85,11 @@ public class EvaluationStatisticsTest {
 
 			TupleQuery tupleQuery = connection.prepareTupleQuery(getQuery("evaluation-statistics/query1.rq"));
 			System.out.println(tupleQuery.toString());
-			IteratingTupleQueryResult evaluate = (IteratingTupleQueryResult) tupleQuery.evaluate();
-			System.out.println(evaluate.toString());
-			evaluate.hasNext();
-			evaluate.close();
+			try (IteratingTupleQueryResult evaluate = (IteratingTupleQueryResult) tupleQuery.evaluate()) {
+				System.out.println(evaluate.toString());
+				long count = Iterations.stream(evaluate).count();
+				System.out.println(count);
+			}
 
 		}
 

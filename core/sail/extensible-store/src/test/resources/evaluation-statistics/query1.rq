@@ -17,6 +17,7 @@ select * where {
         ?b bsbm:productFeature ?a.
 
         ?a rdf:type ?type;
+            bsbm:deliveryDays 5;
             rdfs:label "fumaroles puled".
 
 }
