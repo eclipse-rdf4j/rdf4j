@@ -8,14 +8,10 @@
 
 package org.eclipse.rdf4j.sail.extensiblestoreimpl.benchmark;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -26,7 +22,6 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
 import java.io.IOException;
@@ -70,12 +65,21 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Benchmark
-	public void addStatements() throws IOException {
+	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 
+		return extensibleDynamicEvaluationStatistics;
+	}
+
+	@Benchmark
+	public ExtensibleDynamicEvaluationStatistics instantiate() throws IOException {
+		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
+				null);
+
+		return extensibleDynamicEvaluationStatistics;
 	}
 
 }

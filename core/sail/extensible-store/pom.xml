@@ -34,7 +34,6 @@
             <artifactId>druid-hll</artifactId>
             <version>0.16.1-incubating</version>
             <exclusions>
-
                 <exclusion>
                     <artifactId>joda-time</artifactId>
                     <groupId>joda-time</groupId>
