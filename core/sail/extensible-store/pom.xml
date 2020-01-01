@@ -33,6 +33,29 @@
             <groupId>org.apache.druid</groupId>
             <artifactId>druid-hll</artifactId>
             <version>0.16.1-incubating</version>
+            <exclusions>
+
+                <exclusion>
+                    <artifactId>joda-time</artifactId>
+                    <groupId>joda-time</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>netty-common</artifactId>
+                    <groupId>io.netty</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>netty-codec-http</artifactId>
+                    <groupId>io.netty</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>netty-buffer</artifactId>
+                    <groupId>io.netty</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>async-http-client</artifactId>
+                    <groupId>org.asynchttpclient</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 
