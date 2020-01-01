@@ -11,8 +11,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -21,6 +19,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -133,17 +132,14 @@ class FileIO {
 	}
 
 	private void write(SailDataset explicit, SailDataset inferred, File dataFile) throws IOException, SailException {
-
-		try (OutputStream out = new FileOutputStream(dataFile);) {
+		try (OutputStream out = Files.newOutputStream(dataFile.toPath())) {
 			// Write header
 			out.write(MAGIC_NUMBER);
 			out.write(BMSF_VERSION);
 			out.flush();
 			// The rest of the data is GZIP-compressed
 			try (DataOutputStream dataOut = new DataOutputStream(new GZIPOutputStream(out));) {
-
 				writeNamespaces(explicit, dataOut);
-
 				writeStatements(explicit, inferred, dataOut);
 
 				dataOut.writeByte(EOF_MARKER);
@@ -153,7 +149,7 @@ class FileIO {
 
 	public synchronized void read(File dataFile, SailSink explicit, SailSink inferred)
 			throws IOException, SailException {
-		try (InputStream in = new FileInputStream(dataFile);) {
+		try (InputStream in = Files.newInputStream(dataFile.toPath())) {
 			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
 				throw new IOException("File is not a binary MemoryStore file");
