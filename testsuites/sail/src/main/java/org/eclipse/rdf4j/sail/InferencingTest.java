@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -105,10 +106,10 @@ public abstract class InferencingTest {
 			}
 
 			File dumpFile = dumpStatements(name, diff);
-			fail("Incomplete entailment, diff dumped to file " + dumpFile);
+			Assert.fail("Incomplete entailment, diff dumped to file " + dumpFile);
 		} else if (!isPositiveTest && outputEntailed) {
 			File dumpFile = dumpStatements(name, expectedStatements);
-			fail("Erroneous entailment, unexpected statements dumped to file " + dumpFile);
+			Assert.fail("Erroneous entailment, unexpected statements dumped to file " + dumpFile);
 		}
 	}
 

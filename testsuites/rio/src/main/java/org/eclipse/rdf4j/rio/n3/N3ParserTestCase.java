@@ -15,20 +15,20 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -56,48 +56,36 @@ public abstract class N3ParserTestCase {
 		TestSuite suite = new TestSuite(N3ParserTestCase.class.getName());
 
 		// Add the manifest to a repository and query it
-		Repository repository = new SailRepository(new MemoryStore());
-		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-
 		URL url = url(MANIFEST_URL);
-		con.add(url, base(MANIFEST_URL), RDFFormat.TURTLE);
 
-		// Add all positive parser tests to the test suite
-		String query = "SELECT testURI, inputURL, outputURL " + "FROM {testURI} rdf:type {n3test:PositiveParserTest}; "
-				+ "               n3test:inputDocument {inputURL}; "
-				+ "               n3test:outputDocument {outputURL} "
-				+ "USING NAMESPACE n3test = <http://www.w3.org/2004/11/n3test#>";
+		ValueFactory f = SimpleValueFactory.getInstance();
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String testURI = bindingSet.getValue("testURI").toString();
-			String inputURL = bindingSet.getValue("inputURL").toString();
-			String outputURL = bindingSet.getValue("outputURL").toString();
+		String n3test = "http://www.w3.org/2004/11/n3test#";
 
-			suite.addTest(new PositiveParserTest(testURI, inputURL, outputURL));
+		IRI POSITIVE_PARSER_TEST = f.createIRI(n3test, "PositiveParserTest");
+		IRI NEGATIVE_PARSER_TEST = f.createIRI(n3test, "NegativeParserTest");
+
+		IRI INPUT_DOCUMENT = f.createIRI(n3test, "inputDocument");
+		IRI OUTPUT_DOCUMENT = f.createIRI(n3test, "outputDocument");
+
+		try (InputStream in = url.openStream()) {
+			Model manifest = Rio.parse(in, base(MANIFEST_URL), RDFFormat.TURTLE);
+
+			// add all positive parser tests
+			Set<Resource> positiveTests = manifest.filter(null, RDF.TYPE, POSITIVE_PARSER_TEST).subjects();
+			for (Resource s : positiveTests) {
+				String inputURL = Models.getProperty(manifest, s, INPUT_DOCUMENT).toString();
+				String outputURL = Models.getProperty(manifest, s, OUTPUT_DOCUMENT).toString();
+				suite.addTest(new PositiveParserTest(s.toString(), inputURL, outputURL));
+			}
+
+			// add all negative parser tests
+			Set<Resource> negativeTests = manifest.filter(null, RDF.TYPE, NEGATIVE_PARSER_TEST).subjects();
+			for (Resource s : negativeTests) {
+				String inputURL = Models.getProperty(manifest, s, INPUT_DOCUMENT).toString();
+				suite.addTest(new NegativeParserTest(s.toString(), inputURL));
+			}
 		}
-
-		queryResult.close();
-
-		// Add all negative parser tests to the test suite
-		query = "SELECT testURI, inputURL " + "FROM {testURI} rdf:type {n3test:NegativeParserTest}; "
-				+ "               n3test:inputDocument {inputURL} "
-				+ "USING NAMESPACE n3test = <http://www.w3.org/2004/11/n3test#>";
-
-		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String testURI = bindingSet.getValue("testURI").toString();
-			String inputURL = bindingSet.getValue("inputURL").toString();
-
-			suite.addTest(new NegativeParserTest(testURI, inputURL));
-		}
-		queryResult.close();
-		con.close();
-		repository.shutDown();
 
 		return suite;
 	}

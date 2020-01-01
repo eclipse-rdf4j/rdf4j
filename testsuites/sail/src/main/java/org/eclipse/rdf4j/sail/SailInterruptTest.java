@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import static org.junit.Assert.*;
-
 import java.util.Random;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -16,6 +14,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -63,7 +62,7 @@ public abstract class SailInterruptTest {
 			con.commit();
 		} catch (Exception e) {
 			con.rollback();
-			fail(e.getMessage());
+			Assert.fail(e.getMessage());
 		} finally {
 			con.close();
 		}

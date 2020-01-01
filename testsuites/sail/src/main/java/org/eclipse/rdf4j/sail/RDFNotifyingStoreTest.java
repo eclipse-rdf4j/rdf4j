@@ -7,10 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import static org.junit.Assert.*;
-
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.junit.Assert;
 import org.junit.Test;
 
 /**
@@ -66,31 +65,31 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		con.removeStatements(painting, RDF.TYPE, RDFS.CLASS);
 		con.commit();
 
-		assertEquals("Repository should contain 4 statements in total", 4, countAllElements());
+		Assert.assertEquals("Repository should contain 4 statements in total", 4, countAllElements());
 
-		assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
+		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
 
-		assertEquals("Statement (Painting, type, Class) should no longer be in the repository", 0,
+		Assert.assertEquals("Statement (Painting, type, Class) should no longer be in the repository", 0,
 				countQueryResults("select 1 from {ex:Painting} rdf:type {rdfs:Class}"));
 
 		con.begin();
 		con.removeStatements(null, null, null, context1);
 		con.commit();
 
-		assertEquals("Repository should contain 1 statement in total", 1, countAllElements());
+		Assert.assertEquals("Repository should contain 1 statement in total", 1, countAllElements());
 
-		assertEquals("Named context should be empty", 0, countContext1Elements());
+		Assert.assertEquals("Named context should be empty", 0, countContext1Elements());
 
 		con.begin();
 		con.clear();
 		con.commit();
 
-		assertEquals("Repository should no longer contain any statements", 0, countAllElements());
+		Assert.assertEquals("Repository should no longer contain any statements", 0, countAllElements());
 
 		// test if event listener works properly.
-		assertEquals("There should have been 1 event in which statements were added", 1, addEventCount);
+		Assert.assertEquals("There should have been 1 event in which statements were added", 1, addEventCount);
 
-		assertEquals("There should have been 3 events in which statements were removed", 3, removeEventCount);
+		Assert.assertEquals("There should have been 3 events in which statements were removed", 3, removeEventCount);
 	}
 
 	@Override
