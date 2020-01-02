@@ -181,19 +181,19 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 		/*
 		 * byte[] statementHash = hashFunction.hashString(statement.toString(), StandardCharsets.UTF_8).asBytes();
-		 * 
+		 *
 		 * size.add(statementHash); int subjectHash = statement.getSubject().hashCode(); int predicateHash =
 		 * statement.getPredicate().hashCode(); int objectHash = statement.getObject().hashCode();
-		 * 
+		 *
 		 * indexOneValue(statementHash, subjectIndex, subjectHash); indexOneValue(statementHash, predicateIndex,
 		 * predicateHash); indexOneValue(statementHash, objectIndex, objectHash);
-		 * 
+		 *
 		 * indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
 		 * indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
-		 * 
+		 *
 		 * if (statement.getContext() == null) { defaultContext.add(statementHash); } else {
 		 * indexOneValue(statementHash, contextIndex, statement.getContext().hashCode()); }
-		 * 
+		 *
 		 */
 
 		// logger.info("added: {} : {} ", statement, inferred ? "INFERRED" : "REAL");
@@ -327,7 +327,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	public void waitForQueue() throws InterruptedException {
-		while (!queue.isEmpty()) {
+		while (queueThread != null) {
 			Thread.yield();
 			if (Thread.currentThread().isInterrupted()) {
 				throw new InterruptedException();

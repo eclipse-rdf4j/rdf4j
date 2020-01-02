@@ -38,13 +38,11 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms64M", "-Xmx64M" })
+@Fork(value = 1, jvmArgs = { "-Xms16M", "-Xmx16M" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class ExtensibleDynamicEvaluationStatisticsBenchmark {
-
-	Model parse;
+public class ExtensibleDynamicEvaluationStatisticsLowMemBenchmark {
 
 	@Setup(Level.Iteration)
 	public void beforeClassIteration() throws IOException, InterruptedException {
@@ -56,8 +54,14 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 
 	}
 
-	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	private static InputStream getResourceAsStream(String name) {
+		return ExtensibleDynamicEvaluationStatisticsLowMemBenchmark.class.getClassLoader().getResourceAsStream(name);
+	}
+
+	@Benchmark
+	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
+		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
+				null);
 
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(new RDFHandler() {
@@ -78,7 +82,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 
 			@Override
 			public void handleStatement(Statement st) throws RDFHandlerException {
-
+				extensibleDynamicEvaluationStatistics.add(st, false);
 			}
 
 			@Override
@@ -87,32 +91,9 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 			}
 		});
 
-		parse = Rio.parse(getResourceAsStream("bsbm-100.ttl"), "", RDFFormat.TURTLE);
-		System.gc();
-
-	}
-
-	private static InputStream getResourceAsStream(String name) {
-		return ExtensibleDynamicEvaluationStatisticsBenchmark.class.getClassLoader().getResourceAsStream(name);
-	}
-
-	@Benchmark
-	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
-		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-				null);
-
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		parser.parse(getResourceAsStream("bsbm-100.ttl"), "");
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
-
-		return extensibleDynamicEvaluationStatistics;
-	}
-
-	@Benchmark
-	public ExtensibleDynamicEvaluationStatistics instantiate() throws IOException {
-		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-				null);
-
 		return extensibleDynamicEvaluationStatistics;
 	}
 
