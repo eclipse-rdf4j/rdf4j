@@ -65,11 +65,13 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	}
 
 	@Benchmark
-	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException {
+	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+
+		extensibleDynamicEvaluationStatistics.waitForQueue();
 
 		return extensibleDynamicEvaluationStatistics;
 	}

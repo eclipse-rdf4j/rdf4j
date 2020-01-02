@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +93,11 @@ public class EvaluationStatisticsTest {
 			}
 
 		}
+
+		String distribution = ((ExtensibleDynamicEvaluationStatistics) extensibleStoreImplForTests.getEvalStats())
+				.getDistribution();
+
+		System.out.println(distribution);
 
 		sailRepository.shutDown();
 	}

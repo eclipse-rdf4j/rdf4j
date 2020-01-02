@@ -52,7 +52,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleStore.class);
 
-	private ExtensibleSailStore sailStore;
+	protected ExtensibleSailStore sailStore;
 
 	protected N namespaceStore;
 
