@@ -72,7 +72,7 @@ public class TransactionWriter {
 	/**
 	 * Serializes the supplied operation.
 	 * 
-	 * @param op The operation to serialize
+	 * @param op        The operation to serialize
 	 * @param xmlWriter
 	 * @throws IOException
 	 */
