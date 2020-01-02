@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.http.protocol.transaction;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import javax.xml.bind.DatatypeConverter;
 
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.common.xml.XMLWriter;
@@ -46,6 +48,7 @@ public class TransactionWriter {
 	 * 
 	 * @param txn the operations
 	 * @param out the output stream to write to
+	 * @throws IOException
 	 * @throws IllegalArgumentException when one of the parameters is null
 	 */
 	public void serialize(Iterable<? extends TransactionOperation> txn, OutputStream out) throws IOException {
@@ -69,7 +72,9 @@ public class TransactionWriter {
 	/**
 	 * Serializes the supplied operation.
 	 * 
-	 * @param op The operation to serialize
+	 * @param op        The operation to serialize
+	 * @param xmlWriter
+	 * @throws IOException
 	 */
 	protected void serialize(TransactionOperation op, XMLWriter xmlWriter) throws IOException {
 		if (op instanceof AddStatementOperation) {
@@ -286,7 +291,7 @@ public class TransactionWriter {
 
 			if (!valid) {
 				xmlWriter.setAttribute(TransactionXMLConstants.ENCODING_ATT, "base64");
-				label = javax.xml.bind.DatatypeConverter.printBase64Binary(label.getBytes("UTF-8"));
+				label = DatatypeConverter.printBase64Binary(label.getBytes(StandardCharsets.UTF_8));
 			}
 
 			xmlWriter.textElement(TransactionXMLConstants.LITERAL_TAG, label);
