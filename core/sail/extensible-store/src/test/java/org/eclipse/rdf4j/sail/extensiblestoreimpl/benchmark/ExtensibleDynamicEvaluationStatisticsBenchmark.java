@@ -59,34 +59,6 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
-		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
-		parser.setRDFHandler(new RDFHandler() {
-			@Override
-			public void startRDF() throws RDFHandlerException {
-
-			}
-
-			@Override
-			public void endRDF() throws RDFHandlerException {
-
-			}
-
-			@Override
-			public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
-
-			}
-
-			@Override
-			public void handleStatement(Statement st) throws RDFHandlerException {
-
-			}
-
-			@Override
-			public void handleComment(String comment) throws RDFHandlerException {
-
-			}
-		});
-
 		parse = Rio.parse(getResourceAsStream("bsbm-100.ttl"), "", RDFFormat.TURTLE);
 		System.gc();
 
