@@ -9,6 +9,7 @@
 
 	<name>RDF4J: Federation</name>
 	<description>A federation engine for virtually integrating SPARQL endpoints</description>
+	<packaging>jar</packaging>
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
