@@ -7,41 +7,50 @@
  *******************************************************************************/
 package demos;
 
-import java.io.File;
-
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
+import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
-public class Demo2 {
+public class MonitorRequestsDemo {
 
 	public static void main(String[] args) throws Exception {
 
-		if (System.getProperty("log4j.configuration") == null)
-			System.setProperty("log4j.configuration", "file:local/log4j.properties");
+		FedXConfig config = new FedXConfig().withEnableMonitoring(true).withLogQueries(true);
+		FedXRepository repo = FedXFactory.newFederation()
+				.withSparqlEndpoint("http://dbpedia.org/sparql")
+				.withSparqlEndpoint("https://query.wikidata.org/sparql")
+				.withConfig(config)
+				.create();
 
-		File dataConfig = new File("local/LifeScience-FedX-SPARQL.ttl");
-		Repository repo = FedXFactory.createFederation(dataConfig);
 		repo.init();
 
-		String q = "SELECT ?Drug ?IntDrug ?IntEffect WHERE { "
-				+ "?Drug <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Drug> . "
-				+ "?y <http://www.w3.org/2002/07/owl#sameAs> ?Drug . "
-				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug1> ?y . "
-				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug2> ?IntDrug . "
-				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/text> ?IntEffect . }";
+		String q = "PREFIX wd: <http://www.wikidata.org/entity/> "
+				+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+				+ "SELECT * WHERE { "
+				+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
+				+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
+				+ " ?countrySameAs wdt:P2131 ?gdp ."
+				+ "}";
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);
 			try (TupleQueryResult res = query.evaluate()) {
 
+				int count = 0;
 				while (res.hasNext()) {
-					System.out.println(res.next());
+					res.next();
+					count++;
 				}
+
+				System.out.println("# Done, " + count + " results");
 			}
+
+			MonitoringUtil.printMonitoringInformation(repo.getFederationContext());
 		}
 
 		repo.shutDown();

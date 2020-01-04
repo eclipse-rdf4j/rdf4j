@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.repository;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
 
 /**
  * A RepositoryResult is a result collection of objects (for example {@link org.eclipse.rdf4j.model.Statement} ,
@@ -37,7 +39,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
-public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> {
+public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
 
 	private volatile Iteration<? extends T, RepositoryException> wrappedIter;
 
@@ -123,5 +125,10 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 		} finally {
 			close();
 		}
+	}
+
+	@Override
+	public Iterator<T> iterator() {
+		return new CloseableIterationIterator<T>(this);
 	}
 }
