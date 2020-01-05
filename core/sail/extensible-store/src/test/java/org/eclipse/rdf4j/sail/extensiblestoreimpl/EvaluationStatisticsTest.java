@@ -49,7 +49,6 @@ public class EvaluationStatisticsTest {
 		}
 	}
 
-
 	@Test
 	public void temp() {
 
@@ -95,7 +94,7 @@ public class EvaluationStatisticsTest {
 
 			connection.begin(IsolationLevels.NONE);
 			connection.add(EvaluationStatisticsTest.class.getClassLoader().getResourceAsStream("bsbm-100.ttl"), "",
-				RDFFormat.TURTLE);
+					RDFFormat.TURTLE);
 			connection.commit();
 
 			TupleQuery tupleQuery = connection.prepareTupleQuery(getQuery("evaluation-statistics/query1.rq"));
@@ -109,7 +108,7 @@ public class EvaluationStatisticsTest {
 		}
 
 		String distribution = ((ExtensibleDynamicEvaluationStatistics) extensibleStoreImplForTests.getEvalStats())
-			.getDistribution();
+				.getDistribution();
 
 		System.out.println(distribution);
 
@@ -120,13 +119,10 @@ public class EvaluationStatisticsTest {
 	public void testLazyEvalStopsWhenShutdown() {
 	}
 
-
-
-
 	@Test
 	public void testStaleStats() throws InterruptedException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-			null);
+				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 
@@ -140,12 +136,11 @@ public class EvaluationStatisticsTest {
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 
-
 	}
 
 	private String getQuery(String name) throws IOException {
 		return IOUtils.toString(EvaluationStatisticsTest.class.getClassLoader().getResourceAsStream(name),
-			StandardCharsets.UTF_8);
+				StandardCharsets.UTF_8);
 	}
 
 	private static InputStream getResourceAsStream(String name) {

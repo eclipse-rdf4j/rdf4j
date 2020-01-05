@@ -14,4 +14,9 @@ public abstract class ExtensibleEvaluationStatistics extends EvaluationStatistic
 	@Override
 	abstract protected CardinalityCalculator createCardinalityCalculator();
 
+	/**
+	 *
+	 * @return 1 if stale, 0 if not stale, 0.5 if 50% stale.
+	 */
+	public abstract double staleness();
 }

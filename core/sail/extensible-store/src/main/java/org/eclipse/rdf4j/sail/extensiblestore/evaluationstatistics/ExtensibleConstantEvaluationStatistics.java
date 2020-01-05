@@ -12,6 +12,11 @@ public class ExtensibleConstantEvaluationStatistics extends ExtensibleEvaluation
 		return cardinalityCalculator;
 	}
 
+	@Override
+	public double staleness() {
+		return 0;
+	}
+
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 	};
 

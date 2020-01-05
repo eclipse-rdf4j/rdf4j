@@ -85,6 +85,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		return cardinalityCalculator;
 	}
 
+	@Override
+	public double staleness() {
+		return 0;
+	}
+
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 
 		@Override
@@ -231,6 +236,14 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 							}
 
 						}
+
+						if (queue.isEmpty()) {
+							try {
+								Thread.sleep(2);
+							} catch (InterruptedException ignored) {
+
+							}
+						}
 					}
 				} finally {
 					queueThread = null;
@@ -238,6 +251,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 			});
 
+			queueThread.setDaemon(true);
 			queueThread.start();
 
 		}
@@ -328,7 +342,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	public void waitForQueue() throws InterruptedException {
 		while (queueThread != null) {
-			Thread.yield();
+			Thread.sleep(2);
 			if (Thread.currentThread().isInterrupted()) {
 				throw new InterruptedException();
 			}
