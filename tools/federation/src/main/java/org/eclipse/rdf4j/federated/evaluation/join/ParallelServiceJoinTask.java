@@ -10,12 +10,14 @@ package org.eclipse.rdf4j.federated.evaluation.join;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 
 /**
  * A task implementation representing the evaluation of a SERVICE which is to be evaluated using block input. See
@@ -40,7 +42,11 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
-		return strategy.evaluateService(expr, bindings);
+
+		// Note: in order two avoid deadlocks we consume the SERVICE result.
+		// This is basically required to avoid processing background tuple
+		// request (i.e. HTTP slots) in the correct order.
+		return new CollectionIteration<>(Iterations.asList(strategy.evaluateService(expr, bindings)));
 	}
 
 	@Override

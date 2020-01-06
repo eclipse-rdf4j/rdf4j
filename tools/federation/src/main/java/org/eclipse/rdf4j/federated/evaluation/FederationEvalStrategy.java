@@ -71,7 +71,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
@@ -85,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -516,8 +519,23 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
 			final List<BindingSet> bindings) throws QueryEvaluationException {
 
-		return new ServiceJoinIterator(new CollectionIteration<>(bindings),
-				service.getService(), EmptyBindingSet.getInstance(), this);
+		Var serviceRef = service.getService().getServiceRef();
+		String serviceUri;
+		if (serviceRef.hasValue()) {
+			serviceUri = serviceRef.getValue().stringValue();
+		} else {
+			return new ServiceJoinIterator(new CollectionIteration<>(bindings),
+					service.getService(), EmptyBindingSet.getInstance(), this);
+		}
+
+		// use vectored evaluation
+		FederatedService fs = getService(serviceUri);
+		if (fs instanceof RepositoryFederatedService) {
+			// set the bound join block size to 0 => leave block size up to FedX engine
+			((RepositoryFederatedService) fs).setBoundJoinBlockSize(0);
+		}
+		return fs.evaluate(service.getService(), new CollectionIteration<>(bindings),
+				service.getService().getBaseURI());
 	}
 
 	@Override
