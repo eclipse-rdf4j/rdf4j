@@ -157,12 +157,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			members = fed.getMembers();
 		}
 
-		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null)
-			return new SingleSourceQuery(expr, members.get(0), queryInfo);
-
 		// Clone the tuple expression to allow for more aggressive optimizations
 		TupleExpr query = new QueryRoot(expr.clone());
+
+		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
+
+		// collect information and perform generic optimizations
+		info.optimize(query);
+
+		// if the federation has a single member only, evaluate the entire query there
+		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService())
+			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 
 		Cache cache = federationContext.getCache();
 
@@ -181,11 +186,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		 */
 
 		/* custom optimizers, execute only when needed */
-
-		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
-
-		// collect information and perform generic optimizations
-		info.optimize(query);
 
 		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
