@@ -8,14 +8,21 @@
 package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -23,6 +30,8 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import com.google.common.collect.Sets;
 
 public class ServiceTests extends SPARQLBaseTest {
 
@@ -201,12 +210,126 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		Assertions.assertEquals(1,
 				((TestSparqlFederatedService) serviceResolver
-						.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount);
+						.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount.get());
+	}
+
+	@Test
+	public void test10_serviceBoundJoin() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
+			@Override
+			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
+			}
+		};
+
+		// workaround for test: shutdown and re-initialize in order to set a custom federated service
+		FedXRepository repo = fedxRule.getRepository();
+		repo.shutDown();
+		repo.setFederatedServiceResolver(serviceResolver);
+		repo.init();
+
+		/*
+		 * test select query retrieving all persons from endpoint 1 (SERVICE), endpoint not part of federation =>
+		 * evaluate using externally provided service resolver endpoint1 is reachable as
+		 * http://localhost:18080/repositories/endpoint1 via HTTP
+		 */
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
+				"/tests/data/data4.ttl"));
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
+		fedxRule.removeEndpoint(endpoint1);
+
+		StringBuilder query = new StringBuilder();
+		query.append("SELECT * WHERE { VALUES ?input { ");
+		for (int i = 0; i < 50; i++) {
+			query.append(" \"input").append(i).append("\" ");
+		}
+		query.append(" }");
+		query.append(
+				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+		query.append(" }");
+
+		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
+			List<BindingSet> res = Iterations.asList(tqr);
+			Assertions.assertEquals(50, res.size());
+			Set<Value> expected = Sets.newHashSet();
+			for (int i = 0; i < 50; i++) {
+				expected.add(SimpleValueFactory.getInstance().createLiteral("input" + i + "_processed"));
+			}
+			Assertions.assertEquals(expected, res.stream().map(b -> b.getValue("output")).collect(Collectors.toSet()));
+		}
+
+		// first binding is evaluated using regular service, then we have groups of 4 groups of three bindings and 3
+		// groups with 15
+		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
+				.getService("http://localhost:18080/repositories/endpoint1"));
+		Assertions.assertEquals(1, tfs.serviceRequestCount.get());
+		Assertions.assertEquals(7, tfs.boundJoinRequestCount.get());
+	}
+
+	@Test
+	public void test10_serviceSimpleEvaluation() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		fedxRule.setConfig(c -> c.withEnableServiceAsBoundJoin(false));
+
+		FederatedServiceResolver serviceResolver = new SPARQLServiceResolver() {
+			@Override
+			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
+			}
+		};
+
+		// workaround for test: shutdown and re-initialize in order to set a custom federated service
+		FedXRepository repo = fedxRule.getRepository();
+		repo.shutDown();
+		repo.setFederatedServiceResolver(serviceResolver);
+		repo.init();
+
+		/*
+		 * test select query retrieving all persons from endpoint 1 (SERVICE), endpoint not part of federation =>
+		 * evaluate using externally provided service resolver endpoint1 is reachable as
+		 * http://localhost:18080/repositories/endpoint1 via HTTP
+		 */
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
+				"/tests/data/data4.ttl"));
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
+		fedxRule.removeEndpoint(endpoint1);
+
+		StringBuilder query = new StringBuilder();
+		query.append("SELECT * WHERE { VALUES ?input { ");
+		for (int i = 0; i < 50; i++) {
+			query.append(" \"input").append(i).append("\" ");
+		}
+		query.append(" }");
+		query.append(
+				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+		query.append(" }");
+
+		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
+			List<BindingSet> res = Iterations.asList(tqr);
+			Assertions.assertEquals(50, res.size());
+			Set<Value> expected = Sets.newHashSet();
+			for (int i = 0; i < 50; i++) {
+				expected.add(SimpleValueFactory.getInstance().createLiteral("input" + i + "_processed"));
+			}
+			Assertions.assertEquals(expected, res.stream().map(b -> b.getValue("output")).collect(Collectors.toSet()));
+		}
+
+		// all input bindings are evaluated as simple join
+		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
+				.getService("http://localhost:18080/repositories/endpoint1"));
+		Assertions.assertEquals(50, tfs.serviceRequestCount.get());
+		Assertions.assertEquals(0, tfs.boundJoinRequestCount.get());
 	}
 
 	static class TestSparqlFederatedService extends SPARQLFederatedService {
 
-		long serviceRequestCount = 0;
+		AtomicInteger serviceRequestCount = new AtomicInteger(0);
+		AtomicInteger boundJoinRequestCount = new AtomicInteger(0);
 
 		public TestSparqlFederatedService(String serviceUrl, HttpClientSessionManager client) {
 			super(serviceUrl, client);
@@ -215,8 +338,16 @@ public class ServiceTests extends SPARQLBaseTest {
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
 				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
-			serviceRequestCount++;
+			serviceRequestCount.incrementAndGet();
 			return super.select(service, projectionVars, bindings, baseUri);
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
+				CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+				throws QueryEvaluationException {
+			boundJoinRequestCount.incrementAndGet();
+			return super.evaluate(service, bindings, baseUri);
 		}
 
 	}

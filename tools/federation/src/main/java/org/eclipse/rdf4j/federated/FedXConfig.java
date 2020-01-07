@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
@@ -36,7 +37,7 @@ public class FedXConfig {
 
 	private int enforceMaxQueryTime = 30;
 
-	private boolean enableServiceAsBoundJoin = false;
+	private boolean enableServiceAsBoundJoin = true;
 
 	private boolean enableMonitoring = false;
 
@@ -246,6 +247,18 @@ public class FedXConfig {
 	 */
 	public FedXConfig withLogQueryPlan(boolean flag) {
 		this.isLogQueryPlan = flag;
+		return this;
+	}
+
+	/**
+	 * Whether external SERVICE clauses are evaluated using bound join (i.e. with the VALUES clause). Default
+	 * <i>true</i>
+	 * 
+	 * @param flag
+	 * @return the current config.
+	 */
+	public FedXConfig withEnableServiceAsBoundJoin(boolean flag) {
+		this.enableServiceAsBoundJoin = flag;
 		return this;
 	}
 
