@@ -2,6 +2,9 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -260,6 +263,70 @@ public class RepositoryFederatedServiceIntegrationTest {
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } } } . SERVICE <urn:dummy> { SELECT   * WHERE { ?s ?p ?var }  } }";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1")));
+	}
+
+	@Test
+	public void test9_connectionHandling() throws Exception {
+
+		/*
+		 * The purpose of this test is to simulate concurrent access to the RepositoryFederatedService and thus
+		 * demonstrate correct behavior for the connection handling. Particularly, this test should terminate properly,
+		 * and there should not be any hanging connections waiting for the shutdown.
+		 */
+
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+		List<Value> values = Lists.newArrayList();
+		for (int i = 0; i < 10; i++) {
+			values.add(l("value" + i));
+		}
+		addData(serviceRepo,
+				values.stream()
+						.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
+						.collect(Collectors.toList()));
+
+		ExecutorService executor = Executors.newFixedThreadPool(5);
+		try {
+			for (int i = 0; i < 5; i++) {
+				executor.submit(() -> {
+
+					String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var  } }";
+					assertResultEquals(evaluateQuery(query), "var", values);
+				});
+			}
+
+		} finally {
+			executor.shutdown();
+			executor.awaitTermination(10, TimeUnit.SECONDS);
+		}
+
+	}
+
+	@Test
+	public void test10_consumePartially() throws Exception {
+
+		/*
+		 * The purpose of this test is validate that connections are closed properly, even if a result is consume only
+		 * partially. If it wasn't working we would see a hanging junit testing waiting for connections to close
+		 */
+
+		List<Value> values = Lists.newArrayList();
+		for (int i = 0; i < 10; i++) {
+			values.add(l("value" + i));
+		}
+		addData(serviceRepo,
+				values.stream()
+						.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
+						.collect(Collectors.toList()));
+
+		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var  } }";
+		try (RepositoryConnection conn = localRepo.getConnection()) {
+			try (TupleQueryResult tqr = conn.prepareTupleQuery(query).evaluate()) {
+
+				// consume only two items
+				tqr.next();
+				tqr.next();
+			}
+		}
 	}
 
 	private void addData(Repository repo, Collection<? extends Statement> m) {
