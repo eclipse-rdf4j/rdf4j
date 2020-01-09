@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.GraphToBindingSetConversi
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
@@ -58,7 +59,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, QueryType queryType)
+			String preparedQuery, QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
@@ -68,14 +69,14 @@ public abstract class TripleSourceBase implements TripleSource {
 				monitorRemoteRequest();
 				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery);
 				applyMaxExecutionTimeUpperBound(tQuery);
-				disableInference(tQuery);
+				configureInference(tQuery, queryInfo);
 				resultHolder.set(tQuery.evaluate());
 				return;
 			case CONSTRUCT:
 				monitorRemoteRequest();
 				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery);
 				applyMaxExecutionTimeUpperBound(gQuery);
-				disableInference(gQuery);
+				configureInference(gQuery, queryInfo);
 				resultHolder.set(new GraphToBindingSetConversionIteration(gQuery.evaluate()));
 				return;
 			case ASK:
@@ -84,7 +85,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				try (RepositoryConnection _conn = conn) {
 					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery);
 					applyMaxExecutionTimeUpperBound(bQuery);
-					disableInference(bQuery);
+					configureInference(bQuery, queryInfo);
 					hasResults = bQuery.evaluate();
 				}
 				resultHolder.set(booleanToBindingSetIteration(hasResults));
@@ -97,9 +98,9 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public boolean hasStatements(Resource subj,
-			IRI pred, Value obj, Resource... contexts) throws RepositoryException {
+			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
 		try (RepositoryConnection conn = endpoint.getConnection()) {
-			return conn.hasStatement(subj, pred, obj, false, contexts);
+			return conn.hasStatement(subj, pred, obj, queryInfo.getIncludeInferred(), contexts);
 		}
 	}
 
@@ -112,7 +113,7 @@ public abstract class TripleSourceBase implements TripleSource {
 		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings);
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedAskQuery);
-			disableInference(query);
+			configureInference(query, group.getQueryInfo());
 			applyMaxExecutionTimeUpperBound(query);
 			return query.evaluate();
 		}
@@ -129,14 +130,15 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	/**
-	 * Set includeInference to disabled explicitly.
+	 * Set includeInferred depending on {@link QueryInfo#getIncludeInferred()}
 	 * 
 	 * @param query
+	 * @param querInfo
 	 */
-	protected void disableInference(Query query) {
-		// set includeInferred to false explicitly
+	protected void configureInference(Query query, QueryInfo queryInfo) {
+
 		try {
-			query.setIncludeInferred(false);
+			query.setIncludeInferred(queryInfo.getIncludeInferred());
 		} catch (Exception e) {
 			log.debug("Failed to set include inferred: " + e.getMessage());
 			log.trace("Details:", e);

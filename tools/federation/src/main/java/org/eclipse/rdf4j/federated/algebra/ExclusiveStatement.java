@@ -70,7 +70,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 				} catch (IllegalQueryException e1) {
 					// TODO there might be an issue with filters being evaluated => investigate
 					/* all vars are bound, this must be handled as a check query, can occur in joins */
-					if (t.hasStatements(this, bindings)) {
+					if (t.hasStatements(this, bindings, queryInfo)) {
 						res = new SingleBindingSetIteration(bindings);
 						if (boundFilters != null) {
 							// make sure to insert any values from FILTER expressions that are directly
@@ -82,10 +82,10 @@ public class ExclusiveStatement extends FedXStatementPattern {
 					return new EmptyIteration<>();
 				}
 
-				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr));
+				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr), queryInfo);
 
 			} else {
-				res = t.getStatements(this, bindings, filterExpr);
+				res = t.getStatements(this, bindings, filterExpr, queryInfo);
 			}
 
 			if (boundFilters != null) {

@@ -125,7 +125,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
 					isEvaluated);
 			return tripleSource.getStatements(preparedQuery, bindings,
-					(isEvaluated.get() ? null : group.getFilterExpr()));
+					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {
 			/* no projection vars, e.g. local vars only, can occur in joins */
 			if (tripleSource.hasStatements(group, bindings))
