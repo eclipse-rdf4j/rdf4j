@@ -7,14 +7,14 @@ hide_page_title: "true"
 
 # Tutorials
 
-- <a href="getting-started/">Getting started with Rdf4j</a>
+- <a href="getting-started/">Getting started with RDF4J</a>
 - <a href="maven-eclipse-project/">Starting a new Maven project in Eclipse</a>
 
 # Howtos
 - <a href="custom-sparql-functions/">Creating custom SPARQL functions</a>
 - <a href="sparqlbuilder/">Creating SPARQL queries with the SparqlBuilder</a>
 
-# Programming with Rdf4j
+# Programming with RDF4J
 
 - <a href="programming/setup/">Setting up your development environment</a>
 - <a href="programming/model/">The RDF Model API</a>
@@ -35,16 +35,18 @@ hide_page_title: "true"
 
 # Reference documentation
 
-- <a href="rest-api/">The Rdf4j Server REST API</a>
+- <a href="rest-api/">The RDF4J Server REST API</a>
 - <a href="sail/">The SAIL API (draft)</a>
-- <a href="migration/">Sesame to Rdf4j migration</a>
-- <a href="rdf4j-binary/">Rdf4j Binary RDF Format</a>
+- <a href="migration/">Sesame to RDF4J migration</a>
+- <a href="rdf4j-binary/">RDF4J Binary RDF Format</a>
 
 # Javadoc
 
-- <a href="/javadoc/latest">rdf4j API Javadoc</a>
+- <a href="/javadoc/latest">RDF4J API Javadoc</a>
 - older release: <a href="/javadoc/2.5.4">2.5.4</a>
 
-# Project internal documentation
+# Info for RDF4J Developers
 
-- <a href="developer/">Developer workflow and project management</a>
+- <a href="developer/workflow">Developer workflow</a>
+- <a href="developer/squashing">Squashing commits</a>
+- <a href="developer/releases">Release management</a>
