@@ -13,6 +13,16 @@ For installation and usage instructions of the RDF4J Workbench and Server applic
 
 For installation and usage instructions of the RDF4J Java libaries, see [Programming with RDF4J](https://rdf4j.org/documentation/#programming-with-rdf4j). 
 
+### Building from source
+
+To build the RDF4J project, including onejar and SDK files, from source, run:
+
+     `mvn -Passembly package`
+
+(optionally add the `-Pquick` flag to skip executing tests)
+
+SDK and onejar will be available in `assembly/target`. Individual module jars and wars will be in `target/` in their respective modules. 
+
 ## Keen to contribute?
 
 We welcome contributions! Whether you have a new feature you want to add, or a bug you want to fix, or a bit of documentation you want to improve, it's all very welcome. Have a look in our [issue tracker](https://github.com/eclipse/rdf4j/issues) for any open problems, in particular the ones marked as [good first issue](https://github.com/eclipse/rdf4j/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) or as [help wanted](https://github.com/eclipse/rdf4j/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22). Or feel free to add your own new issue if what you have in mind is not there yet.
@@ -30,7 +40,7 @@ The short version:
 6. **sign off** every commit (using the `-s` flag).
 7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
 8. Use meaningful commit messages and include the issue number in each commit message.
-9. Once your fix is complete, put it up for review by opening a Pull Request against the master branch in the central Github repository.
+9. Once your fix is complete, put it up for review by opening a Pull Request against the master branch in the central Github repository. If you have a lot of commits on your PR, make sure to [squash your commits](https://rdf4j.org/documentation/developer/squashing).
 
 These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md).
