@@ -15,9 +15,9 @@ The following is an overview of the resources that are available from rdf4j serv
     <RDF4J_URL>
        /protocol         : protocol version (GET)
        /repositories     : overview of available repositories (GET)
-       /<REP_ID>         : query evaluation and administration tasks on a repository
+          /<REP_ID>      : query evaluation and administration tasks on a repository
                            (GET/POST/PUT/DELETE)
-           /config       : repository configuration (GET/POST)
+           /config       : repository configuration (GET/POST) 
            /statements   : repository statements (GET/POST/PUT/DELETE)
            /contexts     : context overview (GET)
            /size         : # statements in repository (GET)
@@ -38,6 +38,13 @@ The version of the protocol that the server uses to communicate over HTTP is ava
 Supported methods on this URL are:
 
 - `GET`: Gets the protocol version string, e.g. “1”, “2”, etc.
+
+## Version 10
+
+New in RDF4J release 3.1.0.
+
+- repository configuration / retrieval endpoint at `/repositories/<REP_ID>/config`.
+- modified behavior of PUT on `/repositories/<REP_ID>`.
 
 ## Request examples
 ### Fetch the protocol version
@@ -259,6 +266,8 @@ Response:
     HTTP/1.1 204 NO CONTENT
 
 # Repository configuration
+
+(new in RDF4J 3.1.0) 
 
 The configuration for a specific repositroy with ID `<ID>` is available at: `<RDF4J_URL>/repositories/<ID>/config`.
 
