@@ -218,14 +218,8 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException {
 
-		// the number of bindings sent in a single subquery.
-		// if blockSize is set to 0, the entire input stream is used as block
-		// input
-		// the block size effectively determines the number of remote requests
-		int blockSize = 15; // TODO configurable block size
-
-		if (blockSize > 0) {
-			return new BatchingServiceIteration(bindings, blockSize, service);
+		if (boundJoinBlockSize > 0) {
+			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		} else {
 			// if blocksize is 0 (i.e. disabled) the entire iteration is used as
 			// block

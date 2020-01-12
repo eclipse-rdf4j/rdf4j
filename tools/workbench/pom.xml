@@ -33,6 +33,14 @@
 			<version>${project.version}</version>
 		</dependency>
 		
+		<!-- TODO rather include into rdf4j-storage, however, 
+		requires resolving cyclic dependency on test scope -->
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-tools-federation</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		
 		<dependency>
 			<groupId>javax.servlet</groupId>
 			<artifactId>javax.servlet-api</artifactId>

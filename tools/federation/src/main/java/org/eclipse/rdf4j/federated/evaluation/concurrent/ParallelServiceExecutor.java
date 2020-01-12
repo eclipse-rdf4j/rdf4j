@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -152,7 +154,11 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> performTask()
 				throws Exception {
-			return strategy.evaluate(service.getService(), bindings);
+
+			// Note: in order two avoid deadlocks we consume the SERVICE result.
+			// This is basically required to avoid processing background tuple
+			// request (i.e. HTTP slots) in the correct order.
+			return new CollectionIteration<>(Iterations.asList(strategy.evaluate(service.getService(), bindings)));
 		}
 
 		@Override
