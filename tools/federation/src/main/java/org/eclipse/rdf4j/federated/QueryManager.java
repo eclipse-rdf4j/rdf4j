@@ -270,7 +270,7 @@ public class QueryManager {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
-			 * Sesame throws a MalformedQueryException
+			 * RDF4J throws a MalformedQueryException
 			 */
 			if (prefixCheck.matcher(queryString).matches())
 				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
@@ -282,7 +282,8 @@ public class QueryManager {
 		if (!(query instanceof ParsedQuery))
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		// we use a dummy query info object here
-		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT, federationContext);
+		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
+				federationContext.getConfig().getIncludeInferredDefault(), federationContext);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,

@@ -7,17 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,6 +23,15 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
 /**
  * Utility functions for working with {@link Model}s and other {@link Statement} collections.
@@ -486,6 +487,27 @@ public class Models {
 		}
 
 		return isSubsetInternal(toSet(model1), toModel(model2));
+	}
+
+	/**
+	 * Strips contexts from the input model. This method provides a new {@link Model} containing all statements from the
+	 * input model, with the supplied contexts removed from those statements.
+	 *
+	 * @param model    the input model
+	 * @param contexts the contexts to remove. This is a vararg and as such is optional. If not supplied, the method
+	 *                 strips <i>all</i> contexts.
+	 * @return a new {@link Model} object containg the same statements as the input model, with the supplied contexts
+	 *         stripped.
+	 */
+	public static Model stripContexts(Model model, Resource... contexts) {
+		final List<Resource> contextList = Arrays.asList(contexts);
+		return model.stream().map(st -> {
+			if (contextList.isEmpty() || contextList.contains(st.getContext())) {
+				return Statements.stripContext(st);
+			} else {
+				return st;
+			}
+		}).collect(Collectors.toCollection(LinkedHashModel::new));
 	}
 
 	private static boolean isSubsetInternal(Set<Statement> model1, Model model2) {

@@ -316,7 +316,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
 		if (subj != null && pred != null && obj != null) {
-			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj)) {
+			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo)) {
 				return new SingletonIteration<>(
 						FedXUtil.valueFactory().createStatement(subj, pred, obj));
 			}
@@ -325,14 +325,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// form the union of results from relevant endpoints
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
-				obj);
+				obj, queryInfo);
 
 		if (sources.isEmpty())
 			return new EmptyIteration<>();
 
 		if (sources.size() == 1) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
-			return e.getTripleSource().getStatements(subj, pred, obj, contexts);
+			return e.getTripleSource().getStatements(subj, pred, obj, queryInfo, contexts);
 		}
 
 		// TODO why not collect in parallel?
@@ -340,7 +340,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		for (StatementSource source : sources) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
-			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, contexts);
+			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, queryInfo,
+					contexts);
 			union.addTask(task);
 		}
 
@@ -365,7 +366,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		try {
 			Endpoint source = query.getSource();
-			return source.getTripleSource().getStatements(query.getQueryString(), query.getQueryInfo().getQueryType());
+			return source.getTripleSource()
+					.getStatements(query.getQueryString(), query.getQueryInfo().getQueryType(), query.getQueryInfo());
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -600,7 +602,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
+				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
 			}
 
 			else {
@@ -609,7 +611,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				for (StatementSource source : statementSources) {
 					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint,
-							EmptyBindingSet.getInstance(), null));
+							EmptyBindingSet.getInstance(), null, queryInfo));
 				}
 
 				union.run();
@@ -636,7 +638,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
+				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
 			}
 
 			else {
@@ -645,7 +647,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				for (StatementSource source : statementSources) {
 					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedAlgebraUnionTask(union, preparedQuery, ownedEndpoint,
-							EmptyBindingSet.getInstance(), null));
+							EmptyBindingSet.getInstance(), null, queryInfo));
 				}
 
 				union.run();

@@ -97,7 +97,7 @@ public class FedXConnection extends AbstractSailConnection {
 			if (queryString == null)
 				log.warn("Query string is null. Please check your FedX setup.");
 			queryInfo = new QueryInfo(queryString, getOriginalQueryType(bindings),
-					getOriginalMaxExecutionTime(bindings), federationContext);
+					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext);
 
 			if (log.isDebugEnabled()) {
 				log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
@@ -193,7 +193,8 @@ public class FedXConnection extends AbstractSailConnection {
 
 		FederationEvalStrategy strategy = federationContext.getStrategy();
 		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(strategy,
-				new QueryInfo("getContextIDsInternal", QueryType.UNKNOWN, 0, federationContext));
+				new QueryInfo("getContextIDsInternal", QueryType.UNKNOWN, 0,
+						federationContext.getConfig().getIncludeInferredDefault(), federationContext));
 
 		for (final Endpoint e : federation.getMembers()) {
 			union.addTask(new ParallelTask<Resource>() {
@@ -249,7 +250,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		try {
 			FederationEvalStrategy strategy = federationContext.getStrategy();
-			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, federationContext);
+			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, includeInferred, federationContext);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,
 					obj, contexts);

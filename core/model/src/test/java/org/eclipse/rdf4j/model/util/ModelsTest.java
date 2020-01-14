@@ -7,15 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
-import java.util.Optional;
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -27,8 +18,18 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.util.Optional;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Unit tests on {@link Models} utility methods.
@@ -346,14 +347,14 @@ public class ModelsTest {
 
 		try {
 			Models.getProperty(model1, foo, null).orElse(null);
-			fail("should have resulted in exception");
+			Assert.fail("should have resulted in exception");
 		} catch (NullPointerException e) {
 			// expected
 		}
 
 		try {
 			Models.getProperty(model1, null, bar).orElse(null);
-			fail("should have resulted in exception");
+			Assert.fail("should have resulted in exception");
 		} catch (NullPointerException e) {
 			// expected
 		}
@@ -404,4 +405,44 @@ public class ModelsTest {
 		assertFalse(model1.contains(foo, bar, foo, graph2));
 		assertTrue(model1.contains(foo, bar, lit2));
 	}
+
+	@Test
+	public void testStripContextsCompletely() {
+		IRI graph1 = VF.createIRI("urn:g1");
+		IRI graph2 = VF.createIRI("urn:g2");
+		Literal lit1 = VF.createLiteral(1.0);
+
+		model1.add(foo, bar, lit1, graph1);
+		model1.add(foo, bar, bar);
+		model1.add(foo, bar, foo, graph2);
+
+		Model allStripped = Models.stripContexts(model1);
+		assertThat(allStripped.contexts()).containsOnly((Resource) null);
+		assertThat(allStripped.contains(foo, bar, lit1, (Resource) null)).isTrue();
+		assertThat(allStripped.contains(foo, bar, lit1, graph1)).isFalse();
+		assertThat(allStripped.contains(foo, bar, bar, (Resource) null)).isTrue();
+		assertThat(allStripped.contains(foo, bar, foo, (Resource) null)).isTrue();
+		assertThat(allStripped.contains(foo, bar, foo, graph2)).isFalse();
+		assertThat(allStripped.size()).isEqualTo(model1.size());
+	}
+
+	@Test
+	public void testStripContextsSpecificContext() {
+		IRI graph1 = VF.createIRI("urn:g1");
+		IRI graph2 = VF.createIRI("urn:g2");
+		Literal lit1 = VF.createLiteral(1.0);
+
+		model1.add(foo, bar, lit1, graph1);
+		model1.add(foo, bar, bar);
+		model1.add(foo, bar, foo, graph2);
+
+		Model graph2Stripped = Models.stripContexts(model1, graph2);
+		assertThat(graph2Stripped.contexts()).containsExactly(graph1, null);
+		assertThat(graph2Stripped.contains(foo, bar, lit1, graph1)).isTrue();
+		assertThat(graph2Stripped.contains(foo, bar, foo, (Resource) null)).isTrue();
+		assertThat(graph2Stripped.contains(foo, bar, bar, (Resource) null)).isTrue();
+		assertThat(graph2Stripped.contains(foo, bar, bar, graph2)).isFalse();
+		assertThat(graph2Stripped.size()).isEqualTo(model1.size());
+	}
+
 }
