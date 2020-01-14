@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithVa
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
+import org.eclipse.rdf4j.query.Operation;
+import org.eclipse.rdf4j.query.Query;
 
 /**
  * Configuration class for FedX
@@ -48,6 +50,8 @@ public class FedXConfig {
 	private boolean debugQueryPlan = false;
 
 	private boolean enableJmx = false;
+
+	private boolean includeInferredDefault = true;
 
 	private Class<? extends FederationEvalStrategy> sailEvaluationStrategy = SailFederationEvalStrategy.class;
 
@@ -127,6 +131,17 @@ public class FedXConfig {
 	 */
 	public FedXConfig withEnforceMaxQueryTime(int enforceMaxQueryTime) {
 		this.enforceMaxQueryTime = enforceMaxQueryTime;
+		return this;
+	}
+
+	/**
+	 * Set the default value supplied to {@link Query#setIncludeInferred(boolean)}
+	 * 
+	 * @param flag
+	 * @return the current config
+	 */
+	public FedXConfig withIncludeInferredDefault(boolean flag) {
+		this.includeInferredDefault = flag;
 		return this;
 	}
 
@@ -340,6 +355,14 @@ public class FedXConfig {
 	 */
 	public int getEnforceMaxQueryTime() {
 		return enforceMaxQueryTime;
+	}
+
+	/**
+	 * 
+	 * @return the default for {@link Operation#getIncludeInferred()}
+	 */
+	public boolean getIncludeInferredDefault() {
+		return includeInferredDefault;
 	}
 
 	/**

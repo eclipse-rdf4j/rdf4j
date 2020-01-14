@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -33,11 +34,12 @@ public class CacheUtils {
 	 * @return
 	 * @throws OptimizationException
 	 */
-	private static boolean checkEndpointForResults(Cache cache, Endpoint endpoint, Resource subj, IRI pred, Value obj)
+	private static boolean checkEndpointForResults(Cache cache, Endpoint endpoint, Resource subj, IRI pred, Value obj,
+			QueryInfo queryInfo)
 			throws OptimizationException {
 		try {
 			TripleSource t = endpoint.getTripleSource();
-			boolean hasResults = t.hasStatements(subj, pred, obj);
+			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo);
 
 			CacheEntry entry = createCacheEntry(endpoint, hasResults);
 			cache.updateEntry(new SubQuery(subj, pred, obj), entry);
@@ -67,7 +69,7 @@ public class CacheUtils {
 	 * @return whether some endpoint can provide results
 	 */
 	public static boolean checkCacheUpdateCache(Cache cache, List<Endpoint> endpoints, Resource subj, IRI pred,
-			Value obj) {
+			Value obj, QueryInfo queryInfo) {
 
 		SubQuery q = new SubQuery(subj, pred, obj);
 
@@ -77,7 +79,7 @@ public class CacheUtils {
 					|| a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS)
 				return true;
 			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
-					&& checkEndpointForResults(cache, e, subj, pred, obj))
+					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo))
 				return true;
 		}
 		return false;
@@ -96,7 +98,7 @@ public class CacheUtils {
 	 * @return the list of relevant statement sources
 	 */
 	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(Cache cache, List<Endpoint> endpoints,
-			Resource subj, IRI pred, Value obj) {
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo) {
 
 		SubQuery q = new SubQuery(subj, pred, obj);
 		List<StatementSource> sources = new ArrayList<>(endpoints.size());
@@ -111,7 +113,7 @@ public class CacheUtils {
 			} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
 
 				// check if the endpoint has results (statistics + ask request)
-				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj))
+				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo))
 					sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));
 			}
 		}
