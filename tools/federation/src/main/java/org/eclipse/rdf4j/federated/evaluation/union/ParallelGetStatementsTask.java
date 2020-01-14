@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,17 +33,19 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 
 	protected final IRI pred;
 	protected final Value obj;
+	protected final QueryInfo queryInfo;
 	protected Resource[] contexts;
 
 	public ParallelGetStatementsTask(ParallelExecutor<Statement> unionControl,
 			Endpoint endpoint,
-			Resource subj, IRI pred, Value obj, Resource... contexts) {
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) {
 		super();
 		this.unionControl = unionControl;
 		this.endpoint = endpoint;
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
+		this.queryInfo = queryInfo;
 		this.contexts = contexts;
 
 	}
@@ -56,6 +59,6 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	public CloseableIteration<Statement, QueryEvaluationException> performTask()
 			throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
-		return tripleSource.getStatements(subj, pred, obj, contexts);
+		return tripleSource.getStatements(subj, pred, obj, queryInfo, contexts);
 	}
 }

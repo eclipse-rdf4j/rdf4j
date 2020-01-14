@@ -43,6 +43,8 @@ import org.slf4j.LoggerFactory;
  */
 public class RepositoryFederatedService implements FederatedService {
 
+	private static final String ROW_IDX_VAR = "__rowIdx";
+
 	final static Logger logger = LoggerFactory.getLogger(RepositoryFederatedService.class);
 
 	/**
@@ -86,7 +88,45 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 	}
 
+	/**
+	 * Helper iteration to evaluate a block of {@link BindingSet}s using the simple
+	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
+	 * 
+	 * @author Andreas Schwarte
+	 *
+	 */
+	private class FallbackServiceIteration extends JoinExecutorBase<BindingSet> {
+
+		private final Service service;
+		private final List<BindingSet> allBindings;
+		private final String baseUri;
+
+		public FallbackServiceIteration(Service service,
+				List<BindingSet> allBindings, String baseUri) {
+			super(null, null, null);
+			this.service = service;
+			this.allBindings = allBindings;
+			this.baseUri = baseUri;
+			run();
+		}
+
+		@Override
+		protected void handleBindings() throws Exception {
+			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+			for (BindingSet b : allBindings) {
+				addResult(select(service, projectionVars, b, baseUri));
+			}
+		}
+	}
+
 	protected final Repository rep;
+
+	/**
+	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
+	 * blockSize is set to 0, the entire input stream is used as block input the block size effectively determines the
+	 * number of remote requests
+	 */
+	protected int boundJoinBlockSize = 15;
 
 	// flag indicating whether the repository shall be closed in #shutdown()
 	protected boolean shutDown = true;
@@ -178,14 +218,8 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException {
 
-		// the number of bindings sent in a single subquery.
-		// if blockSize is set to 0, the entire input stream is used as block
-		// input
-		// the block size effectively determines the number of remote requests
-		int blockSize = 15; // TODO configurable block size
-
-		if (blockSize > 0) {
-			return new BatchingServiceIteration(bindings, blockSize, service);
+		if (boundJoinBlockSize > 0) {
+			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		} else {
 			// if blocksize is 0 (i.e. disabled) the entire iteration is used as
 			// block
@@ -195,7 +229,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Evaluate the SPARQL query that can be constructed from the SERVICE node at the initialized {@link Repository} of
-	 * this {@link FederatedService}. Use specified bindings as constraints to the query. Try to evaluate using BINDINGS
+	 * this {@link FederatedService}. Use specified bindings as constraints to the query. Try to evaluate using VALUES
 	 * clause, if this yields an exception fall back to the naive implementation. This method deals with SILENT
 	 * SERVICEs.
 	 */
@@ -231,24 +265,24 @@ public class RepositoryFederatedService implements FederatedService {
 			// To be able to insert the input bindings again later on, we need some
 			// means to identify the row of each binding. hence, we use an
 			// additional
-			// projection variable, which is also passed in the BINDINGS clause
+			// projection variable, which is also passed in the VALUES clause
 			// with the value of the actual row. The value corresponds to the index
 			// of the binding in the index list
-			projectionVars.add("__rowIdx");
+			projectionVars.add(ROW_IDX_VAR);
 
 			String queryString = service.getSelectQueryString(projectionVars);
 
 			List<String> relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());
 
 			if (!relevantBindingNames.isEmpty()) {
-				// append the VALUES clause to the query
-				queryString += buildVALUESClause(allBindings, relevantBindingNames);
+				// insert VALUES clause into the query
+				queryString = insertValuesClause(queryString, buildVALUESClause(allBindings, relevantBindingNames));
 			}
 
 			TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
 			TupleQueryResult res = null;
-			query.setMaxQueryTime(60); // TODO how to retrieve max query value
-										// from actual setting?
+			query.setMaxExecutionTime(60); // TODO how to retrieve max query value
+											// from actual setting?
 			res = query.evaluate();
 
 			if (relevantBindingNames.isEmpty())
@@ -269,7 +303,10 @@ public class RepositoryFederatedService implements FederatedService {
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} catch (MalformedQueryException e) {
 			// this exception must not be silenced, bug in our code
-			throw new QueryEvaluationException(e);
+			// => try a fallback to the simple evaluation
+			logger.debug("Encounted malformed query exception: " + e.getMessage()
+					+ ". Falling back to simple SERVICE evaluation.");
+			return evaluateInternalFallback(service, allBindings, baseUri);
 		} catch (QueryEvaluationException e) {
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
@@ -285,10 +322,55 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 	}
 
+	/**
+	 * Evaluate the service expression for the given lists of bindings using {@link FallbackServiceIteration}, i.e.
+	 * basically as a simple join without VALUES clause.
+	 * 
+	 * @param service     the SERVICE
+	 * @param allBindings all bindings to be processed
+	 * @param baseUri     the base URI
+	 * @return resulting iteration
+	 */
+	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateInternalFallback(Service service,
+			List<BindingSet> allBindings, String baseUri) {
+
+		CloseableIteration<BindingSet, QueryEvaluationException> res = new FallbackServiceIteration(service,
+				allBindings, baseUri);
+
+		if (service.isSilent()) {
+			res = new SilentIteration(res);
+		}
+		return res;
+
+	}
+
+	/**
+	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
+	 * projection if it is not already present.
+	 * 
+	 * @param queryString  the SELECT query string from the SERVICE node
+	 * @param valuesClause the constructed VALUES clause
+	 * @return the final String
+	 */
+	protected String insertValuesClause(String queryString, String valuesClause) {
+		StringBuilder sb = new StringBuilder(queryString);
+		if (sb.indexOf(ROW_IDX_VAR) == -1) {
+			// Note: we also explicitly check on "SELECT *", however, this
+			// check is heuristics based. If the generated query is invalid
+			// after this, the fallback evaluation will jump in
+			// This currently does not cover things like "SELECT *"
+			if (sb.indexOf("SELECT * ") == -1) {
+				sb.insert(sb.indexOf("SELECT") + 6, " ?" + ROW_IDX_VAR);
+			}
+		}
+		sb.insert(sb.indexOf("{") + 1, " " + valuesClause);
+		return sb.toString();
+	}
+
 	@Override
 	public void initialize() throws QueryEvaluationException {
 		try {
-			rep.initialize();
+			rep.init();
 		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -299,13 +381,16 @@ public class RepositoryFederatedService implements FederatedService {
 		return rep.isInitialized();
 	}
 
-	private void closeQuietly(TupleQueryResult res) {
-		try {
-			if (res != null)
-				res.close();
-		} catch (Exception e) {
-			logger.debug("Could not close connection properly: " + e.getMessage(), e);
-		}
+	public int getBoundJoinBlockSize() {
+		return boundJoinBlockSize;
+	}
+
+	/**
+	 * 
+	 * @param boundJoinBlockSize the bound join block size, 0 to evaluate all in a single request
+	 */
+	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
+		this.boundJoinBlockSize = boundJoinBlockSize;
 	}
 
 	@Override

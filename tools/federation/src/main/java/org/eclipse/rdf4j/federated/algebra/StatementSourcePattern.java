@@ -93,10 +93,10 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					}
 
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint, bindings,
-							(isEvaluated.get() ? null : filterExpr)));
+							(isEvaluated.get() ? null : filterExpr), queryInfo));
 
 				} else {
-					union.addTask(new ParallelUnionTask(union, this, ownedEndpoint, bindings, filterExpr));
+					union.addTask(new ParallelUnionTask(union, this, ownedEndpoint, bindings, filterExpr, queryInfo));
 				}
 
 			}
@@ -127,7 +127,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					.getEndpointManager()
 					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			if (t.hasStatements(this, bindings))
+			if (t.hasStatements(this, bindings, queryInfo))
 				return new SingleBindingSetIteration(bindings);
 		}
 

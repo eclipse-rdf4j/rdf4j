@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Utility methods for {@link Statement} objects.
@@ -71,6 +72,36 @@ public class Statements {
 		Objects.requireNonNull(collection);
 		consume(vf, subject, predicate, object, st -> collection.add(st), contexts);
 		return collection;
+	}
+
+	/**
+	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
+	 * and object, but with no assigned context.
+	 * 
+	 * @param statement the statement to strip the context from
+	 * @return a statement without context
+	 * 
+	 * @since 3.1.0
+	 */
+	public static Statement stripContext(Statement statement) {
+		return stripContext(SimpleValueFactory.getInstance(), statement);
+	}
+
+	/**
+	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
+	 * and object, but with no assigned context.
+	 * 
+	 * @param vf        the {@link ValueFactory} to use for creating a new {@link Statement}.
+	 * @param statement the statement to strip the context from.
+	 * @return a statement without context
+	 * 
+	 * @since 3.1.0
+	 */
+	public static Statement stripContext(ValueFactory vf, Statement statement) {
+		if (statement.getContext() == null) {
+			return statement;
+		}
+		return vf.createStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
 	}
 
 	/**

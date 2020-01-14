@@ -68,23 +68,6 @@
 						</td>
 					</tr>
 					<tr>
-						<th>
-							<xsl:value-of select="$distinct.label" />
-						</th>
-						<td>
-							<input type="checkbox" name="distinct" value="true" />
-						</td>
-					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$read-only.label" />
-						</th>
-						<td>
-							<input type="checkbox" name="readonly" value="true"
-								checked="true" />
-						</td>
-					</tr>
-					<tr>
 						<td></td>
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"

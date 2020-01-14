@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIt
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -68,7 +69,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr)
+			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
@@ -76,7 +77,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
 			applyMaxExecutionTimeUpperBound(query);
-			disableInference(query);
+			configureInference(query, queryInfo);
 
 			// evaluate the query
 			monitorRemoteRequest();
@@ -107,7 +108,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr)
+			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
@@ -116,23 +117,23 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public boolean hasStatements(Resource subj,
-			IRI pred, Value obj, Resource... contexts)
+			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
 			throws RepositoryException {
 
 		if (!useASKQueries) {
 			StatementPattern st = new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj));
 			try {
-				return hasStatements(st, EmptyBindingSet.getInstance());
+				return hasStatements(st, EmptyBindingSet.getInstance(), queryInfo);
 			} catch (Exception e) {
 				throw new RepositoryException(e);
 			}
 		}
-		return super.hasStatements(subj, pred, obj, contexts);
+		return super.hasStatements(subj, pred, obj, queryInfo, contexts);
 	}
 
 	@Override
 	public boolean hasStatements(StatementPattern stmt,
-			BindingSet bindings) throws RepositoryException,
+			BindingSet bindings, QueryInfo queryInfo) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
 		// decide whether to use ASK queries or a SELECT query
@@ -142,7 +143,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, queryString, null);
-				disableInference(query);
+				configureInference(query, queryInfo);
 				applyMaxExecutionTimeUpperBound(query);
 
 				monitorRemoteRequest();
@@ -158,7 +159,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-				disableInference(query);
+				configureInference(query, queryInfo);
 				applyMaxExecutionTimeUpperBound(query);
 
 				monitorRemoteRequest();
@@ -187,7 +188,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				String queryString = QueryStringUtil.selectQueryStringLimit1(group, bindings);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-				disableInference(query);
+				configureInference(query, group.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
 
 				monitorRemoteRequest();
@@ -213,7 +214,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr)
+			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
@@ -222,14 +223,15 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
-			Resource subj, IRI pred, Value obj,
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
 			Resource... contexts) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
 		// TODO add handling for contexts
 		return withConnection((conn, resultHolder) -> {
 			monitorRemoteRequest();
-			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj, true);
+			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
+					queryInfo.getIncludeInferred());
 
 			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
 				@Override

@@ -42,6 +42,7 @@ public class QueryInfo {
 	private final QueryType queryType;
 	private final long maxExecutionTimeMs;
 	private final long start;
+	private final boolean includeInferred;
 
 	private final FederationContext federationContext;
 
@@ -49,8 +50,9 @@ public class QueryInfo {
 
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
 
-	public QueryInfo(String query, QueryType queryType, FederationContext federationContext) {
-		this(query, queryType, 0, federationContext);
+	public QueryInfo(String query, QueryType queryType, boolean incluedInferred,
+			FederationContext federationContext) {
+		this(query, queryType, 0, incluedInferred, federationContext);
 	}
 
 	/**
@@ -59,9 +61,11 @@ public class QueryInfo {
 	 * @param queryType
 	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
 	 *                          {@link FedXConfig#getEnforceMaxQueryTime())
+	 * @param includeInferred   whether to include inferred statements
 	 * @param federationContext the {@link FederationContext}
 	 */
-	public QueryInfo(String query, QueryType queryType, int maxExecutionTime, FederationContext federationContext) {
+	public QueryInfo(String query, QueryType queryType, int maxExecutionTime, boolean includeInferred,
+			FederationContext federationContext) {
 		super();
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
@@ -73,11 +77,14 @@ public class QueryInfo {
 		int _maxExecutionTime = maxExecutionTime <= 0 ? federationContext.getConfig().getEnforceMaxQueryTime()
 				: maxExecutionTime;
 		this.maxExecutionTimeMs = _maxExecutionTime * 1000;
+		this.includeInferred = includeInferred;
 		this.start = System.currentTimeMillis();
 	}
 
-	public QueryInfo(Resource subj, IRI pred, Value obj, FederationContext federationContext) {
-		this(QueryStringUtil.toString(subj, (IRI) pred, obj), QueryType.GET_STATEMENTS, federationContext);
+	public QueryInfo(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			FederationContext federationContext) {
+		this(QueryStringUtil.toString(subj, (IRI) pred, obj), QueryType.GET_STATEMENTS, includeInferred,
+				federationContext);
 	}
 
 	public BigInteger getQueryID() {
@@ -90,6 +97,10 @@ public class QueryInfo {
 
 	public QueryType getQueryType() {
 		return queryType;
+	}
+
+	public boolean getIncludeInferred() {
+		return includeInferred;
 	}
 
 	/**

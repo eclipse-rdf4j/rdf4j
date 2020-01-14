@@ -807,6 +807,23 @@ public interface RepositoryConnection extends AutoCloseable {
 			throws RepositoryException, E;
 
 	/**
+	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
+	 *
+	 * @param statements The statements to add. The @{link RepositoryResult} will be closed before this method returns.
+	 * @param contexts   The contexts to add the statements to. Note that this parameter is a vararg and as such is
+	 *                   optional. If no contexts are specified, each statement is added to any context specified in the
+	 *                   statement, or if the statement contains no context, it is added without context. If one or more
+	 *                   contexts are specified each statement is added to these contexts, ignoring any context
+	 *                   information in the statement itself. ignored.
+	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
+	 *                             repository is not writable.
+	 */
+	default void add(RepositoryResult<Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		add((Iteration<Statement, RepositoryException>) statements, contexts);
+	}
+
+	/**
 	 * Removes the statement(s) with the specified subject, predicate and object from the repository, optionally
 	 * restricted to the specified contexts.
 	 * 
@@ -878,6 +895,23 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
+
+	/**
+	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
+	 * carried by the statements themselves.
+	 *
+	 * @param statements The statements to remove. The {@link RepositoryResult} will be closed before this method
+	 *                   returns.
+	 * @param contexts   The context(s) to remove the data from. Note that this parameter is a vararg and as such is
+	 *                   optional. If no contexts are supplied the method operates on the contexts associated with the
+	 *                   statement itself, and if no context is associated with the statement, on the entire repository.
+	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
+	 *                             repository is not writable.
+	 */
+	default void remove(RepositoryResult<Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		remove((Iteration<Statement, RepositoryException>) statements, contexts);
+	}
 
 	/**
 	 * Removes all statements from a specific contexts in the repository.

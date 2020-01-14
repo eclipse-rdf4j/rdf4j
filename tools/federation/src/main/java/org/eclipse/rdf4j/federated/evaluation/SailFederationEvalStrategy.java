@@ -123,7 +123,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQuery(group, bindings, group.getFilterExpr(), isEvaluated);
 		return tripleSource.getStatements(preparedQuery, bindings,
-				(isEvaluated.get() ? null : group.getFilterExpr()));
+				(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 
 		// other option (which might be faster for sesame native stores): join over the statements
 		// TODO implement this and evaluate if it is faster ..

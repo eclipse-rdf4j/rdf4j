@@ -71,7 +71,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
@@ -85,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -154,12 +157,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			members = fed.getMembers();
 		}
 
-		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null)
-			return new SingleSourceQuery(expr, members.get(0), queryInfo);
-
 		// Clone the tuple expression to allow for more aggressive optimizations
 		TupleExpr query = new QueryRoot(expr.clone());
+
+		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
+
+		// collect information and perform generic optimizations
+		info.optimize(query);
+
+		// if the federation has a single member only, evaluate the entire query there
+		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService())
+			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 
 		Cache cache = federationContext.getCache();
 
@@ -178,11 +186,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		 */
 
 		/* custom optimizers, execute only when needed */
-
-		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
-
-		// collect information and perform generic optimizations
-		info.optimize(query);
 
 		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
@@ -313,7 +316,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
 		if (subj != null && pred != null && obj != null) {
-			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj)) {
+			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo)) {
 				return new SingletonIteration<>(
 						FedXUtil.valueFactory().createStatement(subj, pred, obj));
 			}
@@ -322,14 +325,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// form the union of results from relevant endpoints
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
-				obj);
+				obj, queryInfo);
 
 		if (sources.isEmpty())
 			return new EmptyIteration<>();
 
 		if (sources.size() == 1) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
-			return e.getTripleSource().getStatements(subj, pred, obj, contexts);
+			return e.getTripleSource().getStatements(subj, pred, obj, queryInfo, contexts);
 		}
 
 		// TODO why not collect in parallel?
@@ -337,7 +340,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		for (StatementSource source : sources) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
-			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, contexts);
+			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, queryInfo,
+					contexts);
 			union.addTask(task);
 		}
 
@@ -362,7 +366,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		try {
 			Endpoint source = query.getSource();
-			return source.getTripleSource().getStatements(query.getQueryString(), query.getQueryInfo().getQueryType());
+			return source.getTripleSource()
+					.getStatements(query.getQueryString(), query.getQueryInfo().getQueryType(), query.getQueryInfo());
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -516,8 +521,23 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateService(FedXService service,
 			final List<BindingSet> bindings) throws QueryEvaluationException {
 
-		return new ServiceJoinIterator(new CollectionIteration<>(bindings),
-				service.getService(), EmptyBindingSet.getInstance(), this);
+		Var serviceRef = service.getService().getServiceRef();
+		String serviceUri;
+		if (serviceRef.hasValue()) {
+			serviceUri = serviceRef.getValue().stringValue();
+		} else {
+			return new ServiceJoinIterator(new CollectionIteration<>(bindings),
+					service.getService(), EmptyBindingSet.getInstance(), this);
+		}
+
+		// use vectored evaluation
+		FederatedService fs = getService(serviceUri);
+		if (fs instanceof RepositoryFederatedService) {
+			// set the bound join block size to 0 => leave block size up to FedX engine
+			((RepositoryFederatedService) fs).setBoundJoinBlockSize(0);
+		}
+		return fs.evaluate(service.getService(), new CollectionIteration<>(bindings),
+				service.getService().getBaseURI());
 	}
 
 	@Override
@@ -582,7 +602,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
+				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
 			}
 
 			else {
@@ -591,7 +611,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				for (StatementSource source : statementSources) {
 					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint,
-							EmptyBindingSet.getInstance(), null));
+							EmptyBindingSet.getInstance(), null, queryInfo));
 				}
 
 				union.run();
@@ -618,7 +638,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null);
+				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
 			}
 
 			else {
@@ -627,7 +647,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				for (StatementSource source : statementSources) {
 					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedAlgebraUnionTask(union, preparedQuery, ownedEndpoint,
-							EmptyBindingSet.getInstance(), null));
+							EmptyBindingSet.getInstance(), null, queryInfo));
 				}
 
 				union.run();

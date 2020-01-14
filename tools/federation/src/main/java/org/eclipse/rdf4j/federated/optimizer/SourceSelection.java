@@ -103,7 +103,7 @@ public class SourceSelection {
 				} else if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
 					addSource(stmt, new StatementSource(e.getId(), StatementSourceType.REMOTE));
 				} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
-					remoteCheckTasks.add(new CheckTaskPair(e, stmt));
+					remoteCheckTasks.add(new CheckTaskPair(e, stmt, queryInfo));
 				} else if (a == StatementSourceAssurance.NONE) {
 					// cannot provide any statements
 					continue;
@@ -214,7 +214,7 @@ public class SourceSelection {
 
 			latch = new CountDownLatch(tasks.size());
 			for (CheckTaskPair task : tasks)
-				scheduler.schedule(new ParallelCheckTask(task.e, task.t, this));
+				scheduler.schedule(new ParallelCheckTask(task.e, task.t, task.queryInfo, this));
 
 			try {
 				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
@@ -282,10 +282,12 @@ public class SourceSelection {
 	protected class CheckTaskPair {
 		public final Endpoint e;
 		public final StatementPattern t;
+		public final QueryInfo queryInfo;
 
-		public CheckTaskPair(Endpoint e, StatementPattern t) {
+		public CheckTaskPair(Endpoint e, StatementPattern t, QueryInfo queryInfo) {
 			this.e = e;
 			this.t = t;
+			this.queryInfo = queryInfo;
 		}
 	}
 
@@ -299,10 +301,13 @@ public class SourceSelection {
 		protected final Endpoint endpoint;
 		protected final StatementPattern stmt;
 		protected final SourceSelectionExecutorWithLatch control;
+		protected final QueryInfo queryInfo;
 
-		public ParallelCheckTask(Endpoint endpoint, StatementPattern stmt, SourceSelectionExecutorWithLatch control) {
+		public ParallelCheckTask(Endpoint endpoint, StatementPattern stmt, QueryInfo queryInfo,
+				SourceSelectionExecutorWithLatch control) {
 			this.endpoint = endpoint;
 			this.stmt = stmt;
+			this.queryInfo = queryInfo;
 			this.control = control;
 		}
 
@@ -311,7 +316,7 @@ public class SourceSelection {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = false;
-				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance());
+				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo);
 
 				SourceSelection sourceSelection = control.sourceSelection;
 				CacheEntry entry = CacheUtils.createCacheEntry(endpoint, hasResults);

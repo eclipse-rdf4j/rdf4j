@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -19,6 +20,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfigBuilder;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -36,19 +38,15 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.runtime.RepositoryManagerFederator;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 public class CreateServlet extends TransformationServlet {
 
-	private RepositoryManagerFederator rmf;
-
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
-		this.rmf = new RepositoryManagerFederator(manager);
 	}
 
 	/**
@@ -101,9 +99,8 @@ public class CreateServlet extends TransformationServlet {
 		String newID;
 		if ("federate".equals(type)) {
 			newID = req.getParameter("Local repository ID");
-			rmf.addFed(newID, req.getParameter("Repository title"), Arrays.asList(req.getParameterValues("memberID")),
-					Boolean.parseBoolean(req.getParameter("readonly")),
-					Boolean.parseBoolean(req.getParameter("distinct")));
+			addFederated(newID, req.getParameter("Repository title"),
+					Arrays.asList(req.getParameterValues("memberID")));
 		} else {
 			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
 		}
@@ -122,6 +119,15 @@ public class CreateServlet extends TransformationServlet {
 		repConfig.validate();
 		manager.addRepositoryConfig(repConfig);
 		return repConfig;
+	}
+
+	private void addFederated(String repositoryId, String repositoryTitle, List<String> memberIds) {
+
+		RepositoryConfig repoConfig = FedXRepositoryConfigBuilder.create()
+				.withResolvableEndpoint(memberIds)
+				.build(repositoryId, repositoryTitle);
+		repoConfig.validate();
+		manager.addRepositoryConfig(repoConfig);
 	}
 
 	static ConfigTemplate getConfigTemplate(final String type) throws IOException {
