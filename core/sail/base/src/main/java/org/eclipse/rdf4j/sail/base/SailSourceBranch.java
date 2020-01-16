@@ -340,7 +340,7 @@ class SailSourceBranch implements SailSource {
 	void autoFlush() throws SailException {
 		if (autoFlush && semaphore.tryLock()) {
 			try {
-				if (serializable == null && observers.isEmpty()) {
+				if (observers.isEmpty()) {
 					flush();
 				}
 			} finally {
