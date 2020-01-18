@@ -319,7 +319,7 @@ class Transaction implements AutoCloseable {
 	void executeUpdate(QueryLanguage queryLn, String sparqlUpdateString, String baseURI, boolean includeInferred,
 			Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
-			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
+			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 			update.setIncludeInferred(includeInferred);
 			if (dataset != null) {
 				update.setDataset(dataset);
