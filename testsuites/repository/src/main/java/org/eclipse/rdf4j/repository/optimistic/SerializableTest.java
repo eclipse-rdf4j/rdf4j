@@ -34,6 +34,12 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+/**
+ * Tests on behavior of SERIALIZABLE transactions.
+ * 
+ * @author jeen
+ *
+ */
 public class SerializableTest {
 
 	@BeforeClass

@@ -21,6 +21,10 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+/**
+ * Test that a complex delete-insert SPARQL query gets correctly executed.
+ *
+ */
 public class DeleteInsertTest {
 
 	@BeforeClass

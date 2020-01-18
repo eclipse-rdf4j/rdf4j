@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.optimistic.LinearTest;
 import org.eclipse.rdf4j.repository.optimistic.ModificationTest;
 import org.eclipse.rdf4j.repository.optimistic.MonotonicTest;
 import org.eclipse.rdf4j.repository.optimistic.RemoveIsolationTest;
-import org.eclipse.rdf4j.repository.optimistic.SailIsolationLevelTest;
+import org.eclipse.rdf4j.repository.optimistic.IsolationLevelTest;
 import org.eclipse.rdf4j.repository.optimistic.SerializableTest;
 import org.eclipse.rdf4j.repository.optimistic.SnapshotTest;
 import org.junit.BeforeClass;
@@ -31,10 +31,9 @@ import org.junit.runners.Suite.SuiteClasses;
  * @author James Leigh
  */
 @RunWith(Suite.class)
-@SuiteClasses({ MonotonicTest.class })
-//@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
-//		RemoveIsolationTest.class, SailIsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
-//		SerializableTest.class })
+@SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
+		RemoveIsolationTest.class, IsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
+		SerializableTest.class })
 public abstract class OptimisticIsolationTest {
 
 	@BeforeClass
