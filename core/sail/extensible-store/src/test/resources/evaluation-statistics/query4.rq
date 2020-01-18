@@ -1,0 +1,35 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dc: <http://purl.org/dc/terms/>
+PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
+PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX bsbm: <http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/>
+
+SELECT distinct ?offer where {
+
+        ?offer ?b ?c.
+
+        ?offer rdf:type ?type.
+        ?offer2 rdf:type ?type.
+
+        ?offer bsbm:product ?product1.
+        ?offer2 bsbm:product ?product2.
+
+        ?product1 bsbm:producer ?producer.
+        ?product2 bsbm:producer ?producer.
+
+        ?review bsbm:product ?product1.
+        ?review2 bsbm:product ?product2.
+        ?review bsbm:rating1 7 .
+        ?review2 bsbm:rating1 7 .
+
+        filter(?offer != ?offer2)
+
+}
+

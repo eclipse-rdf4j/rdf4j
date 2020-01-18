@@ -24,11 +24,6 @@ public class ExtensibleDirectEvaluationStatistics extends ExtensibleEvaluationSt
 		return cardinalityCalculator;
 	}
 
-	@Override
-	public double staleness() {
-		return 0;
-	}
-
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 		@Override
 		protected double getCardinality(StatementPattern sp) {

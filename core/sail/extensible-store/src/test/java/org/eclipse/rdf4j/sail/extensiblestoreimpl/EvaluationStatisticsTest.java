@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -32,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.stream.IntStream;
 
 import static junit.framework.TestCase.assertEquals;
 
@@ -121,20 +123,41 @@ public class EvaluationStatisticsTest {
 
 	@Test
 	public void testStaleStats() throws InterruptedException {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
-
 		extensibleDynamicEvaluationStatistics.waitForQueue();
+		double staleness1 = extensibleDynamicEvaluationStatistics.staleness();
+		assertEquals(0, Math.round(staleness1));
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.remove(s, false));
+		extensibleDynamicEvaluationStatistics.waitForQueue();
+		double staleness2 = extensibleDynamicEvaluationStatistics.staleness();
+		assertEquals(0, Math.round(staleness2));
 
-		double staleness = extensibleDynamicEvaluationStatistics.staleness();
+		IntStream.range(0, 100).forEach(i -> {
+			extensibleDynamicEvaluationStatistics
+					.add(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "a")), false);
+		});
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		extensibleDynamicEvaluationStatistics.waitForQueue();
+
+		double staleness3 = extensibleDynamicEvaluationStatistics.staleness();
+		assertEquals(1, Math.round(staleness3));
+
+		IntStream.range(0, 100000).forEach(i -> {
+			extensibleDynamicEvaluationStatistics
+					.add(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "b")), false);
+		});
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		double staleness4 = extensibleDynamicEvaluationStatistics.staleness();
+
+		assertEquals(0, Math.round(staleness4));
 
 	}
 

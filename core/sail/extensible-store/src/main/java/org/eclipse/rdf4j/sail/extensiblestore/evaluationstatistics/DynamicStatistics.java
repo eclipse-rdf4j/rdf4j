@@ -12,4 +12,11 @@ public interface DynamicStatistics {
 	void remove(Statement statement, boolean inferred);
 
 	void removeByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource... contexts);
+
+	/**
+	 *
+	 * @return 1 if stale, 0 if not stale, 0.5 if 50% stale. Seen as, given a random statement (that has either been
+	 *         added, or removed), what is the probability that the statistics will return an incorrect result?
+	 */
+	double staleness();
 }

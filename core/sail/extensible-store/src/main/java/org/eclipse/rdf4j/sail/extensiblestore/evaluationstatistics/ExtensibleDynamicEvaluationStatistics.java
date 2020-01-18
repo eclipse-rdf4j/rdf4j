@@ -2,7 +2,6 @@ package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.druid.hll.HyperLogLogCollector;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -15,9 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +35,18 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	private final HyperLogLogCollector size = HyperLogLogCollector.makeLatestCollector();
 	private final HyperLogLogCollector size_removed = HyperLogLogCollector.makeLatestCollector();
+
+	// This array acts as a way to detect when a statement has first been added, then removed, then added again.
+	// The underlying concept is that you "randomly" add your added statement to one of the HLL collectors,
+	// to later check if you have duplicates you can sum the counts from all the collectors, and compare it to to union
+	// of all the collectors, since then union will deduplicate the sets. The difference is the number of statements that have been added more than once.
+	private final HyperLogLogCollector[] duplicateAddedStatements = { HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
+			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector() };
 
 	private final Map<Integer, HyperLogLogCollector> subjectIndex = new HashMap<>();
 	private final Map<Integer, HyperLogLogCollector> predicateIndex = new HashMap<>();
@@ -87,7 +96,21 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	@Override
 	public double staleness() {
-		return 0;
+
+		HyperLogLogCollector staleUnion = HyperLogLogCollector.makeLatestCollector();
+
+		Stream.of(duplicateAddedStatements)
+				.forEach(staleUnion::fold);
+
+		double sumStaleness = Stream.of(duplicateAddedStatements)
+				.mapToDouble(HyperLogLogCollector::estimateCardinality)
+				.sum();
+
+		double unionStaleness = staleUnion.estimateCardinality();
+
+		double min = Math.max(0, 1 / (unionStaleness + 0.1) * (sumStaleness - unionStaleness));
+		return min;
+
 	}
 
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
@@ -183,26 +206,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		if (size > QUEUE_LIMIT && queueThread == null) {
 			startQueueThread();
 		}
-
-		/*
-		 * byte[] statementHash = hashFunction.hashString(statement.toString(), StandardCharsets.UTF_8).asBytes();
-		 *
-		 * size.add(statementHash); int subjectHash = statement.getSubject().hashCode(); int predicateHash =
-		 * statement.getPredicate().hashCode(); int objectHash = statement.getObject().hashCode();
-		 *
-		 * indexOneValue(statementHash, subjectIndex, subjectHash); indexOneValue(statementHash, predicateIndex,
-		 * predicateHash); indexOneValue(statementHash, objectIndex, objectHash);
-		 *
-		 * indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
-		 * indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
-		 *
-		 * if (statement.getContext() == null) { defaultContext.add(statementHash); } else {
-		 * indexOneValue(statementHash, contextIndex, statement.getContext().hashCode()); }
-		 *
-		 */
-
-		// logger.info("added: {} : {} ", statement, inferred ? "INFERRED" : "REAL");
 	}
+
+	int staleIndexCounter = 0;
 
 	synchronized private void startQueueThread() {
 		if (queueThread == null) {
@@ -218,6 +224,10 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						if (poll.added) {
 
 							size.add(statementHash);
+
+							duplicateAddedStatements[staleIndexCounter++ % duplicateAddedStatements.length]
+									.add(statementHash);
+
 							int subjectHash = statement.getSubject().hashCode();
 							int predicateHash = statement.getPredicate().hashCode();
 							int objectHash = statement.getObject().hashCode();
@@ -276,8 +286,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	private void indexOneValue(byte[] statementHash, Map<Integer, HyperLogLogCollector> index, int indexHash) {
 		index.compute(Math.abs(indexHash % ONE_DIMENSION_INDEX_SIZE), (key, val) -> {
-			if (val == null)
+			if (val == null) {
 				val = HyperLogLogCollector.makeLatestCollector();
+			}
 			val.add(statementHash);
 			return val;
 		});
@@ -342,9 +353,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	public void waitForQueue() throws InterruptedException {
 		while (queueThread != null) {
-			Thread.sleep(2);
-			if (Thread.currentThread().isInterrupted()) {
-				throw new InterruptedException();
+			try {
+				queueThread.join();
+			} catch (NullPointerException ignored) {
 			}
 		}
 	}

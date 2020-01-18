@@ -11,12 +11,7 @@ public class ExtensibleConstantEvaluationStatistics extends ExtensibleEvaluation
 	protected CardinalityCalculator createCardinalityCalculator() {
 		return cardinalityCalculator;
 	}
-
-	@Override
-	public double staleness() {
-		return 0;
-	}
-
+	
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 	};
 
