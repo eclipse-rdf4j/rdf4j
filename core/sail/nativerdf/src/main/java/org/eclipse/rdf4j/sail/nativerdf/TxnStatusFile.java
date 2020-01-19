@@ -13,6 +13,8 @@ import java.nio.charset.Charset;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 
+import static java.nio.charset.StandardCharsets.US_ASCII;
+
 /**
  * Writes transaction statuses to a file.
  */
@@ -100,30 +102,49 @@ class TxnStatusFile {
 	 * @throws IOException If the transaction status file could not be read.
 	 */
 	public TxnStatus getTxnStatus() throws IOException {
-		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
-		TxnStatus status = TxnStatus.UNKNOWN;
+		byte[] bytes = nioFile.readBytes(0, 1);
 
-		if (bytes.length == 1) {
-			switch (bytes[0]) {
-			case 1:
-				status = TxnStatus.NONE;
-				break;
-			case 2:
-				status = TxnStatus.ACTIVE;
-				break;
-			case 3:
-				status = TxnStatus.COMMITTING;
-				break;
-			case 4:
-				status = TxnStatus.ROLLING_BACK;
-				break;
-			case 5:
-				status = TxnStatus.UNKNOWN;
-				break;
-			}
+		TxnStatus status;
+
+		switch (bytes[0]) {
+		case 1:
+			status = TxnStatus.NONE;
+			break;
+		case 2:
+			status = TxnStatus.ACTIVE;
+			break;
+		case 3:
+			status = TxnStatus.COMMITTING;
+			break;
+		case 4:
+			status = TxnStatus.ROLLING_BACK;
+			break;
+		case 5:
+			status = TxnStatus.UNKNOWN;
+			break;
+		default:
+			status = getTxnStatusDeprecated();
 		}
 
 		return status;
 
+	}
+
+	private TxnStatus getTxnStatusDeprecated() throws IOException {
+		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
+
+		String s = new String(bytes, US_ASCII);
+		try {
+			return TxnStatus.valueOf(s);
+		} catch (IllegalArgumentException e) {
+			// use platform encoding for backwards compatibility with versions
+			// older than 2.6.6:
+			s = new String(bytes);
+			try {
+				return TxnStatus.valueOf(s);
+			} catch (IllegalArgumentException e2) {
+				return TxnStatus.UNKNOWN;
+			}
+		}
 	}
 }
