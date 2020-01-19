@@ -48,7 +48,7 @@ public class TransactionsPerSecondBenchmark {
 	private SailRepository repository;
 	private File file;
 
-	@Param({ "100", "1000", "10000", "100000" })
+	@Param({ "100", "1000", "10000" })
 	public String numberOfTransactions;
 
 	@Setup(Level.Invocation)
