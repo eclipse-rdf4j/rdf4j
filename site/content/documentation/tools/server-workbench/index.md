@@ -56,7 +56,7 @@ The easiest way to create and manage repositories on an Rdf4j Server to use the 
 
 However, you can also directly edit the `config.ttl` of your repository to change its configuration. For example, you can use this to change the repository name as it is shown in the Workbench, or perhaps to change configuration parameters, or change the repository type. However, proceed with caution: if you make a mistake, your repository may become unreadable until after you've rectified the mistake. Also note that if you change the actual store type (e.g. switching from a memory store to a native store), it _won't_ migrate your existing data to the new store configuration!
 
-More information can be found in the <a href="/documentation/tools/repository-config/">Repository configuration and templates</a> section of the documentation.
+More information can be found in the <a href="/documentation/tools/repository-configuration/">Repository configuration and templates</a> section of the documentation.
 
 ### Logging Configuration
 
@@ -424,3 +424,15 @@ Your data will only be committed if it passes validation.
 
 For a list of supported features and more info on how to use SHACL - see <a href="/documentation/programming/shacl/">Programming with SHACL</a>.
 
+
+## Federation
+
+NOTE: new in RDF4J 3.1
+
+RDF4J integrates federation support using the <a href="/documentation/programming/federation/">FedX engine</a>.
+
+A federation can be configured from the RDF4J Workbench UI by picking the federation members. Once configured it can be used to explore or query the data of the federation members as a virtually integrated graph.
+
+<img src="images/createFederation.png" alt="Create Federation" class="img-responsive"/>
+
+See <a href="/documentation/programming/federation/">Federation with FedX</a> for more information.
