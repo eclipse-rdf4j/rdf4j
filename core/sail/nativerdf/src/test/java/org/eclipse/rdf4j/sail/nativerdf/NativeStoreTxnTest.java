@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.File;
 import java.nio.file.Files;
 
+import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -26,6 +27,10 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
+import static java.nio.charset.StandardCharsets.US_ASCII;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class NativeStoreTxnTest {
 
@@ -103,5 +108,36 @@ public class NativeStoreTxnTest {
 			conn.remove(stmt);
 			conn.commit();
 		}
+	}
+
+	@Test
+	public void testOldTxnStatusFile() throws Exception {
+
+		try (RepositoryConnection con = repo.getConnection()) {
+			con.begin();
+			assertFalse(con.hasStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, false));
+			con.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			con.commit();
+		}
+		repo.shutDown();
+
+		File txnStatusFile = new File(repo.getDataDir().getAbsolutePath() + "/txn-status");
+
+		// write old format of txn-status
+		NioFile nioFile = new NioFile(txnStatusFile);
+		byte[] bytes = "COMMITTING".getBytes(US_ASCII);
+		nioFile.truncate(bytes.length);
+		nioFile.writeBytes(bytes, 0);
+
+		repo.init();
+
+		try (RepositoryConnection con = repo.getConnection()) {
+
+			con.begin();
+			assertTrue(con.hasStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, false));
+			con.commit();
+
+		}
+
 	}
 }
