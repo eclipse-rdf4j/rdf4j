@@ -33,6 +33,10 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+/**
+ * Various tests on linear execution of updates.
+ *
+ */
 public class LinearTest {
 
 	@BeforeClass

@@ -1101,7 +1101,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		List<NameValuePair> queryParams = new ArrayList<>();
 
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
-		queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+
+		if (update != null) {
+			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+		}
 
 		if (baseURI != null) {
 			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
