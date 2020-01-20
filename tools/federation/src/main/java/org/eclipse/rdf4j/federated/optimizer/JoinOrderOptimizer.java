@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -152,6 +153,11 @@ public class JoinOrderOptimizer {
 			return new ArrayList<>();
 		}
 
+		if (tupleExpr instanceof Extension) {
+			// for a BIND extension in our cost model we work with 0 free vars
+			return new ArrayList<String>();
+		}
+
 		throw new FedXRuntimeException("Type " + tupleExpr.getClass().getSimpleName()
 				+ " not supported for cost estimation. If you run into this, please report a bug.");
 
@@ -175,6 +181,9 @@ public class JoinOrderOptimizer {
 			return estimateCost((Projection) tupleExpr, joinVars);
 		if (tupleExpr instanceof BindingSetAssignment)
 			return 0;
+		if (tupleExpr instanceof Extension) {
+			return 0;
+		}
 
 		log.warn("No cost estimation for " + tupleExpr.getClass().getSimpleName() + " available.");
 

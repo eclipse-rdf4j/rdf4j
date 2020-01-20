@@ -85,6 +85,14 @@ public class BasicTests extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void testBindClause() throws Exception {
+
+		/* test query with bind clause */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		execute("/tests/basic/query_bind.rq", "/tests/basic/query_bind.srx", false);
+	}
+
+	@Test
 	public void testFederationSubSetQuery() throws Exception {
 		String ns1 = "http://namespace1.org/";
 		String ns2 = "http://namespace2.org/";
