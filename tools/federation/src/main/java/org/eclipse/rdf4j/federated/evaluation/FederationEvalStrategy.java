@@ -29,8 +29,9 @@ import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
@@ -105,7 +106,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	private static final Logger log = LoggerFactory.getLogger(FederationEvalStrategy.class);
 
 	protected Executor executor;
-	protected Cache cache;
+	protected SourceSelectionCache cache;
 
 	protected FederationContext federationContext;
 
@@ -129,7 +130,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}, federationContext.getFederatedServiceResolver());
 		this.federationContext = federationContext;
 		this.executor = federationContext.getManager().getExecutor();
-		this.cache = federationContext.getCache();
+		this.cache = createSourceSelectionCache();
+	}
+
+	/**
+	 * Create the {@link SourceSelectionCache}
+	 * 
+	 * @return the {@link SourceSelectionCache}
+	 * @see FedXConfig#getSourceSelectionCacheSpec()
+	 */
+	protected SourceSelectionCache createSourceSelectionCache() {
+		String cacheSpec = federationContext.getConfig().getSourceSelectionCacheSpec();
+		return new SourceSelectionMemoryCache(cacheSpec);
 	}
 
 	@Override
@@ -168,8 +180,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		// if the federation has a single member only, evaluate the entire query there
 		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService())
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
-
-		Cache cache = federationContext.getCache();
 
 		if (log.isTraceEnabled()) {
 			log.trace("Query before Optimization: " + query);
@@ -230,7 +240,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @param info
 	 * @return the set of relevant endpoints for the entire query
 	 */
-	protected Set<Endpoint> performSourceSelection(List<Endpoint> members, Cache cache, QueryInfo queryInfo,
+	protected Set<Endpoint> performSourceSelection(List<Endpoint> members, SourceSelectionCache cache,
+			QueryInfo queryInfo,
 			GenericInfoOptimizer info) {
 
 		// Source Selection: all nodes are annotated with their source

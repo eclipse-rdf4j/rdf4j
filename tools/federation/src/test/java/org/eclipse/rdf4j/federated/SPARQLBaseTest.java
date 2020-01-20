@@ -29,6 +29,18 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 	@RegisterExtension
 	public FedXRule fedxRule = new FedXRule();
 
+	protected SPARQLBaseTest() {
+		super();
+		initFedXConfig();
+	}
+
+	/**
+	 * Can be used to initialize the {@link FedXRule} from sub clases
+	 */
+	protected void initFedXConfig() {
+
+	}
+
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
 	 * 
