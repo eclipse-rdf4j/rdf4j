@@ -214,6 +214,7 @@
       <dependency>
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
+        <version>${guava.version}</version>
       </dependency>
 
       <!-- Logging: SLF4J and logback -->
