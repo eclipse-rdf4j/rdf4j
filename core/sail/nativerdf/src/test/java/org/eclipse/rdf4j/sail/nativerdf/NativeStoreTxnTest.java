@@ -7,9 +7,6 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.File;
-import java.nio.file.Files;
-
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -21,6 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -28,9 +26,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.File;
+import java.nio.file.Files;
+
 import static java.nio.charset.StandardCharsets.US_ASCII;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 public class NativeStoreTxnTest {
 
@@ -113,13 +115,14 @@ public class NativeStoreTxnTest {
 	@Test
 	public void testOldTxnStatusFile() throws Exception {
 
-		try (RepositoryConnection con = repo.getConnection()) {
-			con.begin();
-			assertFalse(con.hasStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, false));
-			con.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
-			con.commit();
+		TripleStore tripleStore = new TripleStore(repo.getDataDir(), "spoc");
+		try {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 4);
+			// forget to commit or rollback
+		} finally {
+			tripleStore.close();
 		}
-		repo.shutDown();
 
 		File txnStatusFile = new File(repo.getDataDir().getAbsolutePath() + "/txn-status");
 
@@ -129,14 +132,30 @@ public class NativeStoreTxnTest {
 		nioFile.truncate(bytes.length);
 		nioFile.writeBytes(bytes, 0);
 
-		repo.init();
+		// Try to restore from the uncompleted transaction
+		tripleStore = new TripleStore(repo.getDataDir(), "spoc");
+		try {
+			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
+				// iter should contain exactly one element
+				assertNotNull(iter.next());
+				assertNull(iter.next());
+			}
+		} finally {
+			tripleStore.close();
+		}
 
-		try (RepositoryConnection con = repo.getConnection()) {
+	}
 
-			con.begin();
-			assertTrue(con.hasStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, false));
-			con.commit();
+	@Test
+	public void testOldTxnStatusesDoNotConflict() {
+		String[] oldTxtStatuses = { "NONE", "ACTIVE", "COMMITTING", "ROLLING_BACK", "UNKNOWN" };
 
+		for (String value1 : oldTxtStatuses) {
+			for (TxnStatusFile.TxnStatus value2 : TxnStatusFile.TxnStatus.values()) {
+				byte firstByteInOldValue = value1.getBytes(US_ASCII)[0];
+				byte firstByteInNewValue = value2.getOnDisk()[0];
+				assertNotEquals(firstByteInOldValue, firstByteInNewValue);
+			}
 		}
 
 	}

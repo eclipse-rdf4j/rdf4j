@@ -7,11 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import org.eclipse.rdf4j.common.io.NioFile;
+
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
-
-import org.eclipse.rdf4j.common.io.NioFile;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
@@ -19,63 +18,52 @@ import static java.nio.charset.StandardCharsets.US_ASCII;
  * Writes transaction statuses to a file.
  */
 class TxnStatusFile {
-	public static final byte NONE_BYTE = (byte) 0b00000001;
-	public static final byte ACTIVE_BYTE = (byte) 0b00000010;
-	public static final byte COMMITTING_BYTE = (byte) 0b00000100;
-	public static final byte ROLLING_BACK_BYTE = (byte) 0b00001000;
-	public static final byte UNKNOWN_BYTE = (byte) 0b00010000;
 
-	public static enum TxnStatus {
+	public enum TxnStatus {
 
 		/**
 		 * No active transaction. This occurs if no transaction has been started yet, or if all transactions have been
 		 * committed or rolled back.
 		 */
-		NONE(NONE_BYTE),
+		NONE(TxnStatus.NONE_BYTE),
 
 		/**
 		 * A transaction has been started, but was not yet committed or rolled back.
 		 */
-		ACTIVE(ACTIVE_BYTE),
+		ACTIVE(TxnStatus.ACTIVE_BYTE),
 
 		/**
 		 * A transaction is being committed.
 		 */
-		COMMITTING(COMMITTING_BYTE),
+		COMMITTING(TxnStatus.COMMITTING_BYTE),
 
 		/**
 		 * A transaction is being rolled back.
 		 */
-		ROLLING_BACK(ROLLING_BACK_BYTE),
+		ROLLING_BACK(TxnStatus.ROLLING_BACK_BYTE),
 
 		/**
 		 * The transaction status is unknown.
 		 */
-		UNKNOWN(UNKNOWN_BYTE);
+		UNKNOWN(TxnStatus.UNKNOWN_BYTE);
 
-		byte[] onDisk;
+		private final byte[] onDisk;
 
 		TxnStatus(byte onDisk) {
 			this.onDisk = new byte[1];
 			this.onDisk[0] = onDisk;
 		}
 
-	}
-
-	// THIS CODE BLOCK CAN BE REMOVED IN RDF4J release 4.0!!!
-	// check that none of the new TxnStatus conflict with the old ones, ie. if the first byte for the old values are the
-	// same as the first byte for the new values
-	{
-		boolean assertsEnabled = TxnStatus.class.desiredAssertionStatus();
-		if (assertsEnabled) {
-			for (TxnStatus value1 : TxnStatus.values()) {
-				for (TxnStatus value2 : TxnStatus.values()) {
-					byte firstByteInOldValue = value1.name().getBytes(US_ASCII)[0];
-					byte firstByteInNewValue = value2.onDisk[0];
-					assert firstByteInOldValue != firstByteInNewValue;
-				}
-			}
+		byte[] getOnDisk() {
+			return onDisk;
 		}
+
+		private static final byte NONE_BYTE = (byte) 0b00000001;
+		private static final byte ACTIVE_BYTE = (byte) 0b00000010;
+		private static final byte COMMITTING_BYTE = (byte) 0b00000100;
+		private static final byte ROLLING_BACK_BYTE = (byte) 0b00001000;
+		private static final byte UNKNOWN_BYTE = (byte) 0b00010000;
+
 	}
 
 	/**
@@ -129,19 +117,19 @@ class TxnStatusFile {
 		TxnStatus status;
 
 		switch (bytes[0]) {
-		case NONE_BYTE:
+		case TxnStatus.NONE_BYTE:
 			status = TxnStatus.NONE;
 			break;
-		case ACTIVE_BYTE:
+		case TxnStatus.ACTIVE_BYTE:
 			status = TxnStatus.ACTIVE;
 			break;
-		case COMMITTING_BYTE:
+		case TxnStatus.COMMITTING_BYTE:
 			status = TxnStatus.COMMITTING;
 			break;
-		case ROLLING_BACK_BYTE:
+		case TxnStatus.ROLLING_BACK_BYTE:
 			status = TxnStatus.ROLLING_BACK;
 			break;
-		case UNKNOWN_BYTE:
+		case TxnStatus.UNKNOWN_BYTE:
 			status = TxnStatus.UNKNOWN;
 			break;
 		default:
