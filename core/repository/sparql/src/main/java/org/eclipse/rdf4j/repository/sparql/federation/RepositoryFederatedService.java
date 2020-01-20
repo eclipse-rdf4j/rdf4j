@@ -245,6 +245,11 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+		} catch (RuntimeException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
+			throw e;
 		}
 	}
 
@@ -371,6 +376,9 @@ public class RepositoryFederatedService implements FederatedService {
 			return result;
 
 		} catch (RepositoryException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
 				return new CollectionIteration<>(allBindings);
