@@ -30,6 +30,7 @@ import java.io.File;
 import java.nio.file.Files;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -143,6 +144,10 @@ public class NativeStoreTxnTest {
 		} finally {
 			tripleStore.close();
 		}
+
+		TxnStatusFile.TxnStatus currentStatus = new TxnStatusFile(repo.getDataDir()).getTxnStatus();
+
+		assertEquals(TxnStatusFile.TxnStatus.NONE, currentStatus);
 
 	}
 
