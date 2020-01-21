@@ -1,29 +1,29 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<sparql xmlns='http://www.w3.org/2005/sparql-results#'>
-  <head>
-         <variable name='uri'/>
-         <variable name='id'/>
-         <variable name='title'/>
-         <variable name='readable'/>
-         <variable name='writable'/>
-  </head>
-  <results ordered='false' distinct='false'>
-         <result>
-                <binding name='uri'>
-                  <uri>http://localhost/rdf4j-server/repositories/testf</uri>
-                </binding>
-                <binding name='id'>
-                  <literal>test</literal>
-                </binding>
-                <binding name='title'>
-                  <literal>Main Memory RDF repository</literal>
-                </binding>
-                <binding name='readable'>
-                  <literal datatype='http://www.w3.org/2001/XMLSchema#boolean'>true</literal>
-                </binding>
-                <binding name='writable'>
-                  <literal datatype='http://www.w3.org/2001/XMLSchema#boolean'>false</literal>
-                </binding>
-         </result>
-  </results>
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+	<head>
+		<variable name="uri"/>
+		<variable name="id"/>
+		<variable name="title"/>
+		<variable name="readable"/>
+		<variable name="writable"/>
+	</head>
+	<results ordered="false" distinct="false">
+		<result>
+			<binding name="uri">
+				<uri>http://localhost/rdf4j-server/repositories/testf</uri>
+			</binding>
+			<binding name="id">
+				<literal>test</literal>
+			</binding>
+			<binding name="title">
+				<literal>Main Memory RDF repository</literal>
+			</binding>
+			<binding name="readable">
+				<literal datatype="http://www.w3.org/2001/XMLSchema#boolean">true</literal>
+			</binding>
+			<binding name="writable">
+				<literal datatype="http://www.w3.org/2001/XMLSchema#boolean">false</literal>
+			</binding>
+		</result>
+	</results>
 </sparql>

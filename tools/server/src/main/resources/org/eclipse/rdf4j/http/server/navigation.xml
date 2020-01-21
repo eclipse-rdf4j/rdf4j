@@ -1,8 +1,7 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-
+<?xml version="1.0" encoding="UTF-8"?>
 <navigation id="rdf4j-server">
-	<!-- Group definitions -->	
+	<!-- Group definitions -->
 	<group id="home">
-		<view id="overview" />
+		<view id="overview"/>
 	</group>
 </navigation>

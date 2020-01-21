@@ -5,9 +5,8 @@
 			<layout class="org.eclipse.rdf4j.common.logging.file.logback.StackTracePatternLayout"/>
 		</encoder>
 	</appender>
-
 	<root>
-		<level value="WARN" />
-		<appender-ref ref="STDOUT" />
+		<level value="WARN"/>
+		<appender-ref ref="STDOUT"/>
 	</root>
 </configuration>
