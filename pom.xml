@@ -596,6 +596,15 @@
 					<version>1.6</version>
 				</plugin>
 				<plugin>
+					<groupId>au.com.acegi</groupId>
+					<artifactId>xml-format-maven-plugin</artifactId>
+					<!-- we use the snapshot version to allow tab indents -->
+					<version>3.1.2-SNAPSHOT</version>
+					<configuration>
+						<tabIndent>true</tabIndent>
+					</configuration>
+				</plugin>
+				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-eclipse-plugin</artifactId>
 					<version>2.9</version>

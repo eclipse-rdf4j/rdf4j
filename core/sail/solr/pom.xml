@@ -88,6 +88,13 @@
 			<id>maven-restlet</id>
 			<name>Public online Restlet repository</name>
 			<url>https://maven.restlet.talend.com</url>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+			<snapshots>
+				<enabled>false</enabled>
+				<updatePolicy>never</updatePolicy>
+			</snapshots>
 		</repository>
 	</repositories>
 </project>

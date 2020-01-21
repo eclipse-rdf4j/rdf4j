@@ -371,20 +371,20 @@ public class TurtleUtil {
 
 		if (!isPN_CHARS_U(name.charAt(0)) && name.charAt(0) != ':' && !ASCIIUtil.isNumber(name.charAt(0))
 				&& !isPLX_START(name)) {
-			System.err.println("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
+			logger.debug("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
 					+ name.charAt(0) + " name=" + name);
 			return false;
 		}
 
 		if (!isNameStartChar(name.charAt(0))) {
-			System.err.println("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
+			logger.debug("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
 					+ " name=" + name);
 			return false;
 		}
 
 		for (int i = 1; i < name.length(); i++) {
 			if (!isNameChar(name.charAt(i))) {
-				System.err.println("name was not valid (intermediate character invalid) i=" + i + " nextchar="
+				logger.debug("name was not valid (intermediate character invalid) i=" + i + " nextchar="
 						+ name.charAt(i) + " name=" + name);
 				return false;
 			}
@@ -392,7 +392,7 @@ public class TurtleUtil {
 			// Check if the percent encoding was less than two characters from the
 			// end of the prefix, in which case it is invalid
 			if (name.charAt(i) == '%' && (name.length() - i) < 3) {
-				System.err.println("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
+				logger.debug("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
 						+ " name=" + name);
 				return false;
 			}
