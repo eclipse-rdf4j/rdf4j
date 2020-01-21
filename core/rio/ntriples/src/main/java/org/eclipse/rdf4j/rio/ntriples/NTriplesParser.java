@@ -18,6 +18,8 @@ import java.util.Collection;
 import java.util.HashSet;
 
 import org.apache.commons.io.input.BOMInputStream;
+
+import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -42,18 +44,10 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
  */
 public class NTriplesParser extends AbstractRDFParser {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	protected PushbackReader reader;
-
 	protected long lineNo;
-
 	protected Resource subject;
-
 	protected IRI predicate;
-
 	protected Value object;
 
 	/*--------------*
@@ -250,15 +244,10 @@ public class NTriplesParser extends AbstractRDFParser {
 		boolean ignoredAnError = false;
 		try {
 			c = parseSubject(c);
-
 			c = skipWhitespace(c);
-
 			c = parsePredicate(c);
-
 			c = skipWhitespace(c);
-
 			c = parseObject(c);
-
 			c = skipWhitespace(c);
 
 			if (c == -1) {
@@ -416,7 +405,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		c = readCodePoint();
 		if (c == -1) {
 			throwEOFException();
-		} else if (!NTriplesUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
+		} else if (!ASCIIUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
 			reportError("Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
 					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
@@ -499,7 +488,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			// Read language
 			c = readCodePoint();
 
-			if (!NTriplesUtil.isLetter(c)) {
+			if (!ASCIIUtil.isLetter(c)) {
 				reportError("Expected a letter, found: " + new String(Character.toChars(c)),
 						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			}

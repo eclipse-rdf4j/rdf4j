@@ -20,6 +20,7 @@ import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.common.io.IndentingWriter;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -48,12 +49,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	private static final int LINE_WRAP = 80;
 
 	private static final IRI FIRST = new SimpleIRI(RDF.FIRST.stringValue()) {
-
 		private static final long serialVersionUID = -7951518099940758898L;
 	};
 
 	private static final IRI REST = new SimpleIRI(RDF.REST.stringValue()) {
-
 		private static final long serialVersionUID = -7951518099940758898L;
 	};
 
@@ -62,18 +61,14 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *-----------*/
 
 	protected ParsedIRI baseIRI;
-
 	protected IndentingWriter writer;
-
 	protected boolean writingStarted;
 
 	/**
 	 * Flag indicating whether the last written statement has been closed.
 	 */
 	protected boolean statementClosed;
-
 	protected Resource lastWrittenSubject;
-
 	protected IRI lastWrittenPredicate;
 
 	/**
@@ -83,13 +78,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Model prettyPrintModel;
 
 	private final Deque<Resource> stack = new LinkedList<>();
-
 	private final Deque<IRI> path = new LinkedList<>();
 
 	private Boolean xsdStringToPlainLiteral;
-
 	private Boolean prettyPrint;
-
 	private boolean inlineBNodes;
 
 	/*--------------*
@@ -108,7 +100,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out The OutputStream to write the Turtle document to.
+	 * @param out     The OutputStream to write the Turtle document to.
+	 * @param baseIRI
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
 		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
@@ -126,7 +119,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied Writer.
 	 *
-	 * @param writer The Writer to write the Turtle document to.
+	 * @param writer  The Writer to write the Turtle document to.
+	 * @param baseIRI
 	 */
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
@@ -362,7 +356,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected void writeBase(String baseURI) throws IOException {
 		writer.write("@base <");
-		writer.write(TurtleUtil.encodeURIString(baseURI));
+		StringUtil.simpleEscapeIRI(baseURI, writer, false);
 		writer.write("> .");
 		writer.writeEOL();
 	}
@@ -371,7 +365,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		writer.write("@prefix ");
 		writer.write(prefix);
 		writer.write(": <");
-		writer.write(TurtleUtil.encodeURIString(name));
+		StringUtil.simpleEscapeIRI(name, writer, false);
 		writer.write("> .");
 		writer.writeEOL();
 	}
@@ -463,12 +457,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		} else if (baseIRI != null) {
 			// Write relative URI
 			writer.write("<");
-			writer.write(TurtleUtil.encodeURIString(baseIRI.relativize(uriString)));
+			StringUtil.simpleEscapeIRI(baseIRI.relativize(uriString), writer, false);
 			writer.write(">");
 		} else {
 			// Write full URI
 			writer.write("<");
-			writer.write(TurtleUtil.encodeURIString(uriString));
+			StringUtil.simpleEscapeIRI(uriString, writer, false);
 			writer.write(">");
 		}
 	}
