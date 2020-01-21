@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<beans xmlns="http://www.springframework.org/schema/beans"
-       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd">
-
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd">
 	<!-- RESOURCES -->
 	<bean id="messageSource" class="org.springframework.context.support.ResourceBundleMessageSource">
 		<property name="basenames">
@@ -12,7 +9,6 @@
 			</list>
 		</property>
 	</bean>
-
 	<!--
 		Navigation model for the application. Intended to be extended by webapps based on this one.
 		To do so, add the navigation models from the list below at the end of the list of navigation models
@@ -26,11 +22,10 @@
 			</list>
 		</property>
 	</bean>
-
 	<!-- MAPPINGS -->
 	<!-- Mappings for the "system configuration" part of a webapp. -->
 	<bean id="commonWebappSystemUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
-		<property name="order" value="0" />
+		<property name="order" value="0"/>
 		<property name="alwaysUseFullPath" value="true"/>
 		<property name="mappings">
 			<props>
@@ -42,25 +37,22 @@
 		</property>
 		<property name="interceptors">
 			<list>
-				<ref bean="commonWebappCommonValuesInserter" />
-				<ref bean="commonWebappMessageInserter" />
-				<ref bean="commonWebappNavigationInserter" />
+				<ref bean="commonWebappCommonValuesInserter"/>
+				<ref bean="commonWebappMessageInserter"/>
+				<ref bean="commonWebappNavigationInserter"/>
 			</list>
 		</property>
 	</bean>
-
 	<!-- CONTROLLERS -->
 	<bean id="commonWebappSystemOverviewController" class="org.eclipse.rdf4j.common.webapp.system.SystemOverviewController">
-		<property name="view" value="system/overview" />
-		<property name="config" ref="commonAppConfig" />
+		<property name="view" value="system/overview"/>
+		<property name="config" ref="commonAppConfig"/>
 	</bean>
-
 	<bean id="commonWebappLoggingOverviewController" class="org.eclipse.rdf4j.common.webapp.system.logging.LoggingOverviewController">
-		<property name="config" ref="commonAppConfig" />
+		<property name="config" ref="commonAppConfig"/>
 	</bean>
-
 	<bean id="commonWebappSystemInfoController" class="org.eclipse.rdf4j.common.webapp.system.SystemInfoController">
-		<property name="view" value="system/info/overview" />
-		<property name="config" ref="commonAppConfig" />
+		<property name="view" value="system/info/overview"/>
+		<property name="config" ref="commonAppConfig"/>
 	</bean>
 </beans>
