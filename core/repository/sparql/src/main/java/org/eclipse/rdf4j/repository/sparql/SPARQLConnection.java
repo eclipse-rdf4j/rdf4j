@@ -63,6 +63,7 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLGraphQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLTupleQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLUpdate;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -107,6 +108,12 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public String toString() {
 		return client.getQueryURL();
+	}
+
+	@Override
+	public void setParserConfig(ParserConfig parserConfig) {
+		client.setParserConfig(parserConfig);
+		super.setParserConfig(parserConfig);
 	}
 
 	@Override
