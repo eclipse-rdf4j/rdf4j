@@ -61,22 +61,6 @@
 		</dependency>
 		<!-- testing dependencies -->
 		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-repository-sail</artifactId>
-			<!-- we use a fixed version for testing purposes -->
-			<!-- FIXME this dependency should be stubbed/mocked: https://github.com/eclipse/rdf4j/issues/1263 -->
-			<version>2.5.2</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-sail-memory</artifactId>
-			<!-- we use a fixed version for testing purposes -->
-			<!-- FIXME this dependency should be stubbed/mocked: https://github.com/eclipse/rdf4j/issues/1263 -->
-			<version>2.5.2</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
 			<groupId>com.github.tomakehurst</groupId>
 			<artifactId>wiremock-jre8</artifactId>
 			<scope>test</scope>
