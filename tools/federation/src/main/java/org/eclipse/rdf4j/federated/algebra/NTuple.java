@@ -90,10 +90,12 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		int index = args.indexOf(current);
 
-		if (index >= 0)
+		if (index >= 0) {
 			args.set(index, (TupleExpr) replacement);
-		else
+			replacement.setParentNode(this);
+		} else {
 			super.replaceChildNode(current, replacement);
+		}
 	}
 
 	@Override

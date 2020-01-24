@@ -124,6 +124,10 @@ public abstract class FedXBaseTest {
 
 		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(readQueryString(queryFile));
 		String expectedQueryPlan = readResourceAsString(expectedPlanFile);
+		assertQueryPlanEquals(expectedQueryPlan, actualQueryPlan);
+	}
+
+	protected void assertQueryPlanEquals(String expectedQueryPlan, String actualQueryPlan) {
 
 		// make sure the comparison works cross operating system
 		expectedQueryPlan = expectedQueryPlan.replace("\r\n", "\n");
@@ -132,7 +136,6 @@ public abstract class FedXBaseTest {
 		actualQueryPlan = actualQueryPlan.replace("sparql_localhost:18080_repositories_", "");
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
-
 	}
 
 	/**

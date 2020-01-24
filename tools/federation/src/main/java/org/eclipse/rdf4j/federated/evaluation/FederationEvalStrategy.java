@@ -47,12 +47,13 @@ import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+import org.eclipse.rdf4j.federated.optimizer.DefaultFedXCostModel;
 import org.eclipse.rdf4j.federated.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.GenericInfoOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.LimitOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.ServiceOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.SourceSelection;
-import org.eclipse.rdf4j.federated.optimizer.StatementGroupOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.StatementGroupAndJoinOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -182,7 +183,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		/*
 		 * TODO add some generic optimizers: - FILTER ?s=1 && ?s=2 => EmptyResult - Remove variables that are not
-		 * occuring in query stmts from filters
+		 * occurring in query stmts from filters
 		 */
 
 		/* custom optimizers, execute only when needed */
@@ -201,7 +202,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		// optimize statement groups and join order
-		new StatementGroupOptimizer(queryInfo).optimize(query);
+		optimizeJoinOrder(query, queryInfo, info);
 
 		// potentially push limits (if applicable)
 		if (info.hasLimit()) {
@@ -242,7 +243,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
 		// optimize statement groups and join order
-		new StatementGroupOptimizer(queryInfo).optimize(query);
+		new StatementGroupAndJoinOptimizer(queryInfo, DefaultFedXCostModel.INSTANCE).optimize(query);
+
 	}
 
 	@Override
