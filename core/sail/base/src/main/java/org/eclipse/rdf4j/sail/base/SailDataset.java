@@ -27,7 +27,8 @@ public interface SailDataset extends SailClosable {
 	/**
 	 * Called when this {@link SailDataset} is no longer is used, such as when a read operation is complete. An
 	 * isolation level compatible with {@link IsolationLevels#SNAPSHOT} will ensure the state of this
-	 * {@link SailDataset} dose not change between the first call to this object until {@link #release()} is called.
+	 * {@link SailDataset} dose not change between the first call to this object until {@link SailClosable#release()} is
+	 * called.
 	 */
 	@Override
 	void close() throws SailException;

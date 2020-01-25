@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.queryrender.builder;
  * </p>
  * 
  * @author Michael Grove
- * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
 @Deprecated
 public interface SupportsGroups<T> {

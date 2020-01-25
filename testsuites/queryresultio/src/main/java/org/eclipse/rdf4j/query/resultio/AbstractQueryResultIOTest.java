@@ -483,13 +483,13 @@ public abstract class AbstractQueryResultIOTest {
 	 * an exception of type {@link QueryResultParseException}.
 	 * 
 	 * @param format
-	 * @param tqr
+	 * @param input
 	 * @param matchingBooleanFormat A BooleanQueryResultFormat that matches the given TupleQueryResultFormat .
 	 * @throws IOException
 	 * @throws QueryEvaluationException
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws QueryResultHandlerException
-	 * @see SES-1860
+	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1860">SES-1860</a>
 	 */
 	protected void doTupleParseNoHandlerOnBooleanResults(TupleQueryResultFormat format, boolean input,
 			BooleanQueryResultFormat matchingBooleanFormat)
@@ -680,7 +680,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * @throws QueryEvaluationException
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws TupleQueryResultHandlerException
-	 * @see SES-1860
+	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1860">SES-1860</a>
 	 */
 	protected void doBooleanParseNoHandlerOnTupleResults(BooleanQueryResultFormat format, TupleQueryResult tqr,
 			TupleQueryResultFormat matchingTupleFormat) throws TupleQueryResultHandlerException,

@@ -32,6 +32,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	/**
 	 * Create a new RepositoryConfigImpl.
+	 * 
+	 * @param type
 	 */
 	public AbstractRepositoryImplConfig(String type) {
 		this();
@@ -75,7 +77,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	 * Utility method to create a new {@link RepositoryImplConfig} by reading data from the supplied {@link Model}.
 	 * 
 	 * @param model    the {@link Model} to read configuration data from.
-	 * @param implNode the subject {@link Resource} identifying the configuration data in the Model.
+	 * @param resource the subject {@link Resource} identifying the configuration data in the Model.
 	 * @return a new {@link RepositoryImplConfig} initialized with the configuration from the input Model, or
 	 *         {@code null} if no {@link RepositoryConfigSchema#REPOSITORYTYPE} property was found in the configuration
 	 *         data..

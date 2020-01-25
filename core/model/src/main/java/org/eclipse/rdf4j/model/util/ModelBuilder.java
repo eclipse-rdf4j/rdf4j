@@ -122,10 +122,10 @@ public class ModelBuilder {
 	 * Set the subject about which statements are to be added to the model, defined by a prefixed name or an IRI
 	 * reference.
 	 * 
-	 * @param subject the subject resource about which statements are to be added. This can be defined either as a
-	 *                prefixed name string (e.g. "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If
-	 *                supplied as a prefixed name, the {@link ModelBuilder} will need to have a namespace mapping for
-	 *                the prefix.
+	 * @param prefixedNameOrIri the subject resource about which statements are to be added. This can be defined either
+	 *                          as a prefixed name string (e.g. "ex:john"), or as a full IRI (e.g.
+	 *                          "http://example.org/john"). If supplied as a prefixed name, the {@link ModelBuilder}
+	 *                          will need to have a namespace mapping for the prefix.
 	 * @return the {@link ModelBuilder}
 	 */
 	public ModelBuilder subject(String prefixedNameOrIri) {
@@ -149,9 +149,9 @@ public class ModelBuilder {
 	 * Set the current graph in which to add new statements to the supplied named graph. This method clears the current
 	 * subject.
 	 * 
-	 * @param namedGraph a named graph identifier. This can be defined either as a prefixed name string (e.g.
-	 *                   "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed name,
-	 *                   the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
+	 * @param prefixedNameOrIRI a named graph identifier. This can be defined either as a prefixed name string (e.g.
+	 *                          "ex:john"), or as a full IRI (e.g. "http://example.org/john"). If supplied as a prefixed
+	 *                          name, the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
 	 * @return this {@link ModelBuilder}
 	 */
 	public ModelBuilder namedGraph(String prefixedNameOrIRI) {

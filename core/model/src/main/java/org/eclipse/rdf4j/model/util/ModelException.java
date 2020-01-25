@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * An exception thrown by {@link Model} and {@link org.eclipse.rdf4j.model.util.Models Models} when specific conditions
- * are not met.
+ * An exception thrown by {@link org.eclipse.rdf4j.model.Model Model} and {@link org.eclipse.rdf4j.model.util.Models
+ * Models} when specific conditions are not met.
  * 
  * @author Arjohn Kampman
  */

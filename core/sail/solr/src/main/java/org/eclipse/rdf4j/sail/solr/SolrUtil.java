@@ -19,7 +19,7 @@ public class SolrUtil {
 	 * Converts a {@link SolrDocument} to a {@link SolrInputDocument}
 	 * 
 	 * @param solrDocument
-	 * @return
+	 * @return input document
 	 */
 	public static SolrInputDocument toSolrInputDocument(SolrDocument solrDocument) {
 

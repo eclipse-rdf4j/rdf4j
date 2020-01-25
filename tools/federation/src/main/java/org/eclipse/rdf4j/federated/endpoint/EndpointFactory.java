@@ -237,8 +237,8 @@ public class EndpointFactory {
 	 * </p>
 	 * 
 	 * @param members
-	 * @param baseDirw
-	 * @return
+	 * @param baseDir
+	 * @return list of endpoints
 	 * @throws FedXException
 	 */
 	public static List<Endpoint> loadFederationMembers(Model members, File baseDir) throws FedXException {

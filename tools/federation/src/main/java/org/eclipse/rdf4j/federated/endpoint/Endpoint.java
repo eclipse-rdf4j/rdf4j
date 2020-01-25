@@ -117,7 +117,7 @@ public interface Endpoint {
 	/**
 	 * Initialize this {@link Endpoint}
 	 * 
-	 * @oaram {@link FederationContext}
+	 * @param federationContext
 	 * @throws RepositoryException
 	 */
 	public void init(FederationContext federationContext) throws RepositoryException;

@@ -28,8 +28,6 @@ public interface SailSink extends SailClosable {
 	 * Checks if this {@link SailSink} is consistent with the isolation level it was created with. If this Sink was
 	 * created with a {@link IsolationLevels#SERIALIZABLE} and another conflicting {@link SailSink} has already been
 	 * {@link #flush()}ed, this method will throw a {@link SailConflictException}.
-	 *
-	 * @return <code>false</code> if this sink has a conflict
 	 */
 	void prepare() throws SailException;
 

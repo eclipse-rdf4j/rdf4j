@@ -18,7 +18,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * Abstract superclass for {@link Function}s that cast an argument to an XML Schema datatype.
+ * Abstract superclass for {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function}s that cast an argument
+ * to an XML Schema datatype.
  * 
  * @author Jeen Broekstra
  * @see XMLSchema
