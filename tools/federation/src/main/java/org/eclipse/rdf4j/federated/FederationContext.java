@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import org.eclipse.rdf4j.federated.cache.Cache;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
@@ -28,20 +27,17 @@ public class FederationContext {
 
 	private final QueryManager queryManager;
 
-	private final Cache cache;
-
 	private final DelegateFederatedServiceResolver serviceResolver;
 
 	private final FedXConfig fedXConfig;
 
 	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
-			Cache cache, DelegateFederatedServiceResolver federatedServiceResolver,
+			DelegateFederatedServiceResolver federatedServiceResolver,
 			Monitoring monitoring, FedXConfig fedXConfig) {
 		super();
 		this.manager = manager;
 		this.endpointManager = endpointManager;
 		this.queryManager = queryManager;
-		this.cache = cache;
 		this.serviceResolver = federatedServiceResolver;
 		this.monitoring = monitoring;
 		this.fedXConfig = fedXConfig;
@@ -49,10 +45,6 @@ public class FederationContext {
 
 	public FedX getFederation() {
 		return this.manager.getFederation();
-	}
-
-	public Cache getCache() {
-		return this.cache;
 	}
 
 	public FederationManager getManager() {

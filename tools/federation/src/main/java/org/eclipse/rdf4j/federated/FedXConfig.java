@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
@@ -30,8 +29,6 @@ import com.google.common.cache.CacheBuilderSpec;
 public class FedXConfig {
 
 	public static FedXConfig DEFAULT_CONFIG = new FedXConfig();
-
-	private String cacheLocation = "cache.db";
 
 	private int joinWorkerThreads = 20;
 
@@ -167,21 +164,6 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Define the cache location. See {@link #getCacheLocation()}.
-	 * 
-	 * <p>
-	 * Can only be set before federation initialization.
-	 * </p>
-	 * 
-	 * @param cacheLocation
-	 * @return the current config
-	 */
-	public FedXConfig withCacheLocation(String cacheLocation) {
-		this.cacheLocation = cacheLocation;
-		return this;
-	}
-
-	/**
 	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
 	 * 
 	 * <p>
@@ -294,15 +276,6 @@ public class FedXConfig {
 	public FedXConfig withSourceSelectionCacheSpec(String cacheSpec) {
 		this.sourceSelectionCacheSpec = cacheSpec;
 		return this;
-	}
-
-	/**
-	 * The location of the cache, i.e. currently used in {@link MemoryCache}
-	 * 
-	 * @return the cache location
-	 */
-	public String getCacheLocation() {
-		return this.cacheLocation;
 	}
 
 	/**
