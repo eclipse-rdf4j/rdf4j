@@ -27,14 +27,4 @@ public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationExc
 		return new CloseableIterationIterator<T>(this);
 	}
 
-	/**
-	 *
-	 * Convert the results to a Java 8 Stream. Stream should be closed by calling .close().
-	 *
-	 * @return stream
-	 */
-	default Stream<T> stream() {
-		return Iterations.stream(this);
-	}
-
 }

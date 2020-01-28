@@ -133,14 +133,4 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 		return new CloseableIterationIterator<T>(this);
 	}
 
-	/**
-	 *
-	 * Convert the results to a Java 8 Stream. Stream should be closed by calling .close().
-	 *
-	 * @return stream
-	 */
-	public Stream<T> stream() {
-		return Iterations.stream(this);
-	}
-
 }
