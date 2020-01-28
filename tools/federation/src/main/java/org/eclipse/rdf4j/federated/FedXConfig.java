@@ -7,7 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
@@ -18,6 +19,8 @@ import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.Query;
 
+import com.google.common.cache.CacheBuilderSpec;
+
 /**
  * Configuration class for FedX
  * 
@@ -26,8 +29,6 @@ import org.eclipse.rdf4j.query.Query;
 public class FedXConfig {
 
 	public static FedXConfig DEFAULT_CONFIG = new FedXConfig();
-
-	private String cacheLocation = "cache.db";
 
 	private int joinWorkerThreads = 20;
 
@@ -52,6 +53,8 @@ public class FedXConfig {
 	private boolean enableJmx = false;
 
 	private boolean includeInferredDefault = true;
+
+	private String sourceSelectionCacheSpec = null;
 
 	private Class<? extends FederationEvalStrategy> sailEvaluationStrategy = SailFederationEvalStrategy.class;
 
@@ -161,21 +164,6 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Define the cache location. See {@link #getCacheLocation()}.
-	 * 
-	 * <p>
-	 * Can only be set before federation initialization.
-	 * </p>
-	 * 
-	 * @param cacheLocation
-	 * @return the current config
-	 */
-	public FedXConfig withCacheLocation(String cacheLocation) {
-		this.cacheLocation = cacheLocation;
-		return this;
-	}
-
-	/**
 	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
 	 * 
 	 * <p>
@@ -278,12 +266,16 @@ public class FedXConfig {
 	}
 
 	/**
-	 * The location of the cache, i.e. currently used in {@link MemoryCache}
+	 * The cache specification for the {@link SourceSelectionMemoryCache}. If not set explicitly, the
+	 * {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
 	 * 
-	 * @return the cache location
+	 * @param cacheSpec the {@link CacheBuilderSpec} for the {@link SourceSelectionCache}
+	 * @return the current config
+	 * @see SourceSelectionMemoryCache
 	 */
-	public String getCacheLocation() {
-		return this.cacheLocation;
+	public FedXConfig withSourceSelectionCacheSpec(String cacheSpec) {
+		this.sourceSelectionCacheSpec = cacheSpec;
+		return this;
 	}
 
 	/**
@@ -414,6 +406,16 @@ public class FedXConfig {
 	 */
 	public String getPrefixDeclarations() {
 		return prefixDeclarations;
+	}
+
+	/**
+	 * Returns the configured {@link CacheBuilderSpec} (if any) for the {@link SourceSelectionMemoryCache}. If not
+	 * defined, the {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
+	 * 
+	 * @return the {@link CacheBuilderSpec} or <code>null</code>
+	 */
+	public String getSourceSelectionCacheSpec() {
+		return this.sourceSelectionCacheSpec;
 	}
 
 	/**

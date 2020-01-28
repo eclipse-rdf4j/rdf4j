@@ -23,10 +23,8 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
-import org.eclipse.rdf4j.federated.cache.Cache;
-import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
-import org.eclipse.rdf4j.federated.cache.CacheEntry;
-import org.eclipse.rdf4j.federated.cache.CacheUtils;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
@@ -55,10 +53,10 @@ public class SourceSelection {
 	private static final Logger log = LoggerFactory.getLogger(SourceSelection.class);
 
 	protected final List<Endpoint> endpoints;
-	protected final Cache cache;
+	protected final SourceSelectionCache cache;
 	protected final QueryInfo queryInfo;
 
-	public SourceSelection(List<Endpoint> endpoints, Cache cache, QueryInfo queryInfo) {
+	public SourceSelection(List<Endpoint> endpoints, SourceSelectionCache cache, QueryInfo queryInfo) {
 		this.endpoints = endpoints;
 		this.cache = cache;
 		this.queryInfo = queryInfo;
@@ -97,10 +95,8 @@ public class SourceSelection {
 
 			// check for each current federation member (cache or remote ASK)
 			for (Endpoint e : endpoints) {
-				StatementSourceAssurance a = cache.canProvideStatements(q, e);
-				if (a == StatementSourceAssurance.HAS_LOCAL_STATEMENTS) {
-					addSource(stmt, new StatementSource(e.getId(), StatementSourceType.LOCAL));
-				} else if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
+				StatementSourceAssurance a = cache.getAssurance(q, e);
+				if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
 					addSource(stmt, new StatementSource(e.getId(), StatementSourceType.REMOTE));
 				} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
 					remoteCheckTasks.add(new CheckTaskPair(e, stmt, queryInfo));
@@ -186,7 +182,7 @@ public class SourceSelection {
 		 * 
 		 * @param tasks
 		 */
-		public static void run(SourceSelection sourceSelection, List<CheckTaskPair> tasks, Cache cache) {
+		public static void run(SourceSelection sourceSelection, List<CheckTaskPair> tasks, SourceSelectionCache cache) {
 			new SourceSelectionExecutorWithLatch(sourceSelection).executeRemoteSourceSelection(tasks, cache);
 		}
 
@@ -208,7 +204,7 @@ public class SourceSelection {
 		 * 
 		 * @param tasks
 		 */
-		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, Cache cache) {
+		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, SourceSelectionCache cache) {
 			if (tasks.isEmpty())
 				return;
 
@@ -319,8 +315,7 @@ public class SourceSelection {
 				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo);
 
 				SourceSelection sourceSelection = control.sourceSelection;
-				CacheEntry entry = CacheUtils.createCacheEntry(endpoint, hasResults);
-				sourceSelection.cache.updateEntry(new SubQuery(stmt), entry);
+				sourceSelection.cache.updateInformation(new SubQuery(stmt), endpoint, hasResults);
 
 				if (hasResults)
 					sourceSelection.addSource(stmt, new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));

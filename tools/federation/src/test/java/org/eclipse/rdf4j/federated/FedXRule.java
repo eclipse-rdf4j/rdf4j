@@ -29,6 +29,11 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 	public FedXRule() {
 	}
 
+	public FedXRule withConfiguration(Consumer<FedXConfig> configurator) {
+		configurations.add(configurator);
+		return this;
+	}
+
 	@Override
 	public void beforeEach(ExtensionContext ctx) throws Exception {
 		FedXConfig fedxConfig = new FedXConfig();
@@ -38,7 +43,6 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 		List<Endpoint> endpoints = Collections.<Endpoint>emptyList();
 		repository = FedXFactory.newFederation().withMembers(endpoints).withConfig(fedxConfig).create();
 		repository.init();
-		getFederationContext().getCache().clear();
 	}
 
 	@Override

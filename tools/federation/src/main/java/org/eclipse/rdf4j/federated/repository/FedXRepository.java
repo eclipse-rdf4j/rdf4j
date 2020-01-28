@@ -7,16 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
-import java.io.File;
-
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.QueryManager;
-import org.eclipse.rdf4j.federated.cache.Cache;
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
@@ -75,15 +71,6 @@ public class FedXRepository extends SailRepository {
 
 		EndpointManager endpointManager = EndpointManager.initialize(federation.getMembers());
 
-		String location = fedXConfig.getCacheLocation();
-
-		File cacheLocation = new File(location);
-		if (!cacheLocation.isAbsolute()) {
-			cacheLocation = new File(getDataDir(), location);
-		}
-		Cache cache = new MemoryCache(cacheLocation);
-		cache.initialize();
-
 		FederationManager federationManager = new FederationManager();
 
 		QueryManager queryManager = new QueryManager();
@@ -94,7 +81,7 @@ public class FedXRepository extends SailRepository {
 			fedxServiceResolver.setDelegate(serviceResolver);
 		}
 
-		federationContext = new FederationContext(federationManager, endpointManager, queryManager, cache,
+		federationContext = new FederationContext(federationManager, endpointManager, queryManager,
 				fedxServiceResolver, monitoring, fedXConfig);
 		federation.setFederationContext(federationContext);
 
