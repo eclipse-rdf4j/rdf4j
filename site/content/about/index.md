@@ -12,6 +12,11 @@ Eclipse RDF4J is an open source modular Java framework for working with <a href=
 
 RDF4J offers two out-of-the-box RDF databases (the in-memory store and the native store), and in addition many third party storage solutions are available. The framework offers a large scala of tools to developers to leverage the power of RDF and related standards. RDF4J fully supports the SPARQL 1.1 query and update language for expressive querying and offers transparent access to remote RDF repositories using the exact same API as for local access. Finally, RDF4J supports all mainstream RDF file formats, including RDF/XML, Turtle, N-Triples,  N-Quads, JSON-LD, TriG and TriX.
 
+<div style="padding: 6px; border: 1px solid grey; box-shadow: 5px 5px 2px grey;">
+<img src="/images/rdf4j-architecture.svg" alt="RDF4J Architecture">
+<strong>Eclipse RDF4J Modular Architecture</strong>
+</div>
+
 # RDF4J databases
 
 The RDF4J core framework provides a set of vendor-neutral APIs for highly scalable storage, reasoning, and retrieval of RDF and OWL. Here, we list some available database solutions that implement the RDF4J APIs.
