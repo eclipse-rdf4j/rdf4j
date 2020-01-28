@@ -5,7 +5,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.Rio;
@@ -52,7 +51,6 @@ public class ArrangedWriterTest {
 
 		input.setNamespace("org", exNs);
 		input.setNamespace("net", otherNs);
-		input.setNamespace(RDF.NS);
 
 		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
@@ -66,7 +64,7 @@ public class ArrangedWriterTest {
 
 	private void write(Model model, OutputStream writer) {
 		RDFWriter rdfWriter = writerFactory.getWriter(writer);
-		// without "pretty print" namespace-handling is delegated to TurtleWriter
+		// "pretty print" forces ArrangedWriter to handle namespaces
 		rdfWriter.getWriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true);
 		Rio.write(model, rdfWriter);
 	}
