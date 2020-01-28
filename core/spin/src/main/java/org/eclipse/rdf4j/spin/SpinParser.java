@@ -451,8 +451,7 @@ public class SpinParser {
 	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls, TripleSource store)
 			throws RDF4JException {
 		Set<IRI> possibleTmplTypes;
-		try (Stream<IRI> stream = Iterations.stream(TripleSources.getObjectURIs(tmplUri,
-				RDF.TYPE, store))) {
+		try (Stream<IRI> stream = TripleSources.getObjectURIs(tmplUri, RDF.TYPE, store).stream()) {
 			possibleTmplTypes = stream
 					.filter(TEMPLATE_TYPES::contains)
 					.collect(Collectors.toSet());

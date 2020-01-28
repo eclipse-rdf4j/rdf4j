@@ -201,7 +201,7 @@ public class SpinSailTest {
 
 		IRI OnlyChild = vf.createIRI(ns, "OnlyChild");
 
-		try (Stream<Statement> stream = Iterations.stream(conn.getStatements(null, RDF.TYPE, OnlyChild))) {
+		try (Stream<Statement> stream = conn.getStatements(null, RDF.TYPE, OnlyChild).stream()) {
 			long count = stream.peek(System.out::println).count();
 			assertEquals(0, count);
 		}

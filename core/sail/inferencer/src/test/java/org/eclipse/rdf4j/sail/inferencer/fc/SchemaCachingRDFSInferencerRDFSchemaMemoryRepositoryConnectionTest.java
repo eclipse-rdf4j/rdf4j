@@ -98,11 +98,11 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		 */
 
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null, true))) {
+		try (Stream<Statement> stream = testCon.getStatements(man, RDFS.SUBCLASSOF, null, true).stream()) {
 			stream.forEach(System.out::println);
 		}
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
+		try (Stream<Statement> stream = testCon.getStatements(bob, RDF.TYPE, null, true).stream()) {
 			stream.peek(statement -> assertEquals(graph3, statement.getContext())).forEach(System.out::println);
 		}
 

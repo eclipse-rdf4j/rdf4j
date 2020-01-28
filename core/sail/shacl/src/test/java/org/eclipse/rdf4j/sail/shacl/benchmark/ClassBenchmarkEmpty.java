@@ -133,9 +133,11 @@ public class ClassBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations
-						.stream(connection.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
-								+ FOAF.KNOWS + "> ?c. FILTER(NOT EXISTS{?c a <" + FOAF.PERSON + ">})}").evaluate())) {
+				try (Stream<BindingSet> stream = connection
+						.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
+								+ FOAF.KNOWS + "> ?c. FILTER(NOT EXISTS{?c a <" + FOAF.PERSON + ">})}")
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
