@@ -13,6 +13,12 @@
   color: black;
 }
 
+.logo-vendor {
+  float: right;
+  padding-left: 6px;
+  padding-bottom: 6px;
+}
+
 .featured-jumbotron h1:after {
   /* divider */
   border-bottom: 3px solid white;
