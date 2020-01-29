@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -57,6 +58,9 @@ public class DefaultFedXCostModel implements FedXCostModel {
 			return 0;
 		if (tupleExpr instanceof Extension) {
 			return 0;
+		}
+		if (tupleExpr instanceof ArbitraryLengthPath) {
+			return estimateCost((ArbitraryLengthPath) tupleExpr, joinVars);
 		}
 
 		log.warn("No cost estimation for " + tupleExpr.getClass().getSimpleName() + " available.");
@@ -203,4 +207,17 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		return cost + join.getNumberOfArguments() - 1;
 	}
 
+	private double estimateCost(ArbitraryLengthPath path, Set<String> joinVars) {
+
+		/* currently the cost is the number of free vars that are executed in the join */
+
+		int count = 100;
+		for (String var : StatementGroupAndJoinOptimizer.getFreeVars(path.getPathExpression())) {
+			if (!joinVars.contains(var)) {
+				count++;
+			}
+		}
+
+		return count;
+	}
 }

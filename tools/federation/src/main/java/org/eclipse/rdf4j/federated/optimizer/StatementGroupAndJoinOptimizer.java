@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NTuple;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -324,8 +324,12 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 			return new ArrayList<String>();
 		}
 
-		throw new FedXRuntimeException("Type " + tupleExpr.getClass().getSimpleName()
-				+ " not supported for cost estimation. If you run into this, please report a bug.");
+		if (tupleExpr instanceof ArbitraryLengthPath) {
+			return getFreeVars(((ArbitraryLengthPath) tupleExpr).getPathExpression());
+		}
 
+		log.warn("Type " + tupleExpr.getClass().getSimpleName()
+				+ " not supported for cost estimation. If you run into this, please report a bug.");
+		return new ArrayList<String>();
 	}
 }
