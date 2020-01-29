@@ -40,9 +40,7 @@ public class NavigationXmlParser {
 			Document document = DocumentUtil.getDocument(navigationXml);
 			Node rootNode = (Node) xpath.evaluate("/navigation", document, XPathConstants.NODE);
 			fillModel(result, rootNode);
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (XPathExpressionException e) {
+		} catch (IOException | XPathExpressionException e) {
 			e.printStackTrace();
 		}
 	}
@@ -144,7 +142,7 @@ public class NavigationXmlParser {
 
 	private boolean getBooleanAttribute(String attrValue, boolean defaultValue) {
 		boolean result = defaultValue;
-		if (attrValue != null && !attrValue.trim().equals("")) {
+		if (attrValue != null && !attrValue.trim().isEmpty()) {
 			result = attrValue.equalsIgnoreCase("true") || attrValue.equalsIgnoreCase("yes")
 					|| attrValue.equalsIgnoreCase("on");
 		}

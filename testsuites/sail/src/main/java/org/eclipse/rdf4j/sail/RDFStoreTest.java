@@ -260,7 +260,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongURIRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -273,7 +273,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongLiteralRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -286,7 +286,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testReallyLongLiteralRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 1024000; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -299,7 +299,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testLongLangRoundTrip() throws Exception {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < 512; i++) {
 			sb.append(Character.toChars('A' + (i % 26)));
 		}
@@ -672,6 +672,7 @@ public abstract class RDFStoreTest {
 
 			SailConnection sharedCon = con;
 
+			@Override
 			public void run() {
 				Assert.assertTrue(sharedCon != null);
 
@@ -914,16 +915,13 @@ public abstract class RDFStoreTest {
 			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, query, null);
 			Assert.assertEquals(5, countElements(
 					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));
-			Runnable clearer = new Runnable() {
-
-				public void run() {
-					try {
-						con.begin();
-						con.clear();
-						con.commit();
-					} catch (SailException e) {
-						throw new RuntimeException(e);
-					}
+			Runnable clearer = () -> {
+				try {
+					con.begin();
+					con.clear();
+					con.commit();
+				} catch (SailException e) {
+					throw new RuntimeException(e);
 				}
 			};
 			Thread thread = new Thread(clearer);

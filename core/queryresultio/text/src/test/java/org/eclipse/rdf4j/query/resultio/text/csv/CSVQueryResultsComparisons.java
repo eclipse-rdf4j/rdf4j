@@ -120,8 +120,8 @@ class CSVQueryResultsComparisons {
 					} else if (XMLDatatypeUtil.isIntegerDatatype(commonDatatype)) {
 						compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
 					} else if (commonDatatype.equals(XMLSchema.BOOLEAN)) {
-						Boolean leftBool = Boolean.valueOf(leftLit.booleanValue());
-						Boolean rightBool = Boolean.valueOf(rightLit.booleanValue());
+						Boolean leftBool = leftLit.booleanValue();
+						Boolean rightBool = rightLit.booleanValue();
 						compareResult = leftBool.compareTo(rightBool);
 					} else if (XMLDatatypeUtil.isCalendarDatatype(commonDatatype)) {
 						XMLGregorianCalendar left = leftLit.calendarValue();

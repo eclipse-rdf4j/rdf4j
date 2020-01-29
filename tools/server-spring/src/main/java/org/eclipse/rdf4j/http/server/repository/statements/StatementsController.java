@@ -256,7 +256,7 @@ public class StatementsController extends AbstractController {
 			return new ModelAndView(EmptySuccessView.getInstance());
 		} catch (QueryInterruptedException e) {
 			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "update execution took too long");
-		} catch (UpdateExecutionException e) {
+		} catch (UpdateExecutionException | RepositoryException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException
 				// directly
@@ -265,16 +265,11 @@ public class StatementsController extends AbstractController {
 			} else {
 				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 			}
-		} catch (RepositoryException e) {
-			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
-				// custom signal from the backend, throw as HTTPException
-				// directly
-				// (see SES-1016).
-				throw (HTTPException) e.getCause();
-			} else {
-				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
-			}
-		} catch (MalformedQueryException e) {
+		}
+		// custom signal from the backend, throw as HTTPException
+		// directly
+		// (see SES-1016).
+		catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
 		}

@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Constants for the standard <a href="http://www.w3.org/TR/xmlschema-2/">XML Schema datatypes</a>.
+ * Constants for the standard <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema 1.1 datatypes</a>.
  * 
- * @see <a href="http://www.w3.org/TR/xmlschema-2/">XML Schema Part 2: Datatypes Second Edition</a>
+ * @see <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema 1.1 Part 2: Datatypes</a>
  */
 public class XMLSchema {
 
@@ -46,6 +46,9 @@ public class XMLSchema {
 
 	/** <tt>http://www.w3.org/2001/XMLSchema#dateTime</tt> */
 	public final static IRI DATETIME;
+
+	/** <tt>http://www.w3.org/2001/XMLSchema#dateTimeStamp</tt> */
+	public final static IRI DATETIMESTAMP;
 
 	/** <tt>http://www.w3.org/2001/XMLSchema#dayTimeDuration</tt> */
 	public static final IRI DAYTIMEDURATION;
@@ -189,6 +192,8 @@ public class XMLSchema {
 		DURATION = factory.createIRI(XMLSchema.NAMESPACE, "duration");
 
 		DATETIME = factory.createIRI(XMLSchema.NAMESPACE, "dateTime");
+
+		DATETIMESTAMP = factory.createIRI(XMLSchema.NAMESPACE, "dateTimeStamp");
 
 		DAYTIMEDURATION = factory.createIRI(NAMESPACE, "dayTimeDuration");
 

@@ -64,6 +64,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		return falseNode;
 	}
 
+	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 
 		FilterPlanNode that = this;
@@ -149,6 +150,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	boolean printed = false;
 
+	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		if (printed) {
 			return;
@@ -175,6 +177,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		return this.getClass().getSimpleName();
 	}
 
+	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}

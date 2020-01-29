@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
-import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;

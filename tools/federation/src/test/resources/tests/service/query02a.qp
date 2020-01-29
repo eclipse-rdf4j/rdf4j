@@ -1,0 +1,21 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "person"
+         ProjectionElem "name"
+      ExclusiveGroup
+         ExclusiveStatement
+            Var (name=person)
+            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            Var (name=_const_d7b490e6_uri, value=http://namespace1.org/Person, anonymous)
+            StatementSource (id=endpoint1, type=REMOTE)
+         ExclusiveStatement
+            Var (name=person)
+            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+            StatementSource (id=endpoint1, type=REMOTE)
+         ExclusiveStatement
+            Var (name=person)
+            Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
+            Var (name=name)
+            StatementSource (id=endpoint1, type=REMOTE)

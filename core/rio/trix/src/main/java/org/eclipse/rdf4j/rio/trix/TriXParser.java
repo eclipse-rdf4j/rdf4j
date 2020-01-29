@@ -29,7 +29,6 @@ import java.util.Set;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
-import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -346,9 +345,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				} else if (tagName.equals(CONTEXT_TAG)) {
 					currentContext = null;
 				}
-			} catch (RDFParseException e) {
-				throw new SAXException(e);
-			} catch (RDFHandlerException e) {
+			} catch (RDFParseException | RDFHandlerException e) {
 				throw new SAXException(e);
 			}
 		}

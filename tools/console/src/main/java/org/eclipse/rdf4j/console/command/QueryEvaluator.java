@@ -14,24 +14,20 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
+import org.eclipse.rdf4j.console.Util;
 
-import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
@@ -64,9 +60,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Abstract query evaluator command
  * 
@@ -74,10 +67,6 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public abstract class QueryEvaluator extends ConsoleCommand {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
-
-	private final Map<String, ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
@@ -96,8 +85,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param evaluator
 	 */
 	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator) {
-		super(evaluator.getConsoleIO(), evaluator.getConsoleState());
-		this.settings = evaluator.getConsoleSettings();
+		super(evaluator.getConsoleIO(), evaluator.getConsoleState(), evaluator.getConsoleSettings());
 		this.evaluator = evaluator;
 	}
 
@@ -117,40 +105,47 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
 
+	@Override
+	public String[] usesSettings() {
+		return new String[] { ConsoleWidth.NAME,
+				Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
+				WorkDir.NAME };
+	}
+
 	/**
-	 * Get console width setting Use a new console width setting when not found.
+	 * Get console width setting.
 	 * 
-	 * @return boolean
+	 * @return width in columns
 	 */
 	private int getConsoleWidth() {
-		return ((ConsoleWidth) settings.getOrDefault(ConsoleWidth.NAME, new ConsoleWidth())).get();
+		return ((ConsoleWidth) settings.get(ConsoleWidth.NAME)).get();
 	}
 
 	/**
-	 * Get query prefix setting Use a new query prefix setting when not found.
+	 * Get query prefix setting.
 	 * 
-	 * @return boolean
+	 * @return true if prefixes are used for querying
 	 */
 	private boolean getQueryPrefix() {
-		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
+		return ((QueryPrefix) settings.get(QueryPrefix.NAME)).get();
 	}
 
 	/**
-	 * Get show prefix setting Use a new show prefix setting when not found.
+	 * Get show prefix setting.
 	 * 
-	 * @return boolean
+	 * @return true if prefixes are used for displaying.
 	 */
 	private boolean getShowPrefix() {
-		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
+		return ((ShowPrefix) settings.get(ShowPrefix.NAME)).get();
 	}
 
 	/**
-	 * Get a set of namespaces Use a list of default namespaces when not found.
+	 * Get a set of namespaces
 	 * 
-	 * @return boolean
+	 * @return set of namespace prefixes
 	 */
 	private Set<Namespace> getPrefixes() {
-		return ((Prefixes) settings.getOrDefault(Prefixes.NAME, new Prefixes())).get();
+		return ((Prefixes) settings.get(Prefixes.NAME)).get();
 	}
 
 	/**
@@ -159,7 +154,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @return path of working dir
 	 */
 	private Path getWorkDir() {
-		return ((WorkDir) settings.getOrDefault(WorkDir.NAME, new WorkDir())).get();
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
 	}
 
 	/**
@@ -171,7 +166,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	public void executeQuery(final String command, final String operation) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 
@@ -182,7 +177,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		} else if ("sparql".equals(operation)) {
 			parseAndEvaluateQuery(QueryLanguage.SPARQL, command.substring("sparql".length()));
 		} else {
-			consoleIO.writeError("Unknown command");
+			writeError("Unknown command");
 		}
 	}
 
@@ -201,10 +196,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(p);
-		}
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
 		if (!p.toFile().canRead()) {
 			throw new IOException("Cannot read file " + p);
 		}
@@ -230,12 +222,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			throw new IllegalArgumentException("Empty file name");
 		}
 
-		Path p = Paths.get(filename);
-		if (!p.isAbsolute()) {
-			p = getWorkDir().resolve(filename);
-		}
-
-		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
+		Path p = Util.getNormalizedPath(getWorkDir(), filename);
+		if (!p.toFile().exists() || askProceed("File exists, continue ?", false)) {
 			return p;
 		}
 		throw new IOException("Could not open file for output");
@@ -255,12 +243,11 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			return str;
 		}
 		try {
-			consoleIO.writeln("Enter multi-line " + queryLn.getName() + " query "
+			writeln("Enter multi-line " + queryLn.getName() + " query "
 					+ "(terminate with line containing single '.')");
 			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {
-			consoleIO.writeError("I/O error: " + e.getMessage());
-			LOGGER.error("Failed to read query", e);
+			writeError("Failed to read query", e);
 		}
 		return null;
 	}
@@ -275,7 +262,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private void parseAndEvaluateQuery(QueryLanguage queryLn, String queryText) {
 		String str = readMultiline(queryLn, queryText);
 		if (str == null || str.isEmpty()) {
-			consoleIO.writeError("Empty query string");
+			writeError("Empty query string");
 			return;
 		}
 
@@ -296,7 +283,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 					str = readFile(infile, m.group("enc")); // ignore remainder of command line query
 				}
 			} catch (IOException | IllegalArgumentException ex) {
-				consoleIO.writeError(ex.getMessage());
+				writeError(ex.getMessage());
 				return;
 			}
 		}
@@ -308,21 +295,17 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
 			evaluateQuery(queryLn, query, path);
 		} catch (UnsupportedQueryLanguageException e) {
-			consoleIO.writeError("Unsupported query language: " + queryLn.getName());
+			writeError("Unsupported query language: " + queryLn.getName());
 		} catch (MalformedQueryException e) {
-			consoleIO.writeError("Malformed query: " + e.getMessage());
+			writeError("Malformed query", e);
 		} catch (QueryInterruptedException e) {
-			consoleIO.writeError("Query interrupted: " + e.getMessage());
-			LOGGER.error("Query interrupted", e);
+			writeError("Query interrupted", e);
 		} catch (QueryEvaluationException e) {
-			consoleIO.writeError("Query evaluation error: " + e.getMessage());
-			LOGGER.error("Query evaluation error", e);
+			writeError("Query evaluation error", e);
 		} catch (RepositoryException e) {
-			consoleIO.writeError("Failed to evaluate query: " + e.getMessage());
-			LOGGER.error("Failed to evaluate query", e);
+			writeError("Failed to evaluate query", e);
 		} catch (UpdateExecutionException e) {
-			consoleIO.writeError("Failed to execute update: " + e.getMessage());
-			LOGGER.error("Failed to execute update", e);
+			writeError("Failed to execute update", e);
 		}
 	}
 
@@ -425,10 +408,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				}
 				evaluator.executeUpdate(queryLn, queryString);
 			} else {
-				consoleIO.writeError("Unexpected query type");
+				writeError("Unexpected query type");
 			}
 		} catch (IllegalArgumentException | IOException ioe) {
-			consoleIO.writeError(ioe.getMessage());
+			writeError(ioe.getMessage());
 		}
 	}
 

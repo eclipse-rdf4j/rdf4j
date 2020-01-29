@@ -146,13 +146,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
-		return Iterables.transform(docs, new Function<SolrDocument, SearchDocument>() {
-
-			@Override
-			public SearchDocument apply(SolrDocument hit) {
-				return new SolrSearchDocument(hit);
-			}
-		});
+		return Iterables.transform(docs, SolrSearchDocument::new);
 	}
 
 	@Override
@@ -327,15 +321,11 @@ public class SolrIndex extends AbstractSearchIndex {
 		}
 		SolrDocumentList results = response.getResults();
 		final Map<String, Map<String, List<String>>> highlighting = response.getHighlighting();
-		return Iterables.transform(results, new Function<SolrDocument, DocumentScore>() {
-
-			@Override
-			public DocumentScore apply(SolrDocument document) {
-				SolrSearchDocument doc = new SolrSearchDocument(document);
-				Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
-						: null;
-				return new SolrDocumentScore(doc, docHighlighting);
-			}
+		return Iterables.transform(results, (SolrDocument document) -> {
+			SolrSearchDocument doc = new SolrSearchDocument(document);
+			Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
+					: null;
+			return new SolrDocumentScore(doc, docHighlighting);
 		});
 	}
 
@@ -406,13 +396,9 @@ public class SolrIndex extends AbstractSearchIndex {
 		}
 
 		SolrDocumentList results = response.getResults();
-		return Iterables.transform(results, new Function<SolrDocument, DocumentDistance>() {
-
-			@Override
-			public DocumentDistance apply(SolrDocument document) {
-				SolrSearchDocument doc = new SolrSearchDocument(document);
-				return new SolrDocumentDistance(doc, units);
-			}
+		return Iterables.transform(results, (SolrDocument document) -> {
+			SolrSearchDocument doc = new SolrSearchDocument(document);
+			return new SolrDocumentDistance(doc, units);
 		});
 	}
 
@@ -454,13 +440,9 @@ public class SolrIndex extends AbstractSearchIndex {
 		}
 
 		SolrDocumentList results = response.getResults();
-		return Iterables.transform(results, new Function<SolrDocument, DocumentResult>() {
-
-			@Override
-			public DocumentResult apply(SolrDocument document) {
-				SolrSearchDocument doc = new SolrSearchDocument(document);
-				return new SolrDocumentResult(doc);
-			}
+		return Iterables.transform(results, (SolrDocument document) -> {
+			SolrSearchDocument doc = new SolrSearchDocument(document);
+			return new SolrDocumentResult(doc);
 		});
 	}
 

@@ -44,9 +44,9 @@ public class PrintInfo extends ConsoleCommand {
 
 	@Override
 	public void execute(String... parameters) {
-		consoleIO.writeln(state.getApplicationName());
-		consoleIO.writeln("Data dir: " + state.getDataDirectory());
+		writeln(state.getApplicationName());
+		writeln("Data dir: " + state.getDataDirectory());
 		String managerID = state.getManagerID();
-		consoleIO.writeln("Connected to: " + (managerID == null ? "-" : managerID));
+		writeln("Connected to: " + (managerID == null ? "-" : managerID));
 	}
 }

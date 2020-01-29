@@ -920,6 +920,7 @@ public abstract class ComplexSPARQLQueryTest {
 		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString())
 				.evaluate(new AbstractTupleQueryResultHandler() {
 
+					@Override
 					public void handleSolution(BindingSet bindingSet) {
 						fail("nobody is self published");
 					}

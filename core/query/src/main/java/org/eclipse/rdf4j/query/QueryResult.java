@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.query;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
+
+import java.util.Iterator;
 
 /**
  * Super type of all query result types (TupleQueryResult, GraphQueryResult, etc.).
@@ -15,6 +18,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
-public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationException> {
+public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationException>, Iterable<T> {
 
+	@Override
+	default Iterator<T> iterator() {
+		return new CloseableIterationIterator<T>(this);
+	}
 }

@@ -28,6 +28,7 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).buffer(distance));
 	}
 
+	@Override
 	public Shape convexHull(Shape s) {
 		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).convexHull());
 	}

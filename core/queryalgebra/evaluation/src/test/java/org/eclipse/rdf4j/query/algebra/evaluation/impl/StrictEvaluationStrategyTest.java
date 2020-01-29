@@ -73,12 +73,7 @@ public class StrictEvaluationStrategyTest {
 		QueryOptimizer optimizer1 = mock(QueryOptimizer.class);
 		QueryOptimizer optimizer2 = mock(QueryOptimizer.class);
 
-		strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
-			@Override
-			public Iterable<QueryOptimizer> getOptimizers() {
-				return Arrays.asList(optimizer1, optimizer2);
-			}
-		});
+		strategy.setOptimizerPipeline(() -> Arrays.asList(optimizer1, optimizer2));
 
 		TupleExpr expr = mock(TupleExpr.class);
 		EvaluationStatistics stats = new EvaluationStatistics();

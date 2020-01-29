@@ -21,6 +21,6 @@ class SizeComparator implements Comparator<BindingSet>, Serializable {
 
 	@Override
 	public int compare(BindingSet o1, BindingSet o2) {
-		return Integer.valueOf(o1.size()).compareTo(Integer.valueOf(o2.size()));
+		return Integer.valueOf(o1.size()).compareTo(o2.size());
 	}
 }

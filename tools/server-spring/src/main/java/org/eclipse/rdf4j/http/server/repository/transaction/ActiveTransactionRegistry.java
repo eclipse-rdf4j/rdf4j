@@ -65,6 +65,10 @@ public enum ActiveTransactionRegistry {
 	 */
 	private final Cache<UUID, Transaction> secondaryCache;
 
+	private Cache<UUID, Transaction> getSecondaryCache() {
+		return secondaryCache;
+	}
+
 	/**
 	 * private constructor.
 	 */
@@ -79,39 +83,36 @@ public enum ActiveTransactionRegistry {
 			}
 		}
 
-		primaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, Transaction>() {
+		primaryCache = CacheBuilder.newBuilder()
+				.removalListener((RemovalNotification<UUID, Transaction> notification) -> {
+					Transaction entry = notification.getValue();
+					try {
+						entry.close();
+					} catch (RepositoryException | InterruptedException | ExecutionException e) {
+						// fall through
+					}
+				})
+				.build();
 
-			@Override
-			public void onRemoval(RemovalNotification<UUID, Transaction> notification) {
-				Transaction entry = notification.getValue();
-				try {
-					entry.close();
-				} catch (RepositoryException | InterruptedException | ExecutionException e) {
-					// fall through
-				}
-			}
-		}).build();
-
-		secondaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, Transaction>() {
-
-			@Override
-			public void onRemoval(RemovalNotification<UUID, Transaction> notification) {
-				if (RemovalCause.EXPIRED.equals(notification.getCause())) {
-					final UUID transactionId = notification.getKey();
-					final Transaction entry = notification.getValue();
-					synchronized (primaryCache) {
-						if (!entry.hasActiveOperations()) {
-							// no operation active, we can decommission this entry
-							primaryCache.invalidate(transactionId);
-							logger.warn("deregistered expired transaction {}", transactionId);
-						} else {
-							// operation still active. Reinsert in secondary cache.
-							secondaryCache.put(transactionId, entry);
+		secondaryCache = CacheBuilder.newBuilder()
+				.removalListener((RemovalNotification<UUID, Transaction> notification) -> {
+					if (RemovalCause.EXPIRED.equals(notification.getCause())) {
+						final UUID transactionId = notification.getKey();
+						final Transaction entry = notification.getValue();
+						synchronized (primaryCache) {
+							if (!entry.hasActiveOperations()) {
+								// no operation active, we can decommission this entry
+								primaryCache.invalidate(transactionId);
+								logger.warn("deregistered expired transaction {}", transactionId);
+							} else {
+								// operation still active. Reinsert in secondary cache.
+								getSecondaryCache().put(transactionId, entry);
+							}
 						}
 					}
-				}
-			}
-		}).expireAfterAccess(timeout, TimeUnit.SECONDS).build();
+				})
+				.expireAfterAccess(timeout, TimeUnit.SECONDS)
+				.build();
 
 	}
 
@@ -191,13 +192,7 @@ public enum ActiveTransactionRegistry {
 	 */
 	private void updateSecondaryCache(final Transaction transaction) {
 		try {
-			secondaryCache.get(transaction.getID(), new Callable<Transaction>() {
-
-				@Override
-				public Transaction call() throws Exception {
-					return transaction;
-				}
-			});
+			secondaryCache.get(transaction.getID(), () -> transaction);
 		} catch (ExecutionException e) {
 			throw new RuntimeException(e);
 		}

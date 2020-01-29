@@ -141,13 +141,13 @@ public class ParsedIRITest {
 	@Test
 	public void resolvesAnAbsoluteUriRelativeToABaseJarUri() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/some-nested-file");
-		assertEquals("http://example.test/", uri.resolve("http://example.test/").toString());
+		assertEquals("http://example.test/", uri.resolve("http://example.test/"));
 	}
 
 	@Test
 	public void resolvesAPathRelativeUriRelativeToABaseJarUri() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/some-nested-file");
-		assertEquals("jar:file:///some-file.jar!/another-file", uri.resolve("another-file").toString());
+		assertEquals("jar:file:///some-file.jar!/another-file", uri.resolve("another-file"));
 	}
 
 	@Test
@@ -394,7 +394,7 @@ public class ParsedIRITest {
 	}
 
 	private void assertResolves(String relative, String base, String absolute) throws URISyntaxException {
-		assertEquals(absolute, new ParsedIRI(base).resolve(relative).toString());
+		assertEquals(absolute, new ParsedIRI(base).resolve(relative));
 	}
 
 	@Test

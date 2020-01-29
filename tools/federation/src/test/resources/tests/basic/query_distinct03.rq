@@ -1,0 +1,9 @@
+# make a test for distinct keyword
+
+PREFIX : <http://example.org/> 
+
+SELECT DISTINCT ?x  
+{
+  ?x :p ?p .
+  ?local ?p :Object .
+} 

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
  * @author dale
  */
 public class SetParameters extends ConsoleCommand {
-	private final Map<String, ConsoleSetting> settings;
 
 	@Override
 	public String getName() {
@@ -49,15 +48,14 @@ public class SetParameters extends ConsoleCommand {
 	 * @param settings
 	 */
 	public SetParameters(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
-		super(consoleIO, state);
-		this.settings = settings;
+		super(consoleIO, state, settings);
 	}
 
 	@Override
 	public void execute(String... tokens) {
 		switch (tokens.length) {
 		case 0:
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			break;
 		case 1:
 			for (String setting : settings.keySet()) {
@@ -98,9 +96,9 @@ public class SetParameters extends ConsoleCommand {
 				}
 				s = builder.toString();
 			}
-			consoleIO.writeln(key + ": " + s);
+			writeln(key + ": " + s);
 		} else {
-			consoleIO.writeError("Unknown parameter: " + key);
+			writeError("Unknown parameter: " + key);
 		}
 	}
 
@@ -121,10 +119,10 @@ public class SetParameters extends ConsoleCommand {
 			try {
 				setting.setFromString(value);
 			} catch (IllegalArgumentException iae) {
-				consoleIO.writeError(iae.getMessage());
+				writeError(iae.getMessage());
 			}
 		} else {
-			consoleIO.writeError("Unknown parameter: " + key);
+			writeError("Unknown parameter: " + key);
 		}
 	}
 }

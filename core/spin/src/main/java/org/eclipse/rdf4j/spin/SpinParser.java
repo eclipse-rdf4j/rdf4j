@@ -681,13 +681,8 @@ public class SpinParser {
 	}
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
-		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(new Comparator<IRI>() {
-
-			@Override
-			public int compare(IRI uri1, IRI uri2) {
-				return uri1.getLocalName().compareTo(uri2.getLocalName());
-			}
-		});
+		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(
+				(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 
 		int numArgs = sortedArgs.size();

@@ -98,7 +98,7 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parameters() {
+	public static IsolationLevel[] parameters() {
 		return IsolationLevels.values();
 	}
 
@@ -197,7 +197,6 @@ public abstract class RepositoryConnectionTest {
 	@Before
 	public void setUp() throws Exception {
 		testRepository = createRepository();
-		testRepository.initialize();
 
 		testCon = testRepository.getConnection();
 		testCon.clear();
@@ -831,6 +830,27 @@ public abstract class RepositoryConnectionTest {
 
 		assertNotNull("List should not be null", list);
 		assertFalse("List should not be empty", list.isEmpty());
+	}
+
+	@Test
+	public void testGetStatementsIterable() throws Exception {
+		testCon.add(bob, name, nameBob);
+
+		assertTrue("Repository should contain statement", testCon.hasStatement(bob, name, nameBob, false));
+
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false);) {
+			assertThat(result).isNotNull();
+			assertThat(result).isNotEmpty();
+
+			for (Statement st : result) {
+				assertThat(st.getContext()).isNull();
+				assertThat(st.getPredicate()).isEqualTo(name);
+			}
+
+			assertThat(result).isEmpty();
+			assertThat(result.isClosed()).isTrue();
+		}
+
 	}
 
 	@Test

@@ -1,0 +1,10 @@
+# extract all persons and apply a filter on the name
+
+PREFIX : <http://example.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?s ?name
+{
+  ?s foaf:name ?name .
+  FILTER (?name="Person1")
+} 

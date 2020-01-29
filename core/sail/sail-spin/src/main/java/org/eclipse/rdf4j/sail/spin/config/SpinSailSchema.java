@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Vocabulary constants for RDF-based configuration of the SpinSail.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SpinSailSchema {
@@ -26,6 +26,7 @@ public class SpinSailSchema {
 	 * http://www.openrdf.org/config/sail/spin#axiomClosureNeeded
 	 */
 	public static final IRI AXIOM_CLOSURE_NEEDED = create("axiomClosureNeeded");
+	public static final IRI VALIDATE_CONSTRAINTS = create("validateConstraints");
 
 	private static final IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);

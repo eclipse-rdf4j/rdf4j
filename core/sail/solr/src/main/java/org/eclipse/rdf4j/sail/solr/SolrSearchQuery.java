@@ -60,15 +60,11 @@ public class SolrSearchQuery implements SearchQuery {
 		}
 		SolrDocumentList results = response.getResults();
 		final Map<String, Map<String, List<String>>> highlighting = response.getHighlighting();
-		return Iterables.transform(results, new Function<SolrDocument, DocumentScore>() {
-
-			@Override
-			public DocumentScore apply(SolrDocument document) {
-				SolrSearchDocument doc = new SolrSearchDocument(document);
-				Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
-						: null;
-				return new SolrDocumentScore(doc, docHighlighting);
-			}
+		return Iterables.transform(results, (SolrDocument document) -> {
+			SolrSearchDocument doc = new SolrSearchDocument(document);
+			Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
+					: null;
+			return new SolrDocumentScore(doc, docHighlighting);
 		});
 	}
 

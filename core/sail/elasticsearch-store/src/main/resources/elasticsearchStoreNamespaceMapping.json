@@ -1,0 +1,12 @@
+{
+  "namespace": {
+    "properties": {
+      "prefix": {
+        "type": "keyword"
+      },
+      "namespace": {
+        "type": "keyword"
+      }
+    }
+  }
+}

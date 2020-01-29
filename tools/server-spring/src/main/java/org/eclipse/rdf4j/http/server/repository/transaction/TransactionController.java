@@ -633,7 +633,7 @@ public class TransactionController extends AbstractController {
 			transaction.executeUpdate(queryLn, sparqlUpdateString, baseURI, includeInferred, dataset, bindings);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
-		} catch (UpdateExecutionException | InterruptedException | ExecutionException e) {
+		} catch (UpdateExecutionException | InterruptedException | ExecutionException | RepositoryException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException directly
 				// (see SES-1016).
@@ -641,15 +641,10 @@ public class TransactionController extends AbstractController {
 			} else {
 				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 			}
-		} catch (RepositoryException e) {
-			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
-				// custom signal from the backend, throw as HTTPException directly
-				// (see SES-1016).
-				throw (HTTPException) e.getCause();
-			} else {
-				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
-			}
-		} catch (MalformedQueryException e) {
+		}
+		// custom signal from the backend, throw as HTTPException directly
+		// (see SES-1016).
+		catch (MalformedQueryException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
 		}

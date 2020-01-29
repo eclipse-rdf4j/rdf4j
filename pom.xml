@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.0.5-SNAPSHOT</version>
+	<version>3.1.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -230,10 +230,19 @@
 		<profile>
 			<id>doclint-java8-disable</id>
 			<activation>
-				<jdk>[1.8,9,)</jdk>
+				<jdk>1.8</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
+			</properties>
+		</profile>
+		<profile>
+			<id>doclint-java9-disable</id>
+			<activation>
+				<jdk>[9,)</jdk>
+			</activation>
+			<properties>
+				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
 			</properties>
 		</profile>
 	</profiles>
@@ -242,20 +251,26 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.26</slf4j.version>
 		<logback.version>1.1.11</logback.version>
-		<httpclient.version>4.5.9</httpclient.version>
-		<httpcore.version>4.4.11</httpcore.version>
+		<httpclient.version>4.5.10</httpclient.version>
+		<httpcore.version>4.4.12</httpcore.version>
 		<jackson.version>2.9.9</jackson.version>
-		<jsonldjava.version>0.12.3</jsonldjava.version>
+		<jsonldjava.version>0.12.5</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.0</jaxb.version>
-		<jsonldjava.version>0.12.1</jsonldjava.version>
-		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.0</jaxb.version>
+		<jaxb.version>2.3.1</jaxb.version>
 		<solr.version>7.5.0</solr.version>
 		<elasticsearch.version>6.5.4</elasticsearch.version>
+		<servlet.version>3.1.0</servlet.version>
+		<spring.version>5.2.1.RELEASE</spring.version>
+		<guava.version>18.0</guava.version>
+		<jmhVersion>1.21</jmhVersion>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-collections4</artifactId>
+				<version>4.4</version>
+			</dependency>
 			<!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
@@ -402,7 +417,7 @@
 			<dependency>
 				<groupId>javax.servlet</groupId>
 				<artifactId>javax.servlet-api</artifactId>
-				<version>3.1.0</version>
+				<version>${servlet.version}</version>
 				<scope>provided</scope>
 			</dependency>
 			<dependency>
@@ -462,7 +477,7 @@
 			<dependency>
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava</artifactId>
-				<version>18.0</version>
+				<version>${guava.version}</version>
 			</dependency>
 			<!-- Logging: SLF4J and logback -->
 			<dependency>

@@ -60,11 +60,7 @@ public class SeRQLParser implements QueryParser {
 			}
 
 			return query;
-		} catch (ParseException e) {
-			throw new MalformedQueryException(e.getMessage(), e);
-		} catch (TokenMgrError e) {
-			throw new MalformedQueryException(e.getMessage(), e);
-		} catch (VisitorException e) {
+		} catch (ParseException | TokenMgrError | VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 	}

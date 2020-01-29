@@ -82,9 +82,7 @@ public class DatasetRepository extends RepositoryWrapper {
 			if (since == null || since < urlCon.getLastModified()) {
 				load(url, urlCon, context, config);
 			}
-		} catch (RDFParseException e) {
-			throw new RepositoryException(e);
-		} catch (IOException e) {
+		} catch (RDFParseException | IOException e) {
 			throw new RepositoryException(e);
 		}
 	}

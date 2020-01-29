@@ -43,6 +43,8 @@ import org.slf4j.LoggerFactory;
  */
 public class RepositoryFederatedService implements FederatedService {
 
+	private static final String ROW_IDX_VAR = "__rowIdx";
+
 	final static Logger logger = LoggerFactory.getLogger(RepositoryFederatedService.class);
 
 	/**
@@ -86,12 +88,99 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 	}
 
-	protected final Repository rep;
+	/**
+	 * Helper iteration to evaluate a block of {@link BindingSet}s using the simple
+	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
+	 * 
+	 * @author Andreas Schwarte
+	 *
+	 */
+	private class FallbackServiceIteration extends JoinExecutorBase<BindingSet> {
+
+		private final Service service;
+		private final List<BindingSet> allBindings;
+		private final String baseUri;
+
+		public FallbackServiceIteration(Service service,
+				List<BindingSet> allBindings, String baseUri) {
+			super(null, null, null);
+			this.service = service;
+			this.allBindings = allBindings;
+			this.baseUri = baseUri;
+			run();
+		}
+
+		@Override
+		protected void handleBindings() throws Exception {
+			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+			for (BindingSet b : allBindings) {
+				addResult(select(service, projectionVars, b, baseUri));
+			}
+		}
+	}
+
+	/**
+	 * Wrapper iteration which closes a {@link RepositoryConnection} upon {@link #close()}
+	 * 
+	 * @author Andreas Schwarte
+	 *
+	 */
+	private static class CloseConnectionIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+
+		private final CloseableIteration<BindingSet, QueryEvaluationException> delegate;
+		private final RepositoryConnection connection;
+
+		private CloseConnectionIteration(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
+				RepositoryConnection connection) {
+			super();
+			this.delegate = delegate;
+			this.connection = connection;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			delegate.remove();
+
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			try {
+				delegate.close();
+			} finally {
+				closeQuietly(connection);
+			}
+		}
+	}
+
+	private final Repository rep;
+
+	/**
+	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
+	 * blockSize is set to 0, the entire input stream is used as block input the block size effectively determines the
+	 * number of remote requests
+	 */
+	protected int boundJoinBlockSize = 15;
+
+	/**
+	 * Whether to use a fresh repository connection for individual queries
+	 */
+	private boolean useFreshConnection = true;
 
 	// flag indicating whether the repository shall be closed in #shutdown()
 	protected boolean shutDown = true;
 
-	protected RepositoryConnection conn = null;
+	private RepositoryConnection managedConn = null;
 
 	/**
 	 * @param repo the repository to be used
@@ -118,9 +207,12 @@ public class RepositoryFederatedService implements FederatedService {
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException {
 
+		RepositoryConnection conn = null;
 		try {
 			String sparqlQueryString = service.getSelectQueryString(projectionVars);
-			TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
+
+			conn = useFreshConnection ? freshConnection() : getConnection();
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
 
 			Iterator<Binding> bIter = bindings.iterator();
 			while (bIter.hasNext()) {
@@ -132,17 +224,32 @@ public class RepositoryFederatedService implements FederatedService {
 			TupleQueryResult res = query.evaluate();
 
 			// insert original bindings again
-			InsertBindingSetCursor result = new InsertBindingSetCursor(res, bindings);
+			CloseableIteration<BindingSet, QueryEvaluationException> result = new InsertBindingSetCursor(res, bindings);
+
+			if (useFreshConnection) {
+				result = new CloseConnectionIteration(result, conn);
+			}
 
 			if (service.isSilent())
 				return new SilentIteration(result);
 			else
 				return result;
 		} catch (MalformedQueryException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			throw new QueryEvaluationException(e);
 		} catch (RepositoryException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+		} catch (RuntimeException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
+			throw e;
 		}
 	}
 
@@ -153,9 +260,12 @@ public class RepositoryFederatedService implements FederatedService {
 	@Override
 	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 
+		RepositoryConnection conn = null;
 		try {
 			String sparqlQueryString = service.getAskQueryString();
-			BooleanQuery query = getConnection().prepareBooleanQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
+
+			conn = useFreshConnection ? freshConnection() : getConnection();
+			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
 
 			Iterator<Binding> bIter = bindings.iterator();
 			while (bIter.hasNext()) {
@@ -170,6 +280,10 @@ public class RepositoryFederatedService implements FederatedService {
 		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+		} finally {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 		}
 	}
 
@@ -178,14 +292,8 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException {
 
-		// the number of bindings sent in a single subquery.
-		// if blockSize is set to 0, the entire input stream is used as block
-		// input
-		// the block size effectively determines the number of remote requests
-		int blockSize = 15; // TODO configurable block size
-
-		if (blockSize > 0) {
-			return new BatchingServiceIteration(bindings, blockSize, service);
+		if (boundJoinBlockSize > 0) {
+			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		} else {
 			// if blocksize is 0 (i.e. disabled) the entire iteration is used as
 			// block
@@ -195,7 +303,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Evaluate the SPARQL query that can be constructed from the SERVICE node at the initialized {@link Repository} of
-	 * this {@link FederatedService}. Use specified bindings as constraints to the query. Try to evaluate using BINDINGS
+	 * this {@link FederatedService}. Use specified bindings as constraints to the query. Try to evaluate using VALUES
 	 * clause, if this yields an exception fall back to the naive implementation. This method deals with SILENT
 	 * SERVICEs.
 	 */
@@ -210,7 +318,7 @@ public class RepositoryFederatedService implements FederatedService {
 			allBindings.add(bindings.next());
 		}
 
-		if (allBindings.size() == 0) {
+		if (allBindings.isEmpty()) {
 			return new EmptyIteration<>();
 		}
 
@@ -219,6 +327,7 @@ public class RepositoryFederatedService implements FederatedService {
 		projectionVars.removeAll(allBindings.get(0).getBindingNames());
 
 		// below we need to take care for SILENT services
+		RepositoryConnection conn = null;
 		CloseableIteration<BindingSet, QueryEvaluationException> result = null;
 		try {
 			// fallback to simple evaluation (just a single binding)
@@ -231,51 +340,71 @@ public class RepositoryFederatedService implements FederatedService {
 			// To be able to insert the input bindings again later on, we need some
 			// means to identify the row of each binding. hence, we use an
 			// additional
-			// projection variable, which is also passed in the BINDINGS clause
+			// projection variable, which is also passed in the VALUES clause
 			// with the value of the actual row. The value corresponds to the index
 			// of the binding in the index list
-			projectionVars.add("__rowIdx");
+			projectionVars.add(ROW_IDX_VAR);
 
 			String queryString = service.getSelectQueryString(projectionVars);
 
 			List<String> relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());
 
-			if (relevantBindingNames.size() != 0) {
-				// append the VALUES clause to the query
-				queryString += buildVALUESClause(allBindings, relevantBindingNames);
+			if (!relevantBindingNames.isEmpty()) {
+				// insert VALUES clause into the query
+				queryString = insertValuesClause(queryString, buildVALUESClause(allBindings, relevantBindingNames));
 			}
 
-			TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
+			conn = useFreshConnection ? freshConnection() : getConnection();
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
 			TupleQueryResult res = null;
-			query.setMaxQueryTime(60); // TODO how to retrieve max query value
-										// from actual setting?
+			query.setMaxExecutionTime(60); // TODO how to retrieve max query value
+											// from actual setting?
 			res = query.evaluate();
 
-			if (relevantBindingNames.size() == 0)
+			if (relevantBindingNames.isEmpty())
 				result = new SPARQLCrossProductIteration(res, allBindings); // cross
 			// product
 			else
 				result = new ServiceJoinConversionIteration(res, allBindings); // common
 																				// join
 
+			if (useFreshConnection) {
+				result = new CloseConnectionIteration(result, conn);
+			}
+
 			result = service.isSilent() ? new SilentIteration(result) : result;
 			return result;
 
 		} catch (RepositoryException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
 				return new CollectionIteration<>(allBindings);
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} catch (MalformedQueryException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			// this exception must not be silenced, bug in our code
-			throw new QueryEvaluationException(e);
+			// => try a fallback to the simple evaluation
+			logger.debug("Encounted malformed query exception: " + e.getMessage()
+					+ ". Falling back to simple SERVICE evaluation.");
+			return evaluateInternalFallback(service, allBindings, baseUri);
 		} catch (QueryEvaluationException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
 				return new CollectionIteration<>(allBindings);
 			throw e;
 		} catch (RuntimeException e) {
+			if (useFreshConnection) {
+				closeQuietly(conn);
+			}
 			Iterations.closeCloseable(result);
 			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 			// QueryEval) if silent
@@ -285,10 +414,55 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 	}
 
+	/**
+	 * Evaluate the service expression for the given lists of bindings using {@link FallbackServiceIteration}, i.e.
+	 * basically as a simple join without VALUES clause.
+	 * 
+	 * @param service     the SERVICE
+	 * @param allBindings all bindings to be processed
+	 * @param baseUri     the base URI
+	 * @return resulting iteration
+	 */
+	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateInternalFallback(Service service,
+			List<BindingSet> allBindings, String baseUri) {
+
+		CloseableIteration<BindingSet, QueryEvaluationException> res = new FallbackServiceIteration(service,
+				allBindings, baseUri);
+
+		if (service.isSilent()) {
+			res = new SilentIteration(res);
+		}
+		return res;
+
+	}
+
+	/**
+	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
+	 * projection if it is not already present.
+	 * 
+	 * @param queryString  the SELECT query string from the SERVICE node
+	 * @param valuesClause the constructed VALUES clause
+	 * @return the final String
+	 */
+	protected String insertValuesClause(String queryString, String valuesClause) {
+		StringBuilder sb = new StringBuilder(queryString);
+		if (sb.indexOf(ROW_IDX_VAR) == -1) {
+			// Note: we also explicitly check on "SELECT *", however, this
+			// check is heuristics based. If the generated query is invalid
+			// after this, the fallback evaluation will jump in
+			// This currently does not cover things like "SELECT *"
+			if (sb.indexOf("SELECT * ") == -1) {
+				sb.insert(sb.indexOf("SELECT") + 6, " ?" + ROW_IDX_VAR);
+			}
+		}
+		sb.insert(sb.indexOf("{") + 1, " " + valuesClause);
+		return sb.toString();
+	}
+
 	@Override
 	public void initialize() throws QueryEvaluationException {
 		try {
-			rep.initialize();
+			rep.init();
 		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -299,21 +473,32 @@ public class RepositoryFederatedService implements FederatedService {
 		return rep.isInitialized();
 	}
 
-	private void closeQuietly(TupleQueryResult res) {
-		try {
-			if (res != null)
-				res.close();
-		} catch (Exception e) {
-			logger.debug("Could not close connection properly: " + e.getMessage(), e);
-		}
+	public int getBoundJoinBlockSize() {
+		return boundJoinBlockSize;
+	}
+
+	/**
+	 * 
+	 * @param boundJoinBlockSize the bound join block size, 0 to evaluate all in a single request
+	 */
+	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
+		this.boundJoinBlockSize = boundJoinBlockSize;
+	}
+
+	/**
+	 * 
+	 * @param flag whether to use a fresh {@link RepositoryConnection} for each individual query
+	 */
+	public void setUseFreshConnection(boolean flag) {
+		this.useFreshConnection = flag;
 	}
 
 	@Override
 	public void shutdown() throws QueryEvaluationException {
 		boolean foundException = false;
 		try {
-			if (conn != null) {
-				conn.close();
+			if (managedConn != null) {
+				managedConn.close();
 			}
 		} catch (RepositoryException e) {
 			foundException = true;
@@ -334,19 +519,34 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 	}
 
-	protected RepositoryConnection getConnection() throws RepositoryException {
-		// use a cache connection if possible
-		// (TODO add mechanism to unset/close connection)
-		if (conn == null) {
-			conn = rep.getConnection();
-		}
-		return conn;
+	/**
+	 * Return a fresh {@link RepositoryConnection} from the configured repository.
+	 * 
+	 * @return
+	 * @throws RepositoryException
+	 */
+	private RepositoryConnection freshConnection() throws RepositoryException {
+		return rep.getConnection();
 	}
 
 	/**
-	 * Compute the relevant binding names using the variables occuring in the service expression and the input bindings.
-	 * The idea is find all variables which need to be projected in the subquery, i.e. those that will not be bound by
-	 * an input binding.
+	 * Retrieve a (re-usable) connection. If it is not yet created, open a fresh connection. Note that this connection
+	 * is closed automatically when shutting this service.
+	 * 
+	 * @return
+	 * @throws RepositoryException
+	 */
+	protected synchronized RepositoryConnection getConnection() throws RepositoryException {
+		if (managedConn == null) {
+			managedConn = freshConnection();
+		}
+		return managedConn;
+	}
+
+	/**
+	 * Compute the relevant binding names using the variables occurring in the service expression and the input
+	 * bindings. The idea is find all variables which need to be projected in the subquery, i.e. those that will not be
+	 * bound by an input binding.
 	 * <p>
 	 * If the resulting list is empty, the cross product needs to be formed.
 	 * 
@@ -404,5 +604,17 @@ public class RepositoryFederatedService implements FederatedService {
 
 		sb.append(" }");
 		return sb.toString();
+	}
+
+	private static void closeQuietly(RepositoryConnection conn) {
+		if (conn == null) {
+			return;
+		}
+		try {
+			conn.close();
+		} catch (Throwable t) {
+			logger.warn("Failed to close connection:" + t.getMessage());
+			logger.debug("Details: ", t);
+		}
 	}
 }

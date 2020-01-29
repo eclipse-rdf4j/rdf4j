@@ -38,6 +38,5 @@ public abstract class AbstractSettingTest {
 	public void setUp() {
 		MockitoAnnotations.initMocks(this);
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
-		;
 	}
 }

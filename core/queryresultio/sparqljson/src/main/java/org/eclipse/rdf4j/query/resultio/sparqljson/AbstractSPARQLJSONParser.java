@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
-import org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

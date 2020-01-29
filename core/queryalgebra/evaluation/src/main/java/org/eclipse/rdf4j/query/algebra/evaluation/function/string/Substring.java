@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Optional;
 import org.eclipse.rdf4j.model.IRI;
 
@@ -20,7 +18,6 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Round;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**

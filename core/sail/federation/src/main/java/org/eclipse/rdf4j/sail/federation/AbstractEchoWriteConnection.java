@@ -29,79 +29,43 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void startTransactionInternal() throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.begin();
-			}
-		});
+		excute(RepositoryConnection::begin);
 	}
 
 	@Override
 	public void rollbackInternal() throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.rollback();
-			}
-		});
+		excute(RepositoryConnection::rollback);
 	}
 
 	@Override
 	public void commitInternal() throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.commit();
-			}
-		});
+		excute(RepositoryConnection::commit);
 	}
 
 	@Override
 	public void setNamespaceInternal(final String prefix, final String name) throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.setNamespace(prefix, name);
-			}
+		excute((RepositoryConnection con) -> {
+			con.setNamespace(prefix, name);
 		});
 	}
 
 	@Override
 	public void clearNamespacesInternal() throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.clearNamespaces();
-			}
-		});
+		excute(RepositoryConnection::clearNamespaces);
 	}
 
 	@Override
 	public void removeNamespaceInternal(final String prefix) throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.removeNamespace(prefix);
-			}
+		excute((RepositoryConnection con) -> {
+			con.removeNamespace(prefix);
 		});
 	}
 
 	@Override
 	public void removeStatementsInternal(final Resource subj, final IRI pred, final Value obj,
 			final Resource... contexts) throws SailException {
-		excute(new Procedure() {
-
-			@Override
-			public void run(RepositoryConnection con) throws RepositoryException {
-				con.remove(subj, pred, obj, contexts);
-			}
+		excute((RepositoryConnection con) -> {
+			con.remove(subj, pred, obj, contexts);
 		});
 	}
 }

@@ -150,7 +150,7 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 			message.append("\n=======Diff: ");
 			message.append(getName());
 			message.append("========================\n");
-			if (diff.size() != 0) {
+			if (!diff.isEmpty()) {
 				message.append("Unexpected statements in result: \n");
 				for (Statement st : diff) {
 					message.append(st.toString());
@@ -164,7 +164,7 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 			}
 
 			diff = RepositoryUtil.difference(expectedStatements, actualStatements);
-			if (diff.size() != 0) {
+			if (!diff.isEmpty()) {
 				message.append("Statements missing in result: \n");
 				for (Statement st : diff) {
 					message.append(st.toString());

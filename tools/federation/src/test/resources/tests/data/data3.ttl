@@ -1,0 +1,18 @@
+@prefix : <http://namespace3.org/> .
+@prefix ns1: <http://namespace1.org/> .
+@prefix ns2: <http://namespace2.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . 
+@prefix owl:  <http://www.w3.org/2002/07/owl#> . 
+
+:Project_1 rdf:type :Project .
+:Project_1 rdfs:label "Project1" .
+:Project_1 :responsible ns2:Person_7 .
+
+:Project_2 rdf:type :Project .
+:Project_2 rdfs:label "Project2" .
+
+:Project_3 rdf:type :Project .
+:Project_3 rdfs:label "Project3" .
+

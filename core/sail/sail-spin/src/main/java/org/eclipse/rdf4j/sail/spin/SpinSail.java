@@ -29,6 +29,23 @@ import org.eclipse.rdf4j.spin.SpinParser;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * <p>
+ * The SpinSail is currently deprecated. If you are using SPIN to validate your data then it is recommended to move to
+ * SHACL with the ShaclSail. Currently, the SHACL W3C Recommendation only supports validation, and has no equivalent to
+ * SPIN's inference features.
+ * </p>
+ * <p>
+ * Deprecating the SpinSail has been discussed at https://github.com/eclipse/rdf4j/issues/1262 and can be summarized
+ * with there being no developers actively supporting it and that SPIN in itself is no longer recommended by
+ * TopQuadrant. Do not expect the SpinSail to scale in any way and expect simple delete operations to take seconds to
+ * complete. There are still a number of open issues in GitHub connected to the SpinSail, none of these are likely to
+ * get fixed.
+ * </p>
+ *
+ * @since 3.1.0 2019
+ */
+@Deprecated
 public class SpinSail extends AbstractForwardChainingInferencer {
 
 	private FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
@@ -44,6 +61,8 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	private List<QueryContextInitializer> queryContextInitializers = new ArrayList<>();
 
 	private boolean axiomClosureNeeded = true;
+
+	private boolean validateConstraints = true;
 
 	volatile private boolean initializing;
 
@@ -108,7 +127,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	/**
 	 * Indicates if the SPIN Sail should itself load the full deductive closure of the SPIN axioms. Typically, this will
 	 * be {@code false} if the underlying Sail stack already supports RDFS inferencing, {@code true} if not.
-	 * 
+	 *
 	 * @return {@code true} if the SpinSail needs to load the full axiom closure, {@code false} otherwise.
 	 */
 	public boolean isAxiomClosureNeeded() {
@@ -172,5 +191,29 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	public boolean isInitializing() {
 		return initializing;
+	}
+
+	/**
+	 * <p>
+	 * Disable or enable SPIN constraint validation. This can be very useful in order to improve performance
+	 * </p>
+	 *
+	 * <p>
+	 * Default true (constraint validation enabled).
+	 * </p>
+	 *
+	 * @param validateConstraints (true if enabled)
+	 */
+	public void setValidateConstraints(boolean validateConstraints) {
+		this.validateConstraints = validateConstraints;
+	}
+
+	/**
+	 * Check is SPIN constraint validation is enabled.
+	 *
+	 * @return true if enabled
+	 */
+	public boolean isValidateConstraints() {
+		return validateConstraints;
 	}
 }

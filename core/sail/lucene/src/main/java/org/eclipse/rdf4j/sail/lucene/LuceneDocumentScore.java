@@ -46,12 +46,6 @@ public class LuceneDocumentScore extends LuceneDocumentResult implements Documen
 		if (values == null) {
 			return null;
 		}
-		return Iterables.transform(values, new Function<String, String>() {
-
-			@Override
-			public String apply(String text) {
-				return index.getSnippet(field, text, highlighter);
-			}
-		});
+		return Iterables.transform(values, (String text) -> index.getSnippet(field, text, highlighter));
 	}
 }

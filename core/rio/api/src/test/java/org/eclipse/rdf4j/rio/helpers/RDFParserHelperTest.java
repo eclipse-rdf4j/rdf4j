@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RioSetting;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;

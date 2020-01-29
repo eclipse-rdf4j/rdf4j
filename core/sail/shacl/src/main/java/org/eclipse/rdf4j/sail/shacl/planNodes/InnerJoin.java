@@ -85,6 +85,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		return discardedRight;
 	}
 
+	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		throw new IllegalStateException();
 	}
@@ -213,10 +214,12 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		};
 	}
 
+	@Override
 	public int depth() {
 		return Math.max(left.depth(), right.depth());
 	}
 
+	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		if (printed) {
 			return;
@@ -245,10 +248,12 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
 
+	@Override
 	public IteratorData getIteratorDataType() {
 		if (left.getIteratorDataType() == right.getIteratorDataType()) {
 			return left.getIteratorDataType();

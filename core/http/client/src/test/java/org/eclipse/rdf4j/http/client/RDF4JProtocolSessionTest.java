@@ -11,6 +11,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.lessThanOrExactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.moreThanOrExactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -25,13 +26,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
 
+import org.apache.http.Header;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.message.BasicHeader;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
@@ -72,12 +79,41 @@ public class RDF4JProtocolSessionTest {
 	}
 
 	@Test
+	public void testUpdateRepositoryExecutesPost() throws Exception {
+		RepositoryConfig config = new RepositoryConfig("test");
+
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/config")).willReturn(aResponse().withStatus(200)));
+
+		subject.updateRepository(config);
+
+		verify(postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
+		verifyHeader("/rdf4j-server/repositories/test/config");
+	}
+
+	@Test
 	public void testSize() throws Exception {
 		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/size"))
 				.willReturn(aResponse().withStatus(200).withBody("8")));
 
 		assertThat(subject.size()).isEqualTo(8);
 		verifyHeader("/rdf4j-server/repositories/test/size");
+	}
+
+	@Test
+	public void testGetRepositoryConfig() throws Exception {
+		ArgumentCaptor<HttpGet> method = ArgumentCaptor.forClass(HttpGet.class);
+
+		Header h = new BasicHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
+		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType())
+						.withBodyFile("repository-config.nt")));
+
+		subject.getRepositoryConfig(new StatementCollector());
+
+		verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
+
+		verifyHeader("/rdf4j-server/repositories/test/config");
 	}
 
 	@Test

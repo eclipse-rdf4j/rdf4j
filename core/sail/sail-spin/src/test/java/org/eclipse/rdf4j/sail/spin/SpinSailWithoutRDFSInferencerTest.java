@@ -138,29 +138,17 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 	@Test
 	public void testTransactions() throws Exception {
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				loadStatements("testTransactions-rule.ttl");
-				return null;
-			}
+		tx(() -> {
+			loadStatements("testTransactions-rule.ttl");
+			return null;
 		});
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				loadStatements("testTransactions-data.ttl");
-				return null;
-			}
+		tx(() -> {
+			loadStatements("testTransactions-data.ttl");
+			return null;
 		});
-		tx(new Callable<Void>() {
-
-			@Override
-			public Void call() throws Exception {
-				assertStatements("testTransactions-expected.ttl");
-				return null;
-			}
+		tx(() -> {
+			assertStatements("testTransactions-expected.ttl");
+			return null;
 		});
 	}
 

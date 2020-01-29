@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
- * 
+ *
  * @author James Leigh
  */
 class NativeSailStore implements SailStore {
@@ -203,7 +203,7 @@ class NativeSailStore implements SailStore {
 
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
-	 * 
+	 *
 	 * @param subj     The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
 	 * @param pred     The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
 	 * @param obj      The object of the pattern, or <tt>null</tt> to indicate a wildcard.
@@ -430,13 +430,14 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-			removeStatements(subj, pred, obj, explicit, ctx);
+		public void deprecate(Statement statement) throws SailException {
+			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
+					statement.getContext());
 		}
 
 		/**
 		 * Starts a transaction on the triplestore, if necessary.
-		 * 
+		 *
 		 * @throws SailException if a transaction could not be started.
 		 */
 		private synchronized void startTriplestoreTransaction() throws SailException {
@@ -559,6 +560,16 @@ class NativeSailStore implements SailStore {
 				sinkStoreAccessLock.unlock();
 			}
 		}
+
+		@Override
+		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			return removeStatements(subj, pred, obj, explicit, contexts) > 0;
+		}
+
+		@Override
+		public boolean supportsDeprecateByQuery() {
+			return true;
+		}
 	}
 
 	/**
@@ -589,7 +600,7 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-			return new CloseableIteratorIteration<Resource, SailException>(contextStore.iterator());
+			return new CloseableIteratorIteration<>(contextStore.iterator());
 		}
 
 		@Override

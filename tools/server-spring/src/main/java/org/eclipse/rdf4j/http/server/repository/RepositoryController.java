@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -67,7 +66,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
@@ -153,10 +151,15 @@ public class RepositoryController extends AbstractController {
 				throw new ServerHTTPException("Repository delete error: " + e.getMessage(), e);
 			}
 		} else if (METHOD_PUT.equals(reqMethod)) {
-			// create new repo or update repository config
+			// create new repo
 			String repId = RepositoryInterceptor.getRepositoryID(request);
 			logger.info("PUT request invoked for repository '" + repId + "'");
 			try {
+				if (repositoryManager.hasRepositoryConfig(repId)) {
+					ErrorInfo errorInfo = new ErrorInfo(ErrorType.REPOSITORY_EXISTS,
+							"repository already exists: " + repId);
+					throw new ClientHTTPException(HttpStatus.SC_CONFLICT, errorInfo.toString());
+				}
 				Model model = Rio.parse(request.getInputStream(), "",
 						Rio.getParserFormatForMIMEType(request.getContentType())
 								.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,

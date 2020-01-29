@@ -151,6 +151,7 @@ public class QueryJoinOptimizerTest {
 
 		private Join join;
 
+		@Override
 		public void meet(Join join) {
 			this.join = join;
 		}

@@ -72,6 +72,7 @@ public class Util {
 	 * @param file file name
 	 * @return path or null
 	 */
+	@Deprecated
 	public static Path getPath(String file) {
 		Path path = null;
 		try {
@@ -84,6 +85,32 @@ public class Util {
 			}
 		}
 		return path;
+	}
+
+	/**
+	 * Check if a string looks like a HTTP, HTTPS or file URI.
+	 * 
+	 * @param str string
+	 * @return true if
+	 */
+	public static boolean isHttpOrFile(String str) {
+		String lower = str.toLowerCase();
+		return lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("file://");
+	}
+
+	/**
+	 * Get path from file string if it's absolute, or from working directory if the file is relative.
+	 * 
+	 * @param workDir working dir
+	 * @param file    file name
+	 * @return path normalized path
+	 */
+	public static Path getNormalizedPath(Path workDir, String file) {
+		Path path = Paths.get(file);
+		if (!path.isAbsolute() && (workDir != null)) {
+			path = workDir.resolve(file);
+		}
+		return path.normalize();
 	}
 
 	/**

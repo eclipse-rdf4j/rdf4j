@@ -51,7 +51,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 
 		boolean aFirst = true;
 
-		StringBuffer aQuery = new StringBuffer();
+		StringBuilder aQuery = new StringBuilder();
 
 		if (theQuery instanceof ParsedTupleQuery) {
 			aQuery.append("select ");
@@ -147,7 +147,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 			// from initially being a serql renderer. i'll leave it for now, but i
 			// think this is to be removed.
 			// test cases to prove these things work would be lovely.
-			if (aBody.toString().trim().lastIndexOf(",") == aBody.length() - 1) {
+			if (aBody.toString().trim().lastIndexOf(',') == aBody.length() - 1) {
 				aBody.setCharAt(aBody.lastIndexOf(","), ' ');
 			}
 

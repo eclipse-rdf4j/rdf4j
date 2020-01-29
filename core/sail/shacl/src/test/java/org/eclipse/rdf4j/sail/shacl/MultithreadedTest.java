@@ -50,6 +50,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testDataAndShapes() {
+		System.out.println("testDataAndShapes");
 
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		Properties.setLockTrackingEnabled(true);
@@ -323,6 +324,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSnapshot() throws IOException {
+		System.out.println("testLotsOfValidationFailuresSnapshot");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -337,6 +339,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
+		System.out.println("testLotsOfValidationFailuresSerializableValidation");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -351,6 +354,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
+		System.out.println("testLotsOfValidationFailuresSerializable");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -365,6 +369,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
+		System.out.println("testLotsOfValidationFailuresReadCommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -379,6 +384,7 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
+		System.out.println("testLotsOfValidationFailuresReadUncommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);
@@ -415,54 +421,72 @@ public abstract class MultithreadedTest {
 		}
 
 		Random r = new Random();
-
+		ExecutorService executorService = null;
 		try {
+
+			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
 			Utils.loadShapeData(repository, "complexBenchmark/shacl.ttl");
 
-			IntStream.range(1, numberOfRuns).parallel().forEach(i -> {
-				try (SailRepositoryConnection connection = repository.getConnection()) {
-					ValueFactory vf = connection.getValueFactory();
+			IntStream.range(1, numberOfRuns)
 
-					connection.begin(isolationLevels);
-					connection.add(parse);
+					.mapToObj(transaction -> (Runnable) () -> {
 
-					try {
-						connection.commit();
-					} catch (RepositoryException ignored) {
-						connection.rollback();
-					}
+						try (SailRepositoryConnection connection = repository.getConnection()) {
+							ValueFactory vf = connection.getValueFactory();
 
-					connection.begin(isolationLevels);
-					connection.add(parse2);
+							connection.begin(isolationLevels);
+							connection.add(parse);
 
-					try {
-						connection.commit();
-					} catch (RepositoryException ignored) {
-						connection.rollback();
-					}
+							try {
+								connection.commit();
+							} catch (RepositoryException ignored) {
+								connection.rollback();
+							}
 
-					connection.begin(isolationLevels);
-					connection.add(parse3);
+							connection.begin(isolationLevels);
+							connection.add(parse2);
 
-					try {
-						connection.commit();
-					} catch (RepositoryException ignored) {
-						connection.rollback();
-					}
+							try {
+								connection.commit();
+							} catch (RepositoryException ignored) {
+								connection.rollback();
+							}
 
-					connection.begin(isolationLevels);
-					connection.remove(parse3);
+							connection.begin(isolationLevels);
+							connection.add(parse3);
 
-					try {
-						connection.commit();
-					} catch (RepositoryException ignored) {
-						connection.rollback();
-					}
-				}
-			});
+							try {
+								connection.commit();
+							} catch (RepositoryException ignored) {
+								connection.rollback();
+							}
+
+							connection.begin(isolationLevels);
+							connection.remove(parse3);
+
+							try {
+								connection.commit();
+							} catch (RepositoryException ignored) {
+								connection.rollback();
+							}
+						}
+					})
+					.map(executorService::submit)
+					.collect(Collectors.toList())
+					.forEach(f -> {
+						try {
+							f.get();
+						} catch (InterruptedException | ExecutionException e) {
+							throw new RuntimeException(e);
+						}
+					});
 
 		} finally {
+			if (executorService != null) {
+				executorService.shutdown();
+			}
+
 			repository.shutDown();
 
 		}

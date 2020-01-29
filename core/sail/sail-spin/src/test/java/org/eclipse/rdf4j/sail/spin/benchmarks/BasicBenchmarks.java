@@ -160,6 +160,29 @@ public class BasicBenchmarks {
 	}
 
 	@Benchmark
+	public void addRemoveWithoutConstraintValidations() {
+		SpinSail spinSail = new SpinSail(new MemoryStore());
+		spinSail.setValidateConstraints(false);
+
+		SailRepository sail = new SailRepository(spinSail);
+		sail.init();
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+			connection.commit();
+
+			connection.remove(bob, name, nameBob);
+
+			connection.remove(alice, null, null);
+		}
+
+		sail.shutDown();
+
+	}
+
+	@Benchmark
 	public void remove() {
 		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
 		spinSail.init();
@@ -222,6 +245,28 @@ public class BasicBenchmarks {
 		spinSail.init();
 
 		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+
+			connection.commit();
+
+			connection.remove((Resource) null, null, null);
+
+		}
+		spinSail.shutDown();
+
+	}
+
+	@Benchmark
+	public void addRemoveAllWithoutConstraintValidations() {
+		SpinSail spinSail = new SpinSail(new MemoryStore());
+		spinSail.setValidateConstraints(false);
+
+		SailRepository sail = new SailRepository(spinSail);
+		sail.init();
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.add(bob, name, nameBob);
 			connection.add(alice, name, nameAlice);

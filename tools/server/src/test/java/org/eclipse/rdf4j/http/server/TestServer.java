@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.http.server;
 
 import java.io.File;
 
-import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.webapp.WebAppContext;

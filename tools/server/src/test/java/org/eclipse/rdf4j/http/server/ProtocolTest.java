@@ -239,7 +239,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}
@@ -311,7 +311,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}
@@ -349,7 +349,7 @@ public class ProtocolTest {
 				assertNotNull(contentType);
 
 				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
+				int charPos = contentType.indexOf(';');
 				if (charPos > -1) {
 					contentType = contentType.substring(0, charPos);
 				}
@@ -449,20 +449,16 @@ public class ProtocolTest {
 
 			final String location = Protocol.getNamespacePrefixLocation(repositoryLocation, prefix);
 
-			Runnable runner = new Runnable() {
-
-				@Override
-				public void run() {
-					try {
-						if (number % 2 == 0) {
-							putNamespace(location, ns);
-						} else {
-							deleteNamespace(location);
-						}
-					} catch (Exception e) {
-						e.printStackTrace();
-						fail("Failed in test: " + number);
+			Runnable runner = () -> {
+				try {
+					if (number % 2 == 0) {
+						putNamespace(location, ns);
+					} else {
+						deleteNamespace(location);
 					}
+				} catch (Exception e) {
+					e.printStackTrace();
+					fail("Failed in test: " + number);
 				}
 			};
 			threadPool.execute(runner);

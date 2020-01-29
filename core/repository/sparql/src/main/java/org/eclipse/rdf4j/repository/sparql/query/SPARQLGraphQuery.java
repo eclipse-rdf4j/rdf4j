@@ -40,11 +40,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 			// as last argument?
 			return client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), getBindingsArray());
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e.getMessage(), e);
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e.getMessage(), e);
-		} catch (MalformedQueryException e) {
+		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}
@@ -56,11 +52,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		try {
 			client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), handler, getBindingsArray());
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e.getMessage(), e);
-		} catch (RepositoryException e) {
-			throw new QueryEvaluationException(e.getMessage(), e);
-		} catch (MalformedQueryException e) {
+		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}
 	}

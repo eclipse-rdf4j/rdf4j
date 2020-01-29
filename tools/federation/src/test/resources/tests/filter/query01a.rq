@@ -1,0 +1,12 @@
+# extract the name of Person 1 using a FILTER
+
+PREFIX : <http://example.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX ns1: <http://namespace1.org/> 
+
+SELECT ?person ?name
+{
+  ?person a ns1:Person .
+  ?person foaf:name ?name .
+  FILTER (?person=ns1:Person_1 )
+} 

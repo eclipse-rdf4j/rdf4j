@@ -26,17 +26,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractModel;
 import org.eclipse.rdf4j.model.impl.ContextStatementImpl;
 import org.eclipse.rdf4j.model.impl.FilteredModel;
-import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link TreeModel} until more than 10KB statements are added and the estimated
- * memory usage is more than the amount of free memory available. Once the threshold is cross this implementation
- * seamlessly changes to a disk based {@link SailSourceModel}.
- * 
+ * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the
+ * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
+ * implementation seamlessly changes to a disk based {@link SailSourceModel}.
+ *
  * @author James Leigh
  */
 abstract class MemoryOverflowModel extends AbstractModel {
@@ -49,7 +49,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
-	private TreeModel memory;
+	private LinkedHashModel memory;
 
 	transient File dataDir;
 
@@ -62,7 +62,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private long maxBlockSize = 0;
 
 	public MemoryOverflowModel() {
-		memory = new TreeModel();
+		memory = new LinkedHashModel();
 	}
 
 	public MemoryOverflowModel(Model model) {
@@ -76,7 +76,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	public MemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new TreeModel(namespaces);
+		memory = new LinkedHashModel(namespaces);
 	}
 
 	@Override
@@ -121,6 +121,12 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow();
 		return getDelegate().add(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean add(Statement st) {
+		checkMemoryOverflow();
+		return getDelegate().add(st);
 	}
 
 	@Override
@@ -275,7 +281,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				}
 			};
 			disk.addAll(memory);
-			memory = new TreeModel(memory.getNamespaces());
+			memory = new LinkedHashModel(memory.getNamespaces());
 			logger.debug("overflow synced to disk");
 		} catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";

@@ -473,10 +473,7 @@ public class HashFile implements Closeable {
 				nioFile.read(bucketBuffer, bucketOffset);
 
 				slotNo = -1;
-			} catch (IOException e) {
-				structureLock.readLock().unlock();
-				throw e;
-			} catch (RuntimeException e) {
+			} catch (IOException | RuntimeException e) {
 				structureLock.readLock().unlock();
 				throw e;
 			}

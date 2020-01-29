@@ -3300,7 +3300,7 @@ public class SyntaxTreeBuilder
 			int dtIdx;
 			if (t.image.endsWith(">")) {
 				// URI
-				dtIdx = t.image.lastIndexOf("<") - 2;
+				dtIdx = t.image.lastIndexOf('<') - 2;
 				String uri = t.image.substring(dtIdx + 3, t.image.length() - 1);
 				ASTURI uriNode = new ASTURI(JJTURI, uri);
 				jjtn000.jjtAddChild(uriNode, 0);

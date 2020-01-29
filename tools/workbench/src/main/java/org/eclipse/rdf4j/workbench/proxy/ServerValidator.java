@@ -105,11 +105,7 @@ class ServerValidator {
 				Integer.parseInt(reader.readLine());
 				success = true;
 			}
-		} catch (NumberFormatException e) {
-			LOGGER.warn(e.toString(), e);
-		} catch (MalformedURLException e) {
-			LOGGER.warn(e.toString(), e);
-		} catch (IOException e) {
+		} catch (NumberFormatException | IOException e) {
 			LOGGER.warn(e.toString(), e);
 		}
 		return success;

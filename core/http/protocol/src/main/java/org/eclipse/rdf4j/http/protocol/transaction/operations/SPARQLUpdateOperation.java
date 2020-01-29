@@ -67,9 +67,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 			}
 
 			preparedUpdate.execute();
-		} catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		} catch (UpdateExecutionException e) {
+		} catch (MalformedQueryException | UpdateExecutionException e) {
 			throw new RepositoryException(e);
 		}
 

@@ -233,10 +233,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -265,10 +262,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -297,10 +291,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}
@@ -368,10 +359,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		} catch (RDFParseException e) {
 			conditionalRollback(localTransaction);
 			throw e;
-		} catch (IOException e) {
-			conditionalRollback(localTransaction);
-			throw e;
-		} catch (RuntimeException e) {
+		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
 		}

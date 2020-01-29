@@ -127,10 +127,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 			}
 
 			return 0;
-		} catch (QueryEvaluationException e) {
-			logger.debug(e.getMessage(), e);
-			return 0;
-		} catch (IllegalArgumentException e) {
+		} catch (QueryEvaluationException | IllegalArgumentException e) {
 			logger.debug(e.getMessage(), e);
 			return 0;
 		}

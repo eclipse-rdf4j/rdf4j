@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.console.command;
 
 import java.util.Collection;
 
-import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 

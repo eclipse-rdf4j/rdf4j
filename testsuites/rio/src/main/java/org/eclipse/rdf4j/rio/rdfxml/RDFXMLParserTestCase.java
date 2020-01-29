@@ -273,15 +273,15 @@ public abstract class RDFXMLParserTestCase {
 					value = new String(c14n.canonicalize(value.getBytes("UTF-8")), "UTF-8");
 				} catch (UnsupportedEncodingException e) {
 					throw new RuntimeException(e);
-				} catch (CanonicalizationException e) {
+				} catch (CanonicalizationException | SAXException e) {
 					// ignore
 				} catch (ParserConfigurationException e) {
 					throw new RuntimeException(e);
 				} catch (IOException e) {
 					throw new RuntimeException(e);
-				} catch (SAXException e) {
-					// ignore
 				}
+				// ignore
+
 			}
 
 			return super.createLiteral(value, datatype);

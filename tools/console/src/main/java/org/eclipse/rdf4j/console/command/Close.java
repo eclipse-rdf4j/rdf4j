@@ -37,7 +37,7 @@ public class Close extends ConsoleCommand {
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param appInfo
+	 * @param state
 	 */
 	public Close(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -48,7 +48,7 @@ public class Close extends ConsoleCommand {
 		if (tokens.length == 1) {
 			closeRepository(true);
 		} else {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 		}
 	}
 
@@ -62,10 +62,10 @@ public class Close extends ConsoleCommand {
 
 		if (repository == null) {
 			if (verbose) {
-				consoleIO.writeln("There are no open repositories that can be closed");
+				writeln("There are no open repositories that can be closed");
 			}
 		} else {
-			consoleIO.writeln("Closing repository '" + this.state.getRepositoryID() + "'...");
+			writeln("Closing repository '" + this.state.getRepositoryID() + "'...");
 			this.state.setRepository(null);
 			this.state.setRepositoryID(null);
 		}

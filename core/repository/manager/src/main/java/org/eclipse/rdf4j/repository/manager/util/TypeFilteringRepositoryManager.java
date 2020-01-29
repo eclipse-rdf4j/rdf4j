@@ -174,9 +174,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 				if (isCorrectType(id)) {
 					result.add(id);
 				}
-			} catch (RepositoryConfigException e) {
-				logger.error("Failed to verify repository type", e);
-			} catch (RepositoryException e) {
+			} catch (RepositoryConfigException | RepositoryException e) {
 				logger.error("Failed to verify repository type", e);
 			}
 		}
@@ -195,9 +193,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 				if (repository != null) {
 					result.add(repository);
 				}
-			} catch (RepositoryConfigException e) {
-				logger.error("Failed to verify repository type", e);
-			} catch (RepositoryException e) {
+			} catch (RepositoryConfigException | RepositoryException e) {
 				logger.error("Failed to verify repository type", e);
 			}
 		}

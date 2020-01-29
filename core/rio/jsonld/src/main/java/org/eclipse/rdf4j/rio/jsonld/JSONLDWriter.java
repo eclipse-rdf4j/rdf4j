@@ -25,20 +25,20 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-
 import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
 import com.github.jsonldjava.core.JsonLdProcessor;
 import com.github.jsonldjava.utils.JsonUtils;
+import java.util.Collection;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * An RDFWriter that links to {@link JSONLDInternalRDFParser}.
@@ -68,6 +68,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
 	 *
 	 * @param outputStream The OutputStream to write to.
+	 * @param baseURI      base URI
 	 */
 	public JSONLDWriter(OutputStream outputStream, String baseURI) {
 		this(new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)), baseURI);
@@ -115,15 +116,18 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 			final JsonLdOptions opts = new JsonLdOptions();
 			// opts.addBlankNodeIDs =
 			// getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS);
-			opts.setUseRdfType(getWriterConfig().get(JSONLDSettings.USE_RDF_TYPE));
-			opts.setUseNativeTypes(getWriterConfig().get(JSONLDSettings.USE_NATIVE_TYPES));
+			WriterConfig writerConfig = getWriterConfig();
+			opts.setCompactArrays(writerConfig.get(JSONLDSettings.COMPACT_ARRAYS));
+			opts.setProduceGeneralizedRdf(writerConfig.get(JSONLDSettings.PRODUCE_GENERALIZED_RDF));
+			opts.setUseRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE));
+			opts.setUseNativeTypes(writerConfig.get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
 
-			if (getWriterConfig().get(JSONLDSettings.HIERARCHICAL_VIEW)) {
+			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {
 				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
 			}
 
-			if (baseURI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
+			if (baseURI != null && writerConfig.get(BasicWriterSettings.BASE_DIRECTIVE)) {
 				opts.setBase(baseURI);
 			}
 			if (mode == JSONLDMode.EXPAND) {
@@ -142,19 +146,13 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 				output = JsonLdProcessor.compact(output, localCtx, opts);
 			}
-			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+			if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 				JsonUtils.writePrettyPrint(writer, output);
 			} else {
 				JsonUtils.write(writer, output);
 			}
 
-		} catch (final JsonLdError e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final JsonGenerationException e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final JsonMappingException e) {
-			throw new RDFHandlerException("Could not render JSONLD", e);
-		} catch (final IOException e) {
+		} catch (JsonLdError | IOException e) {
 			throw new RDFHandlerException("Could not render JSONLD", e);
 		}
 	}
@@ -171,6 +169,20 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.JSONLD;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		Collection<RioSetting<?>> result = super.getSupportedSettings();
+
+		result.add(JSONLDSettings.COMPACT_ARRAYS);
+		result.add(JSONLDSettings.HIERARCHICAL_VIEW);
+		result.add(JSONLDSettings.JSONLD_MODE);
+		result.add(JSONLDSettings.PRODUCE_GENERALIZED_RDF);
+		result.add(JSONLDSettings.USE_RDF_TYPE);
+		result.add(JSONLDSettings.USE_NATIVE_TYPES);
+
+		return result;
 	}
 
 	/**

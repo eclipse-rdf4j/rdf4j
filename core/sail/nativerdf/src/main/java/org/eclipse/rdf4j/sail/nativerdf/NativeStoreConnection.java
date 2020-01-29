@@ -67,6 +67,10 @@ public class NativeStoreConnection extends SailSourceConnection {
 		try {
 			if (txnLock == null || !txnLock.isActive()) {
 				txnLock = nativeStore.getTransactionLock(getTransactionIsolation());
+				if (nativeStore.isIsolationDisabled()) {
+					// if the transaction isn't isolated then we need to keep holding our exclusive lock until commit
+					releaseLock = false;
+				}
 			}
 			super.startTransactionInternal();
 		} finally {

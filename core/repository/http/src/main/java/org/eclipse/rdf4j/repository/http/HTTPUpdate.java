@@ -45,13 +45,8 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 					try {
 						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
 								getMaxExecutionTime(), getBindingsArray());
-					} catch (UnauthorizedException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					} catch (QueryInterruptedException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					} catch (MalformedQueryException e) {
-						throw new HTTPUpdateExecutionException(e.getMessage(), e);
-					} catch (IOException e) {
+					} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException
+							| IOException e) {
 						throw new HTTPUpdateExecutionException(e.getMessage(), e);
 					}
 				} else {
@@ -66,13 +61,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 				httpCon.flushTransactionState(Action.UPDATE);
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
 						getMaxExecutionTime(), getBindingsArray());
-			} catch (UnauthorizedException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			} catch (QueryInterruptedException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			} catch (MalformedQueryException e) {
-				throw new HTTPUpdateExecutionException(e.getMessage(), e);
-			} catch (IOException e) {
+			} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException | IOException e) {
 				throw new HTTPUpdateExecutionException(e.getMessage(), e);
 			}
 		} catch (RepositoryException e) {

@@ -13,10 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.Util;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -26,17 +29,12 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Export triples to file
  * 
  * @author Bart Hanssens
  */
 public class Export extends ConsoleCommand {
-	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
-
 	@Override
 	public String getName() {
 		return "export";
@@ -54,15 +52,31 @@ public class Export extends ConsoleCommand {
 	}
 
 	@Override
+	public String[] usesSettings() {
+		return new String[] { WorkDir.NAME };
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings
+	 */
+	public Export(ConsoleIO consoleIO, ConsoleState state, Map<String, ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
+	}
+
+	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
 
 		if (repository == null) {
-			consoleIO.writeUnopenedError();
+			writeUnopenedError();
 			return;
 		}
 		if (tokens.length < 2) {
-			consoleIO.writeln(getHelpLong());
+			writeln(getHelpLong());
 			return;
 		}
 
@@ -72,10 +86,19 @@ public class Export extends ConsoleCommand {
 		try {
 			contexts = Util.getContexts(tokens, 2, repository);
 		} catch (IllegalArgumentException ioe) {
-			consoleIO.writeError(ioe.getMessage());
+			writeError(ioe.getMessage());
 			return;
 		}
 		export(repository, fileName, contexts);
+	}
+
+	/**
+	 * Get working dir setting.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.get(WorkDir.NAME)).get();
 	}
 
 	/**
@@ -87,21 +110,17 @@ public class Export extends ConsoleCommand {
 	 * @throws UnsupportedRDFormatException
 	 */
 	private void export(Repository repository, String fileName, Resource... contexts) {
-		Path path = Util.getPath(fileName);
+		Path path = Util.getNormalizedPath(getWorkDir(), fileName);
 		if (path == null) {
-			consoleIO.writeError("Invalid file name");
+			writeError("Invalid file name " + fileName);
 			return;
 		}
 
 		if (path.toFile().exists()) {
-			try {
-				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
-				if (!overwrite) {
-					consoleIO.writeln("Export aborted");
-					return;
-				}
-			} catch (IOException ioe) {
-				consoleIO.writeError("I/O error " + ioe.getMessage());
+			boolean overwrite = askProceed("File exists, continue ?", false);
+			if (!overwrite) {
+				writeln("Export aborted");
+				return;
 			}
 		}
 
@@ -114,24 +133,14 @@ public class Export extends ConsoleCommand {
 			RDFWriter writer = Rio.createWriter(fmt, w);
 
 			long startTime = System.nanoTime();
-			consoleIO.writeln("Exporting data...");
+			writeln("Exporting data...");
 
 			conn.export(writer, contexts);
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
-			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
+			writeln("Data has been written to file (" + diff + " ms)");
 		} catch (IOException | UnsupportedRDFormatException e) {
-			consoleIO.writeError("Failed to export data: " + e.getMessage());
+			writeError("Failed to export data", e);
 		}
-	}
-
-	/**
-	 * Constructor
-	 * 
-	 * @param consoleIO
-	 * @param state
-	 */
-	public Export(ConsoleIO consoleIO, ConsoleState state) {
-		super(consoleIO, state);
 	}
 }

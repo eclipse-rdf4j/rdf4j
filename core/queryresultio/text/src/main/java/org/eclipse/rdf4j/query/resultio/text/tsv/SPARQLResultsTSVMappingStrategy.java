@@ -84,7 +84,7 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 			int endLabelIdx = findEndOfLabel(literal);
 
 			if (endLabelIdx != -1) {
-				int startLangIdx = literal.indexOf("@", endLabelIdx);
+				int startLangIdx = literal.indexOf('@', endLabelIdx);
 				int startDtIdx = literal.indexOf("^^", endLabelIdx);
 
 				if (startLangIdx != -1 && startDtIdx != -1) {
@@ -121,7 +121,7 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 	 */
 	private int findEndOfLabel(String literal) {
 		// we just look for the last occurrence of a double quote
-		return literal.lastIndexOf("\"");
+		return literal.lastIndexOf('"');
 	}
 
 	/**

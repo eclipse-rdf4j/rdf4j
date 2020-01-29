@@ -7,14 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -32,18 +27,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.RegexAsStringFunctionOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -56,6 +39,10 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * A {@link SailConnection} implementation that is based on an {@link SailStore} .
@@ -627,12 +614,20 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
+
+		// Use deprecateByQuery if we don't need to notify anyone of which statements have been deleted.
+		if (!hasConnectionListeners() && sink.supportsDeprecateByQuery()) {
+			return sink.deprecateByQuery(subj, pred, obj, contexts);
+		}
+
 		boolean statementsRemoved = false;
+
 		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
-				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+				sink.deprecate(st);
+
 				statementsRemoved = true;
 				notifyStatementRemoved(st);
 			}
@@ -754,7 +749,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
 		if (isActive()) {
-			return super.getTransactionIsolation();
+			return getTransactionIsolation();
 		} else {
 			return defaultIsolationLevel;
 		}

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.datatypes;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -44,6 +45,14 @@ public class XMLDatatypeUtilTest {
 	/** invalid xsd:time values */
 	private static final String[] INVALID_TIMES = { "foo", "21:32", "9:15:16", "09:15:10.", "09:15:10.x",
 			"2001-10-10:10:10:10", "-10:00:00", "25:25:25" };
+
+	/** valid xsd:dateTimeStamp values */
+	private static final String[] VALID_DATETIMESTAMPS = { "2001-01-01T11:11:11Z", "2001-01-01T10:00:01+06:00",
+			"2001-01-01T10:01:58-06:00" };
+
+	/** valid xsd:dateTimeStamp values */
+	private static final String[] INVALID_DATETIMESTAMPS = { "2001-01-01T13:00:00", "2001-01-01T09:15:10",
+			"2001-01-01T09:15:10.01", "2001-01-01T09:15:10.12345" };
 
 	/** valid xsd:gYear values */
 	private static final String[] VALID_GYEAR = { "2001", "2001+02:00", "2001Z", "-2001", "-20000", "20000" };
@@ -131,6 +140,9 @@ public class XMLDatatypeUtilTest {
 		testValidation(VALID_DATES, XMLSchema.DATE, true);
 		testValidation(INVALID_DATES, XMLSchema.DATE, false);
 
+		testValidation(VALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, true);
+		testValidation(INVALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, false);
+
 		testValidation(VALID_TIMES, XMLSchema.TIME, true);
 		testValidation(INVALID_TIMES, XMLSchema.TIME, false);
 
@@ -189,5 +201,26 @@ public class XMLDatatypeUtilTest {
 		for (String value : VALID_FLOATS) {
 			XMLDatatypeUtil.parseFloat(value);
 		}
+	}
+
+	@Test
+	public void testCompareDateTimeStamp() {
+		int sameOffset = XMLDatatypeUtil.compare("2019-12-06T00:00:00Z", "2019-12-06T00:00:00+00:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Not the same", sameOffset == 0);
+
+		int offset1 = XMLDatatypeUtil.compare("2019-12-06T14:00:00+02:00", "2019-12-06T13:00:00+02:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Wrong order", offset1 > 0);
+
+		int offset2 = XMLDatatypeUtil.compare("2019-12-06T12:00:00+02:00", "2019-12-06T13:00:00-04:00",
+				XMLSchema.DATETIMESTAMP);
+		assertTrue("Wrong order", offset2 < 0);
+	}
+
+	@Test
+	public void testToStringNaN() {
+		Double d = Double.NaN;
+		assertEquals(XMLDatatypeUtil.toString(d), XMLDatatypeUtil.NaN);
 	}
 }

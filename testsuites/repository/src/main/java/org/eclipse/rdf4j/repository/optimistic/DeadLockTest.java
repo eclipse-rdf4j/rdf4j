@@ -77,39 +77,33 @@ public class DeadLockTest {
 		final CountDownLatch end = new CountDownLatch(2);
 		final CountDownLatch commit = new CountDownLatch(1);
 		final Exception e1 = new Exception();
-		new Thread(new Runnable() {
-
-			public void run() {
-				try {
-					start.countDown();
-					a.begin(level);
-					a.add(PICASSO, RDF.TYPE, PAINTER);
-					commit.await();
-					a.commit();
-				} catch (Exception e) {
-					e1.initCause(e);
-					a.rollback();
-				} finally {
-					end.countDown();
-				}
+		new Thread(() -> {
+			try {
+				start.countDown();
+				a.begin(level);
+				a.add(PICASSO, RDF.TYPE, PAINTER);
+				commit.await();
+				a.commit();
+			} catch (Exception e) {
+				e1.initCause(e);
+				a.rollback();
+			} finally {
+				end.countDown();
 			}
 		}).start();
 		final Exception e2 = new Exception();
-		new Thread(new Runnable() {
-
-			public void run() {
-				try {
-					start.countDown();
-					b.begin(level);
-					b.add(REMBRANDT, RDF.TYPE, PAINTER);
-					commit.await();
-					b.commit();
-				} catch (Exception e) {
-					e2.initCause(e);
-					b.rollback();
-				} finally {
-					end.countDown();
-				}
+		new Thread(() -> {
+			try {
+				start.countDown();
+				b.begin(level);
+				b.add(REMBRANDT, RDF.TYPE, PAINTER);
+				commit.await();
+				b.commit();
+			} catch (Exception e) {
+				e2.initCause(e);
+				b.rollback();
+			} finally {
+				end.countDown();
 			}
 		}).start();
 		start.await();

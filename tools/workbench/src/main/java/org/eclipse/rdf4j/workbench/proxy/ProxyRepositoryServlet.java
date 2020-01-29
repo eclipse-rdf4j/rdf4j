@@ -49,11 +49,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 			if (path.startsWith("/")) {
 				try {
 					servlets.put(path, createServlet(path));
-				} catch (InstantiationException e) {
-					throw new ServletException(e);
-				} catch (IllegalAccessException e) {
-					throw new ServletException(e);
-				} catch (ClassNotFoundException e) {
+				} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
 					throw new ServletException(e);
 				}
 			}

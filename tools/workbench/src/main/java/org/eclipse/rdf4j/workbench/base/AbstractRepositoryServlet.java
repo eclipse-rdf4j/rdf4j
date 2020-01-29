@@ -92,9 +92,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 				if (location != null && location.trim().length() > 0) {
 					info.setLocation(new URL(location));
 				}
-			} catch (MalformedURLException e) {
-				throw new ServletException(e);
-			} catch (RepositoryException e) {
+			} catch (MalformedURLException | RepositoryException e) {
 				throw new ServletException(e);
 			}
 		}

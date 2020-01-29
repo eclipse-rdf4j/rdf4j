@@ -401,11 +401,7 @@ public class SailUpdateExecutor {
 		try {
 			// TODO process update context somehow? dataset, base URI, etc.
 			parser.parse(new StringReader(insertDataExpr.getDataBlock()), "");
-		} catch (RDFParseException e) {
-			throw new SailException(e);
-		} catch (RDFHandlerException e) {
-			throw new SailException(e);
-		} catch (IOException e) {
+		} catch (RDFParseException | RDFHandlerException | IOException e) {
 			throw new SailException(e);
 		}
 	}
@@ -430,11 +426,7 @@ public class SailUpdateExecutor {
 		try {
 			// TODO process update context somehow? dataset, base URI, etc.
 			parser.parse(new StringReader(deleteDataExpr.getDataBlock()), "");
-		} catch (RDFParseException e) {
-			throw new SailException(e);
-		} catch (RDFHandlerException e) {
-			throw new SailException(e);
-		} catch (IOException e) {
+		} catch (RDFParseException | RDFHandlerException | IOException e) {
 			throw new SailException(e);
 		}
 	}

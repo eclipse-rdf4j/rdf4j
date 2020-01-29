@@ -353,13 +353,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 	@Override
 	public synchronized List<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
-		String[] dirs = repositoriesDir.list(new FilenameFilter() {
-
-			@Override
-			public boolean accept(File repositories, String name) {
-				File dataDir = new File(repositories, name);
-				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
-			}
+		String[] dirs = repositoriesDir.list((File repositories, String name) -> {
+			File dataDir = new File(repositories, name);
+			return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
 		});
 		if (dirs == null || dirs.length == 0) {
 			SystemRepository systemRepository = getSystemRepository();
@@ -441,13 +437,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	private synchronized void upgrade() {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
-		String[] dirs = repositoriesDir.list(new FilenameFilter() {
-
-			@Override
-			public boolean accept(File repositories, String name) {
-				File dataDir = new File(repositories, name);
-				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
-			}
+		String[] dirs = repositoriesDir.list((File repositories, String name) -> {
+			File dataDir = new File(repositories, name);
+			return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
 		});
 		if (dirs != null && dirs.length > 0) {
 			return; // already upgraded

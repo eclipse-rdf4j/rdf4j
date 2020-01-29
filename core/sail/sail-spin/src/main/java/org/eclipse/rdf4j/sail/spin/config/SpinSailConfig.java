@@ -22,6 +22,7 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 	 * is necessary if the underlying Sail stack does not provide RDFS inferencing.
 	 */
 	private boolean axiomClosureNeeded = true;
+	private boolean validateConstraints = true;
 
 	public SpinSailConfig() {
 		super(SpinSailFactory.SAIL_TYPE);
@@ -47,6 +48,14 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 		this.axiomClosureNeeded = axiomClosureNeeded;
 	}
 
+	private void setValidateConstraints(boolean booleanValue) {
+		this.validateConstraints = booleanValue;
+	}
+
+	public boolean isValidateConstraints() {
+		return validateConstraints;
+	}
+
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
@@ -54,8 +63,11 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 		try {
 			Models.objectLiteral(m.filter(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null))
 					.ifPresent(lit -> setAxiomClosureNeeded(lit.booleanValue()));
+			Models.objectLiteral(m.filter(implNode, SpinSailSchema.VALIDATE_CONSTRAINTS, null))
+					.ifPresent(lit -> setValidateConstraints(lit.booleanValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
+
 }

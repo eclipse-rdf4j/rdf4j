@@ -41,9 +41,9 @@ public class SPARQLBuilderTest {
 						"urn:test:subj" } });
 	}
 
-	private RepositoryConnection con;
+	private static RepositoryConnection con;
 
-	private ValueFactory valueFactory;
+	private static ValueFactory valueFactory;
 
 	private final String pattern, prefix, namespace;
 
@@ -79,7 +79,7 @@ public class SPARQLBuilderTest {
 
 	@Test
 	public void test() throws RDF4JException { // NOPMD
-												// Thrown exceptions are the only failure path.
+		// Thrown exceptions are the only failure path.
 
 		for (int i = 0; i < 100; i++) {
 			TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);

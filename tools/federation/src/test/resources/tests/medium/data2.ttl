@@ -1,0 +1,27 @@
+@prefix : <http://namespace2.org/> .
+@prefix ns3: <http://namespace3.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . 
+@prefix owl:  <http://www.w3.org/2002/07/owl#> . 
+
+:Person_6 rdf:type foaf:Person .
+:Person_6 rdf:type :Person .
+:Person_6 foaf:name "Person6" .
+
+:Person_7 rdf:type foaf:Person .
+:Person_7 rdf:type :Person .
+:Person_7 foaf:name "Person7" .
+
+:Person_8 rdf:type foaf:Person .
+:Person_8 rdf:type :Person .
+:Person_8 foaf:name "Person8" .
+
+:Person_9 rdf:type foaf:Person .
+:Person_9 rdf:type :Person .
+:Person_9 foaf:name "Person9" .
+
+:Person_10 rdf:type foaf:Person .
+:Person_10 rdf:type :Person .
+:Person_10 foaf:name "Person10" .
+

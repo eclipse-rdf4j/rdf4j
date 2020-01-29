@@ -52,6 +52,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 	}
 
+	@Override
 	public PlanNode getPlanNode() {
 
 		return new PlanNode() {

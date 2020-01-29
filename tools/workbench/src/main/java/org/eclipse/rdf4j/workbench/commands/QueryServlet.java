@@ -117,9 +117,7 @@ public class QueryServlet extends TransformationServlet {
 		super.init(config);
 		try {
 			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
-		} catch (RepositoryException e) {
-			throw new ServletException(e);
-		} catch (IOException e) {
+		} catch (RepositoryException | IOException e) {
 			throw new ServletException(e);
 		}
 	}
@@ -188,15 +186,7 @@ public class QueryServlet extends TransformationServlet {
 		OutputStream out = resp.getOutputStream();
 		try {
 			service(req, resp, out, xslPath);
-		} catch (BadRequestException exc) {
-			LOGGER.warn(exc.toString(), exc);
-			TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
-			builder.transform(xslPath, "query.xsl");
-			builder.start("error-message");
-			builder.link(Arrays.asList(INFO, "namespaces"));
-			builder.result(exc.getMessage());
-			builder.end();
-		} catch (HTTPQueryEvaluationException exc) {
+		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
 			LOGGER.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
 			builder.transform(xslPath, "query.xsl");

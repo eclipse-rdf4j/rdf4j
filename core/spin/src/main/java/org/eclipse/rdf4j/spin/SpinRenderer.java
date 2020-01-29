@@ -136,19 +136,8 @@ public class SpinRenderer {
 	}
 
 	public SpinRenderer(Output output) {
-		this(output, new Function<String, IRI>() {
-
-			@Override
-			public IRI apply(String name) {
-				return SpinWellKnownVars.INSTANCE.getURI(name);
-			}
-		}, new Function<String, IRI>() {
-
-			@Override
-			public IRI apply(String name) {
-				return SpinWellKnownFunctions.INSTANCE.getURI(name);
-			}
-		}, ValueFactoryImpl.getInstance());
+		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI,
+				ValueFactoryImpl.getInstance());
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,
@@ -1296,9 +1285,7 @@ public class SpinRenderer {
 			});
 			try {
 				parser.parse(new StringReader(data), "");
-			} catch (RDFParseException e) {
-				throw new RDFHandlerException(e);
-			} catch (IOException e) {
+			} catch (RDFParseException | IOException e) {
 				throw new RDFHandlerException(e);
 			}
 		}

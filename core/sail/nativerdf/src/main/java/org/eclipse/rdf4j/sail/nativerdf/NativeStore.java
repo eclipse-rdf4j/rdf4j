@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
@@ -263,18 +262,12 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			}
 			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
-			this.store = new SnapshotSailStore(master, new ModelFactory() {
+			this.store = new SnapshotSailStore(master, () -> new MemoryOverflowModel() {
 
 				@Override
-				public Model createEmptyModel() {
-					return new MemoryOverflowModel() {
-
-						@Override
-						protected SailStore createSailStore(File dataDir) throws IOException, SailException {
-							// Model can't fit into memory, use another NativeSailStore to store delta
-							return new NativeSailStore(dataDir, getTripleIndexes());
-						}
-					};
+				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+					// Model can't fit into memory, use another NativeSailStore to store delta
+					return new NativeSailStore(dataDir, getTripleIndexes());
 				}
 			}) {
 

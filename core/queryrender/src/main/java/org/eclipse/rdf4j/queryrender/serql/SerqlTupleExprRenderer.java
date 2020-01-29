@@ -68,7 +68,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 		boolean aFirst = true;
 
-		StringBuffer aQuery = new StringBuffer();
+		StringBuilder aQuery = new StringBuilder();
 
 		if (!mProjection.isEmpty()) {
 			if (isSelect()) {

@@ -1,0 +1,10 @@
+# make a test for distinct keyword with filter
+
+PREFIX : <http://example.org/> 
+
+SELECT DISTINCT ?x  
+{
+  ?x :p ?p .
+  ?local ?p :Object .
+  FILTER (regex(str(?p), "http://example.org/Pred1" ))
+} 
