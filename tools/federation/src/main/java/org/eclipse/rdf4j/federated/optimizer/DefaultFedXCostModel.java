@@ -12,6 +12,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
@@ -77,7 +78,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 			for (String var : group.getFreeVars())
 				if (!joinVars.contains(var))
 					count++;
-			return 100 + (count / group.getStatements().size());
+			return 100 + (count / group.getExclusiveExpressions().size());
 		}
 
 		// heuristic: a group has a selective statement, if one statement has 0 or 1 free variables
@@ -86,7 +87,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 
 		// TODO maybe add additional cost factor for ?x rdf:type :someType
 
-		for (ExclusiveStatement stmt : group.getStatements()) {
+		for (ExclusiveTupleExpr stmt : group.getExclusiveExpressions()) {
 			if (stmt.getFreeVarCount() <= 1) {
 				hasSelectiveStatement = true;
 			}
@@ -95,7 +96,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		double additionalCost = 0;
 
 		// add some slight cost factor, if the subject in the query is not the same
-		additionalCost += computeAdditionPatternCost(group.getStatements());
+		additionalCost += computeAdditionPatternCost(group.getExclusiveExpressions());
 
 		if (!hasSelectiveStatement)
 			additionalCost += 4;
@@ -103,22 +104,33 @@ public class DefaultFedXCostModel implements FedXCostModel {
 //		if (hasExpensiveType)
 //			additionalCost += 1;
 
-		return 0 + additionalCost + (group.getFreeVarCount() / group.getStatements().size());
+		return 0 + additionalCost + (group.getFreeVarCount() / group.getExclusiveExpressions().size());
 
 	}
 
 	/**
 	 * If the subject is not the same for all triple patterns in the group, an additional cost of .5 is considered.
 	 * 
-	 * Example: ?x p o . ?x p2 o2 => cost is 0 ?x p ?s . ?s ?p2 val => additional cost is 0.5
+	 * <p>
+	 * Example:
+	 * </p>
+	 * 
+	 * <pre>
+	 * ?x p o . ?x p2 o2 => cost is 0 
+	 * 
+	 * ?x p ?s . ?s ?p2 val => additional cost is 0.5
+	 * </pre>
 	 * 
 	 * @return
 	 */
-	private double computeAdditionPatternCost(List<ExclusiveStatement> stmts) {
+	private double computeAdditionPatternCost(List<ExclusiveTupleExpr> stmts) {
 
 		String s = null;
-		for (ExclusiveStatement st : stmts) {
-			String currentVar = QueryStringUtil.toString(st.getSubjectVar());
+		for (ExclusiveTupleExpr st : stmts) {
+			if (!(st instanceof ExclusiveStatement)) {
+				return 0.5;
+			}
+			String currentVar = QueryStringUtil.toString(((ExclusiveStatement) st).getSubjectVar());
 			if (!currentVar.equals(s) && s != null)
 				return 0.5;
 			s = currentVar;

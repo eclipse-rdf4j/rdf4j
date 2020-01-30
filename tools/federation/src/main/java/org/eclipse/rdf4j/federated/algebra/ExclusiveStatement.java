@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * 
  * @author Andreas Schwarte
  */
-public class ExclusiveStatement extends FedXStatementPattern {
+public class ExclusiveStatement extends FedXStatementPattern implements ExclusiveTupleExpr {
 
 	private static final long serialVersionUID = -6963394279179263763L;
 
@@ -38,6 +38,7 @@ public class ExclusiveStatement extends FedXStatementPattern {
 		statementSources.add(owner);
 	}
 
+	@Override
 	public StatementSource getOwner() {
 		return getStatementSources().get(0);
 	}
