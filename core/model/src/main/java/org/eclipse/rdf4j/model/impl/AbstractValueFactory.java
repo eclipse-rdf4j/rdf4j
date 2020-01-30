@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -124,6 +125,11 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		return new ContextStatement(subject, predicate, object, context);
+	}
+
+	@Override
+	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+		return new SimpleTriple(subject, predicate, object);
 	}
 
 	/**

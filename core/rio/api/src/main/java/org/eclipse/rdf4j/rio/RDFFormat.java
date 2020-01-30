@@ -101,6 +101,19 @@ public class RDFFormat extends FileFormat {
 			NO_CONTEXTS);
 
 	/**
+	 * The Turtle* (TurtleStar) file format, a Turtle-based RDF serialization format that supports RDF* triples.
+	 * <p>
+	 * The file extension <code>.ttls</code> is recommended for Turtle* documents. The media type is
+	 * <code>application/x-turtlestar</code> and the encoding is UTF-8.
+	 * </p>
+	 *
+	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
+	 *      RDF</a>
+	 */
+	public static final RDFFormat TURTLESTAR = new RDFFormat("Turtle*", "application/x-turtlestar",
+			StandardCharsets.UTF_8, "ttls", SUPPORTS_NAMESPACES, NO_CONTEXTS);
+
+	/**
 	 * The <a href="http://www.w3.org/TeamSubmission/n3/">N3/Notation3</a> file format.
 	 * <p>
 	 * The file extension <code>.n3</code> is recommended for N3 documents. The media type is <code>text/n3</code>, but
@@ -141,6 +154,20 @@ public class RDFFormat extends FileFormat {
 			StandardCharsets.UTF_8, Arrays.asList("trig"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/TriG"), SUPPORTS_NAMESPACES,
 			SUPPORTS_CONTEXTS);
+
+	/**
+	 * The TriG* (TriGStar) file format, a TriG-based RDF serialization format that supports RDF* triples. This builds
+	 * upon the idea for the Turtle* format but adds support for named graphs.
+	 * <p>
+	 * The file extension <code>.trigs</code> is recommended for TriG* documents. The media type is
+	 * <code>application/x-trigstar</code> and the encoding is UTF-8.
+	 * </p>
+	 *
+	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
+	 *      RDF</a>
+	 */
+	public static final RDFFormat TRIGSTAR = new RDFFormat("TriG*", "application/x-trigstar",
+			StandardCharsets.UTF_8, "trigs", SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS);
 
 	/**
 	 * A binary RDF format.
