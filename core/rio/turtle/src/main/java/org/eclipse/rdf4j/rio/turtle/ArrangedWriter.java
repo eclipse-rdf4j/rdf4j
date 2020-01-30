@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * @author James Leigh
  * @since 2.3
  */
-class ArrangedWriter implements RDFWriter {
+public class ArrangedWriter implements RDFWriter {
 
 	private final static int DEFAULT_QUEUE_SIZE = 100;
 
