@@ -27,18 +27,16 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Represents a group of {@link ExclusiveTupleExpr} that can only produce results at a single endpoint, the
- * {@link StatementSource}.
+ * Represents a group of statements that can only produce results at a single endpoint, the owner.
  * 
  * @author Andreas Schwarte
  *
  */
-public class ExclusiveGroup extends AbstractQueryModelNode
-		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
+public class ExclusiveGroup extends AbstractQueryModelNode implements StatementTupleExpr, FilterTuple {
 	private static final long serialVersionUID = 9215353191021766797L;
 
-	protected final List<ExclusiveTupleExpr> owned = new ArrayList<>();
-	protected final StatementSource owner;
+	protected final List<ExclusiveStatement> owned = new ArrayList<>();
+	protected final ArrayList<StatementSource> owner;
 	protected final Set<String> freeVars = new HashSet<>();
 	protected final String id;
 	protected final transient QueryInfo queryInfo;
@@ -47,10 +45,10 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	private final FederationEvalStrategy strategy;
 
-	public ExclusiveGroup(Collection<? extends ExclusiveTupleExpr> ownedNodes, StatementSource owner,
-			QueryInfo queryInfo) {
+	public ExclusiveGroup(Collection<ExclusiveStatement> ownedNodes, StatementSource owner, QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
-		this.owner = owner;
+		this.owner = new ArrayList<>(1);
+		this.owner.add(owner);
 		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
@@ -64,12 +62,12 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	 */
 	protected void init() {
 		HashSet<FilterExpr> conjExpr = new HashSet<>();
-		for (ExclusiveTupleExpr o : owned) {
+		for (ExclusiveStatement o : owned) {
 			freeVars.addAll(o.getFreeVars());
 
-			if ((o instanceof FilterTuple) && ((FilterTuple) o).hasFilter()) {
+			if (o.hasFilter()) {
 
-				FilterValueExpr expr = ((FilterTuple) o).getFilterExpr();
+				FilterValueExpr expr = o.getFilterExpr();
 				if (expr instanceof ConjunctiveFilterExpr)
 					conjExpr.addAll(((ConjunctiveFilterExpr) expr).getExpressions());
 				else if (expr instanceof FilterExpr)
@@ -91,7 +89,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 
-		for (ExclusiveTupleExpr s : owned) {
+		for (ExclusiveStatement s : owned) {
 			s.visit(visitor);
 		}
 	}
@@ -117,22 +115,26 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 		throw new RuntimeException("Operation not supported on this node!");
 	}
 
-	@Override
 	public StatementSource getOwner() {
-		return owner;
+		return owner.get(0);
 	}
 
 	public Endpoint getOwnedEndpoint() {
 		return ownedEndpoint;
 	}
 
-	public List<ExclusiveTupleExpr> getExclusiveExpressions() {
+	public List<ExclusiveStatement> getStatements() {
+		// XXX make a copy? (or copyOnWrite list?)
 		return owned;
 	}
 
 	@Override
 	public int getFreeVarCount() {
 		return freeVars.size();
+	}
+
+	public Set<String> getFreeVarsSet() {
+		return freeVars;
 	}
 
 	@Override
@@ -147,7 +149,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public List<StatementSource> getStatementSources() {
-		return Collections.singletonList(owner);
+		return owner;
 	}
 
 	@Override

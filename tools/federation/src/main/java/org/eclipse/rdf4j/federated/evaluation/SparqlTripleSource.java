@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
-import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
@@ -177,7 +177,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 	}
 
 	@Override
-	public boolean hasStatements(ExclusiveTupleExpr expr,
+	public boolean hasStatements(ExclusiveGroup group,
 			BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -186,9 +186,9 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 			/* remote select limit 1 query */
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings);
+				String queryString = QueryStringUtil.selectQueryStringLimit1(group, bindings);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-				configureInference(query, expr.getQueryInfo());
+				configureInference(query, group.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
 
 				monitorRemoteRequest();
@@ -204,7 +204,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 		}
 
 		// default handling: use ASK query
-		return super.hasStatements(expr, bindings);
+		return super.hasStatements(group, bindings);
 	}
 
 	@Override

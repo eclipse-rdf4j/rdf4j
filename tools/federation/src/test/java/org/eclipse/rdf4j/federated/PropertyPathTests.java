@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
@@ -39,7 +38,6 @@ public class PropertyPathTests extends SPARQLBaseTest {
 		qm.addPrefixDeclaration("owl", OWL.NAMESPACE);
 		qm.addPrefixDeclaration("rdfs", RDFS.NAMESPACE);
 		qm.addPrefixDeclaration("skos", SKOS.NAMESPACE);
-		qm.addPrefixDeclaration("foaf", FOAF.NAMESPACE);
 		qm.addPrefixDeclaration("", EXAMPLE_NAMESPACE);
 	}
 
@@ -67,7 +65,7 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "subClass",
-					Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1"), FOAF.PERSON));
+					Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1")));
 		}
 	}
 
@@ -85,67 +83,6 @@ public class PropertyPathTests extends SPARQLBaseTest {
 					Sets.newHashSet(l("Concept1"), l("Concept1 AltLabel"), l("Concept2"), l("Concept2 AltLabel"),
 							l("Concept3"), l("Concept3 AltLabel")));
 		}
-	}
-
-	@Test
-	public void testPropertyPath_ExclusiveGroup() throws Exception {
-
-		prepareTest(Arrays.asList("/tests/propertypath/data1.ttl", "/tests/propertypath/data2.ttl"));
-
-		String query = "SELECT * WHERE { ?concept a skos:Concept . ?concept skos:broader+ :mammals . ?concept rdfs:label ?label}";
-
-		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(query);
-		assertQueryPlanEquals(readResourceAsString("/tests/propertypath/query_path_exclusiveGroup.qp"),
-				actualQueryPlan);
-
-		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
-
-			List<BindingSet> res = Iterations.asList(tqr);
-
-			assertContainsAll(res, "label",
-					Sets.newHashSet(l("Bovinae"), l("Cows")));
-			assertContainsAll(res, "concept",
-					Sets.newHashSet(iri("bovinae"), iri("cows")));
-		}
-	}
-
-	@Test
-	public void testPropertyPath_ExclusivePath() throws Exception {
-
-		prepareTest(Arrays.asList("/tests/propertypath/data1.ttl", "/tests/propertypath/data2.ttl"));
-
-		String query = "SELECT * WHERE { ?x rdf:type/rdfs:subClassOf* foaf:Agent . ?x rdfs:label ?label}";
-
-		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(query);
-
-		// Note: we currently cannot compare the query plan, because the queryplan contains generated
-		// variable name identifiers for anonymous nodes.
-//		assertQueryPlanEquals(readResourceAsString("/tests/propertypath/query_path_exclusivePath.qp"),
-//				actualQueryPlan);
-		Assertions.assertTrue(actualQueryPlan.contains("ExclusiveArbitraryLengthPath"));
-
-		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
-
-			List<BindingSet> res = Iterations.asList(tqr);
-
-			assertContainsAll(res, "label",
-					Sets.newHashSet(l("Person 1"), l("Person 2")));
-		}
-	}
-
-	@Test
-	public void testPropertyPath_BoundInJoin() throws Exception {
-
-		prepareTest(Arrays.asList("/tests/propertypath/data1.ttl", "/tests/propertypath/data2.ttl"));
-
-		String query = "SELECT * WHERE { BIND(foaf:Person AS ?subClass) . ?subClass rdfs:subClassOf+ foaf:Agent . ?subClass rdfs:label ?label }";
-		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
-
-			List<BindingSet> res = Iterations.asList(tqr);
-			assertContainsAll(res, "subClass", Sets.newHashSet(FOAF.PERSON));
-			assertContainsAll(res, "label", Sets.newHashSet(l("Person")));
-		}
-
 	}
 
 	protected void assertContainsAll(List<BindingSet> res, String bindingName, Set<Value> expected) {

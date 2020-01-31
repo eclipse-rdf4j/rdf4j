@@ -22,9 +22,7 @@ import org.eclipse.rdf4j.sail.federation.Federation;
  * 
  * @see FederationConfig
  * @author James Leigh
- * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
-@Deprecated
 public class FederationFactory implements SailFactory {
 
 	/**
