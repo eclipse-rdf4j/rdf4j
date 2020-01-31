@@ -34,7 +34,9 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
  * Lists the members of a federation and which properties describe a resource subject in a unique member.
  * 
  * @author James Leigh
+ * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
+@Deprecated
 public class FederationConfig extends AbstractSailImplConfig {
 
 	/** http://www.openrdf.org/config/sail/federation# */
