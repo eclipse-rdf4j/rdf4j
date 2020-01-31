@@ -63,11 +63,10 @@ public interface ValueFactory {
 	/**
 	 * Creates a new URI from the supplied namespace and local name.
 	 * 
-	 * @param namespace The IRI's namespace.
-	 * @param localName The IRI's local name.
+	 * @param uri A string-representation of a URI.
 	 * @return An object representing the URI.
 	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated Use {@link #createIRI(String, String)} instead.
+	 * @deprecated Use {{@link #createIRI(String, String)} instead.
 	 */
 	@Deprecated
 	public default URI createURI(String namespace, String localName) {

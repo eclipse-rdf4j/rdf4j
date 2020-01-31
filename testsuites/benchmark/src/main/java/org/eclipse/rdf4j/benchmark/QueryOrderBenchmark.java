@@ -35,7 +35,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 /**
  * Designed to test the performance of ORDER BY queries.
  * 
- * @see <a href="https://github.com/eclipse/rdf4j/issues/971">https://github.com/eclipse/rdf4j/issues/971</a>
+ * @see https://github.com/eclipse/rdf4j/issues/971
  * @author James Leigh
  */
 @Fork(1)

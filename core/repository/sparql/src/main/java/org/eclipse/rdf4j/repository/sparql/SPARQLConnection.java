@@ -931,9 +931,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	/**
 	 * Shall graph information also be retrieved, e.g. for
-	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)}
+	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)
 	 * 
-	 * @return true if in quad mode
+	 * @return
 	 */
 	protected boolean isQuadMode() {
 		return quadMode;

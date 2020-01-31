@@ -266,7 +266,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 *
 	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
 	 * @param store                 Base sail for storing data.
-	 * @return inferencer
+	 * @return
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
 			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
@@ -280,8 +280,8 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 *
 	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
 	 * @param store                 Base sail for storing data.
-	 * @param useAllRdfsRules       Use all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
-	 * @return inferencer
+	 * @param useAllRdfsRules       Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @return
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
 			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,

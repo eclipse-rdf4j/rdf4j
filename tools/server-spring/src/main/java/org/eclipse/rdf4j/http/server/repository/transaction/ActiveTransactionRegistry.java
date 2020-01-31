@@ -121,6 +121,7 @@ public enum ActiveTransactionRegistry {
 	}
 
 	/**
+	 * @param txnId
 	 * @param txn
 	 */
 	public void register(Transaction txn) {

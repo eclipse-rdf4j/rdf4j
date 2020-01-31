@@ -459,13 +459,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
+	 * Returns a Document representing the specified Resource & Context combination, or null when no such Document
 	 * exists yet.
-	 * 
-	 * @param subject
-	 * @param context
-	 * @return search document
-	 * @throws IOException
 	 */
 	public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
 		// fetch the Document representing this Resource
@@ -475,13 +470,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
-	 * @param subject
-	 * @return list of documents
-	 * @throws IOException
 	 */
 	public Iterable<? extends SearchDocument> getDocuments(Resource subject) throws IOException {
 		String resourceId = SearchFields.getResourceID(subject);
@@ -490,9 +481,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Filters the given list of fields, retaining all property fields.
-	 * 
-	 * @param fields
-	 * @return set of fields
 	 */
 	public static Set<String> getPropertyFields(Set<String> fields) {
 		Set<String> result = new HashSet<>(fields.size());
@@ -543,13 +531,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	/**
 	 * Parse the passed query.
 	 *
-	 * @param subject
-	 * @param query       string
-	 * @param propertyURI
-	 * @param highlight
+	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
-	 * @throws IOException
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
@@ -610,11 +594,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
-	 * @param resource
-	 * @param request
-	 * @param query
-	 * @return search hits
 	 */
 	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query) {
 		// rewrite the query
@@ -760,7 +739,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @throws IOException
+	 * @throws SailException
 	 */
 	@Override
 	public synchronized void clearContexts(Resource... contexts) throws IOException {

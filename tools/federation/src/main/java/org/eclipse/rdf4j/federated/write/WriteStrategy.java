@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * @since 4.0
  * @see RepositoryWriteStrategy
  * @see ReadOnlyWriteStrategy
- * @see org.eclipse.rdf4j.federated.FedX#getWriteStrategy()
+ * @see FedX#getWriteStrategy()
  */
 public interface WriteStrategy {
 

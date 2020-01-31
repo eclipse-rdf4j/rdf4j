@@ -21,3 +21,23 @@
 # note: we define altLabel in data2.ttl	
 :Concept2 a :MyClass ;
 	rdfs:label "Concept2" .
+
+# data for exclusive path
+foaf:Agent a owl:Class ; 
+	rdfs:label "Agent" .
+foaf:Person rdfs:subClassOf foaf:Agent ;
+	rdfs:label "Person" .
+:Person1 a foaf:Agent ;
+	rdfs:label "Person 1" .
+:Person2 a foaf:Person ;
+	rdfs:label "Person 2" .
+	
+:SubConcept1 a :MySubClass1 ;
+	rdfs:label "Sub Concept 1" .
+
+# small taxonomie
+:mammals rdf:type skos:Concept .
+:bovinae rdf:type skos:Concept ;
+	skos:broader :mammals .
+:cows rdf:type skos:Concept ;
+	skos:broader :bovinae .

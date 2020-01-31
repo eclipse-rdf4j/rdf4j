@@ -45,6 +45,7 @@ public class Rio {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/rdf+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+	 * @see #getParserFormatForMIMEType(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getParserFormatForMIMEType(String mimeType) {
 		return RDFFormat.matchMIMEType(mimeType, RDFParserRegistry.getInstance().getKeys());
@@ -55,6 +56,7 @@ public class Rio {
 	 * 
 	 * @param fileName A file name.
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+	 * @see #getParserFormatForFileName(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getParserFormatForFileName(String fileName) {
 		return RDFFormat.matchFileName(fileName, RDFParserRegistry.getInstance().getKeys());
@@ -65,6 +67,7 @@ public class Rio {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/rdf+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+	 * @see #getWriterFormatForMIMEType(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getWriterFormatForMIMEType(String mimeType) {
 		return RDFFormat.matchMIMEType(mimeType, RDFWriterRegistry.getInstance().getKeys());
@@ -75,18 +78,17 @@ public class Rio {
 	 * 
 	 * @param fileName A file name.
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+	 * @see #getWriterFormatForFileName(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getWriterFormatForFileName(String fileName) {
 		return RDFFormat.matchFileName(fileName, RDFWriterRegistry.getInstance().getKeys());
 	}
 
 	/**
-	 * Convenience methods for creating RDFParser objects.This method uses the registry returned by
+	 * Convenience methods for creating RDFParser objects. This method uses the registry returned by
 	 * {@link RDFParserRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
 	 * the appropriate parser.
 	 * 
-	 * @param format
-	 * @return RDF Parser
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 */
 	public static RDFParser createParser(RDFFormat format) throws UnsupportedRDFormatException {
@@ -101,9 +103,6 @@ public class Rio {
 	 * Convenience methods for creating RDFParser objects that use the specified ValueFactory to create RDF model
 	 * objects.
 	 * 
-	 * @param format
-	 * @param valueFactory
-	 * @return RDF Parser
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @see #createParser(RDFFormat)
 	 * @see RDFParser#setValueFactory(ValueFactory)
@@ -116,13 +115,10 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
 	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
 	 * the appropriate writer.
 	 * 
-	 * @param format
-	 * @param out
-	 * @return RDF Writer
 	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
 	 */
 	public static RDFWriter createWriter(RDFFormat format, OutputStream out) throws UnsupportedRDFormatException {
@@ -134,14 +130,10 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
 	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
 	 * the appropriate writer.
 	 * 
-	 * @param format
-	 * @param out
-	 * @param baseURI
-	 * @return RDF Writer
 	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
 	 * @throws URISyntaxException           If the baseURI is invalid
 	 */
@@ -155,13 +147,10 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
 	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
 	 * the appropriate writer.
 	 * 
-	 * @param format
-	 * @param writer
-	 * @return RDF Writer
 	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
 	 */
 	public static RDFWriter createWriter(RDFFormat format, Writer writer) throws UnsupportedRDFormatException {
@@ -173,14 +162,10 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
 	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
 	 * the appropriate writer.
 	 * 
-	 * @param format
-	 * @param writer
-	 * @param baseURI
-	 * @return RDF Writer
 	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
 	 * @throws URISyntaxException           If the baseURI is invalid
 	 */
@@ -456,8 +441,7 @@ public class Rio {
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
 	 * 
-	 * @param model  A collection of statements, such as a {@link Model}, to be written.
-	 * @param writer
+	 * @param model A collection of statements, such as a {@link Model}, to be written.
 	 * @throws RDFHandlerException Thrown if there is an error writing the statements.
 	 */
 	public static void write(Iterable<Statement> model, RDFHandler writer) throws RDFHandlerException {
@@ -543,7 +527,6 @@ public class Rio {
 	 * <p>
 	 * 
 	 * @param statement A statement, to be written.
-	 * @param writer
 	 * @throws RDFHandlerException Thrown if there is an error writing the statement.
 	 */
 	public static void write(Statement statement, RDFHandler writer) throws RDFHandlerException {

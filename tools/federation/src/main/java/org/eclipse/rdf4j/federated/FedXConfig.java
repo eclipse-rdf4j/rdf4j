@@ -65,11 +65,9 @@ public class FedXConfig {
 	/* factory like setters */
 
 	/**
-	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()}.
+	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()).
 	 * 
-	 * <p>
-	 * Can be set after federation construction and initialize.
-	 * </p>
+	 * <p>Can be set after federation construction and initialize.</p>
 	 * 
 	 * @param flag
 	 * @return the current config
@@ -233,7 +231,7 @@ public class FedXConfig {
 	 * </p>
 	 * 
 	 * @param prefixFile
-	 * @return config
+	 * @return
 	 */
 	public FedXConfig withPrefixDeclarations(String prefixFile) {
 		this.prefixDeclarations = prefixFile;
@@ -382,7 +380,7 @@ public class FedXConfig {
 	 * Flag to enable/disable query logging via {@link QueryLog}. Default=false The {@link QueryLog} facility allows to
 	 * log all queries to a file. See {@link QueryLog} for details.
 	 * 
-	 * Requires {@link #isEnableMonitoring()} to be active.
+	 * Required {@link Config#isEnableMonitoring()} to be active.
 	 * 
 	 * @return whether queries are logged
 	 */

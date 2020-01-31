@@ -87,7 +87,7 @@ public class ProxySettings implements Configuration {
 
 	/**
 	 *
-	 * @return proxy
+	 * @return
 	 */
 	public String getHttpProxyHost() {
 		return props.getProperty(PROPNAME_HTTP_PROXYHOST);

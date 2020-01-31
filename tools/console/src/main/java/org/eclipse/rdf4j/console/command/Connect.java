@@ -90,7 +90,7 @@ public class Connect extends ConsoleCommand {
 	/**
 	 * Connect to default repository
 	 * 
-	 * @return true if connected
+	 * @return
 	 */
 	public boolean connectDefault() {
 		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()), "default data directory");

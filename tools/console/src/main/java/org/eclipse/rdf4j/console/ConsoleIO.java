@@ -141,7 +141,7 @@ public class ConsoleIO {
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
-	 * @return input string
+	 * @return
 	 * @throws IOException
 	 */
 	public String readMultiLineInput() throws IOException {
@@ -152,7 +152,7 @@ public class ConsoleIO {
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
 	 * @param prompt
-	 * @return input string
+	 * @return
 	 * @throws IOException
 	 */
 	public String readMultiLineInput(String prompt) throws IOException {
@@ -182,7 +182,7 @@ public class ConsoleIO {
 	 * Read message from input
 	 * 
 	 * @param message one or multiple messages
-	 * @return input string
+	 * @return
 	 * @throws IOException
 	 */
 	public String readln(String... message) throws IOException {

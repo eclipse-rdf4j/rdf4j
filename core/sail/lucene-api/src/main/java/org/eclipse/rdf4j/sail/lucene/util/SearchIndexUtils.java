@@ -27,7 +27,7 @@ public class SearchIndexUtils {
 	 * <code>org.eclipse.rdf4j.sail.lucene.LuceneIndex</code>.
 	 *
 	 * @param parameters
-	 * @return search index
+	 * @return
 	 * @throws Exception
 	 */
 	public static SearchIndex createSearchIndex(Properties parameters) throws Exception {

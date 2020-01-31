@@ -165,8 +165,8 @@ public class QueryManager {
 	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
 	 * <p>
 	 * 
-	 * The queryString is modified to use the declared PREFIX declarations, see
-	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+	 * The queryString is modified to use the declared PREFIX declarations, see {@link Config#getPrefixDeclarations()}
+	 * for details.
 	 * 
 	 * @param queryString
 	 * @return the prepared tuple query
@@ -184,8 +184,8 @@ public class QueryManager {
 	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
 	 * <p>
 	 * 
-	 * The queryString is modified to use the declared PREFIX declarations, see
-	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+	 * The queryString is modified to use the declared PREFIX declarations, see {@link Config#getPrefixDeclarations()}
+	 * for details.
 	 * 
 	 * @param queryString
 	 * @return the prepared graph query
@@ -203,8 +203,8 @@ public class QueryManager {
 	 * Prepare a boolean query which uses the underlying federation to evaluate the query.
 	 * <p>
 	 * 
-	 * The queryString is modified to use the declared PREFIX declarations, see
-	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+	 * The queryString is modified to use the declared PREFIX declarations, see {@link Config#getPrefixDeclarations()}
+	 * for details.
 	 * 
 	 * @param queryString
 	 * @return the prepared {@link BooleanQuery}
@@ -226,8 +226,8 @@ public class QueryManager {
 	 * Prepare a {@link Query} which uses the underlying federation to evaluate the SPARQL query.
 	 * <p>
 	 * 
-	 * The queryString is modified to use the declared PREFIX declarations, see
-	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+	 * The queryString is modified to use the declared PREFIX declarations, see {@link Config#getPrefixDeclarations()}
+	 * for details.
 	 * 
 	 * @param queryString
 	 * @return the prepared {@link Query}
@@ -262,10 +262,7 @@ public class QueryManager {
 	/**
 	 * Retrieve the query plan for the given query string.
 	 * 
-	 * @param queryString
 	 * @return the query plan
-	 * @throws MalformedQueryException
-	 * @throws FedXException
 	 */
 	public String getQueryPlan(String queryString) throws MalformedQueryException, FedXException {
 

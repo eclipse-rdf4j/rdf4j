@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
- * @author Håvard Mikkelsen Ottestad
+ * @Author Håvard Mikkelsen Ottestad
  */
 @Experimental
 public interface NamespaceStoreInterface extends Iterable<SimpleNamespace> {

@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
- * <tt>xsd:byte</tt> .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:byte</tt> .
  * 
  * @author Jeen Broekstra
  * @see XMLSchema#BYTE

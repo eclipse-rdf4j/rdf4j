@@ -1,0 +1,26 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "concept"
+         ProjectionElem "label"
+      NJoin
+         ExclusiveGroup
+            ExclusiveStatement
+               Var (name=concept)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=_const_4171603_uri, value=http://www.w3.org/2004/02/skos/core#Concept, anonymous)
+               StatementSource (id=endpoint1, type=REMOTE)
+            ExclusiveArbitraryLengthPath
+               Var (name=concept)
+               ExclusiveStatement
+                  Var (name=concept)
+                  Var (name=_const_7123f66a_uri, value=http://www.w3.org/2004/02/skos/core#broader, anonymous)
+                  Var (name=_const_da6a40f3_uri, value=http://example.org/mammals, anonymous)
+                  StatementSource (id=endpoint1, type=REMOTE)
+               Var (name=_const_da6a40f3_uri, value=http://example.org/mammals, anonymous)
+         StatementSourcePattern
+            Var (name=concept)
+            Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)
+            Var (name=label)
+            StatementSource (id=endpoint1, type=REMOTE)
+            StatementSource (id=endpoint2, type=REMOTE)

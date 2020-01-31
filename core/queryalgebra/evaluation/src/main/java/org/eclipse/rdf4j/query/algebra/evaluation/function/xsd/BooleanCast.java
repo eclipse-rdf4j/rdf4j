@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
- * <tt>xsd:boolean</tt>.
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:boolean</tt>.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra

@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * @version 1.0
- * @see <a href=
- *      "http://www.opengeospatial.org/standards/geosparql">http://www.opengeospatial.org/standards/geosparql</a>
+ * @see http://www.opengeospatial.org/standards/geosparql
  */
 public class GEO {
 

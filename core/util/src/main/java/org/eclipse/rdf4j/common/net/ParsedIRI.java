@@ -509,7 +509,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * <p>
 	 * <b>Internationalized Domain Name Normalization</b> of the host component to Unicode.
 	 *
-	 * @return normalized IRI
+	 * @return
 	 */
 	public ParsedIRI normalize() {
 		String _scheme = toLowerCase(scheme);

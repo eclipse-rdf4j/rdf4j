@@ -81,21 +81,21 @@ public interface Platform {
 	/**
 	 * Check if case is preserved
 	 * 
-	 * @return boolean
+	 * @return
 	 */
 	public boolean dataDirPreserveCase();
 
 	/**
 	 * Check if whitespace is replaced
 	 * 
-	 * @return boolean
+	 * @return
 	 */
 	public boolean dataDirReplaceWhitespace();
 
 	/**
 	 * Check if colon is replaced
 	 * 
-	 * @return boolean
+	 * @return
 	 */
 	public boolean dataDirReplaceColon();
 }

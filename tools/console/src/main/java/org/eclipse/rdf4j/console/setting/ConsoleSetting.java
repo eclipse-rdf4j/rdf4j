@@ -76,7 +76,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
-	 * @return help string
+	 * @return
 	 */
 	@Override
 	public String getHelpShort() {

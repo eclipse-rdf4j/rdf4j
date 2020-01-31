@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * </p>
  * 
  * @author Michael Grove
- * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
 @Deprecated
 public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {

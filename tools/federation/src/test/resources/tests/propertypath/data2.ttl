@@ -20,3 +20,8 @@
 :Concept3 a :MyClass ;
 	rdfs:label "Concept3" ;
 	skos:altLabel "Concept3 AltLabel" .
+
+# labels for SKOS concepts
+:mammals rdfs:label "Mammals" .
+:bovinae rdfs:label "Bovinae" .
+:cows rdfs:label "Cows" .

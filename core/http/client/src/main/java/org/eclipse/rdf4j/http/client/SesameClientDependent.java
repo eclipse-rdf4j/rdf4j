@@ -41,7 +41,7 @@ public interface SesameClientDependent {
 	void setHttpClientSessionManager(HttpClientSessionManager client);
 
 	/**
-	 * @deprecated use {@link #setHttpClientSessionManager(HttpClientSessionManager)} instead.
+	 * @deprecated use {@link #setHttpClientSessionManager()} instead.
 	 */
 	@Deprecated
 	default void setSesameClient(SesameClient client) {

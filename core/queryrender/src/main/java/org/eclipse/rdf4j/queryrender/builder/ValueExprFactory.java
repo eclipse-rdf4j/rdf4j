@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * </p>
  * 
  * @author Michael Grove
- * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
 @Deprecated
 public class ValueExprFactory {

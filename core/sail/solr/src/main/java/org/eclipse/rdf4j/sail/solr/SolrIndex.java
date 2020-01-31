@@ -121,9 +121,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
 	 * such Document exists yet.
 	 * 
-	 * @param id
-	 * @return search document
-	 * @throws IOException
+	 * @throws SolrServerException
 	 */
 	@Override
 	protected SearchDocument getDocument(String id) throws IOException {
@@ -207,13 +205,8 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
+	 * Returns a Document representing the specified Resource & Context combination, or null when no such Document
 	 * exists yet.
-	 * 
-	 * @param subject
-	 * @param context
-	 * @return search document
-	 * @throws IOException
 	 */
 	public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
 		// fetch the Document representing this Resource
@@ -223,13 +216,9 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
-	 * @param subject
-	 * @return list of documents
-	 * @throws IOException
 	 */
 	public Iterable<? extends SearchDocument> getDocuments(Resource subject) throws IOException {
 		String resourceId = SearchFields.getResourceID(subject);
@@ -238,9 +227,6 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Filters the given list of fields, retaining all property fields.
-	 * 
-	 * @param fields
-	 * @return set of fields
 	 */
 	public static Set<String> getPropertyFields(Set<String> fields) {
 		Set<String> result = new HashSet<>(fields.size());
@@ -284,10 +270,9 @@ public class SolrIndex extends AbstractSearchIndex {
 	// //////////////////////////////// Methods for querying the index
 
 	/**
-	 * Parse the passed query.To be removed, no longer used.
+	 * Parse the passed query. To be removed, no longer used.
 	 * 
-	 * @param query       string
-	 * @param propertyURI
+	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
 	 */
@@ -301,13 +286,9 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Parse the passed query.
 	 * 
-	 * @param subject
-	 * @param query       string
-	 * @param propertyURI
-	 * @param highlight
+	 * @param query string
 	 * @return the parsed query
-	 * @throws MalformedQueryException
-	 * @throws IOException
+	 * @throws ParseException when the parsing brakes
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
@@ -367,11 +348,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Evaluates the given query only for the given resource.
 	 * 
-	 * @param resource
-	 * @param query
-	 * @return response
 	 * @throws SolrServerException
-	 * @throws IOException
 	 */
 	public QueryResponse search(Resource resource, SolrQuery query) throws SolrServerException, IOException {
 		// rewrite the query
@@ -576,10 +553,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 * 
-	 * @param query
-	 * @return query response
 	 * @throws SolrServerException
-	 * @throws IOException
 	 */
 	public QueryResponse search(SolrQuery query) throws SolrServerException, IOException {
 		int nDocs;
@@ -607,7 +581,8 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @throws IOException
+	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
+	 * @throws SailException
 	 */
 	@Override
 	public synchronized void clearContexts(Resource... contexts) throws IOException {
