@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -21,9 +22,12 @@ import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
@@ -35,6 +39,7 @@ import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
+import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
@@ -48,7 +53,9 @@ import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.optimizer.DefaultFedXCostModel;
+import org.eclipse.rdf4j.federated.optimizer.ExclusiveTupleExprOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.GenericInfoOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.LimitOptimizer;
@@ -59,6 +66,7 @@ import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -211,6 +219,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			new UnionOptimizer(queryInfo).optimize(query);
 		}
 
+		// identify exclusive expressions
+		new ExclusiveTupleExprOptimizer().optimize(query);
+
 		// optimize statement groups and join order
 		optimizeJoinOrder(query, queryInfo, info);
 
@@ -277,6 +288,10 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (expr instanceof ExclusiveGroup) {
 			return ((ExclusiveGroup) expr).evaluate(bindings);
+		}
+
+		if (expr instanceof ExclusiveTupleExpr) {
+			return evaluateExclusiveTupleExpr((ExclusiveTupleExpr) expr, bindings);
 		}
 
 		if (expr instanceof FedXLeftJoin) {
@@ -496,6 +511,51 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+
+	/**
+	 * Evaluate an {@link ExclusiveTupleExpr}. The default implementation converts the given expression to a SELECT
+	 * query string and evaluates it at the source.
+	 * 
+	 * @param expr
+	 * @param bindings
+	 * @return the result
+	 * @throws RepositoryException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 */
+	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveTupleExpr(
+			ExclusiveTupleExpr expr,
+			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+
+		if (expr instanceof StatementTupleExpr) {
+			return ((StatementTupleExpr) expr).evaluate(bindings);
+		}
+
+		if (!(expr instanceof ExclusiveTupleExprRenderer)) {
+			return super.evaluate(expr, bindings);
+		}
+
+		Endpoint ownedEndpoint = federationContext
+				.getEndpointManager()
+				.getEndpoint(expr.getOwner().getEndpointID());
+		TripleSource t = ownedEndpoint.getTripleSource();
+
+		AtomicBoolean isEvaluated = new AtomicBoolean(false);
+
+		try {
+			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
+			String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr, bindings,
+					filterValueExpr,
+					isEvaluated);
+			return t.getStatements(preparedQuery, bindings,
+					(isEvaluated.get() ? null : filterValueExpr), expr.getQueryInfo());
+		} catch (IllegalQueryException e) {
+			/* no projection vars, e.g. local vars only, can occur in joins */
+			if (t.hasStatements(expr, bindings))
+				return new SingleBindingSetIteration(bindings);
+			return new EmptyIteration<>();
+		}
+	}
 
 	/**
 	 * Evaluate a bound join at the relevant endpoint, i.e. i.e. for a group of bindings retrieve results for the bound

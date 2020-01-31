@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
-import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GraphToBindingSetConversionIteration;
@@ -105,7 +105,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	@Override
-	public boolean hasStatements(ExclusiveGroup group, BindingSet bindings)
+	public boolean hasStatements(ExclusiveTupleExpr group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
