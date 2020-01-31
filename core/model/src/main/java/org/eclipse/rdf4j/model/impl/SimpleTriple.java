@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -91,10 +91,12 @@ public class SimpleTriple implements Triple {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		SimpleTriple that = (SimpleTriple) o;
 		return Objects.equals(subject, that.subject) && Objects.equals(predicate, that.predicate)
 				&& Objects.equals(object, that.object);
