@@ -328,6 +328,10 @@ class ArrangedWriter implements RDFWriter {
 
 	private void getUsedNamespaces(Set<Statement> stmts, Set<String> used) {
 		for (Statement st : stmts) {
+			if (st.getSubject() instanceof IRI) {
+				IRI uri = (IRI) st.getSubject();
+				used.add(uri.getNamespace());
+			}
 			used.add(st.getPredicate().getNamespace());
 			if (st.getObject() instanceof IRI) {
 				IRI uri = (IRI) st.getObject();
