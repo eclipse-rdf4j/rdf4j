@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 /**
- * An RDF* triple. Triples have a subject, predicate and object. Unlike @{@link Statement}, a triple never has an
+ * An RDF* triple. Triples have a subject, predicate and object. Unlike {@link Statement}, a triple never has an
  * associated context.
  *
  * @author Pavel Mihaylov
