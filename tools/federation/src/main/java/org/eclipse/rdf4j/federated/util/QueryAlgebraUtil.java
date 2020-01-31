@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
@@ -21,6 +23,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -33,9 +37,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Sets;
 
 /**
  * Various static functions for query handling and parsing (alegbra expression).
@@ -78,6 +85,23 @@ public class QueryAlgebraUtil {
 		} else {
 			return bindings.getValue(var.getName());
 		}
+	}
+
+	/**
+	 * Convert the given {@link ArbitraryLengthPath} to a fresh {@link TupleExpr} where all provided bindings are bound.
+	 * 
+	 * @param node
+	 * @param varNames
+	 * @param bindings
+	 * @return the fresh and bound expression
+	 */
+	public static TupleExpr toTupleExpr(ArbitraryLengthPath node, Set<String> varNames, BindingSet bindings) {
+
+		TupleExpr clone = node.clone();
+		InsertBindingsVisitor bindingsInserter = new InsertBindingsVisitor(bindings);
+		bindingsInserter.meetOther(clone);
+		varNames.addAll(bindingsInserter.freeVars);
+		return clone;
 	}
 
 	public static StatementPattern toStatementPattern(Statement stmt) {
@@ -163,25 +187,25 @@ public class QueryAlgebraUtil {
 			AtomicBoolean evaluated) {
 
 		Set<String> varNames = new HashSet<>();
-		List<ExclusiveStatement> stmts = group.getStatements();
+		List<ExclusiveTupleExpr> stmts = group.getExclusiveExpressions();
 
 		Join join = null;
 
 		if (stmts.size() == 2) {
-			join = new Join(constructStatement(stmts.get(0), varNames, bindings),
-					constructStatement(stmts.get(1), varNames, bindings));
+			join = new Join(constructJoinArg(stmts.get(0), varNames, bindings),
+					constructJoinArg(stmts.get(1), varNames, bindings));
 		} else {
 			join = new Join();
-			join.setLeftArg(constructStatement(stmts.get(0), varNames, bindings));
+			join.setLeftArg(constructJoinArg(stmts.get(0), varNames, bindings));
 			Join tmp = join;
 			int idx;
 			for (idx = 1; idx < stmts.size() - 1; idx++) {
 				Join _u = new Join();
-				_u.setLeftArg(constructStatement(stmts.get(idx), varNames, bindings));
+				_u.setLeftArg(constructJoinArg(stmts.get(idx), varNames, bindings));
 				tmp.setRightArg(_u);
 				tmp = _u;
 			}
-			tmp.setRightArg(constructStatement(stmts.get(idx), varNames, bindings));
+			tmp.setRightArg(constructJoinArg(stmts.get(idx), varNames, bindings));
 		}
 
 		TupleExpr expr = join;
@@ -302,6 +326,33 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementId(stmt, outerID + "_" + idx, varNames, bindings.get(idx)));
 
 		return union;
+	}
+
+	/**
+	 * Construct a TupleExpr from the {@link ExclusiveTupleExpr} that can be used as an argument to a {@link Join}.
+	 * <p>
+	 * This method can only be used for {@link ExclusiveTupleExpr} that additionally provide
+	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
+	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement}
+	 * </p>
+	 * 
+	 * @param exclusiveExpr
+	 * @param varNames
+	 * @param bindings
+	 * @return the fresh {@link TupleExpr} with bindings inserted
+	 */
+	private static TupleExpr constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set<String> varNames,
+			BindingSet bindings) {
+
+		if (exclusiveExpr instanceof StatementPattern) {
+			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);
+		}
+
+		if (!(exclusiveExpr instanceof ExclusiveTupleExprRenderer)) {
+			throw new IllegalStateException("Cannot render tupl expr of type " + exclusiveExpr.getClass());
+		}
+
+		return ((ExclusiveTupleExprRenderer) exclusiveExpr).toQueryAlgebra(varNames, bindings);
 	}
 
 	/**
@@ -427,4 +478,33 @@ public class QueryAlgebraUtil {
 		return res;
 	}
 
+	/**
+	 * A helper class to insert bindings in the {@link Var} nodes of the given {@link TupleExpr}.
+	 * 
+	 * @author Andreas Schwarte
+	 *
+	 */
+	private static class InsertBindingsVisitor extends AbstractQueryModelVisitor<QueryEvaluationException> {
+
+		private final BindingSet bindings;
+
+		private final Set<String> freeVars = Sets.newHashSet();
+
+		private InsertBindingsVisitor(BindingSet bindings) {
+			super();
+			this.bindings = bindings;
+		}
+
+		@Override
+		public void meet(Var node) throws QueryEvaluationException {
+			if (node.hasValue()) {
+				if (bindings.hasBinding(node.getName())) {
+					node.setValue(bindings.getValue(node.getName()));
+				}
+			} else {
+				freeVars.add(node.getName());
+			}
+			super.meet(node);
+		}
+	}
 }
