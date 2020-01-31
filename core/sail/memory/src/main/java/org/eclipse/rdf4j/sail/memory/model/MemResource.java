@@ -30,11 +30,15 @@ public interface MemResource extends MemValue, Resource {
 
 	/**
 	 * Adds a statement to this MemResource's list of statements for which it is the subject.
+	 * 
+	 * @param st
 	 */
 	public void addSubjectStatement(MemStatement st);
 
 	/**
 	 * Removes a statement from this MemResource's list of statements for which it is the subject.
+	 * 
+	 * @param st
 	 */
 	public void removeSubjectStatement(MemStatement st);
 
@@ -62,11 +66,15 @@ public interface MemResource extends MemValue, Resource {
 
 	/**
 	 * Adds a statement to this MemResource's list of statements for which it represents the context.
+	 * 
+	 * @param st
 	 */
 	public void addContextStatement(MemStatement st);
 
 	/**
 	 * Removes a statement from this MemResource's list of statements for which it represents the context.
+	 * 
+	 * @param st
 	 */
 	public void removeContextStatement(MemStatement st);
 

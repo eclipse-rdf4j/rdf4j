@@ -18,7 +18,8 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:negativeInteger</tt> .
+ * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
+ * <tt>xsd:negativeInteger</tt> .
  * 
  * @author Jeen Broekstra
  */

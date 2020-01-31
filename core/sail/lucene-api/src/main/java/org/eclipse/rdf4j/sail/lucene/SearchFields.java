@@ -38,7 +38,7 @@ public final class SearchFields {
 	 * The name of the Document field that holds multiple text values of a Resource. The field is called "text", as it
 	 * contains all text, but was called "ALL" during the discussion. For each statement-literal of the resource, the
 	 * object literal is stored in a field using the predicate-literal and additionally in a TEXT_FIELD_NAME-literal
-	 * field. The reasons are given in the documentation of {@link #addPropertyFields(String, String, Document)}
+	 * field.
 	 */
 	public static final String TEXT_FIELD_NAME = "text";
 
@@ -98,9 +98,10 @@ public final class SearchFields {
 	}
 
 	/**
-	 * Parses an id-string (a serialized resource) back to a resource Inverse method of {@link getResourceID}
+	 * Parses an id-string (a serialized resource) back to a resource Inverse method of {@link #getResourceID(Resource)}
 	 * 
 	 * @param idString
+	 * @return resource
 	 */
 	public static Resource createResource(String idString) {
 		if (idString.startsWith(BNODE_ID_PREFIX)) {

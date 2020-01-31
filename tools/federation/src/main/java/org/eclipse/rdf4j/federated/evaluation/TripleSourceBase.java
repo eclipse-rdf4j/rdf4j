@@ -133,7 +133,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * Set includeInferred depending on {@link QueryInfo#getIncludeInferred()}
 	 * 
 	 * @param query
-	 * @param querInfo
+	 * @param queryInfo
 	 */
 	protected void configureInference(Query query, QueryInfo queryInfo) {
 
@@ -146,7 +146,8 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	/**
-	 * Apply an upper bound of the maximum execution time using {@link FedXUtil#applyMaxQueryExecutionTime(Operation)}.
+	 * Apply an upper bound of the maximum execution time using
+	 * {@link FedXUtil#applyMaxQueryExecutionTime(Operation, FederationContext)}.
 	 * 
 	 * @param operation the operation
 	 */

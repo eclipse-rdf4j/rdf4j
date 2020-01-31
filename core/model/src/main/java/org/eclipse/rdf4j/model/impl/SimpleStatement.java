@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Value;
  * A simple default implementation of the {@link Statement} interface for statements that don't have an associated
  * context. For statements that do have an associated context, {@link ContextStatement} can be used.
  * 
- * @see {@link SimpleValueFactory}
+ * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory
  */
 public class SimpleStatement implements Statement {
 
@@ -52,12 +52,12 @@ public class SimpleStatement implements Statement {
 	 * <p>
 	 * Note that creating SimpleStatement objects directly via this constructor is not the recommended approach.
 	 * Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by
-	 * using {@link SimpleValueFactory#getInstance()}) to create new Statement objects.
+	 * using {@link org.eclipse.rdf4j.model.impl.SimpleValueFactory#getInstance()}) to create new Statement objects.
 	 * 
 	 * @param subject   The statement's subject, must not be <tt>null</tt>.
 	 * @param predicate The statement's predicate, must not be <tt>null</tt>.
 	 * @param object    The statement's object, must not be <tt>null</tt>.
-	 * @see {@link SimpleValueFactory#createStatement(Resource, IRI, Value)
+	 * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory#createStatement(Resource, IRI, Value)
 	 */
 	protected SimpleStatement(Resource subject, IRI predicate, Value object) {
 		this.subject = Objects.requireNonNull(subject, "subject must not be null");

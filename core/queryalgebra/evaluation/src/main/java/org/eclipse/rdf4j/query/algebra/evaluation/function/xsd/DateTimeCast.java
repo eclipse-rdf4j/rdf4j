@@ -20,7 +20,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:dateTime</tt>.
+ * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
+ * <tt>xsd:dateTime</tt>.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra

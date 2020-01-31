@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * This triple source supports the {@link SparqlEndpointConfiguration} for defining whether ASK queries are to be used
  * for source selection.
  * 
- * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr)} is wrapped in a
+ * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr, QueryInfo)} is wrapped in a
  * {@link ConsumingIteration} to avoid blocking behavior..
  * 
  * @author Andreas Schwarte

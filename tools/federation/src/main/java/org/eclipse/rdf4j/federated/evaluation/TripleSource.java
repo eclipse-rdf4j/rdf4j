@@ -140,7 +140,7 @@ public interface TripleSource {
 	 * @param subj
 	 * @param pred
 	 * @param obj
-	 * @param includeInferred
+	 * @param queryInfo
 	 * @param contexts
 	 * @return whether the source can provide results
 	 * @throws RepositoryException
@@ -149,8 +149,9 @@ public interface TripleSource {
 			throws RepositoryException;
 
 	/**
-	 * Check if the repository can return results for the given {@link ExclusiveGroup}, i.e. a list of Statements
+	 * Check if the repository can return results for the given {@link ExclusiveGroup}, i.e.a list of Statements
 	 * 
+	 * @param group
 	 * @param bindings
 	 * @return whether the repository can return results
 	 * @throws RepositoryException

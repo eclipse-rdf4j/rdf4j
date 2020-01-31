@@ -522,7 +522,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Return a fresh {@link RepositoryConnection} from the configured repository.
 	 * 
-	 * @return
+	 * @return connection
 	 * @throws RepositoryException
 	 */
 	private RepositoryConnection freshConnection() throws RepositoryException {
@@ -533,7 +533,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 * Retrieve a (re-usable) connection. If it is not yet created, open a fresh connection. Note that this connection
 	 * is closed automatically when shutting this service.
 	 * 
-	 * @return
+	 * @return connection
 	 * @throws RepositoryException
 	 */
 	protected synchronized RepositoryConnection getConnection() throws RepositoryException {

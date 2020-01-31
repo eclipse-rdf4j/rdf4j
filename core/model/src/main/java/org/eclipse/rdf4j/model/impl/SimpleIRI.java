@@ -57,7 +57,7 @@ public class SimpleIRI implements IRI {
 	 *
 	 * @param iriString A String representing a valid, absolute IRI. May not be <code>null</code>.
 	 * @throws IllegalArgumentException If the supplied IRI is not a valid (absolute) IRI.
-	 * @see {@link SimpleValueFactory#createIRI(String)}
+	 * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory#createIRI(String)
 	 */
 	protected SimpleIRI(String iriString) {
 		setIRIString(iriString);

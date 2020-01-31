@@ -497,8 +497,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a Document representing the specified Resource & Context combination, or null when no such Document
+	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
+	 * 
+	 * @param subject
+	 * @param context
+	 * @return document
+	 * @throws IOException
 	 */
 	public synchronized Document getDocument(Resource subject, Resource context) throws IOException {
 		// fetch the Document representing this Resource
@@ -509,9 +514,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
+	 * 
+	 * @param subject
+	 * @return list of documents
+	 * @throws IOException
 	 */
 	public synchronized List<Document> getDocuments(Resource subject) throws IOException {
 		String resourceId = SearchFields.getResourceID(subject);
@@ -521,6 +530,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes an ID in a Document.
+	 * 
+	 * @param id
+	 * @param document
 	 */
 	public static void addIDField(String id, Document document) {
 		document.add(new StringField(SearchFields.ID_FIELD_NAME, id, Store.YES));
@@ -529,9 +541,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Add the "context" value to the doc
 	 * 
-	 * @param context     the context or null, if null-context
-	 * @param document    the document
-	 * @param ifNotExists check if this context exists
+	 * @param context  the context or null, if null-context
+	 * @param document the document
 	 */
 	public static void addContextField(String context, Document document) {
 		if (context != null) {
@@ -541,6 +552,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes the resource ID in a Document.
+	 * 
+	 * @param resourceId
+	 * @param document
 	 */
 	public static void addResourceField(String resourceId, Document document) {
 		document.add(new StringField(SearchFields.URI_FIELD_NAME, resourceId, Store.YES));
@@ -811,7 +825,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Returns the lucene hit with the given id of the respective lucene query
 	 * 
-	 * @param id the id of the document to return
+	 * @param docId        the id of the document to return
+	 * @param fieldsToLoad
 	 * @return the requested hit, or null if it fails
 	 */
 	public synchronized Document getDocument(int docId, Set<String> fieldsToLoad) {
@@ -856,6 +871,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
+	 * 
+	 * @param resource
+	 * @param query
+	 * @return top documents
+	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Resource resource, Query query) throws IOException {
 		// rewrite the query
@@ -868,6 +888,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
+	 * 
+	 * @param query
+	 * @return top documents
+	 * @throws IOException
 	 */
 	public synchronized TopDocs search(Query query) throws IOException {
 		int nDocs;
@@ -894,8 +918,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * @param contexts
-	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
-	 * @throws SailException
+	 * @throws IOException
 	 */
 	@Override
 	public synchronized void clearContexts(Resource... contexts) throws IOException {

@@ -45,7 +45,6 @@ public class QueryResultIO {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getParserFormatForMIMEType(String, TupleQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getParserFormatForMIMEType(String mimeType) {
 		return TupleQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -56,7 +55,6 @@ public class QueryResultIO {
 	 * 
 	 * @param fileName A file name.
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getParserFormatForFileName(String, TupleQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getParserFormatForFileName(String fileName) {
 		return TupleQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -67,7 +65,6 @@ public class QueryResultIO {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getWriterFormatForMIMEType(String, TupleQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getWriterFormatForMIMEType(String mimeType) {
 		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -78,7 +75,6 @@ public class QueryResultIO {
 	 * 
 	 * @param fileName A file name.
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getWriterFormatForFileName(String, TupleQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getWriterFormatForFileName(String fileName) {
 		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -89,7 +85,6 @@ public class QueryResultIO {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getBooleanParserFormatForMIMEType(String, BooleanQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getBooleanParserFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -100,7 +95,6 @@ public class QueryResultIO {
 	 * 
 	 * @param fileName A file name.
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getBooleanParserFormatForFileName(String, BooleanQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getBooleanParserFormatForFileName(String fileName) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -111,7 +105,6 @@ public class QueryResultIO {
 	 * 
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getBooleanWriterFormatForMIMEType(String, BooleanQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getBooleanWriterFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -122,7 +115,6 @@ public class QueryResultIO {
 	 * 
 	 * @param fileName A file name.
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
-	 * @see #getBooleanWriterFormatForFileName(String, BooleanQueryResultFormat)
 	 */
 	public static Optional<QueryResultFormat> getBooleanWriterFormatForFileName(String fileName) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -151,10 +143,11 @@ public class QueryResultIO {
 	 * Convenience methods for creating TupleQueryResultParser objects that use the specified ValueFactory to create RDF
 	 * model objects.
 	 * 
+	 * @param format
+	 * @param valueFactory
 	 * @return A TupleQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified tuple query result
 	 *                                               format.
-	 * @see #createParser(TupleQueryResultFormat)
 	 * @see TupleQueryResultParser#setValueFactory(ValueFactory)
 	 */
 	public static TupleQueryResultParser createTupleParser(QueryResultFormat format, ValueFactory valueFactory)
@@ -165,10 +158,12 @@ public class QueryResultIO {
 	}
 
 	/**
-	 * Convenience methods for creating TupleQueryResultWriter objects. This method uses the registry returned by
+	 * Convenience methods for creating TupleQueryResultWriter objects.This method uses the registry returned by
 	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
 	 * 
+	 * @param format
+	 * @param out
 	 * @return A TupleQueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified tuple query result
 	 *                                               format.
@@ -184,10 +179,11 @@ public class QueryResultIO {
 	}
 
 	/**
-	 * Convenience methods for creating BooleanQueryResultParser objects. This method uses the registry returned by
+	 * Convenience methods for creating BooleanQueryResultParser objects.This method uses the registry returned by
 	 * {@link BooleanQueryResultParserRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate parser.
 	 * 
+	 * @param format
 	 * @return A BooleanQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified boolean query result
 	 *                                               format.
@@ -203,10 +199,12 @@ public class QueryResultIO {
 	}
 
 	/**
-	 * Convenience methods for creating BooleanQueryResultWriter objects. This method uses the registry returned by
+	 * Convenience methods for creating BooleanQueryResultWriter objects.This method uses the registry returned by
 	 * {@link BooleanQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
 	 * 
+	 * @param format
+	 * @param out
 	 * @return A BooleanQueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified boolean query result
 	 *                                               format.
@@ -222,10 +220,12 @@ public class QueryResultIO {
 	}
 
 	/**
-	 * Convenience methods for creating QueryResultWriter objects. This method uses the registry returned by
+	 * Convenience methods for creating QueryResultWriter objects.This method uses the registry returned by
 	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
 	 * 
+	 * @param format
+	 * @param out
 	 * @return A QueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified tuple query result
 	 *                                               format.
@@ -256,11 +256,12 @@ public class QueryResultIO {
 	/**
 	 * Parses a query result document, reporting the parsed solutions to the supplied TupleQueryResultHandler.
 	 * 
-	 * @param in      An InputStream to read the query result document from.
-	 * @param format  The query result format of the document to parse. Supported formats are
-	 *                {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
-	 * @param handler The TupleQueryResultHandler to report the parse results to.
-	 * @throws IOException                           If an I/O error occured while reading the query result document
+	 * @param in           An InputStream to read the query result document from.
+	 * @param format       The query result format of the document to parse. Supported formats are
+	 *                     {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @param handler      The TupleQueryResultHandler to report the parse results to.
+	 * @param valueFactory
+	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the supplied
 	 *                                               TupleQueryResultHandler.
@@ -291,7 +292,7 @@ public class QueryResultIO {
 	 * @param format The query result format of the document to parse. Supported formats are
 	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
 	 * @return A TupleQueryResult containing the query results.
-	 * @throws IOException                           If an I/O error occured while reading the query result document
+	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
 	 * @throws UnsupportedQueryResultFormatException
@@ -312,7 +313,7 @@ public class QueryResultIO {
 	 * @param format The query result format of the document to parse. Supported formats are
 	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
 	 * @return A TupleQueryResult containing the query results, which must be closed to prevent resource leaks.
-	 * @throws IOException                           If an I/O error occured while reading the query result document
+	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
 	 * @throws UnsupportedQueryResultFormatException
@@ -365,7 +366,7 @@ public class QueryResultIO {
 	 * @param in     An InputStream to read the query result document from.
 	 * @param format The file format of the document to parse.
 	 * @return A boolean representing the result of parsing the given InputStream.
-	 * @throws IOException                           If an I/O error occured while reading the query result document
+	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
 	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
 	 */
@@ -394,7 +395,7 @@ public class QueryResultIO {
 	 * @param tqr    The query result to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
-	 * @throws IOException                           If an I/O error occured while writing the query result document to
+	 * @throws IOException                           If an I/O error occurred while writing the query result document to
 	 *                                               the stream.
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result writer.
 	 * @throws UnsupportedQueryResultFormatException
@@ -424,7 +425,7 @@ public class QueryResultIO {
 	 * @param value  The value to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
-	 * @throws IOException                           If an I/O error occured while writing the query result document to
+	 * @throws IOException                           If an I/O error occurred while writing the query result document to
 	 *                                               the stream.
 	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
 	 */
@@ -442,7 +443,7 @@ public class QueryResultIO {
 	 * @param gqr    The query result to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
-	 * @throws IOException                  If an I/O error occured while writing the query result document to the
+	 * @throws IOException                  If an I/O error occurred while writing the query result document to the
 	 *                                      stream.
 	 * @throws RDFHandlerException          If such an exception is thrown by the used RDF writer.
 	 * @throws QueryEvaluationException

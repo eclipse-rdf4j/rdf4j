@@ -15,12 +15,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 
 /**
- * FederatedService to allow for customized evaluation of SERVICE expression. By default {@link SPARQLFederatedService}
- * is used.
+ * FederatedService to allow for customized evaluation of SERVICE expression. By default
+ * {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} is used.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
- * @see SPARQLFederatedService
+ * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService
  */
 public interface FederatedService {
 
@@ -72,7 +72,8 @@ public interface FederatedService {
 	 * <li>SILENT service must be dealt with in the method</li>
 	 * </ul>
 	 * <p>
-	 * Compare {@link SPARQLFederatedService} for a reference implementation
+	 * Compare {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} for a reference
+	 * implementation
 	 * </p>
 	 * 
 	 * @param service  the reference to the service node, contains information to construct the query
