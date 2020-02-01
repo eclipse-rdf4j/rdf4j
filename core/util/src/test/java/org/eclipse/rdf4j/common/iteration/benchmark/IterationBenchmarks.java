@@ -16,7 +16,6 @@ import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
-import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -29,7 +28,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
@@ -139,6 +138,17 @@ public class IterationBenchmarks {
 		Iterations.addAll(getIterator(duplicates), objects);
 		return objects;
 
+	}
+
+	@Benchmark
+	public int getFirst() throws Exception {
+		Stream<String> stream = Iterations.stream(getIterator(strings));
+
+		return stream
+				.mapToInt(String::length)
+				.filter(length -> length >= Integer.MAX_VALUE)
+				.findFirst()
+				.orElse(0);
 	}
 
 	private Iteration<String, Exception> getIterator(List<String> list) throws Exception {
