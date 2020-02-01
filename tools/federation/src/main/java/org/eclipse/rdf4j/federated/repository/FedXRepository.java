@@ -55,6 +55,9 @@ public class FedXRepository extends SailRepository {
 
 	@Override
 	public FedXRepositoryConnection getConnection() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
 		try {
 			return new FedXRepositoryConnection(this, this.getSail().getConnection());
 		} catch (SailException e) {

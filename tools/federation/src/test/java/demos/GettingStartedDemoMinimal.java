@@ -24,8 +24,6 @@ public class GettingStartedDemoMinimal {
 				.withSparqlEndpoint("https://query.wikidata.org/sparql")
 				.create();
 
-		repository.init();
-
 		String query = "PREFIX wd: <http://www.wikidata.org/entity/> "
 				+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
 				+ "SELECT * WHERE { "
