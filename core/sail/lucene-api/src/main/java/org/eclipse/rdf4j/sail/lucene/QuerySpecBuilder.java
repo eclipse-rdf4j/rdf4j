@@ -61,8 +61,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	/**
 	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
-	 * TupleExpr. To be removed, prefer {@link #process(TupleExpr tupleExpr, BindingSet bindings, Collection
-	 * <SearchQueryEvaluator> result)}.
+	 * TupleExpr. To be removed, prefer {@link #process(TupleExpr, BindingSet, Collection<SearchQueryEvaluator>)}.
 	 */
 	@SuppressWarnings("unchecked")
 	@Deprecated

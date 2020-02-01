@@ -322,7 +322,7 @@ public class QueryResults extends Iterations {
 	 * @param result2 the second query result to compare.
 	 * @return {@code true} if the supplied graph query results are isomorphic graphs, {@code false} otherwise.
 	 * @throws QueryEvaluationException
-	 * @see {@link Models#isomorphic(Iterable, Iterable)}
+	 * @see Models#isomorphic(Iterable, Iterable)
 	 */
 	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) throws QueryEvaluationException {
 		Set<? extends Statement> graph1 = Iterations.asSet(result1);

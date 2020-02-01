@@ -93,19 +93,21 @@ public class RDFCollections {
 	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
 	 * statements making up the new RDF Collection will be added to the supplied statement collection.
 	 * 
-	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
-	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
-	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
-	 *                 {@link LiteralUtilException} if the value's object type is not supported. See
-	 *                 {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported types.
-	 * @param head     a {@link Resource} which will be used as the head of the list, that is, the starting point of the
-	 *                 created RDF Collection. May be {@code null}, in which case a new resource is generated to
-	 *                 represent the list head.
-	 * @param sink     a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the RDF
-	 *                 Collection statements will be added. May not be {@code null}.
-	 * @param factory  the {@link ValueFactory} to be used for creation of RDF model objects. May not be {@code null}.
-	 * @param contexts the context(s) in which to add the RDF Collection. This argument is an optional vararg and can be
-	 *                 left out.
+	 * @param values       an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
+	 *                     to an RDF Collection. May not be {@code null}. The method attempts to convert each value that
+	 *                     is not already an instance of {@link Value} to a {@link Literal}. This conversion will fail
+	 *                     with a {@link LiteralUtilException} if the value's object type is not supported. See
+	 *                     {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported
+	 *                     types.
+	 * @param head         a {@link Resource} which will be used as the head of the list, that is, the starting point of
+	 *                     the created RDF Collection. May be {@code null}, in which case a new resource is generated to
+	 *                     represent the list head.
+	 * @param sink         a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the
+	 *                     RDF Collection statements will be added. May not be {@code null}.
+	 * @param valueFactory the {@link ValueFactory} to be used for creation of RDF model objects. May not be
+	 *                     {@code null}.
+	 * @param contexts     the context(s) in which to add the RDF Collection. This argument is an optional vararg and
+	 *                     can be left out.
 	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
 	 *         Collection added.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.

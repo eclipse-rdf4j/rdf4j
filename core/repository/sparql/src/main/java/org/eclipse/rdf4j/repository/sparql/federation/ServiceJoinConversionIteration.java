@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 
 /**
  * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
- * {@link ServiceJoinIterator} and {@link SPARQLFederatedService}.
+ * {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator} and {@link SPARQLFederatedService}.
  * 
  * @author Andreas Schwarte
  */

@@ -29,7 +29,7 @@ public interface SearchIndex {
 	void initialize(Properties parameters) throws Exception;
 
 	/**
-	 * To be removed from interface, prefer {@link evaluate(SearchQueryEvaluator query)}.
+	 * To be removed from interface, prefer {@link #evaluate(SearchQueryEvaluator query)}.
 	 */
 	@Deprecated
 	Collection<BindingSet> evaluate(QuerySpec query) throws SailException;
@@ -55,41 +55,55 @@ public interface SearchIndex {
 
 	/**
 	 * Returns true if the given property contains a geometry.
+	 * 
+	 * @param propertyName
+	 * @return boolean
 	 */
 	boolean isGeoField(String propertyName);
 
 	/**
 	 * Begins a transaction.
+	 * 
+	 * @throws java.io.IOException
 	 */
 	void begin() throws IOException;
 
 	/**
-	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
+	 * Commits any changes done to the LuceneIndex since the last commit.The semantics is synchronous to
 	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the LuceneSailConnection is
 	 * committed/rollbacked.
+	 * 
+	 * @throws IOException
 	 */
 	void commit() throws IOException;
 
 	void rollback() throws IOException;
 
 	/**
-	 * Indexes the specified Statement. This should be called from within a begin-commit-rollback block.
+	 * Indexes the specified Statement.This should be called from within a begin-commit-rollback block.
+	 * 
+	 * @param statement
+	 * @throws IOException
 	 */
 	void addStatement(Statement statement) throws IOException;
 
 	/**
-	 * Removes the specified Statement from the indexes. This should be called from within a begin-commit-rollback
+	 * Removes the specified Statement from the indexes.This should be called from within a begin-commit-rollback
+	 * 
 	 * block.
+	 * 
+	 * @param statement
 	 */
 	void removeStatement(Statement statement) throws IOException;
 
 	/**
-	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
-	 * done inside this method. The passed added/removed sets are disjunct, no statement can be in both. This should be
+	 * Add many statements at the same time, remove many statements at the same time.Ordering by resource has to be done
+	 * inside this method. The passed added/removed sets are disjunct, no statement can be in both. This should be
 	 * called from within a begin-commit-rollback block.
 	 * 
 	 * @param added   all added statements, can have multiple subjects
 	 * @param removed all removed statements, can have multiple subjects
+	 * @throws IOException
 	 */
 	void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed) throws IOException;
 
@@ -97,16 +111,16 @@ public interface SearchIndex {
 	 * This should be called from within a begin-commit-rollback block.
 	 * 
 	 * @param contexts
-	 * @param sail     - the underlying native sail where to read the missing triples from after deletion
-	 * @throws SailException
+	 * @throws IOException
 	 */
 	void clearContexts(Resource... contexts) throws IOException;
 
 	/**
-	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
+	 * Add a complete Lucene Document based on these statements.Do not search for an existing document with the same
 	 * subject id. (assume the existing document was deleted). This should be called from within a begin-commit-rollback
 	 * block.
 	 * 
+	 * @param subject
 	 * @param statements the statements that make up the resource
 	 * @throws IOException
 	 */
@@ -114,6 +128,8 @@ public interface SearchIndex {
 
 	/**
 	 * Clears the indexes.
+	 * 
+	 * @throws java.io.IOException
 	 */
 	void clear() throws IOException;
 }

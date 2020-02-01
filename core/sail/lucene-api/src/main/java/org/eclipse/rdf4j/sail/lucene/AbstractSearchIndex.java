@@ -417,7 +417,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	/**
-	 * To be removed, prefer {@link evaluate(SearchQueryEvaluator query)}.
+	 * To be removed, prefer {@link #evaluate(SearchQueryEvaluator)}.
 	 */
 	@Override
 	@Deprecated
