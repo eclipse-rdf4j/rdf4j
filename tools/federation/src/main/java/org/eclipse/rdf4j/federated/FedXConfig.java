@@ -50,8 +50,6 @@ public class FedXConfig {
 
 	private boolean debugQueryPlan = false;
 
-	private boolean enableJmx = false;
-
 	private boolean includeInferredDefault = true;
 
 	private String sourceSelectionCacheSpec = null;
@@ -453,14 +451,5 @@ public class FedXConfig {
 	 */
 	public boolean isDebugQueryPlan() {
 		return debugQueryPlan;
-	}
-
-	/**
-	 * Flag to enable/disable JMX monitoring. Default=false
-	 * 
-	 * @return whether JMX is enabled
-	 */
-	public boolean isEnableJMX() {
-		return enableJmx;
 	}
 }

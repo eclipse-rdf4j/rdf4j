@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringFactory;
-import org.eclipse.rdf4j.federated.monitoring.MonitoringUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -93,14 +92,6 @@ public class FedXRepository extends SailRepository {
 		federationManager.init(federation, federationContext);
 		queryManager.init(this, federationContext);
 		fedxServiceResolver.initialize();
-
-		if (fedXConfig.isEnableJMX()) {
-			try {
-				MonitoringUtil.initializeJMXMonitoring(federationContext);
-			} catch (Exception e1) {
-				log.error("JMX monitoring could not be initialized: " + e1.getMessage());
-			}
-		}
 	}
 
 	@Override
