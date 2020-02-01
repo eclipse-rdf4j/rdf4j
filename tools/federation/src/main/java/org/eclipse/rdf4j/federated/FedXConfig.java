@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
@@ -56,7 +55,7 @@ public class FedXConfig {
 
 	private Class<? extends FederationEvalStrategy> sailEvaluationStrategy = SailFederationEvalStrategy.class;
 
-	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategyWithValues.class;
+	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategy.class;
 
 	private String prefixDeclarations = null;
 
@@ -421,8 +420,9 @@ public class FedXConfig {
 	/**
 	 * Returns the class of the {@link FederationEvalStrategy} implementation that is used in the case of SAIL
 	 * implementations, e.g. for native stores.
-	 * 
+	 * <p>
 	 * Default {@link SailFederationEvalStrategy}
+	 * </p>
 	 * 
 	 * @return the evaluation strategy class
 	 */
@@ -433,10 +433,9 @@ public class FedXConfig {
 	/**
 	 * Returns the class of the {@link FederationEvalStrategy} implementation that is used in the case of SPARQL
 	 * implementations, e.g. SPARQL repository or remote repository.
-	 * 
-	 * Default {@link SparqlFederationEvalStrategyWithValues}
-	 * 
-	 * Alternative implementation: {@link SparqlFederationEvalStrategy}
+	 * <p>
+	 * Default {@link SparqlFederationEvalStrategy}
+	 * </p>
 	 * 
 	 * @return the evaluation strategy class
 	 */
