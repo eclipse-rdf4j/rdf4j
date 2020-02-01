@@ -55,7 +55,8 @@ public interface Iteration<E, X extends Exception> {
 
 	/**
 	 *
-	 * Convert the results to a Java 8 Stream.
+	 * Convert the results to a Java 8 Stream. If this iteration implements CloseableIteration it should be closed (by
+	 * calling Stream#close() or using try-with-resource) if it is not fully consumed.
 	 *
 	 * @return stream
 	 */

@@ -35,15 +35,4 @@ public interface CloseableIteration<E, X extends Exception> extends Iteration<E,
 	@Override
 	public void close() throws X;
 
-	/**
-	 *
-	 * Convert the results to a Java 8 Stream. Stream should be closed by calling .close().
-	 *
-	 * @return stream
-	 */
-	@Override
-	default Stream<E> stream() {
-		return Iterations.stream(this);
-	}
-
 }
