@@ -25,12 +25,12 @@ Here is an example of when data in the database affects the validation plans:
 
 ```turtle
 ex:PersonShape
-        a sh:NodeShape  ;
-        sh:targetClass ex:Person ;
-        sh:property [
-                sh:path ex:age ;
-                sh:datatype xsd:integer ;
-        ] .
+    a sh:NodeShape  ;
+    sh:targetClass ex:Person ;
+    sh:property [
+        sh:path ex:age ;
+        sh:datatype xsd:integer ;
+    ] .
 ```
 
 Initial data in the database.
@@ -60,13 +60,13 @@ sailRepository.init();
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-        connection.begin();
+    connection.begin();
 
-        Reader shaclRules = ....
+    Reader shaclRules = ....
 
-        connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+    connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
-        connection.commit();
+    connection.commit();
 }
 ```
 
@@ -131,17 +131,17 @@ On `commit()` the ShaclSail will validate your changes and throw an exception if
 
 ```java
 try {
-        connection.commit();
+    connection.commit();
 } catch (RepositoryException exception) {
-        Throwable cause = exception.getCause();
-        if (cause instanceof ShaclSailValidationException) {
-                ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-                Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-                // use validationReport or validationReportModel to understand validation violations
+    Throwable cause = exception.getCause();
+    if (cause instanceof ShaclSailValidationException) {
+        ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
+        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+        // use validationReport or validationReportModel to understand validation violations
 
-                Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
-        }
-        throw exception;
+        Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
+    }
+    throw exception;
 }
 ```
 
@@ -149,15 +149,15 @@ The `validationReportModel` follows the report format specified by the W3C SHACL
 
 ```turtle
 []
-  a sh:ValidationReport ;
-  sh:conforms false ;
-  sh:result [
+    a sh:ValidationReport ;
+    sh:conforms false ;
+    sh:result [
         a sh:ValidationResult ;
         sh:focusNode <http://example.com/ns#pete> ;
         sh:resultPath <http://example.com/ns#age> ;
         sh:sourceConstraintComponent sh:DatatypeConstraintComponent ;
         sh:sourceShape <http://example.com/ns#PersonShapeAgeProperty> ;
-  ] .
+    ] .
 ```
 
 The `ValidationReport` class provides the same information as the validationReportModel, but as a Java object with getters for accessing the report data.
@@ -171,7 +171,7 @@ ShaclSail when a transaction fails.
 
 ```java
 try {
-        connection.commit();
+    connection.commit();
 } catch (RepositoryException exception) {
     Throwable cause = exception.getCause();
     if (cause instanceof ShaclSailValidationException) {
@@ -180,19 +180,19 @@ try {
         validationReportModel
             .filter(null, SHACL.SOURCE_SHAPE, null);
             .forEach(s -> {
-	    	    Value object = s.getObject();
-	        
-	    	    try (SailRepositoryConnection connection = shaclSail.getConnection()) {
-	        
-	    	    	try (Stream<Statement> stream = connection.getStatements((Resource) object, null, null, RDF4J.SHACL_SHAPE_GRAPH).stream()) {
-	    	    		List<Statement> collect = stream.collect(Collectors.toList());
-	        
-	    	    		// collect contains the shape!
-	    	    	}
-	        
-	    	    }
-	    
-	        });
+                Value object = s.getObject();
+            
+                try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+            
+                    try (Stream<Statement> stream = connection.getStatements((Resource) object, null, null, RDF4J.SHACL_SHAPE_GRAPH).stream()) {
+                        List<Statement> collect = stream.collect(Collectors.toList());
+            
+                        // collect contains the shape!
+                    }
+            
+                }
+        
+            });
     }
     throw exception;
 }
@@ -205,12 +205,12 @@ A good example is as follows:
 
 ```turtle
 ex:PersonShape
-        a sh:NodeShape  ;
-        sh:targetClass ex:Person ;
-        sh:property [
-                sh:path ex:age ;
-                sh:datatype xsd:integer ;
-        ] .
+    a sh:NodeShape  ;
+    sh:targetClass ex:Person ;
+    sh:property [
+        sh:path ex:age ;
+        sh:datatype xsd:integer ;
+    ] .
 ```
 
 One transaction adds:
@@ -264,31 +264,31 @@ shaclSail.disableValidation();
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
     // load shapes
-	connection.begin(IsolationLevels.NONE);
-	try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
-		connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-	}
-	connection.commit();
+    connection.begin(IsolationLevels.NONE);
+    try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
+        connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+    }
+    connection.commit();
 
     // load data
-	connection.begin(IsolationLevels.NONE);
-	try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
-		connection.add(inputStream, "", RDFFormat.TURTLE);
-	}
-	connection.commit();
+    connection.begin(IsolationLevels.NONE);
+    try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
+        connection.add(inputStream, "", RDFFormat.TURTLE);
+    }
+    connection.commit();
 
 }
 shaclSail.enableValidation();
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-	connection.begin(IsolationLevels.NONE);
-	ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-	connection.commit();
+    connection.begin(IsolationLevels.NONE);
+    ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+    connection.commit();
 
-	if (!revalidate.conforms()) {
-		Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
-	}
+    if (!revalidate.conforms()) {
+        Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+    }
 
 }
 
@@ -389,75 +389,75 @@ import java.io.StringReader;
 
 public class ShaclSampleCode {
 
-        public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException {
 
-                ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+        ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
-                //Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
-                //root.setLevel(Level.INFO);
+        //Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+        //root.setLevel(Level.INFO);
 
-                //shaclSail.setLogValidationPlans(true);
-                //shaclSail.setGlobalLogValidationExecution(true);
-                //shaclSail.setLogValidationViolations(true);
+        //shaclSail.setLogValidationPlans(true);
+        //shaclSail.setGlobalLogValidationExecution(true);
+        //shaclSail.setLogValidationViolations(true);
 
-                SailRepository sailRepository = new SailRepository(shaclSail);
-                sailRepository.init();
+        SailRepository sailRepository = new SailRepository(shaclSail);
+        sailRepository.init();
 
-                try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+        try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-                        connection.begin();
+            connection.begin();
 
-                        StringReader shaclRules = new StringReader(
-                                String.join("\n", "",
-                                        "@prefix ex: <http://example.com/ns#> .",
-                                        "@prefix sh: <http://www.w3.org/ns/shacl#> .",
-                                        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-                                        "@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+            StringReader shaclRules = new StringReader(
+                String.join("\n", "",
+                    "@prefix ex: <http://example.com/ns#> .",
+                    "@prefix sh: <http://www.w3.org/ns/shacl#> .",
+                    "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+                    "@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-                                        "ex:PersonShape",
-                                        "  a sh:NodeShape  ;",
-                                        "  sh:targetClass foaf:Person ;",
-                                        "  sh:property ex:PersonShapeProperty .",
+                    "ex:PersonShape",
+                    "  a sh:NodeShape  ;",
+                    "  sh:targetClass foaf:Person ;",
+                    "  sh:property ex:PersonShapeProperty .",
 
-                                        "ex:PersonShapeProperty ",
-                                        "  sh:path foaf:age ;",
-                                        "  sh:datatype xsd:int ;",
-                                        "  sh:maxCount 1 ;",
-                                        "  sh:minCount 1 ."
-                                ));
+                    "ex:PersonShapeProperty ",
+                    "  sh:path foaf:age ;",
+                    "  sh:datatype xsd:int ;",
+                    "  sh:maxCount 1 ;",
+                    "  sh:minCount 1 ."
+                ));
 
-                        connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-                        connection.commit();
+            connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+            connection.commit();
 
-                        connection.begin();
+            connection.begin();
 
-                        StringReader invalidSampleData = new StringReader(
-                                String.join("\n", "",
-                                        "@prefix ex: <http://example.com/ns#> .",
-                                        "@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-                                        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+            StringReader invalidSampleData = new StringReader(
+                String.join("\n", "",
+                    "@prefix ex: <http://example.com/ns#> .",
+                    "@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+                    "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
 
-                                        "ex:peter a foaf:Person ;",
-                                        "  foaf:age 20, \"30\"^^xsd:int  ."
+                    "ex:peter a foaf:Person ;",
+                    "  foaf:age 20, \"30\"^^xsd:int  ."
 
-                                ));
+                ));
 
-                        connection.add(invalidSampleData, "", RDFFormat.TURTLE);
-                        try {
-                                connection.commit();
-                        } catch (RepositoryException exception) {
-                                Throwable cause = exception.getCause();
-                                if (cause instanceof ShaclSailValidationException) {
-                                        ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-                                        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-                                        // use validationReport or validationReportModel to understand validation violations
+            connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+            try {
+                connection.commit();
+            } catch (RepositoryException exception) {
+                Throwable cause = exception.getCause();
+                if (cause instanceof ShaclSailValidationException) {
+                    ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
+                    Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+                    // use validationReport or validationReportModel to understand validation violations
 
-                                        Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
-                                }
-                                throw exception;
-                        }
+                    Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
                 }
+                throw exception;
+            }
         }
+    }
 }
 ```
 
