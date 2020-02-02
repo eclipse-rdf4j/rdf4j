@@ -174,9 +174,11 @@ public class NotClassBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations
-						.stream(connection.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
-								+ FOAF.KNOWS + "> ?c. ?c a <" + ANIMAL + "> }").evaluate())) {
+				try (Stream<BindingSet> stream = connection
+						.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
+								+ FOAF.KNOWS + "> ?c. ?c a <" + ANIMAL + "> }")
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -201,9 +203,11 @@ public class NotClassBenchmarkEmpty {
 			for (List<Statement> statements : allStatementsWithoutAnimals) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations
-						.stream(connection.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
-								+ FOAF.KNOWS + "> ?c. ?c a <" + ANIMAL + "> }").evaluate())) {
+				try (Stream<BindingSet> stream = connection
+						.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
+								+ FOAF.KNOWS + "> ?c. ?c a <" + ANIMAL + "> }")
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

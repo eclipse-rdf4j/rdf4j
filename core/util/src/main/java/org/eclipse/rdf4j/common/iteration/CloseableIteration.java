@@ -8,14 +8,16 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.stream.Stream;
+
 /**
  * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations automatically free
  * their resources when exhausted. If not read until exhaustion or if you want to make sure the iteration is properly
  * closed, any code using the iterator should be placed in a try-with-resources block, closing the iteration
  * automatically, e.g.:
- * 
+ *
  * <pre>
- * 
+ *
  * try (CloseableIteration&lt;Object, Exception&gt; iter = ...) {
  *    // read objects from the iterator
  * }

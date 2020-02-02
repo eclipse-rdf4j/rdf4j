@@ -138,7 +138,7 @@ public class ComplexBenchmark {
 
 		try (SailRepositoryConnection connection = memoryStore.getConnection()) {
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, SHACL.PROPERTY, null))) {
+			try (Stream<Statement> stream = connection.getStatements(null, SHACL.PROPERTY, null).stream()) {
 				stream.map(Statement::getObject).forEach(o -> {
 					new ShaclProperties((Resource) o, connection);
 				});

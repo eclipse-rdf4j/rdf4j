@@ -103,7 +103,7 @@ public class QueryResultsTest {
 
 	@Test
 	public void testStreamGraphResult() {
-		List<Statement> aboutA = QueryResults.stream(gqr)
+		List<Statement> aboutA = gqr.stream()
 				.filter(s -> s.getSubject().equals(a))
 				.collect(Collectors.toList());
 
@@ -124,7 +124,7 @@ public class QueryResultsTest {
 		tqr1.append(b);
 		tqr1.append(b);
 
-		List<BindingSet> list = QueryResults.stream(tqr1)
+		List<BindingSet> list = tqr1.stream()
 				.filter(bs -> bs.getValue("a").equals(foo))
 				.collect(Collectors.toList());
 

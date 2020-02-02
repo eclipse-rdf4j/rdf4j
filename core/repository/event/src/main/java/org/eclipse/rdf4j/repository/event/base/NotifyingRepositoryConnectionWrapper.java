@@ -169,8 +169,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 
 			List<Statement> list;
-			try (Stream<Statement> stream = Iterations
-					.stream(getDelegate().getStatements(subj, pred, obj, false, ctx))) {
+			try (Stream<Statement> stream = getDelegate().getStatements(subj, pred, obj, false, ctx).stream()) {
 				list = stream.collect(Collectors.toList());
 			}
 
@@ -210,7 +209,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 
 			List<String> prefix;
-			try (Stream<Namespace> stream = Iterations.stream(getDelegate().getNamespaces())) {
+			try (Stream<Namespace> stream = getDelegate().getNamespaces().stream()) {
 				prefix = stream.map(Namespace::getPrefix).collect(Collectors.toList());
 			}
 

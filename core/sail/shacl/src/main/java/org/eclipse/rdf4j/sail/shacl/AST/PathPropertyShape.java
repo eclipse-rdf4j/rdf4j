@@ -84,7 +84,7 @@ public abstract class PathPropertyShape extends PropertyShape {
 				return false;
 			} else {
 
-				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(path, null, null))) {
+				try (Stream<Statement> stream = connection.getStatements(path, null, null).stream()) {
 
 					boolean complexPath = stream
 							.map(Statement::getPredicate)

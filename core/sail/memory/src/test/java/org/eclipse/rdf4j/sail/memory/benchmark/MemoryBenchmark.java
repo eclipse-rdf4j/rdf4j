@@ -271,8 +271,8 @@ public class MemoryBenchmark {
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
-				try (Stream<? extends Statement> stream = Iterations
-						.stream(connection.getStatements(vf.createBNode(), null, null, false))) {
+				try (Stream<? extends Statement> stream = connection.getStatements(vf.createBNode(), null, null, false)
+						.stream()) {
 					count += stream.count();
 				}
 			}
@@ -286,8 +286,7 @@ public class MemoryBenchmark {
 
 	private long getCount(NotifyingSailConnection connection) {
 		long count;
-		try (Stream<? extends Statement> stream = Iterations
-				.stream(connection.getStatements(null, null, null, false))) {
+		try (Stream<? extends Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 			count = stream.count();
 		}
 		return count;

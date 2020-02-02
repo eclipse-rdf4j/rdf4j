@@ -44,8 +44,9 @@ public class Name extends AbstractSpinFunction implements Function {
 			QueryPreparer qp = getCurrentQueryPreparer();
 			try {
 
-				try (Stream<Literal> stream = Iterations.stream(
-						TripleSources.getObjectLiterals((Resource) args[0], RDFS.LABEL, qp.getTripleSource()))) {
+				try (Stream<Literal> stream = TripleSources
+						.getObjectLiterals((Resource) args[0], RDFS.LABEL, qp.getTripleSource())
+						.stream()) {
 					return stream.findFirst().orElseGet(() -> valueFactory.createLiteral(args[0].stringValue()));
 				}
 

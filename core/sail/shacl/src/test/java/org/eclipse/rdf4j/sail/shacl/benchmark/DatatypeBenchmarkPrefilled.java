@@ -180,10 +180,11 @@ public class DatatypeBenchmarkPrefilled {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection
+				try (Stream<BindingSet> stream = connection
 						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
 								+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
-						.evaluate())) {
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
