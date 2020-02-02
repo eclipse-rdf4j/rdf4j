@@ -353,12 +353,21 @@ The Javadoc for each parser/writer setting documents the system property name by
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
 
-## A note on parsing RDF/XML and JAXP limits
+## Some notes on parsing RDF/XML and JAXP limits
 
-Check the documentation on limits and using the `jaxp.properties` file if you get one of the following errors:
+The Rio RDF/XML parser uses the [Java API for XML Processing
+(JAXP)](https://www.oracle.com/technetwork/java/intro-140052.html) to process
+XML data. Check the [documentation on
+limit definitions](https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html) and
+using the `jaxp.properties` file if you get one of the following errors:
 
-    JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
-    JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
+- JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
+- JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
 
-As a work-around, try passing `-Djdk.xml.totalEntitySizeLimit=0 -DentityExpansionLimit=0` to the JVM.
+To disable these limits, you can pass `-Djdk.xml.totalEntitySizeLimit=0 -Djdk.xml.entityExpansionLimit=0` to the JVM.
 
+If you have Apache Xerces on the classpath, it replaces the default JDK XML
+parser. Unfortunately, Apache Xerces at the time of writing does not fully
+implement the JAXP limit definitions, and the above fix will not work with
+Xerces. If you run into this issue, we recommend removing Xerces from the
+runtime classpath and relying on the default JDK XML processor instead.
