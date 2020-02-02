@@ -18,6 +18,11 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * A {@link WriteStrategy} to write to a designated {@link Repository}. This write strategy opens a fresh
  * {@link RepositoryConnection} and keeps this until a call of {@link #close()}.
  * 
+ * 
+ * <p>
+ * <b>Note:</b> this is an experimental feature which is subject to change in a future version.
+ * </p>
+ * 
  * @author Andreas Schwarte
  * @see WriteStrategy
  */

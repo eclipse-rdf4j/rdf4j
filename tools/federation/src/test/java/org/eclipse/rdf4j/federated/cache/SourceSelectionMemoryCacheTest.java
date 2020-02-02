@@ -18,8 +18,6 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformation;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringService;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.jupiter.api.Assertions;
@@ -230,9 +228,5 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 
 	private MonitoringService monitoring() {
 		return (MonitoringService) federationContext().getMonitoringService();
-	}
-
-	private Literal l(String value) {
-		return SimpleValueFactory.getInstance().createLiteral(value);
 	}
 }

@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
+import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.BNode;
@@ -336,7 +336,10 @@ public class QueryStringUtil {
 	 *                      in beginning
 	 * 
 	 * @return the SELECT query string
+	 * @deprecated replaced with
+	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
 	 */
+	@Deprecated
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, Boolean evaluated) {
 
@@ -373,10 +376,20 @@ public class QueryStringUtil {
 
 	/**
 	 * Creates a bound join subquery using the SPARQL 1.1 VALUES operator.
-	 * 
+	 * <p>
 	 * Example subquery:
+	 * </p>
 	 * 
-	 * <source> SELECT ?v ?__index WHERE { VALUES (?s ?__index) { (:s1 1) (:s2 2) ... (:sN N) } ?s name ?v. } </source>
+	 * <pre>
+	 * SELECT ?v ?__index WHERE { 
+	 *    VALUES (?s ?__index) { 
+	 *      (:s1 1) (:s2 2) 
+	 *      ... 
+	 *      (:sN N) 
+	 *    } 
+	 *    ?s name ?v. 
+	 * }
+	 * </pre>
 	 * 
 	 * @param stmt
 	 * @param unionBindings
@@ -385,7 +398,7 @@ public class QueryStringUtil {
 	 *                      in beginning
 	 * 
 	 * @return the SELECT query string
-	 * @see SparqlFederationEvalStrategyWithValues
+	 * @see SparqlFederationEvalStrategy
 	 * @see BoundJoinVALUESConversionIteration
 	 * @since 3.0
 	 */

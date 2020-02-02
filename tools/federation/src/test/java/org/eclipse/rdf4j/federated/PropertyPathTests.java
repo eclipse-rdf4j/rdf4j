@@ -9,14 +9,8 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -30,8 +24,6 @@ import org.junit.jupiter.api.Test;
 import com.google.common.collect.Sets;
 
 public class PropertyPathTests extends SPARQLBaseTest {
-
-	private static final String EXAMPLE_NAMESPACE = "http://example.org/";
 
 	@BeforeEach
 	public void before() {
@@ -148,17 +140,4 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 	}
 
-	protected void assertContainsAll(List<BindingSet> res, String bindingName, Set<Value> expected) {
-		Assertions.assertEquals(expected,
-				res.stream().map(bs -> bs.getValue(bindingName)).collect(Collectors.toSet()));
-		Assertions.assertEquals(expected.size(), res.size());
-	}
-
-	private Literal l(String value) {
-		return SimpleValueFactory.getInstance().createLiteral(value);
-	}
-
-	private IRI iri(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(EXAMPLE_NAMESPACE, localName);
-	}
 }

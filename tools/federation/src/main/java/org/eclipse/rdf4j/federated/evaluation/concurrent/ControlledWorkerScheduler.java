@@ -106,11 +106,6 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		return nWorkers;
 	}
 
-	public int getNumberOfIdleWorkers() {
-		// TODO
-		return -1;
-	}
-
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
 	}

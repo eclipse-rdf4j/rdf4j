@@ -80,7 +80,13 @@ public class WriteTest extends SPARQLBaseTest {
 		Assertions.assertThrows(UnsupportedOperationException.class, () -> {
 			Statement st = simpleStatement();
 			try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
-				conn.add(st);
+				try {
+					conn.add(st);
+				} catch (RuntimeException e) {
+					// rollback to avoid a stack trace in the output
+					conn.rollback();
+					throw e;
+				}
 			}
 		});
 

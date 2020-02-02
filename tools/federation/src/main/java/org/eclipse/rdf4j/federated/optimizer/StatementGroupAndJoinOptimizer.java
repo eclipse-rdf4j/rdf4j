@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -334,6 +335,11 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 
 		if (tupleExpr instanceof ArbitraryLengthPath) {
 			return getFreeVars(((ArbitraryLengthPath) tupleExpr).getPathExpression());
+		}
+
+		if (tupleExpr instanceof LeftJoin) {
+			// for our cost model we treat as expensive and work with 0 free vars
+			return new ArrayList<String>();
 		}
 
 		log.warn("Type " + tupleExpr.getClass().getSimpleName()

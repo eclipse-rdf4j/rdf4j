@@ -57,12 +57,20 @@ public class QueryManager {
 
 	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);
 
-	private RepositoryConnection conn;
 	private final AtomicBigInteger nextQueryID;
 	private Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
 	private Map<String, String> prefixDeclarations = new HashMap<>();
 
+	private FedXRepository repo;
 	private FederationContext federationContext;
+
+	/**
+	 * The global {@link RepositoryConnection} used by the query manager.
+	 * <p>
+	 * Always access using {@link #getOrCreateConn()}
+	 * </p>
+	 */
+	private transient RepositoryConnection conn;
 
 	public QueryManager() {
 
@@ -73,6 +81,7 @@ public class QueryManager {
 	public void init(FedXRepository repo, FederationContext federationContext) {
 
 		this.federationContext = federationContext;
+		this.repo = repo;
 
 		// initialize prefix declarations, if any
 		String prefixFile = federationContext.getConfig().getPrefixDeclarations();
@@ -88,12 +97,13 @@ public class QueryManager {
 				addPrefixDeclaration(ns, props.getProperty(ns)); // register namespace/prefix pair
 			}
 		}
+	}
 
-		try {
+	private synchronized RepositoryConnection getOrCreateConn() {
+		if (this.conn == null) {
 			this.conn = repo.getConnection();
-		} catch (RepositoryException e) {
-			throw new FedXRuntimeException(e); // should never occur
 		}
+		return this.conn;
 	}
 
 	public void shutdown() {
@@ -239,7 +249,7 @@ public class QueryManager {
 
 			/*
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
-			 * Sesame throws a MalformedQueryException
+			 * RDF4J throws a MalformedQueryException
 			 */
 			if (prefixCheck.matcher(queryString).matches())
 				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
@@ -249,7 +259,7 @@ public class QueryManager {
 
 		Query q;
 		try {
-			q = conn.prepareQuery(QueryLanguage.SPARQL, queryString);
+			q = getOrCreateConn().prepareQuery(QueryLanguage.SPARQL, queryString);
 		} catch (RepositoryException e) {
 			throw new FedXRuntimeException(e); // cannot occur
 		}
