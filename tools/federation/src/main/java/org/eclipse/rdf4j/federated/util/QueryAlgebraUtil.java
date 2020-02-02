@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.util;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,7 +18,10 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.NTuple;
+import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -25,13 +30,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -506,5 +515,76 @@ public class QueryAlgebraUtil {
 			}
 			super.meet(node);
 		}
+	}
+
+	/**
+	 * Computes the collection of free variables in the given {@link TupleExpr}.
+	 * 
+	 * @param tupleExpr the expression
+	 * @return the free variables
+	 */
+	public static Collection<String> getFreeVars(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementTupleExpr)
+			return ((StatementTupleExpr) tupleExpr).getFreeVars();
+
+		// determine the number of free variables in a UNION or Join
+		if (tupleExpr instanceof NTuple) {
+			HashSet<String> freeVars = new HashSet<>();
+			NTuple ntuple = (NTuple) tupleExpr;
+			for (TupleExpr t : ntuple.getArgs())
+				freeVars.addAll(getFreeVars(t));
+			return freeVars;
+		}
+
+		if (tupleExpr instanceof FedXService) {
+			return ((FedXService) tupleExpr).getFreeVars();
+		}
+
+		if (tupleExpr instanceof Service) {
+			return ((Service) tupleExpr).getServiceVars();
+		}
+
+		// can happen in SERVICE nodes, if they cannot be optimized
+		if (tupleExpr instanceof StatementPattern) {
+			List<String> freeVars = new ArrayList<>();
+			StatementPattern st = (StatementPattern) tupleExpr;
+			if (st.getSubjectVar().getValue() == null)
+				freeVars.add(st.getSubjectVar().getName());
+			if (st.getPredicateVar().getValue() == null)
+				freeVars.add(st.getPredicateVar().getName());
+			if (st.getObjectVar().getValue() == null)
+				freeVars.add(st.getObjectVar().getName());
+			return freeVars;
+		}
+
+		if (tupleExpr instanceof Projection) {
+			Projection p = (Projection) tupleExpr;
+			return new ArrayList<>(p.getBindingNames());
+		}
+
+		if (tupleExpr instanceof BindingSetAssignment) {
+			return new ArrayList<>();
+		}
+
+		if (tupleExpr instanceof Extension) {
+			// for a BIND extension in our cost model we work with 0 free vars
+			return new ArrayList<String>();
+		}
+
+		if (tupleExpr instanceof ArbitraryLengthPath) {
+			return getFreeVars(((ArbitraryLengthPath) tupleExpr).getPathExpression());
+		}
+
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin l = (LeftJoin) tupleExpr;
+			HashSet<String> freeVars = new HashSet<>();
+			freeVars.addAll(getFreeVars(l.getLeftArg()));
+			freeVars.addAll(getFreeVars(l.getRightArg()));
+			return freeVars;
+		}
+
+		log.warn("Type " + tupleExpr.getClass().getSimpleName()
+				+ " not supported for cost estimation. If you run into this, please report a bug.");
+		return new ArrayList<String>();
 	}
 }
