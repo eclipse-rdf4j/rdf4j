@@ -41,29 +41,10 @@ pygmentsStyle = "github"
 [permalinks]
   news = "/:sections/:year/:month/:day/:slug/"
 
-
-
 [[menu.main]]
-    name = "About"
-    weight = 2
-
-[[menu.main]]
-    name = "Eclipse rdf4j"
+    name = "About RDF4J"
     url = "/about/"
-    parent = "About"
     weight = 1
-
-[[menu.main]]
-    name = "Rdf4j databases"
-    url = "/databases/"
-    parent = "About"
-    weight = 2
-
-[[menu.main]]
-    name = "Related projects"
-    url = "/related/"
-    parent = "About"
-    weight = 3
 
 [[menu.main]]
     name = "Documentation"

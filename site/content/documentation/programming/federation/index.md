@@ -84,6 +84,56 @@ The full code is also available as source in the "demos" package of the test sou
 Instead of defining the federation via code, it is also possible to use data configurations. See the following sections for further examples.
 
 
+## FedX in the RDF4J Workbench
+
+FedX is integrated into the RDF4J server and RDF4J workbench. This allows creation of a managed federation repository and exposing it as a SPARQL repository. In the following provide some details on how this can be achieved.
+
+### Using the workbench UI
+
+The RDF4J workbench offers a UI for creating a federation:
+
+1. Navigate to the workbench UI
+2. Create some repositories (the federation members) and prepare them with data
+3. Create a new repository and select _federation_ as type
+4. Pick the federation members from the list of managed repositories
+5. Save and explore the federation
+
+See <a href="/documentation/tools/server-workbench/#federation">RDF4J Workbench Federation</a> for further information.
+
+### Advanced federation using a repository config template
+
+Repositories in the workbench can also be created using <a href="/documentation/tools/repository-configuration/">Repository configuration templates</a>.
+
+Also a FedX federation can be configured using such template and deployed in the <a href="/documentation/tools/server-workbench/#repository-configuration">RDF4J server</a>.
+
+The following snippet depicts an example repository configuration that defines a federation over the repositories _my-repository-1_ and _my-repository-2_. The actual repositories of the federation members are managed by the RDF4J server.
+
+```
+#
+# RDF4J configuration template for a FedX Repository
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix fedx: <http://rdf4j.org/config/federation#>.
+
+[] a rep:Repository ;
+   rep:repositoryImpl [
+      rep:repositoryType "fedx:FedXRepository" ;
+      fedx:member [
+         fedx:store "ResolvableRepository" ;
+         fedx:repositoryName "my-repository-1" 
+      ] ,
+      [
+         fedx:store "ResolvableRepository" ;
+         fedx:repositoryName "my-repository-2" 
+      ]
+   ];
+   rep:repositoryID "my-federation" ;
+   rdfs:label "FedX Federation" .
+```
+
+
+In order to deploy a FedX configuration the repository configuration template needs to be placed in a `config.ttl` file in the RDF4J application dir. The full location is `[Rdf4j_DATA]/server/repositories/[REPOSITORY_ID]/config.ttl`, see <a href="/documentation/tools/server-workbench/#repository-configuration">here</a> for further details.
 
 ## FedX in Java Applications
 
@@ -187,6 +237,37 @@ System.out.println("Done.");
 System.exit(0);
 ```
 
+**Example 4: Using repositories from a remote RDF4J server as federation members**
+
+This example shows how repositories from a remote RDF4J server can be easily used as federation members. The main idea is to instruct FedX to use the `RemoteRepositoryManager` as a resolver for the resolvable endpoints.
+
+Similarly of course a `LocalRepositoryManager` or any other construct implementing the `RepositoryResolver` interface can be used.
+
+```
+// connection URL of a RDF4J server which manages the repositories
+String serverUrl = "http://localhost:8080/rdf4j-server";
+RepositoryManager repoManager = new RemoteRepositoryManager(serverUrl);
+
+// assumes that remote repositories exist
+Repository repo = FedXFactory.newFederation()
+		.withRepositoryResolver(repoManager)
+		.withResolvableEndpoint("my-repository-1")
+		.withResolvableEndpoint("my-repository-2")
+		.create();
+
+repo.init();
+
+try (RepositoryConnection conn = repo.getConnection()) {
+	try (RepositoryResult<Statement> repoResult = conn.getStatements(null, RDF.TYPE, FOAF.PERSON)) {
+		repoResult.forEach(st -> System.out.println(st));
+	}
+}
+
+repo.shutDown();
+repoManager.shutDown();
+```
+
+
 ## Federation Management
 
 FedX federations can be managed both at initialization and at runtime. This is possible since FedX is capable of on-demand federation setup, meaning that we do not require any prior knowledge about data sources.
@@ -200,7 +281,7 @@ Endpoints can be added to the federation using the methods `addEndpoint(Endpoint
 
 In FedX any federation member is mapped to an _Endpoint_. The endpoint maintains all relevant information for a particular endpoint, e.g. how triples can be retrieved from the endpoint. Endpoints can be added to the federation at initialization time or at runtime.
 
-In FedX we provide support methods to create _Endpoints_ for SPARQL endpoints, RDF4J _NativeStores_. The methods can be used to create endpoints easily.
+In FedX we provide support methods to create _Endpoints_ for SPARQL endpoints, RDF4J _NativeStores_ as well as _Resolvable Endpoints_ (e.g. managed by an RDF4J RepositoryManager). The methods can be used to create endpoints easily.
 
 **Example: Using the endpoint Manager to create endpoints**
 
@@ -243,7 +324,7 @@ FedX provides various means for configuration. Configuration settings can be def
 <tr><td>unionWorkerThreads</td><td>The number of union worker threads for parallelization, default <i>20</i></td></tr>
 <tr><td>boundJoinBlockSize</td><td>Block size for bound joins, default <i>15</i></td></tr>
 <tr><td>enforceMaxQueryTime</td><td>Max query time in seconds, 0 to disable, default <i>30</i></td></tr>
-<tr><td>enableServiceAsBoundJoin</td><td>Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default <i>false</i>. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE</td></tr>
+<tr><td>enableServiceAsBoundJoin</td><td>Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default <i>true</i>. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE</td></tr>
 <tr><td>debugQueryPlan</td><td>Print the optimized query execution plan to stdout, default <i>false</i></td></tr>
 <tr><td>enableMonitoring</td><td>Flag to enable/disable monitoring features, default <i>false</i></td></tr>
 <tr><td>logQueryPlan</td><td>Flag to enable/disable query plan logging via Java class <i>QueryPlanLog</i>, default <i>false</i></td></tr>
@@ -357,7 +438,7 @@ FedX supports to use resolvable endpoints as federation members. These resolvabl
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
 @prefix fedx: <http://www.fluidops.com/config/fedx#> .
 
-<http://myNtiveStore> a sd:Service ;
+<http://myNativeStore> a sd:Service ;
 	fedx:store "ResolvableRepository" ;
 	fedx:repositoryName "myNativeStore" .
 ```
