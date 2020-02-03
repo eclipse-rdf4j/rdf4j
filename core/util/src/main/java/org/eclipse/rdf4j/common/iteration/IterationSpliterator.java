@@ -40,24 +40,30 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 	@Override
 	public boolean tryAdvance(Consumer<? super T> action) {
 		Objects.requireNonNull(action, "action may not be null");
+
+		// we start by assuming that we need to close the iteration, in case an error occurs
+		// this could be handled in the catch part, but then we would need to catch throwable...which is not recommended
+		boolean needsToBeClosed = true;
 		try {
 			if (iteration.hasNext()) {
 				action.accept(iteration.next());
+				// since the iteration might have more elements we don't need to close it
+				needsToBeClosed = false;
 				return true;
 			}
-			Iterations.closeCloseable(iteration);
 			return false;
 		} catch (Exception e) {
-			try {
-				Iterations.closeCloseable(iteration);
-			} catch (Exception e1) {
-				// fall through
-			}
-
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}
 			throw new RuntimeException(e);
+		} finally {
+			if (needsToBeClosed) {
+				try {
+					Iterations.closeCloseable(iteration);
+				} catch (Exception ignored) {
+				}
+			}
 		}
 	}
 
@@ -68,18 +74,16 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 			while (iteration.hasNext()) {
 				action.accept(iteration.next());
 			}
-			Iterations.closeCloseable(iteration);
 		} catch (Exception e) {
-			try {
-				Iterations.closeCloseable(iteration);
-			} catch (Exception e1) {
-				// fall through
-			}
-
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}
 			throw new RuntimeException(e);
+		} finally {
+			try {
+				Iterations.closeCloseable(iteration);
+			} catch (Exception ignored) {
+			}
 		}
 	}
 }

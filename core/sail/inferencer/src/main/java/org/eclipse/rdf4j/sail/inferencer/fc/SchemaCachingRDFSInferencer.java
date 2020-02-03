@@ -225,8 +225,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 				try (RepositoryConnection schemaConnection = schema.getConnection()) {
 					schemaConnection.begin();
-					try (Stream<Statement> stream = Iterations
-							.stream(schemaConnection.getStatements(null, null, null))) {
+					try (Stream<Statement> stream = schemaConnection.getStatements(null, null, null).stream()) {
 						tboxStatments = stream
 								.peek(conn::processForSchemaCache)
 								.collect(Collectors.toList());

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.optimizer;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
-import org.junit.Ignore;
 import org.junit.jupiter.api.Test;
 
 public class OptimizerTest extends SPARQLBaseTest {
@@ -32,7 +31,6 @@ public class OptimizerTest extends SPARQLBaseTest {
 	}
 
 	@Test
-	@Ignore // does not work currently, SES-2221
 	public void testOptimizer_QueryWithComment() throws Exception {
 
 		prepareTest(Arrays.asList("/tests/data/optional1.ttl", "/tests/data/optional2.ttl"));

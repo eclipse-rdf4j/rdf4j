@@ -358,7 +358,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);
 
-						try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+						try (Stream<Tuple> stream = planNode.iterator().stream()) {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
@@ -458,7 +458,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				addedStatements = getNewMemorySail();
 				removedStatements = getNewMemorySail();
 
-				try (Stream<? extends Statement> stream = Iterations.stream(getStatements(null, null, null, false))) {
+				try (Stream<? extends Statement> stream = getStatements(null, null, null, false).stream()) {
 					try (NotifyingSailConnection connection = addedStatements.getConnection()) {
 						connection.begin(IsolationLevels.NONE);
 						stream

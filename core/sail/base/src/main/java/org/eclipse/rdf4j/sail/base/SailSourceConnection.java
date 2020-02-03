@@ -279,8 +279,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	protected long sizeInternal(Resource... contexts) throws SailException {
 
 		flush();
-		try (Stream<? extends Statement> stream = Iterations
-				.stream(getStatementsInternal(null, null, null, false, contexts))) {
+		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
 			return stream.count();
 		}
 	}

@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertNotNull;
@@ -29,6 +31,8 @@ import static junit.framework.TestCase.assertNull;
  * @author Håvard Ottestad
  */
 public class TrackAddedStatementsTest {
+
+	private static final Logger logger = LoggerFactory.getLogger(TrackAddedStatementsTest.class);
 
 	@Test
 	public void testCleanup() throws Exception {
@@ -391,8 +395,10 @@ public class TrackAddedStatementsTest {
 
 	private static long size(SailConnection connection) {
 		try {
-			return Iterations.stream(connection.getStatements(null, null, null, true))
-					.peek(System.out::println)
+			return connection.getStatements(null, null, null, true)
+					.stream()
+					.map(Object::toString)
+					.peek(logger::info)
 					.count();
 		} finally {
 			connection.close();
@@ -400,12 +406,20 @@ public class TrackAddedStatementsTest {
 	}
 
 	private static long size(RepositoryConnection connection) {
-		return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
+		return connection.getStatements(null, null, null)
+				.stream()
+				.map(Object::toString)
+				.peek(logger::info)
+				.count();
 	}
 
 	private static long size(Repository repo) {
 		try (RepositoryConnection connection = repo.getConnection()) {
-			return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
+			return connection.getStatements(null, null, null)
+					.stream()
+					.map(Object::toString)
+					.peek(logger::info)
+					.count();
 		}
 	}
 

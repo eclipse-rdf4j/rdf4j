@@ -156,8 +156,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public static class Factory {
 
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
-			try (Stream<Statement> stream = Iterations
-					.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
+			try (Stream<Statement> stream = connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE).stream()) {
 				return stream.map(Statement::getSubject).flatMap(shapeId -> {
 
 					List<NodeShape> propertyShapes = new ArrayList<>(2);

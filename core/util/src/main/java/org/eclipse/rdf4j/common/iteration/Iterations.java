@@ -45,7 +45,7 @@ public class Iterations {
 	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
 	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, X> iter) throws X {
-		try (Stream<? extends E> stream = Iterations.stream(iter)) {
+		try (Stream<? extends E> stream = iter.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
 	}

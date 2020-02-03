@@ -320,7 +320,7 @@ abstract public class AbstractShaclTest {
 				System.out.println("################################################\n");
 			} else {
 
-				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, null, null, false))) {
+				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 					LinkedHashModel model = stream.collect(Collectors.toCollection(LinkedHashModel::new));
 					model.setNamespace("ex", "http://example.com/ns#");
 					model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);

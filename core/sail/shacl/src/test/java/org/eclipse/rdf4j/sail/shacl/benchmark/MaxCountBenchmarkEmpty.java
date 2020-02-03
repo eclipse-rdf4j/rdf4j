@@ -130,8 +130,8 @@ public class MaxCountBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <"
-						+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate())) {
+				try (Stream<BindingSet> stream = connection.prepareTupleQuery("select * where {?a a <"
+						+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate().stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -156,10 +156,11 @@ public class MaxCountBenchmarkEmpty {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection
+				try (Stream<BindingSet> stream = connection
 						.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <"
 								+ RDFS.LABEL + "> ?c} group by ?a having(?count > 1)")
-						.evaluate())) {
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

@@ -58,7 +58,7 @@ public class ShaclProperties {
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(propertyShapeId, null, null))) {
+		try (Stream<Statement> stream = connection.getStatements(propertyShapeId, null, null).stream()) {
 			stream.forEach(statement -> {
 				String predicate = statement.getPredicate().toString();
 				Value object = statement.getObject();

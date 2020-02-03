@@ -219,8 +219,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			new UnionOptimizer(queryInfo).optimize(query);
 		}
 
-		// identify exclusive expressions
-		new ExclusiveTupleExprOptimizer().optimize(query);
+		optimizeExclusiveExpressions(query, queryInfo, info);
 
 		// optimize statement groups and join order
 		optimizeJoinOrder(query, queryInfo, info);
@@ -266,7 +265,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
 		// optimize statement groups and join order
 		new StatementGroupAndJoinOptimizer(queryInfo, DefaultFedXCostModel.INSTANCE).optimize(query);
+	}
 
+	/**
+	 * Optimize {@link ExclusiveTupleExpr}, e.g. restructure the exclusive parts of the query AST.
+	 * 
+	 * @param query
+	 * @param queryInfo
+	 * @param info
+	 */
+	protected void optimizeExclusiveExpressions(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
+		// identify exclusive expressions
+		new ExclusiveTupleExprOptimizer().optimize(query);
 	}
 
 	@Override
