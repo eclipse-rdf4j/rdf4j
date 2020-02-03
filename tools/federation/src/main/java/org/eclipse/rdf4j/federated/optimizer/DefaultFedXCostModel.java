@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -224,7 +225,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		/* currently the cost is the number of free vars that are executed in the join */
 
 		int count = 100;
-		for (String var : StatementGroupAndJoinOptimizer.getFreeVars(path.getPathExpression())) {
+		for (String var : QueryAlgebraUtil.getFreeVars(path.getPathExpression())) {
 			if (!joinVars.contains(var)) {
 				count++;
 			}
