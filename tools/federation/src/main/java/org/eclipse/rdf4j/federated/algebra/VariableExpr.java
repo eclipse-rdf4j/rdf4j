@@ -7,21 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
+import java.util.List;
+
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
+
 /**
- * Interface representing nodes that can exclusively be evaluated at a single {@link StatementSource}.
- * <p>
- * Implementations are recommended to additionally implement {@link ExclusiveTupleExprRenderer}
- * </p>
+ * Interface for algebra nodes that can return the free variables of the expression.
  * 
  * @author Andreas Schwarte
- * @see ExclusiveStatement
+ * @see QueryAlgebraUtil#getFreeVars(org.eclipse.rdf4j.query.algebra.TupleExpr)
  */
-public interface ExclusiveTupleExpr extends FedXTupleExpr {
+public interface VariableExpr {
 
 	/**
-	 * 
-	 * @return the owner for this expression
+	 * @return a list of free (i.e. unbound) variables in this expression
 	 */
-	public StatementSource getOwner();
-
+	public List<String> getFreeVars();
 }
