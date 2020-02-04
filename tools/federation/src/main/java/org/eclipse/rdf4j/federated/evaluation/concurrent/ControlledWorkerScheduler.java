@@ -112,8 +112,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	protected void initWorkerThreads() {
 
-		executor = new ThreadPoolExecutor(Math.min(10, nWorkers / 2), nWorkers, 30L, TimeUnit.SECONDS, _taskQueue,
+		ThreadPoolExecutor _executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,
 				new NamingThreadFactory(name));
+		_executor.allowCoreThreadTimeOut(true);
+		this.executor = _executor;
 	}
 
 	@Override
