@@ -65,7 +65,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 			return estimateCost((ArbitraryLengthPath) tupleExpr, joinVars);
 		}
 
-		log.warn("No cost estimation for " + tupleExpr.getClass().getSimpleName() + " available.");
+		log.debug("No cost estimation for " + tupleExpr.getClass().getSimpleName() + " available.");
 
 		return 1000d;
 	}
