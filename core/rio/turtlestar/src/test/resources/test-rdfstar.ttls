@@ -24,3 +24,6 @@ ex:bobshomepage dct:source<< ex:book dct:creator ex:alice  >> .
 >> # end of triple
 dct:source ex:bobshomepage .
 
+<< ex:book dct:title "Example book"@en >> dct:source  ex:bobshomepage .
+<< ex:book dct:title "Beispielbuch"@de>> dct:source ex:bobshomepage.
+<< ex:book dct:title "Example Book"@en-US>> dct:source ex:bobshomepage.
