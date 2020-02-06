@@ -19,9 +19,10 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
+import org.eclipse.rdf4j.federated.algebra.FedXTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.VariableExpr;
 import org.eclipse.rdf4j.federated.algebra.NTuple;
-import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -522,10 +523,17 @@ public class QueryAlgebraUtil {
 	 * 
 	 * @param tupleExpr the expression
 	 * @return the free variables
+	 * @see VariableExpr
 	 */
 	public static Collection<String> getFreeVars(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof StatementTupleExpr)
-			return ((StatementTupleExpr) tupleExpr).getFreeVars();
+
+		if (tupleExpr instanceof FedXTupleExpr) {
+			return ((FedXTupleExpr) tupleExpr).getFreeVars();
+		}
+
+		if (tupleExpr instanceof VariableExpr) {
+			return ((VariableExpr) tupleExpr).getFreeVars();
+		}
 
 		// determine the number of free variables in a UNION or Join
 		if (tupleExpr instanceof NTuple) {
@@ -583,8 +591,8 @@ public class QueryAlgebraUtil {
 			return freeVars;
 		}
 
-		log.warn("Type " + tupleExpr.getClass().getSimpleName()
-				+ " not supported for cost estimation. If you run into this, please report a bug.");
+		log.debug("Type " + tupleExpr.getClass().getSimpleName()
+				+ " not supported for computing free vars. If you run into this, please report a bug.");
 		return new ArrayList<String>();
 	}
 }
