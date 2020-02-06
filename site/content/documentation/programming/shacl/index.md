@@ -53,22 +53,19 @@ is type `ex:Person`.
 The ShaclSail uses a reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) for storing the SHACL shapes. 
 Utilize a normal connection to load your shapes into this graph. SPARQL is not supported.
 
-```java
+{{< highlight java >}}
 ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 SailRepository sailRepository = new SailRepository(shaclSail);
-sailRepository.init();
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
     connection.begin();
 
     Reader shaclRules = ....
 
     connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
     connection.commit();
 }
-```
+{{< / highlight >}}
 
 You can at any point update your shapes. Updating shapes will cause your data to be re-validated. The transaction
 will fail if the data is not valid according to the changed shapes.
@@ -129,7 +126,7 @@ Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and eithe
 
 On `commit()` the ShaclSail will validate your changes and throw an exception if there are violations. The exception contains a validation report and can be retrieved like this:
 
-```java
+{{< highlight java >}}
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -143,7 +140,7 @@ try {
     }
     throw exception;
 }
-```
+{{< / highlight >}}
 
 The `validationReportModel` follows the report format specified by the W3C SHACL recommendation. It does not provide all the information specified in the recommendation. Example report:
 
@@ -169,7 +166,7 @@ There is no support for `sh:severity`, all violations will trigger an exception.
 Since all shapes are stored in the SHACL shapes graph, the actual shape that was violated can be retrieved from the
 ShaclSail when a transaction fails.
 
-```java
+{{< highlight java >}}
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -196,7 +193,7 @@ try {
     }
     throw exception;
 }
-```
+{{< / highlight >}}
 
 # Transactional support
 
@@ -246,7 +243,7 @@ Some workloads will not fit in memory and need to be validated while stored on d
 NativeStore and temporarily disabling the SHACL validation while loading data. After loading data there is a special
 method to trigger a full validation against your shapes. The process is illustrated in the following example:
 
-```java
+{{< highlight java >}}
 ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,psoc"));
 
 // significantly reduce required memory
@@ -257,12 +254,10 @@ shaclSail.setCacheSelectNodes(false);
 shaclSail.setParallelValidation(false);
 
 SailRepository sailRepository = new SailRepository(shaclSail);
-sailRepository.init();
 
 shaclSail.disableValidation();
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
     // load shapes
     connection.begin(IsolationLevels.NONE);
     try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
@@ -276,12 +271,10 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
         connection.add(inputStream, "", RDFFormat.TURTLE);
     }
     connection.commit();
-
 }
 shaclSail.enableValidation();
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
     connection.begin(IsolationLevels.NONE);
     ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
     connection.commit();
@@ -293,7 +286,7 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 }
 
 sailRepository.shutDown();
-```
+{{< / highlight >}}
 
 # Reasoning
 By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
@@ -368,7 +361,7 @@ The structure of this log and its contents may change in the future, without war
 
 # Full working example
 
-```java
+{{< highlight java >}}
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.model.Model;
@@ -459,7 +452,7 @@ public class ShaclSampleCode {
         }
     }
 }
-```
+{{< / highlight >}}
 
 # Further reading
 
