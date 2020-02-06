@@ -70,6 +70,9 @@ public class TurtleStarParserTest {
 		IRI valid = vf.createIRI("http://example.com/valid");
 		Literal abcDate = vf.createLiteral("1999-08-16", XMLSchema.DATE);
 		Literal birthDate = vf.createLiteral("1908-03-18", XMLSchema.DATE);
+		Literal titleEn = vf.createLiteral("Example book", "en");
+		Literal titleDe = vf.createLiteral("Beispielbuch", "de");
+		Literal titleEnUs = vf.createLiteral("Example Book", "en-US");
 
 		Triple bobCreatedBook = vf.createTriple(bob, DCTERMS.CREATED, book);
 		Triple aliceKnowsBobCreatedBook = vf.createTriple(alice, FOAF.KNOWS, bobCreatedBook);
@@ -78,13 +81,16 @@ public class TurtleStarParserTest {
 		Triple aliceCreatedBook = vf.createTriple(alice, DCTERMS.CREATED, book);
 		Triple abc = vf.createTriple(a, b, c);
 		Triple bobBirthdayDate = vf.createTriple(bob, FOAF.BIRTHDAY, birthDate);
+		Triple bookTitleEn = vf.createTriple(book, DCTERMS.TITLE, titleEn);
+		Triple bookTitleDe = vf.createTriple(book, DCTERMS.TITLE, titleDe);
+		Triple bookTitleEnUs = vf.createTriple(book, DCTERMS.TITLE, titleEnUs);
 
 		try (InputStream in = this.getClass().getResourceAsStream("/test-rdfstar.ttls")) {
 			parser.parse(in, baseURI);
 
 			Collection<Statement> stmts = statementCollector.getStatements();
 
-			assertEquals(7, stmts.size());
+			assertEquals(10, stmts.size());
 
 			assertTrue(stmts.contains(vf.createStatement(bob, FOAF.KNOWS, aliceKnowsBobCreatedBook)));
 			assertTrue(stmts.contains(vf.createStatement(bobCreatedBookKnowsAlice, DCTERMS.SOURCE, otherbook)));
@@ -93,6 +99,9 @@ public class TurtleStarParserTest {
 			assertTrue(stmts.contains(vf.createStatement(bookCreatorAlice, DCTERMS.REQUIRES, aliceCreatedBook)));
 			assertTrue(stmts.contains(vf.createStatement(abc, valid, abcDate)));
 			assertTrue(stmts.contains(vf.createStatement(bobBirthdayDate, DCTERMS.SOURCE, bobshomepage)));
+			assertTrue(stmts.contains(vf.createStatement(bookTitleEn, DCTERMS.SOURCE, bobshomepage)));
+			assertTrue(stmts.contains(vf.createStatement(bookTitleDe, DCTERMS.SOURCE, bobshomepage)));
+			assertTrue(stmts.contains(vf.createStatement(bookTitleEnUs, DCTERMS.SOURCE, bobshomepage)));
 		}
 	}
 

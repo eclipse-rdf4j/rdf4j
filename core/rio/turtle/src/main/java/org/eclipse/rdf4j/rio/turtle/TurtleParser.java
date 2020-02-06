@@ -631,7 +631,7 @@ public class TurtleParser extends AbstractRDFParser {
 				// Turtle
 				// language tags do not need whitespace following the language
 				// tag
-				if (c == '.' || c == ';' || c == ',' || c == ')' || c == ']' || c == -1) {
+				if (c == '.' || c == ';' || c == ',' || c == ')' || c == ']' || c == '>' || c == -1) {
 					break;
 				}
 				if (verifyLanguageTag && !TurtleUtil.isLanguageChar(c)) {
