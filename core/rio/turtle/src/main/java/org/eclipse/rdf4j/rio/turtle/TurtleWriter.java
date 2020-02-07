@@ -84,6 +84,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	private Boolean xsdStringToPlainLiteral;
 	private Boolean prettyPrint;
 	private boolean inlineBNodes;
+	private boolean convertRDFStar;
 
 	/*--------------*
 	 * Constructors *
@@ -154,6 +155,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);
 			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
+			convertRDFStar = getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 			if (prettyPrint) {
 				writer.setIndentationString("  ");
 			} else {
@@ -236,11 +238,19 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public final void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
 
+		if (convertRDFStar) {
+			convertRDFStarToReification(st, this::handleStatementInternal);
+		} else {
+			handleStatementInternal(st);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st) throws RDFHandlerException {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();

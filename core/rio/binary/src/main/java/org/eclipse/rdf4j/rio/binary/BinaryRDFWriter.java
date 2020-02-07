@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Arjohn Kampman
@@ -58,6 +59,8 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	private final DataOutputStream out;
 
 	private boolean writingStarted = false;
+
+	private boolean convertRDFStar;
 
 	private byte[] buf;
 
@@ -81,6 +84,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	public void startRDF() throws RDFHandlerException {
 		if (!writingStarted) {
 			writingStarted = true;
+			convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 			try {
 				out.write(MAGIC_NUMBER);
 				out.writeInt(FORMAT_VERSION);
@@ -129,7 +133,15 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public final void handleStatement(Statement st) throws RDFHandlerException {
+		if (convertRDFStar) {
+			convertRDFStarToReification(st, this::handleStatementInternal);
+		} else {
+			handleStatementInternal(st);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st) {
 		statementQueue.add(st);
 		incValueFreq(st.getSubject());
 		incValueFreq(st.getPredicate());

@@ -48,6 +48,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Resource lastWrittenSubject;
 	protected char quote;
 	protected boolean entityQuote;
+	protected boolean convertRDFStar;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -105,6 +106,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			throw new RDFHandlerException("Document writing has already started");
 		}
 		writingStarted = true;
+		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	protected void writeHeader() throws IOException {
@@ -225,11 +227,19 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public final void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not yet been started");
 		}
 
+		if (convertRDFStar) {
+			convertRDFStarToReification(st, this::handleStatementInternal);
+		} else {
+			handleStatementInternal(st);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
