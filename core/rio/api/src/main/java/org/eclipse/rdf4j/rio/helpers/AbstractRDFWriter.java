@@ -13,7 +13,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -82,5 +85,9 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	public <T> RDFWriter set(RioSetting<T> setting, T value) {
 		getWriterConfig().set(setting, value);
 		return this;
+	}
+
+	protected void convertRDFStarToReification(Statement st, Consumer<Statement> consumer) {
+		Statements.convertRDFStarToReification(st, consumer);
 	}
 }

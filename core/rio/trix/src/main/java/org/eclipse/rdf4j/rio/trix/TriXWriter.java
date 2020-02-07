@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
 /**
@@ -54,7 +55,9 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private boolean inActiveContext = false;
 
+	private boolean convertRDFStar;
 	private Resource currentContext = null;
+
 
 	/*--------------*
 	 * Constructors *
@@ -99,6 +102,8 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 		if (writingStarted) {
 			throw new RDFHandlerException("Document writing has already started");
 		}
+
+		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 
 		try {
 
@@ -147,6 +152,14 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			throw new RDFHandlerException("Document writing has not yet been started");
 		}
 
+		if (convertRDFStar) {
+			convertRDFStarToReification(st, this::handleStatementInternal);
+		} else {
+			handleStatementInternal(st);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st) {
 		try {
 			Resource context = st.getContext();
 

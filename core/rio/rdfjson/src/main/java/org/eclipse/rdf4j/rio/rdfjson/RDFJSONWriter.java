@@ -51,6 +51,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private Model graph;
 
+	private boolean convertRDFStar;
+
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
@@ -113,12 +115,17 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleStatement(final Statement statement) throws RDFHandlerException {
-		this.graph.add(statement);
+		if (convertRDFStar) {
+			convertRDFStarToReification(statement, graph::add);
+		} else {
+			this.graph.add(statement);
+		}
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
 		this.graph = new TreeModel();
+		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	/**
