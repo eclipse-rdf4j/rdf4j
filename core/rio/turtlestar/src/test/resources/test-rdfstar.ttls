@@ -1,0 +1,29 @@
+@prefix ex: <http://example.com/> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+
+ex:bob foaf:knows << ex:alice foaf:knows<<ex:bob dct:created ex:book>> >> .
+
+<<<< ex:bob dct:created ex:book >> foaf:knows ex:alice >> dct:source ex:otherbook .
+
+ex:bobshomepage dct:source<< ex:book dct:creator ex:alice  >> .
+
+<< ex:book dct:creator ex:alice  >> dct:source  ex:bobshomepage .
+
+<< ex:book dct:creator ex:alice >> dct:requires << ex:alice dct:created ex:book >> .
+
+<<<http://example.org/a>ex:b ex:c>>ex:valid "1999-08-16"^^xsd:date .
+
+<< # Start of triple
+    ex:bob # triple subject
+    foaf:birthday # triple predicate
+    "1908-03-18"^^xsd:date # triple object
+>> # end of triple
+dct:source ex:bobshomepage .
+
+<< ex:book dct:title "Example book"@en >> dct:source  ex:bobshomepage .
+<< ex:book dct:title "Beispielbuch"@de>> dct:source ex:bobshomepage.
+<< ex:book dct:title "Example Book"@en-US>> dct:source ex:bobshomepage.

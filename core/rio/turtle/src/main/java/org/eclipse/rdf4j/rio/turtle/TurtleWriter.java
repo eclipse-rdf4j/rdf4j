@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
@@ -432,8 +433,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeResource(Resource res, boolean canShorten) throws IOException {
 		if (res instanceof IRI) {
 			writeURI((IRI) res);
-		} else {
+		} else if (res instanceof BNode) {
 			writeBNode((BNode) res, canShorten);
+		} else {
+			writeTriple((Triple) res, canShorten);
 		}
 	}
 
@@ -514,6 +517,28 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				}
 			}
 		}
+	}
+
+	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
+		// Ideally RDF* triples might be serialized as RDF reification but should that happen automatically
+		// or only when requested via some way? If we do it for Turtle, should we also do it for all other non-RDF*
+		// parsers too?
+		throw new IOException(getRDFFormat().getName() + " does not support RDF* triples");
+	}
+
+	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
+		writer.write("<<");
+		writeResource(triple.getSubject());
+		writer.write(" ");
+		writeURI(triple.getPredicate());
+		writer.write(" ");
+		Value object = triple.getObject();
+		if (object instanceof Literal) {
+			writeLiteral((Literal) object);
+		} else {
+			writeResource((Resource) object, canShorten);
+		}
+		writer.write(">>");
 	}
 
 	protected void writeLiteral(Literal lit) throws IOException {

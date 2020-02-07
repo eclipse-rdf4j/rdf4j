@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -113,6 +115,18 @@ public abstract class RDFWriterTest {
 
 	private IRI uri5;
 
+	private Triple triple1;
+
+	private Triple triple2;
+
+	private Triple triple3;
+
+	private Triple triple4;
+
+	private Triple triple5;
+
+	private Triple triple6;
+
 	private Literal plainLit;
 
 	private Literal dtLit;
@@ -140,6 +154,10 @@ public abstract class RDFWriterTest {
 	private List<IRI> potentialPredicates;
 
 	protected RDFWriterTest(RDFWriterFactory writerF, RDFParserFactory parserF) {
+		this(writerF, parserF, false);
+	}
+
+	protected RDFWriterTest(RDFWriterFactory writerF, RDFParserFactory parserF, boolean rdfStar) {
 		rdfWriterFactory = writerF;
 		rdfParserFactory = parserF;
 
@@ -177,6 +195,15 @@ public abstract class RDFWriterTest {
 
 		litBigPlaceholder = vf.createLiteral(prng.nextDouble());
 
+		if (rdfStar) {
+			triple1 = vf.createTriple(uri1, uri2, plainLit);
+			triple2 = vf.createTriple(bnode, uri3, litWithMultipleNewlines);
+			triple3 = vf.createTriple(uri3, uri4, bnodeSingleLetter);
+			triple4 = vf.createTriple(uri5, uri1, uri3);
+			triple5 = vf.createTriple(triple1, uri3, litBigPlaceholder);
+			triple6 = vf.createTriple(triple2, uri4, triple5);
+		}
+
 		potentialSubjects = new ArrayList<>();
 		potentialSubjects.add(bnode);
 		potentialSubjects.add(bnodeEmpty);
@@ -190,6 +217,9 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri3);
 		potentialSubjects.add(uri4);
 		potentialSubjects.add(uri5);
+		if (rdfStar) {
+			potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
+		}
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -212,6 +242,9 @@ public abstract class RDFWriterTest {
 		potentialObjects.add(plainLit);
 		potentialObjects.add(dtLit);
 		potentialObjects.add(langLit);
+		if (rdfStar) {
+			potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
+		}
 		// FIXME: SES-879: The following break the RDF/XML parser/writer
 		// combination in terms of getting the same number of triples back as we
 		// start with

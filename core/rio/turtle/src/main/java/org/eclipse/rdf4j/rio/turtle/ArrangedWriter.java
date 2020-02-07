@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -42,7 +43,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * @author James Leigh
  * @since 2.3
  */
-class ArrangedWriter implements RDFWriter {
+public class ArrangedWriter implements RDFWriter {
 
 	private final static int DEFAULT_QUEUE_SIZE = 100;
 
@@ -88,6 +89,11 @@ class ArrangedWriter implements RDFWriter {
 		if (!(o1 instanceof IRI) && o2 instanceof IRI) {
 			return -1;
 		} else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
+			return 1;
+		}
+		if (!(o1 instanceof Triple) && o2 instanceof Triple) {
+			return -1;
+		} else if (o1 instanceof Triple && !(o2 instanceof Triple)) {
 			return 1;
 		}
 		int str_cmp = o1.stringValue().compareTo(o2.stringValue());
