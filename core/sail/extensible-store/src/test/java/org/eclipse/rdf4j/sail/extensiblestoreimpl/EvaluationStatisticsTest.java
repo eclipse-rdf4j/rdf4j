@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.benchmark.ExtensibleDynamicEvaluationStatisticsBenchmark;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -159,6 +158,31 @@ public class EvaluationStatisticsTest {
 
 		assertEquals(0, Math.round(staleness4));
 
+	}
+
+	@Test
+	public void stalenessCalculationTest() throws InterruptedException {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
+				null);
+
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		extensibleDynamicEvaluationStatistics.waitForQueue();
+
+		double staleness1 = extensibleDynamicEvaluationStatistics.staleness(parse.size());
+		roundedAssert(0, staleness1);
+
+		double staleness2 = extensibleDynamicEvaluationStatistics.staleness(parse.size() * 3);
+		roundedAssert(0.7, staleness2);
+
+		double staleness3 = extensibleDynamicEvaluationStatistics.staleness(parse.size() / 3);
+		roundedAssert(0.7, staleness3);
+
+	}
+
+	private void roundedAssert(double expected, double actual) {
+		assertEquals(expected, Math.round(actual * 10) / 10.0);
 	}
 
 	private String getQuery(String name) throws IOException {

@@ -89,7 +89,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 		double diff = Math.abs(estimatedSize - actualSize);
 
-		return 1.0 / actualSize * diff;
+		double staleness = 1.0 / Math.max(estimatedSize, actualSize) * diff;
+
+		return staleness;
 
 	}
 
