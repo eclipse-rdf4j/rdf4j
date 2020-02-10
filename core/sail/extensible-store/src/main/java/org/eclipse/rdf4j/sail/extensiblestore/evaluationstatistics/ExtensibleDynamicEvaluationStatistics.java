@@ -36,18 +36,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private final HyperLogLogCollector size = HyperLogLogCollector.makeLatestCollector();
 	private final HyperLogLogCollector size_removed = HyperLogLogCollector.makeLatestCollector();
 
-	// This array acts as a way to detect when a statement has first been added, then removed, then added again.
-	// The underlying concept is that you "randomly" add your added statement to one of the HLL collectors,
-	// to later check if you have duplicates you can sum the counts from all the collectors, and compare it to to union
-	// of all the collectors, since then union will deduplicate the sets. The difference is the number of statements that have been added more than once.
-	private final HyperLogLogCollector[] duplicateAddedStatements = { HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector(),
-			HyperLogLogCollector.makeLatestCollector(), HyperLogLogCollector.makeLatestCollector() };
-
 	private final Map<Integer, HyperLogLogCollector> subjectIndex = new HashMap<>();
 	private final Map<Integer, HyperLogLogCollector> predicateIndex = new HashMap<>();
 	private final Map<Integer, HyperLogLogCollector> objectIndex = new HashMap<>();
@@ -95,21 +83,13 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	public double staleness() {
+	public double staleness(int actualSize) {
 
-		HyperLogLogCollector staleUnion = HyperLogLogCollector.makeLatestCollector();
+		double estimatedSize = size.estimateCardinality() - size_removed.estimateCardinality();
 
-		Stream.of(duplicateAddedStatements)
-				.forEach(staleUnion::fold);
+		double diff = Math.abs(estimatedSize - actualSize);
 
-		double sumStaleness = Stream.of(duplicateAddedStatements)
-				.mapToDouble(HyperLogLogCollector::estimateCardinality)
-				.sum();
-
-		double unionStaleness = staleUnion.estimateCardinality();
-
-		double min = Math.max(0, 1 / (unionStaleness + 0.1) * (sumStaleness - unionStaleness));
-		return min;
+		return 1.0 / actualSize * diff;
 
 	}
 
@@ -224,9 +204,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						if (poll.added) {
 
 							size.add(statementHash);
-
-							duplicateAddedStatements[staleIndexCounter++ % duplicateAddedStatements.length]
-									.add(statementHash);
 
 							int subjectHash = statement.getSubject().hashCode();
 							int predicateHash = statement.getPredicate().hashCode();

@@ -130,12 +130,12 @@ public class EvaluationStatisticsTest {
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
-		double staleness1 = extensibleDynamicEvaluationStatistics.staleness();
+		double staleness1 = extensibleDynamicEvaluationStatistics.staleness(parse.size());
 		assertEquals(0, Math.round(staleness1));
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.remove(s, false));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
-		double staleness2 = extensibleDynamicEvaluationStatistics.staleness();
+		double staleness2 = extensibleDynamicEvaluationStatistics.staleness(0);
 		assertEquals(0, Math.round(staleness2));
 
 		IntStream.range(0, 100).forEach(i -> {
@@ -145,7 +145,7 @@ public class EvaluationStatisticsTest {
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
-		double staleness3 = extensibleDynamicEvaluationStatistics.staleness();
+		double staleness3 = extensibleDynamicEvaluationStatistics.staleness(100 + parse.size());
 		assertEquals(1, Math.round(staleness3));
 
 		IntStream.range(0, 100000).forEach(i -> {
@@ -155,7 +155,7 @@ public class EvaluationStatisticsTest {
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
-		double staleness4 = extensibleDynamicEvaluationStatistics.staleness();
+		double staleness4 = extensibleDynamicEvaluationStatistics.staleness(100000 + 100 + parse.size());
 
 		assertEquals(0, Math.round(staleness4));
 

@@ -11,7 +11,7 @@ public class ExtensibleConstantEvaluationStatistics extends ExtensibleEvaluation
 	protected CardinalityCalculator createCardinalityCalculator() {
 		return cardinalityCalculator;
 	}
-	
+
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 	};
 
