@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
-import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * This triple source supports the {@link SparqlEndpointConfiguration} for defining whether ASK queries are to be used
  * for source selection.
  * 
- * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr)} is wrapped in a
+ * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr, QueryInfo)} is wrapped in a
  * {@link ConsumingIteration} to avoid blocking behavior..
  * 
  * @author Andreas Schwarte
@@ -177,7 +177,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 	}
 
 	@Override
-	public boolean hasStatements(ExclusiveGroup group,
+	public boolean hasStatements(ExclusiveTupleExpr expr,
 			BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
@@ -186,9 +186,9 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 			/* remote select limit 1 query */
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(group, bindings);
+				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-				configureInference(query, group.getQueryInfo());
+				configureInference(query, expr.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
 
 				monitorRemoteRequest();
@@ -204,7 +204,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 		}
 
 		// default handling: use ASK query
-		return super.hasStatements(group, bindings);
+		return super.hasStatements(expr, bindings);
 	}
 
 	@Override

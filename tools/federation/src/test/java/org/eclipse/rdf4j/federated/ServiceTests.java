@@ -22,12 +22,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -95,7 +97,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/*
 		 * test select query retrieving all persons from endpoint 1 (SERVICE), endpoint not part of federation =>
-		 * evaluate using SESAME
+		 * evaluate using RDF4J
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
@@ -324,6 +326,50 @@ public class ServiceTests extends SPARQLBaseTest {
 				.getService("http://localhost:18080/repositories/endpoint1"));
 		Assertions.assertEquals(50, tfs.serviceRequestCount.get());
 		Assertions.assertEquals(0, tfs.boundJoinRequestCount.get());
+	}
+
+	@Test
+	public void test11_errorHandling() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		/*
+		 * test select query where SERVICE is not part of federation and produces error
+		 */
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
+				"/tests/data/data4.ttl"));
+		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
+		fedxRule.removeEndpoint(endpoint1);
+
+		// run a simple SERVICE query
+		repoSettings(1).resetOperationsCounter();
+		repoSettings(1).setFailAfter(0);
+		String query_a = readQueryString("/tests/service/query11_error_a.rq");
+
+		Assertions.assertThrows(QueryEvaluationException.class, () -> {
+			Repositories.tupleQueryNoTransaction(fedxRule.repository, query_a,
+					iter -> QueryResults.asList(iter));
+		});
+
+		// run query where service does not produce errors
+		String query_b = readQueryString("/tests/service/query11_error_b.rq");
+		repoSettings(1).setFailAfter(-1);
+		List<BindingSet> bs = Repositories.tupleQueryNoTransaction(fedxRule.repository, query_b,
+				iter -> QueryResults.asList(iter));
+		Assertions
+				.assertEquals(Sets.newHashSet("Person2", "Person5"),
+						bs.stream()
+								.map(b -> b.getValue("name").stringValue())
+								.collect(Collectors.toSet()));
+
+		// re-run, but now simulate errors
+		repoSettings(1).resetOperationsCounter();
+		repoSettings(1).setFailAfter(1);
+		Assertions.assertThrows(QueryEvaluationException.class, () -> {
+			Repositories.tupleQueryNoTransaction(fedxRule.repository, query_b,
+					iter -> QueryResults.asList(iter));
+		});
+
 	}
 
 	static class TestSparqlFederatedService extends SPARQLFederatedService {

@@ -37,7 +37,7 @@ public class SnapshotSailStore implements SailStore {
 	private final SailSourceBranch inferredAutoFlush;
 
 	/**
-	 * Wraps an {@link SailStore}, tracking changes in {@link SailModelFactory} instances.
+	 * Wraps an {@link SailStore}, tracking changes in {@link ModelFactory} instances.
 	 * 
 	 * @param backingStore
 	 * @param modelFactory

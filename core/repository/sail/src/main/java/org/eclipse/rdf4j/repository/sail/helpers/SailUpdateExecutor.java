@@ -70,7 +70,6 @@ import org.slf4j.LoggerFactory;
  * 
  * @author jeen
  * @author James Leigh
- * @param <E>
  * @see SailConnection#startUpdate(UpdateContext)
  * @see SailConnection#endUpdate(UpdateContext)
  * @see SailConnection#addStatement(UpdateContext, Resource, IRI, Value, Resource...)

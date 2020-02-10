@@ -96,10 +96,12 @@ public class W3cComplianceTest {
 			}
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null,
-						connection.getValueFactory()
-								.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
-						null))) {
+				try (Stream<Statement> stream = connection
+						.getStatements(null,
+								connection.getValueFactory()
+										.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
+								null)
+						.stream()) {
 					include = stream
 							.map(Statement::getObject)
 							.map(Value::stringValue)
@@ -144,8 +146,7 @@ public class W3cComplianceTest {
 			this.filename = filename.getPath();
 			SailRepository sailRepository = Utils.getSailRepository(filename);
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = Iterations
-						.stream(connection.getStatements(null, SHACL.CONFORMS, null))) {
+				try (Stream<Statement> stream = connection.getStatements(null, SHACL.CONFORMS, null).stream()) {
 					conforms = stream
 							.map(Statement::getObject)
 							.map(o -> (Literal) o)

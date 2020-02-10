@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.util;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,28 +16,43 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+import org.eclipse.rdf4j.federated.algebra.FedXService;
+import org.eclipse.rdf4j.federated.algebra.FedXTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.VariableExpr;
+import org.eclipse.rdf4j.federated.algebra.NTuple;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Sets;
 
 /**
  * Various static functions for query handling and parsing (alegbra expression).
@@ -78,6 +95,23 @@ public class QueryAlgebraUtil {
 		} else {
 			return bindings.getValue(var.getName());
 		}
+	}
+
+	/**
+	 * Convert the given {@link ArbitraryLengthPath} to a fresh {@link TupleExpr} where all provided bindings are bound.
+	 * 
+	 * @param node
+	 * @param varNames
+	 * @param bindings
+	 * @return the fresh and bound expression
+	 */
+	public static TupleExpr toTupleExpr(ArbitraryLengthPath node, Set<String> varNames, BindingSet bindings) {
+
+		TupleExpr clone = node.clone();
+		InsertBindingsVisitor bindingsInserter = new InsertBindingsVisitor(bindings);
+		bindingsInserter.meetOther(clone);
+		varNames.addAll(bindingsInserter.freeVars);
+		return clone;
 	}
 
 	public static StatementPattern toStatementPattern(Statement stmt) {
@@ -163,25 +197,25 @@ public class QueryAlgebraUtil {
 			AtomicBoolean evaluated) {
 
 		Set<String> varNames = new HashSet<>();
-		List<ExclusiveStatement> stmts = group.getStatements();
+		List<ExclusiveTupleExpr> stmts = group.getExclusiveExpressions();
 
 		Join join = null;
 
 		if (stmts.size() == 2) {
-			join = new Join(constructStatement(stmts.get(0), varNames, bindings),
-					constructStatement(stmts.get(1), varNames, bindings));
+			join = new Join(constructJoinArg(stmts.get(0), varNames, bindings),
+					constructJoinArg(stmts.get(1), varNames, bindings));
 		} else {
 			join = new Join();
-			join.setLeftArg(constructStatement(stmts.get(0), varNames, bindings));
+			join.setLeftArg(constructJoinArg(stmts.get(0), varNames, bindings));
 			Join tmp = join;
 			int idx;
 			for (idx = 1; idx < stmts.size() - 1; idx++) {
 				Join _u = new Join();
-				_u.setLeftArg(constructStatement(stmts.get(idx), varNames, bindings));
+				_u.setLeftArg(constructJoinArg(stmts.get(idx), varNames, bindings));
 				tmp.setRightArg(_u);
 				tmp = _u;
 			}
-			tmp.setRightArg(constructStatement(stmts.get(idx), varNames, bindings));
+			tmp.setRightArg(constructJoinArg(stmts.get(idx), varNames, bindings));
 		}
 
 		TupleExpr expr = join;
@@ -302,6 +336,33 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementId(stmt, outerID + "_" + idx, varNames, bindings.get(idx)));
 
 		return union;
+	}
+
+	/**
+	 * Construct a TupleExpr from the {@link ExclusiveTupleExpr} that can be used as an argument to a {@link Join}.
+	 * <p>
+	 * This method can only be used for {@link ExclusiveTupleExpr} that additionally provide
+	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
+	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement}
+	 * </p>
+	 * 
+	 * @param exclusiveExpr
+	 * @param varNames
+	 * @param bindings
+	 * @return the fresh {@link TupleExpr} with bindings inserted
+	 */
+	private static TupleExpr constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set<String> varNames,
+			BindingSet bindings) {
+
+		if (exclusiveExpr instanceof StatementPattern) {
+			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);
+		}
+
+		if (!(exclusiveExpr instanceof ExclusiveTupleExprRenderer)) {
+			throw new IllegalStateException("Cannot render tupl expr of type " + exclusiveExpr.getClass());
+		}
+
+		return ((ExclusiveTupleExprRenderer) exclusiveExpr).toQueryAlgebra(varNames, bindings);
 	}
 
 	/**
@@ -427,4 +488,111 @@ public class QueryAlgebraUtil {
 		return res;
 	}
 
+	/**
+	 * A helper class to insert bindings in the {@link Var} nodes of the given {@link TupleExpr}.
+	 * 
+	 * @author Andreas Schwarte
+	 *
+	 */
+	private static class InsertBindingsVisitor extends AbstractQueryModelVisitor<QueryEvaluationException> {
+
+		private final BindingSet bindings;
+
+		private final Set<String> freeVars = Sets.newHashSet();
+
+		private InsertBindingsVisitor(BindingSet bindings) {
+			super();
+			this.bindings = bindings;
+		}
+
+		@Override
+		public void meet(Var node) throws QueryEvaluationException {
+			if (node.hasValue()) {
+				if (bindings.hasBinding(node.getName())) {
+					node.setValue(bindings.getValue(node.getName()));
+				}
+			} else {
+				freeVars.add(node.getName());
+			}
+			super.meet(node);
+		}
+	}
+
+	/**
+	 * Computes the collection of free variables in the given {@link TupleExpr}.
+	 * 
+	 * @param tupleExpr the expression
+	 * @return the free variables
+	 * @see VariableExpr
+	 */
+	public static Collection<String> getFreeVars(TupleExpr tupleExpr) {
+
+		if (tupleExpr instanceof FedXTupleExpr) {
+			return ((FedXTupleExpr) tupleExpr).getFreeVars();
+		}
+
+		if (tupleExpr instanceof VariableExpr) {
+			return ((VariableExpr) tupleExpr).getFreeVars();
+		}
+
+		// determine the number of free variables in a UNION or Join
+		if (tupleExpr instanceof NTuple) {
+			HashSet<String> freeVars = new HashSet<>();
+			NTuple ntuple = (NTuple) tupleExpr;
+			for (TupleExpr t : ntuple.getArgs())
+				freeVars.addAll(getFreeVars(t));
+			return freeVars;
+		}
+
+		if (tupleExpr instanceof FedXService) {
+			return ((FedXService) tupleExpr).getFreeVars();
+		}
+
+		if (tupleExpr instanceof Service) {
+			return ((Service) tupleExpr).getServiceVars();
+		}
+
+		// can happen in SERVICE nodes, if they cannot be optimized
+		if (tupleExpr instanceof StatementPattern) {
+			List<String> freeVars = new ArrayList<>();
+			StatementPattern st = (StatementPattern) tupleExpr;
+			if (st.getSubjectVar().getValue() == null)
+				freeVars.add(st.getSubjectVar().getName());
+			if (st.getPredicateVar().getValue() == null)
+				freeVars.add(st.getPredicateVar().getName());
+			if (st.getObjectVar().getValue() == null)
+				freeVars.add(st.getObjectVar().getName());
+			return freeVars;
+		}
+
+		if (tupleExpr instanceof Projection) {
+			Projection p = (Projection) tupleExpr;
+			return new ArrayList<>(p.getBindingNames());
+		}
+
+		if (tupleExpr instanceof BindingSetAssignment) {
+			return new ArrayList<>();
+		}
+
+		if (tupleExpr instanceof Extension) {
+			// for a BIND extension in our cost model we work with 0 free vars
+			return new ArrayList<String>();
+		}
+
+		if (tupleExpr instanceof ArbitraryLengthPath) {
+			return getFreeVars(((ArbitraryLengthPath) tupleExpr).getPathExpression());
+		}
+
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin l = (LeftJoin) tupleExpr;
+			HashSet<String> freeVars = new HashSet<>();
+			freeVars.addAll(getFreeVars(l.getLeftArg()));
+			freeVars.addAll(getFreeVars(l.getRightArg()));
+			return freeVars;
+		}
+
+		log.debug("Type " + tupleExpr.getClass().getSimpleName()
+				+ " not supported for computing free vars. If you run into this, please report a bug.");
+		return new ArrayList<String>();
+	}
 }

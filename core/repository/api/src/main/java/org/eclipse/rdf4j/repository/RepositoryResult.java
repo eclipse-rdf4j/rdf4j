@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -31,7 +32,7 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  * <p>
  * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
  * locks, etc.) it has on the underlying repository.
- * 
+ *
  * @see RepositoryConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
  *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource[])
  * @see RepositoryConnection#getNamespaces()
@@ -78,7 +79,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 * that already occur in this Set.
 	 * <P>
 	 * Caution: use of this filtering mechanism is potentially memory-intensive.
-	 * 
+	 *
 	 * @throws RepositoryException if a problem occurred during initialization of the filter.
 	 */
 	public void enableDuplicateFilter() throws RepositoryException {
@@ -95,7 +96,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 * <P>
 	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is potentially
 	 * very memory-intensive.
-	 * 
+	 *
 	 * @return a List containing all objects of this RepositoryResult.
 	 * @throws RepositoryException if a problem occurred during retrieval of the results.
 	 * @see #addTo(Collection)
@@ -109,7 +110,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	/**
 	 * Adds all objects of this RepositoryResult to the supplied collection. The RepositoryResult is fully consumed and
 	 * automatically closed by this operation.
-	 * 
+	 *
 	 * @return A reference to the collection that was supplied.
 	 * @throws RepositoryException if a problem occurred during retrieval of the results.
 	 * @deprecated Use {@link Iterations#addAll(Iteration, Collection)} instead.
@@ -131,4 +132,5 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	public Iterator<T> iterator() {
 		return new CloseableIterationIterator<T>(this);
 	}
+
 }

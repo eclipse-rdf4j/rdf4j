@@ -153,7 +153,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	/**
 	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
 	 *
-	 * @param out The Writer to write the RDF/XML document to.
+	 * @param writer  the Writer to write the RDF/XML document to
+	 * @param baseIRI base IRI
 	 */
 	public RDFXMLPrettyWriter(Writer writer, ParsedIRI baseIRI) {
 		super(writer, baseIRI);

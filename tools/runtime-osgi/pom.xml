@@ -1,20 +1,15 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>3.1.0-SNAPSHOT</version>
+		<version>3.2.0-SNAPSHOT</version>
 	</parent>
-
 	<artifactId>rdf4j-runtime-osgi</artifactId>
 	<packaging>bundle</packaging>
-
 	<name>RDF4J: Runtime - OSGi</name>
 	<description>OSGi Runtime dependencies for an RDF4J application</description>
-
 	<properties>
 		<serviceresources.basedir>${project.build.directory}/serviceResources</serviceresources.basedir>
 		<serviceresources.raw.dir>${serviceresources.basedir}/raw</serviceresources.raw.dir>
@@ -22,7 +17,6 @@
 		<serviceresources.fixed.dir>${serviceresources.basedir}/fixed</serviceresources.fixed.dir>
 		<jarToEnhance>${project.build.directory}/${project.artifactId}-${project.version}.jar</jarToEnhance>
 	</properties>
-
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -30,7 +24,6 @@
 			<version>${project.version}</version>
 		</dependency>
 	</dependencies>
-
 	<build>
 		<plugins>
 			<plugin>
@@ -42,21 +35,8 @@
 					<instructions>
 						<Bundle-SymbolicName>org.eclipse.rdf4j</Bundle-SymbolicName>
 						<Export-Package>!*text-base,!*prop-base,org.eclipse.rdf4j.*</Export-Package>
-						<Import-Package>
-							org.slf4j.*,
-							org.eclipse.rdf4j.*;version=0,
-							javax.*;resolution:=optional,
-							org.apache.*;resolution:=optional,
-							org.springframework.*;resolution:=optional,
-							*
-						</Import-Package>
-						<Embed-Dependency>
-							*;
-							groupId=org.eclipse.rdf4j;
-							scope=compile|runtime;
-							type=!pom;
-							inline=true
-						</Embed-Dependency>
+						<Import-Package>org.slf4j.*, org.eclipse.rdf4j.*;version=0, javax.*;resolution:=optional, org.apache.*;resolution:=optional, org.springframework.*;resolution:=optional, *</Import-Package>
+						<Embed-Dependency>*; groupId=org.eclipse.rdf4j; scope=compile|runtime; type=!pom; inline=true</Embed-Dependency>
 						<Embed-Transitive>true</Embed-Transitive>
 					</instructions>
 				</configuration>
@@ -85,8 +65,7 @@
 								</filter>
 							</filters>
 							<transformers>
-								<transformer
-									implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
 							</transformers>
 							<outputFile>${serviceresources.raw.jar}</outputFile>
 						</configuration>
@@ -104,8 +83,7 @@
 						</goals>
 						<configuration>
 							<target>
-								<ant antfile="build.xml"
-									target="enrich-artifact-with-provider-configuration-files" dir="${basedir}" />
+								<ant antfile="build.xml" target="enrich-artifact-with-provider-configuration-files" dir="${basedir}"/>
 							</target>
 						</configuration>
 					</execution>

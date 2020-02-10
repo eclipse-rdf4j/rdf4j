@@ -12,7 +12,6 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Interface for any expression that can be evaluated
@@ -23,22 +22,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * @see ExclusiveStatement
  * @see ExclusiveGroup
  */
-public interface StatementTupleExpr extends TupleExpr, QueryRef {
+public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 
 	/**
 	 * @return the id of this expr
 	 */
 	public String getId();
-
-	/**
-	 * @return a list of free (i.e. unbound) variables in this expression
-	 */
-	public List<String> getFreeVars();
-
-	/**
-	 * @return the number of free (i.e. unbound) variables in this expression
-	 */
-	public int getFreeVarCount();
 
 	/**
 	 * @return a list of sources that are relevant for evaluation of this expression

@@ -79,7 +79,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a whitespace character
 	 * 
 	 * @param codePoint a Unicode code point
-	 * @return <code>true</code> iff the supplied code point represents a whitespace character, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a whitespace character, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isWhitespace(int codePoint) {
@@ -139,7 +139,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid prefixed name start character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid prefixed name start char, false
+	 * @return <code>true</code> if the supplied code point represents a valid prefixed name start char, false
 	 *         otherwise.
 	 */
 	public static boolean isPrefixStartChar(int codePoint) {
@@ -150,7 +150,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid start character for a blank node label.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid blank node label start char,
+	 * @return <code>true</code> if the supplied code point represents a valid blank node label start char,
 	 *         <code>false</code> otherwise.
 	 */
 	public static boolean isBLANK_NODE_LABEL_StartChar(int codePoint) {
@@ -161,8 +161,8 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid blank node label character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid blank node label char,
-	 *         <code>false</code> otherwise.
+	 * @return <code>true</code> if the supplied code point represents a valid blank node label char, <code>false</code>
+	 *         otherwise.
 	 */
 	public static boolean isBLANK_NODE_LABEL_Char(int codePoint) {
 		return isPN_CHARS(codePoint) || codePoint == '.';
@@ -172,7 +172,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid blank node label end character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid blank node label end char,
+	 * @return <code>true</code> if the supplied code point represents a valid blank node label end char,
 	 *         <code>false</code> otherwise.
 	 */
 	public static boolean isBLANK_NODE_LABEL_EndChar(int codePoint) {
@@ -183,7 +183,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid name start character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid name start char, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a valid name start char, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isNameStartChar(int codePoint) {
@@ -195,7 +195,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid name character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid name char, <code>false</code> otherwise.
+	 * @return <code>true</code> if the supplied code point represents a valid name char, <code>false</code> otherwise.
 	 */
 	public static boolean isNameChar(int codePoint) {
 		return isPN_CHARS(codePoint) || codePoint == '.' || codePoint == ':' | codePoint == '\\' || codePoint == '%';
@@ -205,7 +205,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid name end character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid name end char, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a valid name end char, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isNameEndChar(int codePoint) {
@@ -216,7 +216,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid local escaped character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid local escaped char, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a valid local escaped char, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isLocalEscapedChar(int codePoint) {
@@ -227,7 +227,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid prefix character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid prefix char, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a valid prefix char, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isPrefixChar(int codePoint) {
@@ -238,7 +238,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid language tag start character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid language tag start char,
+	 * @return <code>true</code> if the supplied code point represents a valid language tag start char,
 	 *         <code>false</code> otherwise.
 	 */
 	public static boolean isLanguageStartChar(int codePoint) {
@@ -249,7 +249,7 @@ public class TurtleUtil {
 	 * Check if the supplied code point represents a valid language tag character.
 	 * 
 	 * @param codePoint a Unicode code point.
-	 * @return <code>true</code> iff the supplied code point represents a valid language tag char, <code>false</code>
+	 * @return <code>true</code> if the supplied code point represents a valid language tag char, <code>false</code>
 	 *         otherwise.
 	 */
 	public static boolean isLanguageChar(int codePoint) {
@@ -264,7 +264,7 @@ public class TurtleUtil {
 	 * [167s] PN_PREFIX ::= PN_CHARS_BASE ((PN_CHARS | '.')* PN_CHARS)?
 	 * 
 	 * @param prefix a prefix string.
-	 * @return true iff the supplied prefix conforms to Turtle grammar rules
+	 * @return true if the supplied prefix conforms to Turtle grammar rules
 	 */
 	public static boolean isPN_PREFIX(String prefix) {
 		// Empty prefixes are not legal, they should always have a colon
@@ -371,20 +371,20 @@ public class TurtleUtil {
 
 		if (!isPN_CHARS_U(name.charAt(0)) && name.charAt(0) != ':' && !ASCIIUtil.isNumber(name.charAt(0))
 				&& !isPLX_START(name)) {
-			System.err.println("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
+			logger.debug("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
 					+ name.charAt(0) + " name=" + name);
 			return false;
 		}
 
 		if (!isNameStartChar(name.charAt(0))) {
-			System.err.println("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
+			logger.debug("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
 					+ " name=" + name);
 			return false;
 		}
 
 		for (int i = 1; i < name.length(); i++) {
 			if (!isNameChar(name.charAt(i))) {
-				System.err.println("name was not valid (intermediate character invalid) i=" + i + " nextchar="
+				logger.debug("name was not valid (intermediate character invalid) i=" + i + " nextchar="
 						+ name.charAt(i) + " name=" + name);
 				return false;
 			}
@@ -392,7 +392,7 @@ public class TurtleUtil {
 			// Check if the percent encoding was less than two characters from the
 			// end of the prefix, in which case it is invalid
 			if (name.charAt(i) == '%' && (name.length() - i) < 3) {
-				System.err.println("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
+				logger.debug("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
 						+ " name=" + name);
 				return false;
 			}
@@ -407,6 +407,9 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a 'normal' string in a Turtle document.
+	 * 
+	 * @param s
+	 * @return encoded string
 	 */
 	public static String encodeString(String s) {
 		s = StringUtil.gsub("\\", "\\\\", s);
@@ -419,7 +422,10 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a long string in a Turtle document.
-	 **/
+	 * 
+	 * @param s
+	 * @return encoded long string
+	 */
 	public static String encodeLongString(String s) {
 		// TODO: not all double quotes need to be escaped. It suffices to encode
 		// the ones that form sequences of 3 or more double quotes, and the ones
@@ -431,7 +437,10 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a (relative) URI in a Turtle document.
-	 **/
+	 * 
+	 * @param s
+	 */
+	@Deprecated
 	public static String encodeURIString(String s) {
 		s = StringUtil.gsub("\\", "\\u005C", s);
 		s = StringUtil.gsub("\t", "\\u0009", s);
@@ -478,14 +487,14 @@ public class TurtleUtil {
 			if (c == 't') {
 				sb.append('\t');
 				startIdx = backSlashIdx + 2;
-			} else if (c == 'r') {
-				sb.append('\r');
+			} else if (c == 'b') {
+				sb.append('\b');
 				startIdx = backSlashIdx + 2;
 			} else if (c == 'n') {
 				sb.append('\n');
 				startIdx = backSlashIdx + 2;
-			} else if (c == 'b') {
-				sb.append('\b');
+			} else if (c == 'r') {
+				sb.append('\r');
 				startIdx = backSlashIdx + 2;
 			} else if (c == 'f') {
 				sb.append('\f');

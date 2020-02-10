@@ -20,9 +20,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
+import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.BNode;
@@ -31,6 +33,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -87,6 +91,42 @@ public class QueryStringUtil {
 		sb.append("; ");
 		appendVar(sb, stmt.getObjectVar(), new HashSet<>(), EmptyBindingSet.getInstance());
 		sb.append("}");
+		return sb.toString();
+	}
+
+	/**
+	 * Converts an {@link ArbitraryLengthPath} node to a sub query string and makes sure to insert any bindings.
+	 * 
+	 * <p>
+	 * This method assumes that the {@link ArbitraryLengthPath#getPathExpression()} is a {@link StatementPattern}.
+	 * </p>
+	 * 
+	 * @param node
+	 * @param varNames
+	 * @param bindings
+	 * @return the query string
+	 */
+	public static String toString(ArbitraryLengthPath node, Set<String> varNames, BindingSet bindings) {
+
+		// assumes that the path expr is a statement pattern
+		if (!(node.getPathExpression() instanceof StatementPattern)) {
+			throw new IllegalArgumentException("Can only handle path expressions of type StatementPattern, was "
+					+ node.getPathExpression().getClass());
+		}
+
+		StatementPattern stmt = (StatementPattern) node.getPathExpression();
+
+		StringBuilder sb = new StringBuilder();
+
+		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
+
+		// append the path expression with the modifier
+		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings);
+		sb.append(node.getMinLength() == 0 ? "*" : "+");
+		sb.append(" ");
+
+		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+
 		return sb.toString();
 	}
 
@@ -162,6 +202,58 @@ public class QueryStringUtil {
 	}
 
 	/**
+	 * Construct a SELECT query for the provided {@link ExclusiveTupleExprRenderer}
+	 * 
+	 * @param stmt
+	 * @param bindings
+	 * @param filterExpr
+	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+	 *                   beginning
+	 * 
+	 * @return the SELECT query
+	 * @throws IllegalQueryException if the query does not have any free variables
+	 */
+	public static String selectQueryString(ExclusiveTupleExprRenderer expr, BindingSet bindings,
+			FilterValueExpr filterExpr,
+			AtomicBoolean evaluated) throws IllegalQueryException {
+
+		Set<String> varNames = new HashSet<>();
+		String s = constructJoinArg(expr, varNames, bindings);
+
+		StringBuilder res = new StringBuilder();
+
+		res.append("SELECT ");
+
+		if (varNames.isEmpty())
+			throw new IllegalQueryException("SELECT query needs at least one projection!");
+
+		for (String var : varNames)
+			res.append(" ?").append(var);
+
+		res.append(" WHERE { ").append(s);
+
+		if (filterExpr != null) {
+			try {
+				String filter = FilterUtils.toSparqlString(filterExpr);
+				res.append("FILTER ").append(filter);
+				evaluated.set(true);
+			} catch (Exception e) {
+				log.debug("Filter could not be evaluated remotely. " + e.getMessage());
+				log.trace("Details: ", e);
+			}
+		}
+
+		res.append(" }");
+
+		// TODO add support for this in ExclusiveTupleExprRenderer
+//		long upperLimit = stmt.getUpperLimit();
+//		if (upperLimit > 0) {
+//			res.append(" LIMIT ").append(upperLimit);
+//		}
+		return res.toString();
+	}
+
+	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveGroup}. Note that bindings and filterExpr are applied
 	 * whenever possible.
 	 * 
@@ -181,8 +273,8 @@ public class QueryStringUtil {
 		StringBuilder sb = new StringBuilder();
 		Set<String> varNames = new HashSet<>();
 
-		for (ExclusiveStatement s : group.getStatements())
-			sb.append(constructStatement(s, varNames, bindings));
+		for (ExclusiveTupleExpr s : group.getExclusiveExpressions())
+			sb.append(constructJoinArg(s, varNames, bindings));
 
 		if (varNames.isEmpty())
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
@@ -212,23 +304,19 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Transform the exclusive group into a ASK query string
+	 * Transform the {@link ExclusiveTupleExpr} into a ASK query string
 	 * 
-	 * @param group
+	 * @param expr
 	 * @param bindings
 	 * @return the ASK query string
 	 * @throws IllegalQueryException
 	 */
-	public static String askQueryString(ExclusiveGroup group, BindingSet bindings) {
+	public static String askQueryString(ExclusiveTupleExpr expr, BindingSet bindings) {
 
-		StringBuilder sb = new StringBuilder();
 		Set<String> varNames = new HashSet<>();
 
-		for (ExclusiveStatement s : group.getStatements())
-			sb.append(constructStatement(s, varNames, bindings));
-
 		StringBuilder res = new StringBuilder();
-		res.append("ASK { ").append(sb.toString()).append(" }");
+		res.append("ASK { ").append(constructJoinArg(expr, varNames, bindings)).append(" }");
 		return res.toString();
 	}
 
@@ -248,7 +336,10 @@ public class QueryStringUtil {
 	 *                      in beginning
 	 * 
 	 * @return the SELECT query string
+	 * @deprecated replaced with
+	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
 	 */
+	@Deprecated
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, Boolean evaluated) {
 
@@ -285,10 +376,20 @@ public class QueryStringUtil {
 
 	/**
 	 * Creates a bound join subquery using the SPARQL 1.1 VALUES operator.
-	 * 
+	 * <p>
 	 * Example subquery:
+	 * </p>
 	 * 
-	 * <source> SELECT ?v ?__index WHERE { VALUES (?s ?__index) { (:s1 1) (:s2 2) ... (:sN N) } ?s name ?v. } </source>
+	 * <pre>
+	 * SELECT ?v ?__index WHERE { 
+	 *    VALUES (?s ?__index) { 
+	 *      (:s1 1) (:s2 2) 
+	 *      ... 
+	 *      (:sN N) 
+	 *    } 
+	 *    ?s name ?v. 
+	 * }
+	 * </pre>
 	 * 
 	 * @param stmt
 	 * @param unionBindings
@@ -297,7 +398,7 @@ public class QueryStringUtil {
 	 *                      in beginning
 	 * 
 	 * @return the SELECT query string
-	 * @see SparqlFederationEvalStrategyWithValues
+	 * @see SparqlFederationEvalStrategy
 	 * @see BoundJoinVALUESConversionIteration
 	 * @since 3.0
 	 */
@@ -402,6 +503,42 @@ public class QueryStringUtil {
 	}
 
 	/**
+	 * Construct a query substring from the {@link ExclusiveTupleExpr} that can be used as an argument to a
+	 * {@link Join}.
+	 * <p>
+	 * This method can only be used for {@link ExclusiveTupleExpr} that additionally provide
+	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
+	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement} or {@link ExclusiveGroup}.
+	 * </p>
+	 * 
+	 * @param exclusiveExpr
+	 * @param varNames
+	 * @param bindings
+	 * @return the query string with bindings inserted
+	 */
+	protected static String constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set<String> varNames,
+			BindingSet bindings) {
+
+		if (exclusiveExpr instanceof StatementPattern) {
+			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);
+		}
+
+		if (exclusiveExpr instanceof ExclusiveGroup) {
+			StringBuilder sb = new StringBuilder();
+			for (ExclusiveTupleExpr s : ((ExclusiveGroup) exclusiveExpr).getExclusiveExpressions()) {
+				sb.append(constructJoinArg(s, varNames, bindings));
+			}
+			return sb.toString();
+		}
+
+		if (!(exclusiveExpr instanceof ExclusiveTupleExprRenderer)) {
+			throw new IllegalStateException("Cannot render tupl expr of type " + exclusiveExpr.getClass());
+		}
+
+		return ((ExclusiveTupleExprRenderer) exclusiveExpr).toQueryString(varNames, bindings);
+	}
+
+	/**
 	 * Construct a boolean ASK query for the provided statement.
 	 * 
 	 * @param stmt
@@ -443,6 +580,31 @@ public class QueryStringUtil {
 	}
 
 	/**
+	 * Construct a SELECT query for the provided expr with LIMIT 1. Such query can be used for source selection instead
+	 * of ASK queries.
+	 * 
+	 * @param stmt
+	 * @param bindings
+	 * @return the SELECT query string
+	 */
+	public static String selectQueryStringLimit1(ExclusiveTupleExpr expr, BindingSet bindings) {
+
+		if (expr instanceof ExclusiveGroup) {
+			return selectQueryStringLimit1((ExclusiveGroup) expr, bindings);
+		}
+
+		Set<String> varNames = new HashSet<>();
+		String s = constructJoinArg(expr, varNames, bindings);
+
+		StringBuilder res = new StringBuilder();
+
+		res.append("SELECT * WHERE {");
+		res.append(s).append(" } LIMIT 1");
+
+		return res.toString();
+	}
+
+	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveGroup} with LIMIT 1. Such query can be used for source
 	 * selection instead of ASK queries.
 	 * 
@@ -457,8 +619,8 @@ public class QueryStringUtil {
 
 		res.append("SELECT * WHERE { ");
 
-		for (ExclusiveStatement s : group.getStatements())
-			res.append(constructStatement(s, varNames, bindings));
+		for (ExclusiveTupleExpr s : group.getExclusiveExpressions())
+			res.append(constructJoinArg(s, varNames, bindings));
 
 		res.append(" } LIMIT 1");
 

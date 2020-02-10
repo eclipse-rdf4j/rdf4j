@@ -609,7 +609,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #isActive()
 	 * @see #commit()
 	 * @see #rollback()
-	 * @see #setIsolationLevel()
+	 * @see #setIsolationLevel(IsolationLevel)
 	 */
 	public void begin(IsolationLevel level) throws RepositoryException;
 

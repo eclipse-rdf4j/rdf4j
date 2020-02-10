@@ -130,7 +130,7 @@ public abstract class RDFStoreTest {
 
 	/**
 	 * Gets an instance of the Sail that should be tested.
-	 * 
+	 *
 	 * @return a Sail.
 	 */
 	protected abstract Sail createSail();
@@ -972,8 +972,7 @@ public abstract class RDFStoreTest {
 		con.commit();
 		con.begin();
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
-		try (Stream<? extends Statement> stream = Iterations
-				.stream(con.getStatements(null, null, null, false))) {
+		try (Stream<? extends Statement> stream = con.getStatements(null, null, null, false).stream()) {
 			long count = stream.count();
 			Assert.assertEquals("Statement should appear once", 1, count);
 		}
@@ -989,8 +988,7 @@ public abstract class RDFStoreTest {
 		con.begin();
 		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		con.commit();
-		try (Stream<? extends Statement> stream = Iterations
-				.stream(con.getStatements(null, null, null, false))) {
+		try (Stream<? extends Statement> stream = con.getStatements(null, null, null, false).stream()) {
 			long count = stream.count();
 			Assert.assertEquals("Statement should appear once", 1, count);
 

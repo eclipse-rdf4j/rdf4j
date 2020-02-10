@@ -1,17 +1,13 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>3.1.0-SNAPSHOT</version>
+		<version>3.2.0-SNAPSHOT</version>
 	</parent>
-
 	<artifactId>rdf4j-http-server</artifactId>
 	<packaging>war</packaging>
-
 	<name>RDF4J: HTTP server</name>
 	<description>HTTP server implementing a REST-style protocol</description>
 	<properties>
@@ -28,8 +24,6 @@
 			<artifactId>rdf4j-config</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		
-				
 		<!-- TODO rather include into rdf4j-storage, however, 
 		requires resolving cyclic dependency on test scope -->
 		<dependency>
@@ -37,8 +31,6 @@
 			<artifactId>rdf4j-tools-federation</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		
-
 		<dependency>
 			<groupId>org.ebaysf.web</groupId>
 			<artifactId>cors-filter</artifactId>
@@ -47,7 +39,6 @@
 			<groupId>org.tuckey</groupId>
 			<artifactId>urlrewritefilter</artifactId>
 		</dependency>
-
 		<dependency>
 			<groupId>com.github.ziplet</groupId>
 			<artifactId>ziplet</artifactId>
@@ -64,8 +55,6 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-
-
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
@@ -76,7 +65,6 @@
 			<artifactId>jcl-over-slf4j</artifactId>
 			<scope>runtime</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
@@ -88,14 +76,12 @@
 			<version>${jetty.version}</version>
 			<scope>test</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-webapp</artifactId>
 			<version>${jetty.version}</version>
 			<scope>test</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-jsp</artifactId>
@@ -108,15 +94,13 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-
-<!--		Jetty-jsp is including a snapshot version of javax.el, thid breaks the build-->
+		<!--		Jetty-jsp is including a snapshot version of javax.el, thid breaks the build-->
 		<dependency>
 			<groupId>org.glassfish</groupId>
 			<artifactId>javax.el</artifactId>
 			<version>3.0.0</version>
 			<scope>test</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>log4j-over-slf4j</artifactId>
@@ -132,9 +116,7 @@
 			<artifactId>opencsv</artifactId>
 			<scope>test</scope>
 		</dependency>
-
 	</dependencies>
-
 	<build>
 		<plugins>
 			<plugin>
@@ -189,7 +171,6 @@
 			</plugin>
 		</plugins>
 	</build>
-
 	<profiles>
 		<profile>
 			<id>spring.ide</id>
@@ -206,15 +187,11 @@
 							<wtpContextName>rdf4j-server</wtpContextName>
 							<additionalBuildcommands>
 								<buildCommand>
-									<name>
-										org.springframework.ide.eclipse.core.springbuilder
-									</name>
+									<name>org.springframework.ide.eclipse.core.springbuilder</name>
 								</buildCommand>
 							</additionalBuildcommands>
 							<additionalProjectnatures>
-								<projectnature>
-									org.springframework.ide.eclipse.core.springnature
-								</projectnature>
+								<projectnature>org.springframework.ide.eclipse.core.springnature</projectnature>
 							</additionalProjectnatures>
 						</configuration>
 					</plugin>
@@ -222,5 +199,4 @@
 			</build>
 		</profile>
 	</profiles>
-
 </project>

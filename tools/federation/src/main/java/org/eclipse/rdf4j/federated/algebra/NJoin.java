@@ -11,8 +11,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.federated.optimizer.JoinOrderOptimizer;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
@@ -55,8 +55,8 @@ public class NJoin extends NTuple implements TupleExpr {
 	public Set<String> getJoinVariables(int joinIndex) {
 
 		Set<String> joinVars = new HashSet<>();
-		joinVars.addAll(JoinOrderOptimizer.getFreeVars(getArg(joinIndex - 1)));
-		joinVars.retainAll(JoinOrderOptimizer.getFreeVars(getArg(joinIndex)));
+		joinVars.addAll(QueryAlgebraUtil.getFreeVars(getArg(joinIndex - 1)));
+		joinVars.retainAll(QueryAlgebraUtil.getFreeVars(getArg(joinIndex)));
 		return joinVars;
 	}
 }

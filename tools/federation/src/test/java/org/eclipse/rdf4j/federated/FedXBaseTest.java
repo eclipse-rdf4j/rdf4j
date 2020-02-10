@@ -14,9 +14,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -64,7 +67,11 @@ public abstract class FedXBaseTest {
 		log = LoggerFactory.getLogger(FedXBaseTest.class);
 	}
 
+	protected static final String EXAMPLE_NAMESPACE = "http://example.org/";
+
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	protected String defaultNamespace = EXAMPLE_NAMESPACE;
 
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
@@ -124,6 +131,10 @@ public abstract class FedXBaseTest {
 
 		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(readQueryString(queryFile));
 		String expectedQueryPlan = readResourceAsString(expectedPlanFile);
+		assertQueryPlanEquals(expectedQueryPlan, actualQueryPlan);
+	}
+
+	protected void assertQueryPlanEquals(String expectedQueryPlan, String actualQueryPlan) {
 
 		// make sure the comparison works cross operating system
 		expectedQueryPlan = expectedQueryPlan.replace("\r\n", "\n");
@@ -132,7 +143,29 @@ public abstract class FedXBaseTest {
 		actualQueryPlan = actualQueryPlan.replace("sparql_localhost:18080_repositories_", "");
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
+	}
 
+	protected void assertContainsAll(List<BindingSet> res, String bindingName, Set<Value> expected) {
+		Assertions.assertEquals(expected,
+				res.stream().map(bs -> bs.getValue(bindingName)).collect(Collectors.toSet()));
+		Assertions.assertEquals(expected.size(), res.size());
+	}
+
+	protected Literal l(String value) {
+		return SimpleValueFactory.getInstance().createLiteral(value);
+	}
+
+	/**
+	 * 
+	 * @param localName
+	 * @return the IRI in the instance's {@link #defaultNamespace}
+	 */
+	protected IRI iri(String localName) {
+		return iri(defaultNamespace, localName);
+	}
+
+	protected IRI iri(String namespace, String localName) {
+		return vf.createIRI(namespace, localName);
 	}
 
 	/**

@@ -28,17 +28,17 @@ public class ReadOnlyWriteStrategy implements WriteStrategy {
 
 	@Override
 	public void begin() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
+		// no-op
 	}
 
 	@Override
 	public void commit() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
+		// no-op
 	}
 
 	@Override
 	public void rollback() throws RepositoryException {
-		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
+		// no-op
 	}
 
 	@Override

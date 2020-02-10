@@ -169,13 +169,10 @@ public class FedXFactory {
 	/**
 	 * Configure the FedX base directory at federation construction time.
 	 * 
-	 * @param fedxBaseDir the existing fedx base directory
+	 * @param fedxBaseDir the fedx base directory
 	 * @return the {@link FedXFactory} instance
 	 */
 	public FedXFactory withFedXBaseDir(File fedxBaseDir) {
-		if (!fedxBaseDir.isDirectory()) {
-			throw new IllegalArgumentException("Base directory does not exist: " + fedxBaseDir);
-		}
 		this.fedxBaseDir = fedxBaseDir;
 		return this;
 	}

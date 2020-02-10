@@ -36,18 +36,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Test that Sail correctly supports claimed isolation levels.
+ * Test that the Repository correctly supports claimed isolation levels.
  * 
  * @author James Leigh
  */
-public class SailIsolationLevelTest {
+public class IsolationLevelTest {
 
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);
+	private final Logger logger = LoggerFactory.getLogger(IsolationLevelTest.class);
 
 	/*-----------*
 	 * Variables *
@@ -65,7 +65,7 @@ public class SailIsolationLevelTest {
 
 	@Before
 	public void setUp() throws Exception {
-		store = OptimisticIsolationTest.getEmptyInitializedRepository(SailIsolationLevelTest.class);
+		store = OptimisticIsolationTest.getEmptyInitializedRepository(IsolationLevelTest.class);
 		failed = null;
 	}
 

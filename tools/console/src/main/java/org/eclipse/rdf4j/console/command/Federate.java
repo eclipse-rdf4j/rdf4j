@@ -65,8 +65,7 @@ public class Federate extends ConsoleCommand {
 	/**
 	 * Executes a 'federate' command for the RDF4J Console.
 	 *
-	 * @param parameters the expectations for the tokens in this array are fully documented in
-	 *                   {@link PrintHelp#FEDERATE} .
+	 * @param parameters the expectations for the tokens in this array are fully documented in {@link PrintHelp} .
 	 * @throws java.io.IOException
 	 */
 	@Override

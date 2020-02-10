@@ -1,0 +1,26 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "x"
+         ProjectionElem "label"
+      NJoin
+         ExclusiveArbitraryLengthPath
+            Var (name=_anon_5403df55_e1d4_4b0f_87ce_3abce9d396b5, anonymous)
+            ExclusiveStatement
+               Var (name=_anon_5403df55_e1d4_4b0f_87ce_3abce9d396b5, anonymous)
+               Var (name=_const_4592be07_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOf, anonymous)
+               Var (name=_const_50c92f1a_uri, value=http://xmlns.com/foaf/0.1/Agent, anonymous)
+               StatementSource (id=endpoint1, type=REMOTE)
+            Var (name=_const_50c92f1a_uri, value=http://xmlns.com/foaf/0.1/Agent, anonymous)
+         StatementSourcePattern
+            Var (name=x)
+            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            Var (name=_anon_5403df55_e1d4_4b0f_87ce_3abce9d396b5, anonymous)
+            StatementSource (id=endpoint1, type=REMOTE)
+            StatementSource (id=endpoint2, type=REMOTE)
+         StatementSourcePattern
+            Var (name=x)
+            Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)
+            Var (name=label)
+            StatementSource (id=endpoint1, type=REMOTE)
+            StatementSource (id=endpoint2, type=REMOTE)

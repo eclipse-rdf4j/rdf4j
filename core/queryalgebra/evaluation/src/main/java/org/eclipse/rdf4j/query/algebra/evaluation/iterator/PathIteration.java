@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -63,7 +64,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private ValuePair currentVp;
 
-	private static final String JOINVAR_PREFIX = "intermediate-join-";
+	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
 	public PathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
@@ -103,13 +104,17 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 			while (currentIter.hasNext()) {
 				BindingSet nextElement = currentIter.next();
+				// if it is not a compatible type of BindingSet
+				if (!(nextElement instanceof QueryBindingSet) && !(nextElement instanceof MapBindingSet)) {
+					nextElement = new QueryBindingSet(nextElement);
+				}
 
 				if (!startVarFixed && !endVarFixed && currentVp != null) {
 					Value startValue = currentVp.getStartValue();
 
 					if (startValue != null) {
 						nextElement = new QueryBindingSet(nextElement);
-						((QueryBindingSet) nextElement).addBinding(startVar.getName(), startValue);
+						addBinding(nextElement, startVar.getName(), startValue);
 					}
 				}
 
@@ -120,7 +125,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
 				} else if (startVarFixed && endVarFixed && currentLength == 2) {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "-" + this.hashCode());
+					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
 				} else {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
 					v2 = getVarValue(endVar, endVarFixed, nextElement);
@@ -149,10 +154,10 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 								addToQueue(valueQueue, vp);
 							}
 							if (!nextElement.hasBinding(startVar.getName())) {
-								((QueryBindingSet) nextElement).addBinding(startVar.getName(), v1);
+								addBinding(nextElement, startVar.getName(), v1);
 							}
 							if (!nextElement.hasBinding(endVar.getName())) {
-								((QueryBindingSet) nextElement).addBinding(endVar.getName(), v2);
+								addBinding(nextElement, endVar.getName(), v2);
 							}
 							return nextElement;
 						} else {
@@ -169,10 +174,10 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 							addToQueue(valueQueue, vp);
 						}
 						if (!nextElement.hasBinding(startVar.getName())) {
-							((QueryBindingSet) nextElement).addBinding(startVar.getName(), v1);
+							addBinding(nextElement, startVar.getName(), v1);
 						}
 						if (!nextElement.hasBinding(endVar.getName())) {
-							((QueryBindingSet) nextElement).addBinding(endVar.getName(), v2);
+							addBinding(nextElement, endVar.getName(), v2);
 						}
 						return nextElement;
 					}
@@ -187,6 +192,16 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			unreportedValues.clear();
 			valueQueue.clear();
 			return null;
+		}
+	}
+
+	private void addBinding(BindingSet bs, String name, Value value) {
+		if (bs instanceof QueryBindingSet) {
+			((QueryBindingSet) bs).addBinding(name, value);
+		} else if (bs instanceof MapBindingSet) {
+			((MapBindingSet) bs).addBinding(name, value);
+		} else {
+			throw new IllegalStateException("Unexpected BindingSet implementation: " + bs.getClass());
 		}
 	}
 
@@ -252,7 +267,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -269,7 +284,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
 					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
 					startReplacement.setAnonymous(false);
 					endReplacement.setAnonymous(false);

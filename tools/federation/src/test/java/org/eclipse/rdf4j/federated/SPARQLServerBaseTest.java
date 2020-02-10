@@ -148,8 +148,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 	protected List<Endpoint> prepareTest(List<String> sparqlEndpointData) throws Exception {
 
-		// clear federation and cache
-		federationContext().getCache().clear();
+		// clear federation
 		federationContext().getManager().removeAll();
 
 		// prepare the test endpoints (i.e. load data)

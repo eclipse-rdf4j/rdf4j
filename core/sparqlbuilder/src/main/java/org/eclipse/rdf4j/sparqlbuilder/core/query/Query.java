@@ -215,10 +215,12 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	}
 
 	/**
-	 * A shortcut. Each call to this method returns a new {@link RdfBlankNode.LabeledBlankNode} that is unique (i.e.,
-	 * has a unique alias) to this query instance.
+	 * A shortcut. Each call to this method returns a new
+	 * {@link org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode RdfBlankNode.LabeledBlankNode} that is
+	 * unique (i.e., has a unique alias) to this query instance.
 	 *
-	 * @return a {@link RdfBlankNode.LabeledBlankNode} object that is unique to this query instance
+	 * @return a {@link org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode RdfBlankNode.LabeledBlankNode}
+	 *         object that is unique to this query instance
 	 */
 	public RdfBlankNode.LabeledBlankNode bNode() {
 		return Rdf.bNode("b" + ++bnodeCount);

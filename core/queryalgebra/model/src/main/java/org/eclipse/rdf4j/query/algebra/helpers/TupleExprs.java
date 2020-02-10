@@ -80,7 +80,7 @@ public class TupleExprs {
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
 	 *         otherwise.
-	 * @deprecated since 2.0. Use {@link TupleExprs#containsSubQuery(TupleExpr)} instead.
+	 * @deprecated since 2.0. Use {@link #containsSubquery(TupleExpr)} instead.
 	 */
 	@Deprecated
 	public static boolean containsProjection(TupleExpr t) {
@@ -169,7 +169,7 @@ public class TupleExprs {
 	/**
 	 * Verifies if the supplied expression is a FILTER (NOT) EXISTS operation
 	 * 
-	 * @param rightArg a tuple expression
+	 * @param expr a tuple expression
 	 * @return true if the supplied expression is a FILTER (NOT) EXISTS operation, false otherwise.
 	 */
 	public static boolean isFilterExistsFunction(TupleExpr expr) {

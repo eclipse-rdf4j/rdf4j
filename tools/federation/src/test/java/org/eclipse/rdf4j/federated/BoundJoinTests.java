@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -20,8 +18,6 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testSimpleUnion() throws Exception {
 		/* test a simple bound join */
-		fedxRule.setConfig(
-				fedxConfig -> fedxConfig.withSparqlEvaluationStrategy(SparqlFederationEvalStrategy.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 		execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false);
 	}
@@ -29,9 +25,6 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testSimpleValues() throws Exception {
 		/* test with VALUES clause based bound join */
-		fedxRule.setConfig(
-				fedxConfig -> fedxConfig
-						.withSparqlEvaluationStrategy(SparqlFederationEvalStrategyWithValues.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 		execute("/tests/boundjoin/query01.rq", "/tests/boundjoin/query01.srx", false);
 	}
@@ -39,8 +32,6 @@ public class BoundJoinTests extends SPARQLBaseTest {
 	@Test
 	public void testBoundJoin_FailingEndpoint() throws Exception {
 		/* test a simple bound join */
-		fedxRule.setConfig(
-				fedxConfig -> fedxConfig.withSparqlEvaluationStrategy(SparqlFederationEvalStrategy.class));
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 
 		repoSettings(2).setFailAfter(5);

@@ -55,7 +55,7 @@ public interface EvaluationStrategyFactory {
 	 * 
 	 * @param dataset              the DataSet to evaluate queries against.
 	 * @param tripleSource         the TripleSource to evaluate queries against.
-	 * @param EvaluationStatistics the store evaluation statistics to use for query optimization.
+	 * @param evaluationStatistics the store evaluation statistics to use for query optimization.
 	 * @return an EvaluationStrategy.
 	 */
 	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,

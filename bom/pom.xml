@@ -1,26 +1,18 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>3.1.0-SNAPSHOT</version>
+		<version>3.2.0-SNAPSHOT</version>
 	</parent>
-
 	<artifactId>rdf4j-bom</artifactId>
 	<packaging>pom</packaging>
-
 	<name>RDF4J BOM</name>
 	<description>RDF4J Bill of Materials (BOM)</description>
-
 	<dependencyManagement>
 		<dependencies>
-
 			<!-- Core modules -->
-
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-http-client</artifactId>
@@ -31,7 +23,6 @@
 				<artifactId>rdf4j-http-protocol</artifactId>
 				<version>${project.version}</version>
 			</dependency>
-
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-model</artifactId>
@@ -292,9 +283,7 @@
 				<artifactId>rdf4j-util</artifactId>
 				<version>${project.version}</version>
 			</dependency>
-
 			<!-- tool modules -->
-
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-config</artifactId>
@@ -322,9 +311,7 @@
 				<version>${project.version}</version>
 				<type>war</type>
 			</dependency>
-
 			<!-- umbrella modules -->
-
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-runtime-osgi</artifactId>
@@ -348,9 +335,7 @@
 				<version>${project.version}</version>
 				<type>pom</type>
 			</dependency>
-
 			<!-- reusable test suites -->
-
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-geosparql-testsuite</artifactId>
