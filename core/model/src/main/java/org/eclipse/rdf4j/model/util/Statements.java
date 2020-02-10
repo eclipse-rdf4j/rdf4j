@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -28,6 +30,16 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * @author Jeen Broekstra
  */
 public class Statements {
+
+	/**
+	 * A {@link Function} that maps {@link Triple} to {@link org.eclipse.rdf4j.model.BNode} consistently. Multiple
+	 * invocations for the same {@link Triple} will return the same {@link org.eclipse.rdf4j.model.BNode}.
+	 *
+	 * The current implementation creates a {@link org.eclipse.rdf4j.model.BNode} by encoding the string representation
+	 * of the {@link Triple} using base64 URL-safe encoding.
+	 */
+	public static Function<Triple, Resource> TRIPLE_BNODE_MAPPER = (t) -> SimpleValueFactory.getInstance()
+			.createBNode(Base64.getUrlEncoder().encodeToString(t.stringValue().getBytes(StandardCharsets.UTF_8)));
 
 	/**
 	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
@@ -151,7 +163,7 @@ public class Statements {
 	 * @param consumer the {@link Consumer} function for the produced statements.
 	 */
 	public static void convertRDFStarToReification(ValueFactory vf, Statement st, Consumer<Statement> consumer) {
-		convertRDFStarToReification(vf, (t) -> vf.createBNode(), st, consumer);
+		convertRDFStarToReification(vf, TRIPLE_BNODE_MAPPER, st, consumer);
 	}
 
 	/**
@@ -161,7 +173,8 @@ public class Statements {
 	 * The supplied value factory is used to create all new statements.
 	 * <p>
 	 * The supplied mapper function maps a {@link Triple} to a {@link Resource} and is used to create the ID of the RDF
-	 * reification statement corresponding to the converted triple.
+	 * reification statement corresponding to the converted triple. The function must return the same value for
+	 * identical triples in order to produce consistent results between invocations. See {@link #TRIPLE_BNODE_MAPPER}.
 	 *
 	 * @param vf              the {@link ValueFactory} to use for creating statements.
 	 * @param reifiedIdMapper the mapper {@link Function} from {@link Triple} to {@link Resource}.

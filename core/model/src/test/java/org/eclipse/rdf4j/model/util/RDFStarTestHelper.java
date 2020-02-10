@@ -36,7 +36,9 @@ public class RDFStarTestHelper {
 	public static Model createRDFStarModel() {
 		Model rdfStarModel = new LinkedHashModel();
 		Statements.create(VF, IRI_1, IRI_2, IRI_3, rdfStarModel, GRAPH_NULL);
+		// The same triple repeated twice
 		Statements.create(VF, IRI_1, IRI_2, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
+		Statements.create(VF, IRI_1, IRI_3, VF.createTriple(IRI_4, IRI_5, LITERAL_1), rdfStarModel, GRAPH_1);
 		Statements.create(VF, VF.createTriple(IRI_5, IRI_6, IRI_4), IRI_3, BNODE_1, rdfStarModel, GRAPH_2);
 		Statements.create(VF, VF.createTriple(VF.createTriple(IRI_1, IRI_2, LITERAL_2),
 				IRI_3, VF.createTriple(IRI_4, IRI_5, IRI_6)),
@@ -54,6 +56,14 @@ public class RDFStarTestHelper {
 		// maps iri1 iri2 <<iri4 iri5 "literal1">> to reification
 		BNode t1 = VF.createBNode();
 		Statements.create(VF, IRI_1, IRI_2, t1, reifiedModel, GRAPH_1);
+		Statements.create(VF, t1, RDF.TYPE, RDF.STATEMENT, reifiedModel, GRAPH_1);
+		Statements.create(VF, t1, RDF.SUBJECT, IRI_4, reifiedModel, GRAPH_1);
+		Statements.create(VF, t1, RDF.PREDICATE, IRI_5, reifiedModel, GRAPH_1);
+		Statements.create(VF, t1, RDF.OBJECT, LITERAL_1, reifiedModel, GRAPH_1);
+
+		// maps iri1 iri2 <<iri4 iri5 "literal1">> to reification
+		// same triple/reification statements as previous entry
+		Statements.create(VF, IRI_1, IRI_3, t1, reifiedModel, GRAPH_1);
 		Statements.create(VF, t1, RDF.TYPE, RDF.STATEMENT, reifiedModel, GRAPH_1);
 		Statements.create(VF, t1, RDF.SUBJECT, IRI_4, reifiedModel, GRAPH_1);
 		Statements.create(VF, t1, RDF.PREDICATE, IRI_5, reifiedModel, GRAPH_1);
