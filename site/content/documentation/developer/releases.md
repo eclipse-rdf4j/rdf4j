@@ -166,35 +166,19 @@ RDF4J has four separate announcements:
 3. the [RDF4J.org website](http://rdf4j.org/wp-admin/edit.php), and
 4. the [rdf4j-user mailing list](https://groups.google.com/forum/#!forum/rdf4j-users).
 
-## Building and uploading Maven artifacts
+## Building and uploading the release
 
-We use the [Eclipse RDF4J Jenkins CI instance](https://ci.eclipse.org/rdf4j) to build and deploy new releases to the Central Repository.
-To do this, log in to Jenkins, and start the job named `rdf4j-client-deploy-release-ossrh-central`.
-The job will ask for the github release tag as an input parameters, e.g. '2.2.1'. It will automatically start deployment jobs for the `rdf4j-storage`, `rdf4j-tools`, and `rdf4j-testsuite` subprojects, in the correct sequence.
+We use the [Eclipse RDF4J Jenkins CI instance](https://ci.eclipse.org/rdf4j) to build and deploy new releases to the Central Repository, as well as building and deploying the SDK archive and the onejar to the Eclipse download mirrors.
 
-These jobs will automatically check out the release tag, build the project, and upload all artifacts to [OSS Sonatype](https://oss.sonatype.org/).
-After successful upload, it will also automatically invoke synchronization with the Central Repository.
-Note that after successful completion, the artifacts may not be available on the Central Repository for several hours.
+To do this, log in to Jenkins, and start the job named `rdf4j-deploy-release-sdk`.
+The job will ask for the github release tag as an input parameters, e.g. '2.2.1'. It will automatically check out the release tag, build the project, and upload the SDK zip file and the onejar to the Eclipse download mirrors. 
 
-## Building and uploading SDK and onejar
-
-The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . The archives need to be built locally, and uploaded manually, via secure FTP.
-
-## Building the SDK and onejar
-
-1. Check out the release tag of [rdf4j](https://github.com/eclipse/rdf4j)
-2. From the root directory, execute the following:
-
-   `mvn -Passembly clean install -DskipTests`
-
-3. Once this completes, the SDK and onejar can be found in `assembly/target`.
-4. Verify that the SDK is complete by inspecting its contents (in particular, check that javadoc is included).
-
-## Uploading the SDK and onejar
-
-1. SFTP to `build.eclipse.org`. You will need to provide your eclipse username and password.
-2. Go to remote directory `/home/data/httpd/download.eclipse.org/rdf4j`.
-3. Upload the SDK and onejar archives to this directory (NB we currently only distribute the SDK zip file, not the tar.gz file)
+After successful completion, it will kick off a second job:
+`rdf4j-deploy-release-ossrh`. This job will build all Maven artifacts and
+upload them to [OSS Sonatype](https://oss.sonatype.org/).  After successful
+upload, it will also automatically invoke synchronization with the Central
+Repository.  Note that after successful completion, the artifacts may not be
+available on the Central Repository for several hours.
 
 # Minor and Major releases
 
