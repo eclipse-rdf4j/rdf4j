@@ -15,49 +15,6 @@ increment_version() {
 
 
 echo ""
-echo "Part of this script connects to the Eclipse build server over sftp to upload the onejar file."
-echo "You need to provide your username and password for this to work."
-echo "You may need to 'apt-get install expect'."
-printf "Username: "
-read username
-printf "Password: "
-read -s password
-echo ""
-echo ""
-echo "Connecting to SFTP server using terminal automation."
-
-./sftp-test.expect $username $password
-RET=$?
-if [ $RET -eq 91 ]
-then
-  echo "Could not connect to server!"
-  exit 1
-fi
-
-if [ $RET -eq 92 ]
-then
-  echo "Wrong username or password!"
-  exit 1
-fi
-
-if [ $RET -eq 93 ]
-then
-  echo "Expected path was not found on this server!"
-  exit 1
-fi
-
-
-
-if [ $RET -eq 0 ]
-then
-  echo "Username and password are correct"
-else
-  echo "Unknown error connecting to sftp server"
-  exit 1
-fi
-
-
-echo ""
 echo "This script will stop if an unhandled error occurs";
 echo "Do not change any files in this directory while the script is running!"
 set -e -o pipefail
@@ -157,7 +114,7 @@ git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
 echo "You need to tell jenkins to start the release process."
-echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
+echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
 echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -214,29 +171,6 @@ echo "When you have created the PR you can press any key to continue. It's ok to
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout $MVN_VERSION_RELEASE
-
-echo "";
-echo "SDK and onejar build takes several minutes, this is the last step and the script will complete by itself when you continue."
-read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
-
-# build aggregate javadoc, SDK, and onejar
-# run clean install first, because otherwise the javadoc generation will fail due to missing dependency
-mvn clean install -DskipTests
-mvn -Passembly install -DskipTests
-
-echo "Starting automated upload with sftp. Timeout is set to 1 hour!"
-
-./sftp-onejar-upload.expect $username $password $MVN_VERSION_RELEASE
-
-echo "";
-echo "Upload complete";
-echo "";
-
-
-git checkout master
-mvn clean install -DskipTests
-mvn -Passembly install -DskipTests
-
 
 echo "DONE!"
 
