@@ -51,23 +51,6 @@ public class EvaluationStatisticsTest {
 	}
 
 	@Test
-	public void temp() {
-
-		ExtensibleStoreImplForTests extensibleStoreImplForTests = new ExtensibleStoreImplForTests();
-
-		SailRepository sailRepository = new SailRepository(extensibleStoreImplForTests);
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-			connection.begin();
-			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
-			connection.commit();
-		}
-
-		sailRepository.shutDown();
-	}
-
-	@Test
 	public void hllTest() {
 
 		Statement statement = SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);

@@ -23,7 +23,6 @@ public class ExtensibleStoreImplForTests
 	protected synchronized void initializeInternal() throws SailException {
 		namespaceStore = new SimpleMemoryNamespaceStore();
 		dataStructure = new NaiveHashSetDataStructure();
-		dataStructureInferred = new NaiveHashSetDataStructure();
 		super.initializeInternal();
 	}
 

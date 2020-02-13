@@ -1,3 +1,10 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
 import com.google.common.hash.HashFunction;
@@ -23,13 +30,13 @@ import java.util.stream.Stream;
 public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 	private static final int QUEUE_LIMIT = 128;
-	private static final int ONE_DIMENSION_INDEX_SIZE = 1024;
+	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
 
 	ConcurrentLinkedQueue<StatemetQueueItem> queue = new ConcurrentLinkedQueue<StatemetQueueItem>();
 
 	AtomicInteger queueSize = new AtomicInteger();
 
-	private final HashFunction hashFunction = Hashing.murmur3_128();
+	private final HashFunction HASH_FUNCTION = Hashing.murmur3_128();
 
 	private final HyperLogLogCollector EMPTY_HLL = HyperLogLogCollector.makeLatestCollector();
 
@@ -57,14 +64,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
-
-//		Stream.of(subjectIndex, predicateIndex, objectIndex, contextIndex,
-//			subjectIndex_removed, predicateIndex_removed, objectIndex_removed, contextIndex_removed)
-//			.forEach(index -> {
-//				for (int i = 0; i < index.length; i++) {
-//					index[i] = HyperLogLogCollector.makeLatestCollector();
-//				}
-//			});
 
 		Stream.of(subjectPredicateIndex, predicateObjectIndex, subjectPredicateIndex_removed,
 				predicateObjectIndex_removed).forEach(index -> {
@@ -173,16 +172,18 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private double getHllCardinality(Map<Integer, HyperLogLogCollector> index,
 			Map<Integer, HyperLogLogCollector> index_removed, Value value) {
 
-		return index.getOrDefault(Math.abs(value.hashCode() % ONE_DIMENSION_INDEX_SIZE), EMPTY_HLL)
-				.estimateCardinality()
-				- index_removed.getOrDefault(Math.abs(value.hashCode() % ONE_DIMENSION_INDEX_SIZE), EMPTY_HLL)
-						.estimateCardinality();
+		int indexIntoMap = Math.abs(value.hashCode() % SINGLE_DIMENSION_INDEX_SIZE);
+
+		double cardinalityAdded = index.getOrDefault(indexIntoMap, EMPTY_HLL).estimateCardinality();
+		double cardinalityRemoved = index_removed.getOrDefault(indexIntoMap, EMPTY_HLL).estimateCardinality();
+
+		return cardinalityAdded - cardinalityRemoved;
 	}
 
 	@Override
 	public void add(Statement statement, boolean inferred) {
 
-		queue.add(new StatemetQueueItem(statement, inferred, true));
+		queue.add(new StatemetQueueItem(statement, inferred, StatemetQueueItem.Type.added));
 
 		int size = queueSize.incrementAndGet();
 		if (size > QUEUE_LIMIT && queueThread == null) {
@@ -200,29 +201,22 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						StatemetQueueItem poll = queue.poll();
 						queueSize.decrementAndGet();
 						Statement statement = poll.statement;
-						byte[] statementHash = hashFunction.hashString(statement.toString(), StandardCharsets.UTF_8)
+						byte[] statementHash = HASH_FUNCTION
+								.hashString(statement.toString(), StandardCharsets.UTF_8)
 								.asBytes();
 
-						if (poll.added) {
+						if (poll.type == StatemetQueueItem.Type.added) {
 
-							size.add(statementHash);
+							handleStatement(statement, statementHash, size, subjectIndex, predicateIndex, objectIndex,
+									subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
 
-							int subjectHash = statement.getSubject().hashCode();
-							int predicateHash = statement.getPredicate().hashCode();
-							int objectHash = statement.getObject().hashCode();
+						} else { // removed
 
-							indexOneValue(statementHash, subjectIndex, subjectHash);
-							indexOneValue(statementHash, predicateIndex, predicateHash);
-							indexOneValue(statementHash, objectIndex, objectHash);
+							assert poll.type == StatemetQueueItem.Type.removed;
 
-							indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
-							indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
-
-							if (statement.getContext() == null) {
-								defaultContext.add(statementHash);
-							} else {
-								indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());
-							}
+							handleStatement(statement, statementHash, size_removed, subjectIndex_removed,
+									predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
+									predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
 
 						}
 
@@ -246,15 +240,44 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	class StatemetQueueItem {
+	private void handleStatement(Statement statement, byte[] statementHash, HyperLogLogCollector size,
+			Map<Integer, HyperLogLogCollector> subjectIndex, Map<Integer, HyperLogLogCollector> predicateIndex,
+			Map<Integer, HyperLogLogCollector> objectIndex, HyperLogLogCollector[][] subjectPredicateIndex,
+			HyperLogLogCollector[][] predicateObjectIndex, HyperLogLogCollector defaultContext,
+			Map<Integer, HyperLogLogCollector> contextIndex) {
+		size.add(statementHash);
+		int subjectHash = statement.getSubject().hashCode();
+		int predicateHash = statement.getPredicate().hashCode();
+		int objectHash = statement.getObject().hashCode();
+
+		indexOneValue(statementHash, subjectIndex, subjectHash);
+		indexOneValue(statementHash, predicateIndex, predicateHash);
+		indexOneValue(statementHash, objectIndex, objectHash);
+
+		indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
+		indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
+
+		if (statement.getContext() == null) {
+			defaultContext.add(statementHash);
+		} else {
+			indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());
+		}
+	}
+
+	static class StatemetQueueItem {
 		Statement statement;
 		boolean inferred;
-		boolean added;
+		Type type;
 
-		public StatemetQueueItem(Statement statement, boolean inferred, boolean added) {
+		public StatemetQueueItem(Statement statement, boolean inferred, Type type) {
 			this.statement = statement;
 			this.inferred = inferred;
-			this.added = added;
+			this.type = type;
+		}
+
+		enum Type {
+			added,
+			removed;
 		}
 	}
 
@@ -264,7 +287,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	private void indexOneValue(byte[] statementHash, Map<Integer, HyperLogLogCollector> index, int indexHash) {
-		index.compute(Math.abs(indexHash % ONE_DIMENSION_INDEX_SIZE), (key, val) -> {
+		index.compute(Math.abs(indexHash % SINGLE_DIMENSION_INDEX_SIZE), (key, val) -> {
 			if (val == null) {
 				val = HyperLogLogCollector.makeLatestCollector();
 			}
@@ -275,24 +298,12 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	@Override
 	public void remove(Statement statement, boolean inferred) {
-		byte[] statementHash = hashFunction.hashString(statement.toString(), StandardCharsets.UTF_8).asBytes();
 
-		size_removed.add(statementHash);
-		int subjectHash = statement.getSubject().hashCode();
-		int predicateHash = statement.getPredicate().hashCode();
-		int objectHash = statement.getObject().hashCode();
+		queue.add(new StatemetQueueItem(statement, inferred, StatemetQueueItem.Type.removed));
 
-		indexOneValue(statementHash, subjectIndex_removed, subjectHash);
-		indexOneValue(statementHash, predicateIndex_removed, predicateHash);
-		indexOneValue(statementHash, objectIndex_removed, objectHash);
-
-		indexTwoValues(statementHash, subjectPredicateIndex_removed, subjectHash, predicateHash);
-		indexTwoValues(statementHash, predicateObjectIndex_removed, predicateHash, objectHash);
-
-		if (statement.getContext() == null) {
-			defaultContext_removed.add(statementHash);
-		} else {
-			indexOneValue(statementHash, contextIndex_removed, statement.getContext().hashCode());
+		int size = queueSize.incrementAndGet();
+		if (size > QUEUE_LIMIT && queueThread == null) {
+			startQueueThread();
 		}
 	}
 

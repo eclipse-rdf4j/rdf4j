@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyF
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +59,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	protected N namespaceStore;
 
 	protected T dataStructure;
-	protected T dataStructureInferred;
 
 	final boolean cacheEnabled;
 
@@ -84,15 +85,13 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 
 		DataStructureInterface dataStructure = Objects.requireNonNull(this.dataStructure);
-		DataStructureInterface dataStructureInferred = Objects.requireNonNull(this.dataStructureInferred);
 
 		if (cacheEnabled) {
 			dataStructure = new ReadCache(dataStructure);
-			dataStructureInferred = new ReadCache(dataStructureInferred);
 		}
 
-		sailStore = new ExtensibleSailStore(dataStructure, dataStructureInferred,
-				Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType());
+		sailStore = new ExtensibleSailStore(dataStructure,
+				Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType(), getExtensibleStatementHelper());
 
 		sailStore.init();
 		namespaceStore.init();
@@ -146,13 +145,17 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		sailStore.close();
 		sailStore = null;
 		dataStructure = null;
-		dataStructureInferred = null;
 		namespaceStore = null;
 	}
 
 	// override this method to change which evaluation statistics to use
 	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
 		return EvaluationStatisticsEnum.dynamic;
+	}
+
+	public ExtensibleStatementHelper getExtensibleStatementHelper() {
+		return ExtensibleStatementHelper.getDefaultImpl();
+
 	}
 
 }

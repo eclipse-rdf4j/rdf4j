@@ -15,9 +15,10 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.DynamicStatistics;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
-import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStisticsWrapper;
-import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsWrapper;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -28,19 +29,19 @@ public class ExtensibleSailStore implements SailStore {
 	private ExtensibleSailSource sailSourceInferred;
 	private ExtensibleEvaluationStatistics evaluationStatistics;
 
-	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsType) {
-		evaluationStatistics = evaluationStatisticsType.getInstance(this);
+	public ExtensibleSailStore(DataStructureInterface dataStructure,
+			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
+			ExtensibleStatementHelper extensibleStatementHelper) {
+		evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
 
 		if (evaluationStatistics instanceof DynamicStatistics) {
-			dataStructure = new EvaluationStisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics,
+			dataStructure = new EvaluationStatisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics,
 					false);
-			dataStructureInferred = new EvaluationStisticsWrapper(dataStructureInferred,
-					(DynamicStatistics) evaluationStatistics, true);
 		}
 
-		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
-		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
+		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, false, extensibleStatementHelper);
+		sailSourceInferred = new ExtensibleSailSource(dataStructure, namespaceStore, true, extensibleStatementHelper);
+
 	}
 
 	@Override

@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.client.Client;
@@ -71,7 +72,6 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		clientProvider = new SingletonClientProvider(hostname, port, clusterName);
 
 		dataStructure = new ElasticsearchDataStructure(clientProvider, index);
-		dataStructureInferred = new ElasticsearchDataStructure(clientProvider, index + "_inferred");
 		namespaceStore = new ElasticsearchNamespaceStore(clientProvider, index + "_namespaces");
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
@@ -89,7 +89,6 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		this.clientProvider = new UnclosableClientProvider(clientPool);
 
 		dataStructure = new ElasticsearchDataStructure(this.clientProvider, index);
-		dataStructureInferred = new ElasticsearchDataStructure(this.clientProvider, index + "_inferred");
 		namespaceStore = new ElasticsearchNamespaceStore(this.clientProvider, index + "_namespaces");
 
 	}
@@ -228,7 +227,6 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	public void setElasticsearchScrollTimeout(int timeout) {
 		dataStructure.setElasticsearchScrollTimeout(timeout);
-		dataStructureInferred.setElasticsearchScrollTimeout(timeout);
 	}
 
 	@Override
@@ -259,6 +257,10 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	public void setElasticsearchBulkSize(int size) {
 		dataStructure.setElasticsearchBulkSize(size);
-		dataStructureInferred.setElasticsearchBulkSize(size);
+	}
+
+	@Override
+	public ExtensibleStatementHelper getExtensibleStatementHelper() {
+		return ElasticsearchValueFactory.getInstance();
 	}
 }
