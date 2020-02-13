@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -102,11 +103,13 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -262,6 +265,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return evaluate((ArbitraryLengthPath) expr, bindings);
 		} else if (expr instanceof BindingSetAssignment) {
 			return evaluate((BindingSetAssignment) expr, bindings);
+		} else if (expr instanceof TripleRef) {
+			return evaluate((TripleRef) expr, bindings);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -1033,6 +1038,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return evaluate((If) expr, bindings);
 		} else if (expr instanceof ListMemberOperator) {
 			return evaluate((ListMemberOperator) expr, bindings);
+		} else if (expr instanceof ValueExprTripleRef) {
+			return evaluate((ValueExprTripleRef) expr, bindings);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -1098,6 +1105,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			} else {
 				return tripleSource.getValueFactory().createLiteral(literal.getLabel());
 			}
+		} else if (argValue instanceof Triple) {
+			return tripleSource.getValueFactory().createLiteral(argValue.toString());
 		} else {
 			throw new ValueExprEvaluationException();
 		}
@@ -1795,6 +1804,34 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			}
 		}
 		return Long.MAX_VALUE;
+	}
+
+	public Value evaluate(ValueExprTripleRef node, BindingSet bindings)
+			throws ValueExprEvaluationException, QueryEvaluationException {
+		Value subj = evaluate(node.getSubjectVar(), bindings);
+		if (subj == null || !(subj instanceof Resource))
+			throw new ValueExprEvaluationException("no subject value");
+		Value pred = evaluate(node.getPredicateVar(), bindings);
+		if (pred == null || !(pred instanceof IRI))
+			throw new ValueExprEvaluationException("no predicate value");
+		Value obj = evaluate(node.getObjectVar(), bindings);
+		if (obj == null)
+			throw new ValueExprEvaluationException("no object value");
+		return tripleSource.getValueFactory().createTriple((Resource) subj, (IRI) pred, obj);
+
+	}
+
+	/**
+	 * evaluates a TripleRef node returning bindingsets from the matched Triple nodes in the dataset (or explore
+	 * standart reification)
+	 * 
+	 * @param ref      to evaluate
+	 * @param bindings with the solutions
+	 * @return iteration over the solutions
+	 */
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref, BindingSet bindings) {
+		// not supported
+		return new EmptyIteration<BindingSet, QueryEvaluationException>();
 	}
 
 }
