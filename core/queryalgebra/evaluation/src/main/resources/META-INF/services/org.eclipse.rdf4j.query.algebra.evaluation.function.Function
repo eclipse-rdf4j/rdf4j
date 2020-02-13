@@ -53,3 +53,8 @@ org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedByteCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedIntCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast
+org.eclipse.rdf4j.query.algebra.evaluation.function.triple.IsTripleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.triple.StatementFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleSubjectFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TriplePredicateFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleObjectFunction

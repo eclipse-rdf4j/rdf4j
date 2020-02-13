@@ -59,117 +59,248 @@ public interface SyntaxTreeBuilderTreeConstants {
 	public int JJTBLANKNODEPROPERTYLIST = 47;
 	public int JJTCOLLECTION = 48;
 	public int JJTVAR = 49;
-	public int JJTOR = 50;
-	public int JJTAND = 51;
-	public int JJTCOMPARE = 52;
-	public int JJTINFIX = 53;
-	public int JJTMATH = 54;
-	public int JJTNOT = 55;
-	public int JJTNUMERICLITERAL = 56;
-	public int JJTCOUNT = 57;
-	public int JJTSUM = 58;
-	public int JJTMIN = 59;
-	public int JJTMAX = 60;
-	public int JJTAVG = 61;
-	public int JJTSAMPLE = 62;
-	public int JJTGROUPCONCAT = 63;
-	public int JJTMD5 = 64;
-	public int JJTSHA1 = 65;
-	public int JJTSHA224 = 66;
-	public int JJTSHA256 = 67;
-	public int JJTSHA384 = 68;
-	public int JJTSHA512 = 69;
-	public int JJTNOW = 70;
-	public int JJTYEAR = 71;
-	public int JJTMONTH = 72;
-	public int JJTDAY = 73;
-	public int JJTHOURS = 74;
-	public int JJTMINUTES = 75;
-	public int JJTSECONDS = 76;
-	public int JJTTIMEZONE = 77;
-	public int JJTTZ = 78;
-	public int JJTRAND = 79;
-	public int JJTABS = 80;
-	public int JJTCEIL = 81;
-	public int JJTFLOOR = 82;
-	public int JJTROUND = 83;
-	public int JJTSUBSTR = 84;
-	public int JJTSTRLEN = 85;
-	public int JJTUPPERCASE = 86;
-	public int JJTLOWERCASE = 87;
-	public int JJTSTRSTARTS = 88;
-	public int JJTSTRENDS = 89;
-	public int JJTSTRBEFORE = 90;
-	public int JJTSTRAFTER = 91;
-	public int JJTREPLACE = 92;
-	public int JJTCONCAT = 93;
-	public int JJTCONTAINS = 94;
-	public int JJTENCODEFORURI = 95;
-	public int JJTIF = 96;
-	public int JJTIN = 97;
-	public int JJTNOTIN = 98;
-	public int JJTCOALESCE = 99;
-	public int JJTSTR = 100;
-	public int JJTLANG = 101;
-	public int JJTLANGMATCHES = 102;
-	public int JJTDATATYPE = 103;
-	public int JJTBOUND = 104;
-	public int JJTSAMETERM = 105;
-	public int JJTISIRI = 106;
-	public int JJTISBLANK = 107;
-	public int JJTISLITERAL = 108;
-	public int JJTISNUMERIC = 109;
-	public int JJTBNODEFUNC = 110;
-	public int JJTIRIFUNC = 111;
-	public int JJTSTRDT = 112;
-	public int JJTSTRLANG = 113;
-	public int JJTUUID = 114;
-	public int JJTSTRUUID = 115;
-	public int JJTBIND = 116;
-	public int JJTREGEXEXPRESSION = 117;
-	public int JJTEXISTSFUNC = 118;
-	public int JJTNOTEXISTSFUNC = 119;
-	public int JJTRDFLITERAL = 120;
-	public int JJTTRUE = 121;
-	public int JJTFALSE = 122;
-	public int JJTSTRING = 123;
-	public int JJTQNAME = 124;
-	public int JJTBLANKNODE = 125;
-	public int JJTGRAPHREFALL = 126;
-	public int JJTGRAPHORDEFAULT = 127;
-	public int JJTUNPARSEDQUADDATABLOCK = 128;
-	public int JJTQUADSNOTTRIPLES = 129;
-	public int JJTLOAD = 130;
-	public int JJTCLEAR = 131;
-	public int JJTDROP = 132;
-	public int JJTADD = 133;
-	public int JJTMOVE = 134;
-	public int JJTCOPY = 135;
-	public int JJTCREATE = 136;
-	public int JJTINSERTDATA = 137;
-	public int JJTDELETEDATA = 138;
-	public int JJTDELETEWHERE = 139;
-	public int JJTDELETECLAUSE = 140;
-	public int JJTINSERTCLAUSE = 141;
-	public int JJTMODIFY = 142;
+	public int JJTTRIPLEREF = 50;
+	public int JJTCONSTTRIPLEREF = 51;
+	public int JJTOR = 52;
+	public int JJTAND = 53;
+	public int JJTCOMPARE = 54;
+	public int JJTINFIX = 55;
+	public int JJTMATH = 56;
+	public int JJTNOT = 57;
+	public int JJTNUMERICLITERAL = 58;
+	public int JJTCOUNT = 59;
+	public int JJTSUM = 60;
+	public int JJTMIN = 61;
+	public int JJTMAX = 62;
+	public int JJTAVG = 63;
+	public int JJTSAMPLE = 64;
+	public int JJTGROUPCONCAT = 65;
+	public int JJTMD5 = 66;
+	public int JJTSHA1 = 67;
+	public int JJTSHA224 = 68;
+	public int JJTSHA256 = 69;
+	public int JJTSHA384 = 70;
+	public int JJTSHA512 = 71;
+	public int JJTNOW = 72;
+	public int JJTYEAR = 73;
+	public int JJTMONTH = 74;
+	public int JJTDAY = 75;
+	public int JJTHOURS = 76;
+	public int JJTMINUTES = 77;
+	public int JJTSECONDS = 78;
+	public int JJTTIMEZONE = 79;
+	public int JJTTZ = 80;
+	public int JJTRAND = 81;
+	public int JJTABS = 82;
+	public int JJTCEIL = 83;
+	public int JJTFLOOR = 84;
+	public int JJTROUND = 85;
+	public int JJTSUBSTR = 86;
+	public int JJTSTRLEN = 87;
+	public int JJTUPPERCASE = 88;
+	public int JJTLOWERCASE = 89;
+	public int JJTSTRSTARTS = 90;
+	public int JJTSTRENDS = 91;
+	public int JJTSTRBEFORE = 92;
+	public int JJTSTRAFTER = 93;
+	public int JJTREPLACE = 94;
+	public int JJTCONCAT = 95;
+	public int JJTCONTAINS = 96;
+	public int JJTENCODEFORURI = 97;
+	public int JJTIF = 98;
+	public int JJTIN = 99;
+	public int JJTNOTIN = 100;
+	public int JJTCOALESCE = 101;
+	public int JJTSTR = 102;
+	public int JJTLANG = 103;
+	public int JJTLANGMATCHES = 104;
+	public int JJTDATATYPE = 105;
+	public int JJTBOUND = 106;
+	public int JJTSAMETERM = 107;
+	public int JJTISIRI = 108;
+	public int JJTISBLANK = 109;
+	public int JJTISLITERAL = 110;
+	public int JJTISNUMERIC = 111;
+	public int JJTBNODEFUNC = 112;
+	public int JJTIRIFUNC = 113;
+	public int JJTSTRDT = 114;
+	public int JJTSTRLANG = 115;
+	public int JJTUUID = 116;
+	public int JJTSTRUUID = 117;
+	public int JJTBIND = 118;
+	public int JJTREGEXEXPRESSION = 119;
+	public int JJTEXISTSFUNC = 120;
+	public int JJTNOTEXISTSFUNC = 121;
+	public int JJTRDFLITERAL = 122;
+	public int JJTTRUE = 123;
+	public int JJTFALSE = 124;
+	public int JJTSTRING = 125;
+	public int JJTQNAME = 126;
+	public int JJTBLANKNODE = 127;
+	public int JJTGRAPHREFALL = 128;
+	public int JJTGRAPHORDEFAULT = 129;
+	public int JJTUNPARSEDQUADDATABLOCK = 130;
+	public int JJTQUADSNOTTRIPLES = 131;
+	public int JJTLOAD = 132;
+	public int JJTCLEAR = 133;
+	public int JJTDROP = 134;
+	public int JJTADD = 135;
+	public int JJTMOVE = 136;
+	public int JJTCOPY = 137;
+	public int JJTCREATE = 138;
+	public int JJTINSERTDATA = 139;
+	public int JJTDELETEDATA = 140;
+	public int JJTDELETEWHERE = 141;
+	public int JJTDELETECLAUSE = 142;
+	public int JJTINSERTCLAUSE = 143;
+	public int JJTMODIFY = 144;
 
-	public String[] jjtNodeName = { "UpdateSequence", "UpdateContainer", "QueryContainer", "void", "BaseDecl",
-			"PrefixDecl", "SelectQuery", "Select", "ProjectionElem", "ConstructQuery", "Construct", "DescribeQuery",
-			"Describe", "AskQuery", "DatasetClause", "WhereClause", "BindingsClause", "InlineData", "BindingSet",
-			"BindingValue", "GroupClause", "OrderClause", "GroupCondition", "HavingClause", "OrderCondition", "Limit",
-			"Offset", "GraphPatternGroup", "BasicGraphPattern", "OptionalGraphPattern", "GraphGraphPattern",
-			"UnionGraphPattern", "MinusGraphPattern", "ServiceGraphPattern", "Constraint", "FunctionCall",
-			"TriplesSameSubject", "PropertyList", "ObjectList", "TriplesSameSubjectPath", "PropertyListPath",
-			"PathAlternative", "PathSequence", "PathElt", "IRI", "PathOneInPropertySet", "PathMod",
-			"BlankNodePropertyList", "Collection", "Var", "Or", "And", "Compare", "Infix", "Math", "Not",
-			"NumericLiteral", "Count", "Sum", "Min", "Max", "Avg", "Sample", "GroupConcat", "MD5", "SHA1", "SHA224",
-			"SHA256", "SHA384", "SHA512", "Now", "Year", "Month", "Day", "Hours", "Minutes", "Seconds", "Timezone",
-			"Tz", "Rand", "Abs", "Ceil", "Floor", "Round", "Substr", "StrLen", "UpperCase", "LowerCase", "StrStarts",
-			"StrEnds", "StrBefore", "StrAfter", "Replace", "Concat", "Contains", "EncodeForURI", "If", "In", "NotIn",
-			"Coalesce", "Str", "Lang", "LangMatches", "Datatype", "Bound", "SameTerm", "IsIRI", "IsBlank", "IsLiteral",
-			"IsNumeric", "BNodeFunc", "IRIFunc", "StrDt", "StrLang", "UUID", "STRUUID", "Bind", "RegexExpression",
-			"ExistsFunc", "NotExistsFunc", "RDFLiteral", "True", "False", "String", "QName", "BlankNode", "GraphRefAll",
-			"GraphOrDefault", "UnparsedQuadDataBlock", "QuadsNotTriples", "Load", "Clear", "Drop", "Add", "Move",
-			"Copy", "Create", "InsertData", "DeleteData", "DeleteWhere", "DeleteClause", "InsertClause", "Modify", };
+	public String[] jjtNodeName = {
+			"UpdateSequence",
+			"UpdateContainer",
+			"QueryContainer",
+			"void",
+			"BaseDecl",
+			"PrefixDecl",
+			"SelectQuery",
+			"Select",
+			"ProjectionElem",
+			"ConstructQuery",
+			"Construct",
+			"DescribeQuery",
+			"Describe",
+			"AskQuery",
+			"DatasetClause",
+			"WhereClause",
+			"BindingsClause",
+			"InlineData",
+			"BindingSet",
+			"BindingValue",
+			"GroupClause",
+			"OrderClause",
+			"GroupCondition",
+			"HavingClause",
+			"OrderCondition",
+			"Limit",
+			"Offset",
+			"GraphPatternGroup",
+			"BasicGraphPattern",
+			"OptionalGraphPattern",
+			"GraphGraphPattern",
+			"UnionGraphPattern",
+			"MinusGraphPattern",
+			"ServiceGraphPattern",
+			"Constraint",
+			"FunctionCall",
+			"TriplesSameSubject",
+			"PropertyList",
+			"ObjectList",
+			"TriplesSameSubjectPath",
+			"PropertyListPath",
+			"PathAlternative",
+			"PathSequence",
+			"PathElt",
+			"IRI",
+			"PathOneInPropertySet",
+			"PathMod",
+			"BlankNodePropertyList",
+			"Collection",
+			"Var",
+			"TripleRef",
+			"ConstTripleRef",
+			"Or",
+			"And",
+			"Compare",
+			"Infix",
+			"Math",
+			"Not",
+			"NumericLiteral",
+			"Count",
+			"Sum",
+			"Min",
+			"Max",
+			"Avg",
+			"Sample",
+			"GroupConcat",
+			"MD5",
+			"SHA1",
+			"SHA224",
+			"SHA256",
+			"SHA384",
+			"SHA512",
+			"Now",
+			"Year",
+			"Month",
+			"Day",
+			"Hours",
+			"Minutes",
+			"Seconds",
+			"Timezone",
+			"Tz",
+			"Rand",
+			"Abs",
+			"Ceil",
+			"Floor",
+			"Round",
+			"Substr",
+			"StrLen",
+			"UpperCase",
+			"LowerCase",
+			"StrStarts",
+			"StrEnds",
+			"StrBefore",
+			"StrAfter",
+			"Replace",
+			"Concat",
+			"Contains",
+			"EncodeForURI",
+			"If",
+			"In",
+			"NotIn",
+			"Coalesce",
+			"Str",
+			"Lang",
+			"LangMatches",
+			"Datatype",
+			"Bound",
+			"SameTerm",
+			"IsIRI",
+			"IsBlank",
+			"IsLiteral",
+			"IsNumeric",
+			"BNodeFunc",
+			"IRIFunc",
+			"StrDt",
+			"StrLang",
+			"UUID",
+			"STRUUID",
+			"Bind",
+			"RegexExpression",
+			"ExistsFunc",
+			"NotExistsFunc",
+			"RDFLiteral",
+			"True",
+			"False",
+			"String",
+			"QName",
+			"BlankNode",
+			"GraphRefAll",
+			"GraphOrDefault",
+			"UnparsedQuadDataBlock",
+			"QuadsNotTriples",
+			"Load",
+			"Clear",
+			"Drop",
+			"Add",
+			"Move",
+			"Copy",
+			"Create",
+			"InsertData",
+			"DeleteData",
+			"DeleteWhere",
+			"DeleteClause",
+			"InsertClause",
+			"Modify",
+	};
 }
-/* JavaCC - OriginalChecksum=2287dd1b17bf4cc92caa09c3b3f30603 (do not edit this line) */
+/* JavaCC - OriginalChecksum=755adc5716b4a4060ac0325ac00e1de4 (do not edit this line) */
