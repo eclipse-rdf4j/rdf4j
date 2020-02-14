@@ -14,6 +14,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleStatement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
+import java.util.Objects;
+
 public class ExtensibleStatementImpl extends SimpleStatement implements ExtensibleStatement {
 
 	private final boolean inferred;
@@ -38,5 +40,25 @@ public class ExtensibleStatementImpl extends SimpleStatement implements Extensib
 	@Override
 	public boolean isInferred() {
 		return inferred;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof ExtensibleStatementImpl)) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		ExtensibleStatementImpl that = (ExtensibleStatementImpl) o;
+		return inferred == that.inferred;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), inferred);
 	}
 }

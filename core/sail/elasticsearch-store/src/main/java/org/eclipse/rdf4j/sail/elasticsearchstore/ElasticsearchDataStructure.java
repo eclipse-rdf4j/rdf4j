@@ -313,7 +313,31 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			int failures = 0;
 
+			List<ExtensibleStatement> explicitStatementOverridesInferred = new ArrayList<>();
+
 			do {
+
+				explicitStatementOverridesInferred
+
+						.stream()
+						.parallel()
+						.map(statement -> {
+
+							Map<String, Object> jsonMap = statementToJsonMap(statement);
+
+							return new BuilderAndSha(sha256(statement), jsonMap);
+
+						})
+						.collect(Collectors.toList())
+						.forEach(builderAndSha -> {
+
+							bulkRequest.add(clientProvider.getClient()
+									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
+									.setSource(builderAndSha.getMap()));
+
+						});
+
+				explicitStatementOverridesInferred.clear();
 
 				workingBuffer
 
@@ -321,44 +345,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 						.parallel()
 						.map(statement -> {
 
-							Map<String, Object> jsonMap = new HashMap<>();
-
-							jsonMap.put("subject", statement.getSubject().stringValue());
-							jsonMap.put("predicate", statement.getPredicate().stringValue());
-							jsonMap.put("object", statement.getObject().stringValue());
-							jsonMap.put("object_Hash", statement.getObject().stringValue().hashCode());
-							jsonMap.put("inferred", statement.isInferred());
-
-							Resource context = statement.getContext();
-
-							if (context != null) {
-								jsonMap.put("context", context.stringValue());
-
-								if (context instanceof IRI) {
-									jsonMap.put("context_IRI", true);
-								} else {
-									jsonMap.put("context_BNode", true);
-								}
-							}
-
-							if (statement.getSubject() instanceof IRI) {
-								jsonMap.put("subject_IRI", true);
-							} else {
-								jsonMap.put("subject_BNode", true);
-							}
-
-							if (statement.getObject() instanceof IRI) {
-								jsonMap.put("object_IRI", true);
-							} else if (statement.getObject() instanceof BNode) {
-								jsonMap.put("object_BNode", true);
-							} else {
-								jsonMap.put("object_Datatype",
-										((Literal) statement.getObject()).getDatatype().stringValue());
-								if (((Literal) statement.getObject()).getLanguage().isPresent()) {
-									jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
-								}
-							}
+							Map<String, Object> jsonMap = statementToJsonMap(statement);
 
 							return new BuilderAndSha(sha256(statement), jsonMap);
 
@@ -369,7 +356,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 							bulkRequest.add(clientProvider.getClient()
 									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
 									.setSource(builderAndSha.getMap())
-									.setOpType(DocWriteRequest.OpType.CREATE));
+									.setOpType(DocWriteRequest.OpType.INDEX));
 
 						});
 
@@ -401,9 +388,20 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 								.filter(statement -> {
 
 									String sha256 = sha256(statement);
-									Statement statementById = getStatementById(sha256);
+									ExtensibleStatement statementById = getStatementById(sha256);
 
-									return !statement.equals(statementById);
+									if (statementById.isInferred() && !statement.isInferred()) {
+
+										explicitStatementOverridesInferred.add(statement);
+
+										return false;
+									} else if (statement.isInferred() && !statementById.isInferred()) {
+										// trying to add an inferred version of an explicit statement
+										return false;
+									} else {
+										return !statement.equals(statementById);
+									}
+
 								})
 
 								// now we only have conflicts
@@ -418,25 +416,30 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 								})
 								.collect(Collectors.toSet());
 
-					} else {
-						failures++;
-						if (failures > 10) {
-							throw new RuntimeException("Elasticsearch has failed " + failures
-									+ " times when adding data, retrying. Message: "
-									+ bulkResponse.buildFailureMessage());
+						if (!workingBuffer.isEmpty()) {
+							failures++;
 						}
 
-						try {
-							Thread.sleep(failures * 100);
-						} catch (InterruptedException ignored) {
-						}
+					} else {
+						failures++;
+					}
+
+					if (failures > 10) {
+						throw new RuntimeException("Elasticsearch has failed " + failures
+								+ " times when adding data, retrying. Message: "
+								+ bulkResponse.buildFailureMessage());
+					}
+
+					try {
+						Thread.sleep(failures * 100);
+					} catch (InterruptedException ignored) {
 					}
 
 				} else {
 					failures = 0;
 				}
 
-			} while (failures > 0);
+			} while (failures > 0 || !explicitStatementOverridesInferred.isEmpty());
 
 			logger.debug("Added {} statements", workingBuffer.size());
 
@@ -451,7 +454,49 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 		}
 	}
 
-	private Statement getStatementById(String sha256) {
+	private Map<String, Object> statementToJsonMap(ExtensibleStatement statement) {
+		Map<String, Object> jsonMap = new HashMap<>();
+
+		jsonMap.put("subject", statement.getSubject().stringValue());
+		jsonMap.put("predicate", statement.getPredicate().stringValue());
+		jsonMap.put("object", statement.getObject().stringValue());
+		jsonMap.put("object_Hash", statement.getObject().stringValue().hashCode());
+		jsonMap.put("inferred", statement.isInferred());
+
+		Resource context = statement.getContext();
+
+		if (context != null) {
+			jsonMap.put("context", context.stringValue());
+
+			if (context instanceof IRI) {
+				jsonMap.put("context_IRI", true);
+			} else {
+				jsonMap.put("context_BNode", true);
+			}
+		}
+
+		if (statement.getSubject() instanceof IRI) {
+			jsonMap.put("subject_IRI", true);
+		} else {
+			jsonMap.put("subject_BNode", true);
+		}
+
+		if (statement.getObject() instanceof IRI) {
+			jsonMap.put("object_IRI", true);
+		} else if (statement.getObject() instanceof BNode) {
+			jsonMap.put("object_BNode", true);
+		} else {
+			jsonMap.put("object_Datatype",
+					((Literal) statement.getObject()).getDatatype().stringValue());
+			if (((Literal) statement.getObject()).getLanguage().isPresent()) {
+				jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
+
+			}
+		}
+		return jsonMap;
+	}
+
+	private ExtensibleStatement getStatementById(String sha256) {
 		Map<String, Object> source = clientProvider.getClient()
 				.prepareGet(index, ELASTICSEARCH_TYPE, sha256)
 				.get()

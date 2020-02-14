@@ -12,6 +12,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.ContextStatement;
 
+import java.util.Objects;
+
 public class ExtensibleContextStatement extends ContextStatement implements ExtensibleStatement {
 	final boolean inferred;
 
@@ -33,4 +35,25 @@ public class ExtensibleContextStatement extends ContextStatement implements Exte
 	public boolean isInferred() {
 		return inferred;
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof ExtensibleContextStatement)) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		ExtensibleContextStatement that = (ExtensibleContextStatement) o;
+		return inferred == that.inferred;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), inferred);
+	}
+
 }
