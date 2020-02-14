@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
@@ -25,10 +24,5 @@ public class ShaclIsolationLevelTest extends SailIsolationLevelTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setIgnoreNoShapesLoadedException(true);
 		return shaclSail;
-	}
-
-	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// see: https://github.com/eclipse/rdf4j/issues/1795
 	}
 }

@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -42,12 +48,6 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
@@ -360,8 +360,6 @@ class MemorySailStore implements SailStore {
 
 		private final Lock txnStLock;
 
-		private volatile int nextSnapshot;
-
 		private volatile Set<StatementPattern> observations;
 
 		private volatile boolean txnLock;
@@ -387,11 +385,15 @@ class MemorySailStore implements SailStore {
 				sb.append("inferred ");
 			}
 			if (txnLock) {
-				sb.append("snapshot ").append(nextSnapshot);
+				sb.append("snapshot ").append(getNextSnapshot());
 			} else {
 				sb.append(super.toString());
 			}
 			return sb.toString();
+		}
+
+		private int getNextSnapshot() {
+			return currentSnapshot + 1;
 		}
 
 		@Override
@@ -415,8 +417,9 @@ class MemorySailStore implements SailStore {
 							MemStatement st = iter.next();
 							int since = st.getSinceSnapshot();
 							int till = st.getTillSnapshot();
-							if (serializable < since && since < nextSnapshot
-									|| serializable < till && till < nextSnapshot) {
+							int next = getNextSnapshot();
+							if (serializable < since && since < next
+									|| serializable < till && till < next) {
 								throw new SailConflictException("Observed State has Changed");
 							}
 						}
@@ -428,7 +431,7 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void flush() throws SailException {
 			if (txnLock) {
-				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
+				currentSnapshot = getNextSnapshot();
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
 				}
@@ -492,10 +495,10 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
-					explicit, nextSnapshot, contexts);) {
+					explicit, getNextSnapshot(), contexts);) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+					st.setTillSnapshot(getNextSnapshot());
 				}
 			}
 		}
@@ -509,25 +512,26 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void deprecate(Statement statement) throws SailException {
 			acquireExclusiveTransactionLock();
+			int next = getNextSnapshot();
 			requireCleanup = true;
 			if (statement instanceof MemStatement) {
-				((MemStatement) statement).setTillSnapshot(nextSnapshot);
+				((MemStatement) statement).setTillSnapshot(next);
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
 				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
 				// original statement that can be retrieved here.
 				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
-				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
-					toDeprecate.setTillSnapshot(nextSnapshot);
+				if (toDeprecate.getTillSnapshot() > next && toDeprecate.isExplicit() == explicit) {
+					toDeprecate.setTillSnapshot(next);
 				}
 			} else {
 				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
 						statement.getSubject(),
 						statement.getPredicate(), statement.getObject(),
-						explicit, nextSnapshot, statement.getContext())) {
+						explicit, next, statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
-						st.setTillSnapshot(nextSnapshot);
+						st.setTillSnapshot(next);
 					}
 				}
 			}
@@ -536,7 +540,6 @@ class MemorySailStore implements SailStore {
 		private void acquireExclusiveTransactionLock() throws SailException {
 			if (!txnLock) {
 				txnLockManager.lock();
-				nextSnapshot = currentSnapshot + 1;
 				txnLock = true;
 			}
 		}
@@ -548,6 +551,8 @@ class MemorySailStore implements SailStore {
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
 			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
 			MemResource memContext = (context == null) ? null : valueFactory.getOrCreateMemResource(context);
+
+			int next = getNextSnapshot();
 
 			if (memSubj.hasStatements() && memPred.hasStatements() && memObj.hasStatements()
 					&& (memContext == null || memContext.hasStatements())) {
@@ -563,9 +568,9 @@ class MemorySailStore implements SailStore {
 
 						if (!st.isExplicit() && explicit) {
 							// Implicit statement is now added explicitly
-							st.setTillSnapshot(nextSnapshot);
-						} else if (!st.isInSnapshot(nextSnapshot)) {
-							st.setSinceSnapshot(nextSnapshot);
+							st.setTillSnapshot(next);
+						} else if (!st.isInSnapshot(next)) {
+							st.setSinceSnapshot(next);
 						} else {
 							// statement already exists
 							return null;
@@ -575,7 +580,7 @@ class MemorySailStore implements SailStore {
 			}
 
 			// completely new statement
-			MemStatement st = new MemStatement(memSubj, memPred, memObj, memContext, explicit, nextSnapshot);
+			MemStatement st = new MemStatement(memSubj, memPred, memObj, memContext, explicit, next);
 			statements.add(st);
 			st.addToComponentLists();
 			return st;
@@ -586,12 +591,13 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			boolean deprecated = false;
 			requireCleanup = true;
+			int next = getNextSnapshot();
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-					explicit, nextSnapshot, contexts)) {
+					explicit, next, contexts)) {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+					st.setTillSnapshot(next);
 				}
 			}
 
