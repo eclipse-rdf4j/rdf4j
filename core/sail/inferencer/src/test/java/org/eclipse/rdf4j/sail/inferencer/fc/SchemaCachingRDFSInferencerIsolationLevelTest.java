@@ -72,7 +72,7 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 						connection.commit();
 						if (statements.size() != triplesInEmptyStore) {
 							if (statements.size() != count * 2 + triplesInEmptyStore) {
-								logger.error("Size was {}. Expected 0 or {}", statements.size(),
+								logger.error("Size was {}. Expected {} or {}", statements.size(), triplesInEmptyStore,
 										count * 2 + triplesInEmptyStore);
 								logger.error("\n[\n\t{}\n]",
 										statements.stream()
