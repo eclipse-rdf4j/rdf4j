@@ -72,9 +72,4 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	public List<String> getBindingNames() throws QueryEvaluationException {
 		return bindingNames;
 	}
-
-	@Override
-	public String toString() {
-		return super.toString();
-	}
 }
