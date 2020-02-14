@@ -89,6 +89,16 @@ public class BasicWriterSettings {
 			"org.eclipse.rdf4j.rio.base_directive", "Serialize base directive", Boolean.TRUE);
 
 	/**
+	 * Boolean setting for writer to determine whether it should convert RDF* statements to standard RDF reification.
+	 * <p>
+	 * Defaults to false
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.convert_rdf_star}.
+	 */
+	public static final RioSetting<Boolean> CONVERT_RDF_STAR_TO_REIFICATION = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.convert_rdf_star", "Convert RDF* statements to RDF reification", Boolean.FALSE);
+
+	/**
 	 * Private default constructor.
 	 */
 	private BasicWriterSettings() {

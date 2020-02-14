@@ -42,6 +42,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private boolean xsdStringToPlainLiteral = true;
 	private boolean escapeUnicode;
+	private boolean convertRDFStar;
 
 	/*--------------*
 	 * Constructors *
@@ -84,6 +85,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		writingStarted = true;
 		xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 		escapeUnicode = getWriterConfig().get(NTriplesWriterSettings.ESCAPE_UNICODE);
+		convertRDFStar = getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	@Override
@@ -107,11 +109,19 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public final void handleStatement(Statement st) throws RDFHandlerException {
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
 
+		if (convertRDFStar) {
+			convertRDFStarToReification(st, this::handleStatementInternal);
+		} else {
+			handleStatementInternal(st);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st) {
 		try {
 			writeValue(st.getSubject());
 			writer.write(" ");
