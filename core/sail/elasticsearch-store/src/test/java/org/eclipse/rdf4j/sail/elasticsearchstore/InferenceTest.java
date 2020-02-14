@@ -171,6 +171,7 @@ public class InferenceTest {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			BNode bNode = vf.createBNode();
+			BNode bNode2 = vf.createBNode();
 
 			connection.begin();
 			connection.add(bNode, RDFS.LABEL, vf.createLiteral("label"), graph1);
@@ -180,6 +181,8 @@ public class InferenceTest {
 
 			connection.begin();
 			connection.add(bNode, RDF.TYPE, RDFS.RESOURCE, graph1);
+			connection.add(bNode2, RDFS.LABEL, vf.createLiteral("label2"), graph1);
+
 			connection.commit();
 
 			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, false));
@@ -188,8 +191,10 @@ public class InferenceTest {
 			connection.remove(bNode, RDFS.LABEL, vf.createLiteral("label"));
 			connection.commit();
 
-			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, false));
+			assertTrue(connection.hasStatement(bNode2, RDFS.LABEL, null, false));
+
 			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, true));
+			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, false));
 			assertFalse(connection.hasStatement(bNode, RDFS.LABEL, null, true));
 
 		}

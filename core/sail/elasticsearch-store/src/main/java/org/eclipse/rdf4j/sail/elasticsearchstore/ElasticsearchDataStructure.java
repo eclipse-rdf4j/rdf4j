@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -309,35 +310,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 				addStatementBuffer = new HashSet<>(Math.min(addStatementBuffer.size(), BUFFER_THRESHOLD));
 			}
 
-			BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
-
 			int failures = 0;
 
-			List<ExtensibleStatement> explicitStatementOverridesInferred = new ArrayList<>();
-
 			do {
-
-				explicitStatementOverridesInferred
-
-						.stream()
-						.parallel()
-						.map(statement -> {
-
-							Map<String, Object> jsonMap = statementToJsonMap(statement);
-
-							return new BuilderAndSha(sha256(statement), jsonMap);
-
-						})
-						.collect(Collectors.toList())
-						.forEach(builderAndSha -> {
-
-							bulkRequest.add(clientProvider.getClient()
-									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
-									.setSource(builderAndSha.getMap()));
-
-						});
-
-				explicitStatementOverridesInferred.clear();
+				BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();
 
 				workingBuffer
 
@@ -356,7 +332,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 							bulkRequest.add(clientProvider.getClient()
 									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())
 									.setSource(builderAndSha.getMap())
-									.setOpType(DocWriteRequest.OpType.INDEX));
+									.setOpType(DocWriteRequest.OpType.CREATE));
 
 						});
 
@@ -364,9 +340,6 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 				if (bulkResponse.hasFailures()) {
 
 					List<BulkItemResponse> bulkItemResponses = getBulkItemResponses(bulkResponse);
-
-					logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
-							bulkResponse.buildFailureMessage());
 
 					boolean onlyVersionConflicts = bulkItemResponses.stream()
 							.filter(BulkItemResponse::isFailed)
@@ -390,18 +363,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 									String sha256 = sha256(statement);
 									ExtensibleStatement statementById = getStatementById(sha256);
 
-									if (statementById.isInferred() && !statement.isInferred()) {
-
-										explicitStatementOverridesInferred.add(statement);
-
-										return false;
-									} else if (statement.isInferred() && !statementById.isInferred()) {
-										// trying to add an inferred version of an explicit statement
-										return false;
-									} else {
-										return !statement.equals(statementById);
-									}
-
+									return !statement.equals(statementById);
 								})
 
 								// now we only have conflicts
@@ -422,6 +384,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 					} else {
 						failures++;
+
+						logger.info("Elasticsearch has failures when adding data, retrying. Message: {}",
+								bulkResponse.buildFailureMessage());
+
 					}
 
 					if (failures > 10) {
@@ -439,7 +405,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 					failures = 0;
 				}
 
-			} while (failures > 0 || !explicitStatementOverridesInferred.isEmpty());
+			} while (failures > 0);
 
 			logger.debug("Added {} statements", workingBuffer.size());
 
@@ -646,14 +612,35 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	}
 
-	String sha256(Statement statement) {
+	String sha256(ExtensibleStatement statement) {
 
-		String originalString = statement.toString();
+		StringBuilder stringBuilder = new StringBuilder();
+
+		Stream
+				.of(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext(),
+						statement.isInferred())
+				.forEachOrdered(o -> {
+
+					if (o instanceof IRI) {
+						stringBuilder.append("IRI<").append(o.toString()).append(">");
+					} else if (o instanceof BNode) {
+						stringBuilder.append("Bnode<").append(o.toString()).append(">");
+					} else if (o instanceof Literal) {
+						stringBuilder.append("Value<").append(o.toString()).append(">");
+					} else if (o instanceof Boolean) {
+						stringBuilder.append("Boolean<").append(o).append(">");
+					} else if (o == null) {
+						stringBuilder.append("Null<>");
+					} else {
+						throw new IllegalStateException();
+					}
+
+				});
 
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
-			byte[] hash = digest.digest(originalString.getBytes(StandardCharsets.UTF_8));
+			byte[] hash = digest.digest(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));
 
 			StringBuilder hexString = new StringBuilder();
 			for (byte b : hash) {

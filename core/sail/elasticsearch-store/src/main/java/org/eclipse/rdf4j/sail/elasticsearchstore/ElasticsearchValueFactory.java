@@ -71,15 +71,6 @@ class ElasticsearchValueFactory extends AbstractValueFactory implements Extensib
 			if (elasticsearchIdStatement.isInferred() == inferred) {
 				return elasticsearchIdStatement;
 			}
-
-			if (statement.getContext() != null) {
-				return createStatement(elasticsearchIdStatement.getElasticsearchId(), statement.getSubject(),
-						statement.getPredicate(), statement.getObject(), statement.getContext(), inferred);
-			}
-
-			return createStatement(elasticsearchIdStatement.getElasticsearchId(), statement.getSubject(),
-					statement.getPredicate(), statement.getObject(), inferred);
-
 		}
 
 		return ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
