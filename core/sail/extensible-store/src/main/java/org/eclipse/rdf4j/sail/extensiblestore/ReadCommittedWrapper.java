@@ -171,6 +171,10 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	@Override
 	public void flushForCommit() {
 
+		if (internalAdded.isEmpty() && internalRemoved.isEmpty()) {
+			return;
+		}
+
 		List<ExtensibleStatement> internalAddedEffective = internalAdded
 				.keySet()
 				.stream()
@@ -183,8 +187,8 @@ class ReadCommittedWrapper implements DataStructureInterface {
 			dataStructure.flushForReading();
 		}
 
-		internalAdded = new HashMap<>(internalAdded.size());
-		internalRemoved = new HashMap<>(internalRemoved.size());
+		internalAdded = new HashMap<>();
+		internalRemoved = new HashMap<>();
 
 	}
 

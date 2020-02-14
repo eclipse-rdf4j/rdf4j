@@ -626,7 +626,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 					} else if (o instanceof BNode) {
 						stringBuilder.append("Bnode<").append(o.toString()).append(">");
 					} else if (o instanceof Literal) {
-						stringBuilder.append("Value<").append(o.toString()).append(">");
+						stringBuilder.append("Literal<").append(o.toString()).append(">");
 					} else if (o instanceof Boolean) {
 						stringBuilder.append("Boolean<").append(o).append(">");
 					} else if (o == null) {
