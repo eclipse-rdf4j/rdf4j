@@ -14,16 +14,9 @@ public class ClientProviderWithDebugStats implements ClientProvider {
 
 	transient private ClientWithStats client;
 	private transient boolean closed = false;
-	private String hostname;
-	private int port;
-	private String clusterName;
 	private long getClientCalls;
 
 	public ClientProviderWithDebugStats(String hostname, int port, String clusterName) {
-		this.hostname = hostname;
-		this.port = port;
-		this.clusterName = clusterName;
-
 		try {
 			Settings settings = Settings.builder().put("cluster.name", clusterName).build();
 			TransportClient client = new PreBuiltTransportClient(settings);
