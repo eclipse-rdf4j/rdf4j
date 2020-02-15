@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,12 +64,14 @@ class ReadCommittedWrapper implements DataStructureInterface {
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, context[0]);
 
+			statement = ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
+
 			ExtensibleStatement extensibleStatement = internalAdded.get(statement);
 
-			if (extensibleStatement != null && extensibleStatement.isInferred() == inferred) {
+			if (extensibleStatement != null) {
 				return new SingletonIteration<>(extensibleStatement);
 			} else {
-				if (internalRemoved.containsKey(statement) && internalRemoved.get(statement).isInferred() == inferred) {
+				if (internalRemoved.containsKey(statement)) {
 					return new EmptyIteration<>();
 				} else {
 					synchronized (dataStructure) {
