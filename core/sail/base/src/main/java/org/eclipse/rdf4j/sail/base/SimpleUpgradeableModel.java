@@ -82,13 +82,17 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (subj == null || pred == null || obj == null || contexts.length == 0) {
+			upgrade();
+		}
+
 		if (model == null) {
-			boolean added = false;
+			boolean removed = false;
 			for (Resource context : contexts) {
-				added = added
+				removed = removed
 						| statements.remove(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
 			}
-			return added;
+			return removed;
 		} else {
 			return model.remove(subj, pred, obj, contexts);
 		}

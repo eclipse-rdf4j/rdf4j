@@ -202,7 +202,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	public synchronized void clear(Resource... contexts) {
 		if (contexts != null && contexts.length == 0) {
 			if (approved != null) {
-				approved.remove(null, null, null);
+				approved.clear();
 			}
 			if (approvedContexts != null) {
 				approvedContexts.clear();
