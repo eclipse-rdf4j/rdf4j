@@ -229,8 +229,9 @@ public class SimpleUpgradeableModel implements Model {
 	public void clear() {
 		if (model == null) {
 			statements.clear();
+		} else {
+			model.clear();
 		}
-		model.clear();
 	}
 
 	@Override
