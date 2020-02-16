@@ -20,10 +20,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
@@ -61,8 +63,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private final SailConnection serializableConnection;
 	private final SailConnection previousStateSerializableConnection;
 
-	MemoryStore addedStatements;
-	MemoryStore removedStatements;
+	Sail addedStatements;
+	Sail removedStatements;
 
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
@@ -143,7 +145,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	private MemoryStore getNewMemorySail() {
+	private Sail getNewMemorySail() {
 		MemoryStore sail = new MemoryStore();
 		sail.setDefaultIsolationLevel(IsolationLevels.NONE);
 		sail.init();
@@ -452,7 +454,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if ((rdfsSubClassOfReasoner == null || rdfsSubClassOfReasoner.isEmpty())
 					&& sail.getBaseSail() instanceof MemoryStore && this.getIsolationLevel() == IsolationLevels.NONE) {
-				addedStatements = (MemoryStore) sail.getBaseSail();
+				addedStatements = sail.getBaseSail();
 				removedStatements = getNewMemorySail();
 			} else {
 				addedStatements = getNewMemorySail();
@@ -477,7 +479,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.parallel()
 					.forEach(set -> {
 						Set<Statement> otherSet;
-						MemoryStore repository;
+						Sail repository;
 						if (set == addedStatementsSet) {
 							otherSet = removedStatementsSet;
 
