@@ -228,7 +228,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(subj, pred, obj, ctx);
 		}
 		if (approved == null) {
-			approved = createEmptyModel();
+			approved = new SimpleUpgradeableModel(this);
 		}
 		approved.add(subj, pred, obj, ctx);
 		if (ctx != null) {
@@ -245,7 +245,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(statement);
 		}
 		if (approved == null) {
-			approved = createEmptyModel();
+			approved = new SimpleUpgradeableModel(this);
 		}
 		approved.add(statement);
 		if (statement.getContext() != null) {
@@ -262,7 +262,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			approved.remove(statement);
 		}
 		if (deprecated == null) {
-			deprecated = createEmptyModel();
+			deprecated = new SimpleUpgradeableModel(this);
 		}
 		deprecated.add(statement);
 		Resource ctx = statement.getContext();
