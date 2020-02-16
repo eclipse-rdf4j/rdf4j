@@ -34,7 +34,6 @@ public class SimpleUpgradeableModel implements Model {
 		this.modelFactory = modelFactory;
 	}
 
-
 	@Override
 	public Model unmodifiable() {
 		throw new UnsupportedOperationException();
@@ -61,20 +60,19 @@ public class SimpleUpgradeableModel implements Model {
 		return model.contains(subj, pred, obj, contexts);
 	}
 
-
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
-				added = added | statements.add(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+				added = added
+						| statements.add(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
 			}
 			return added;
 		} else {
 			return model.add(subj, pred, obj, contexts);
 		}
 	}
-
 
 	@Override
 	public boolean clear(Resource... context) {
@@ -87,7 +85,8 @@ public class SimpleUpgradeableModel implements Model {
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
-				added = added | statements.remove(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+				added = added
+						| statements.remove(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
 			}
 			return added;
 		} else {
@@ -95,13 +94,11 @@ public class SimpleUpgradeableModel implements Model {
 		}
 	}
 
-
 	@Override
 	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		upgrade();
 		return model.filter(subj, pred, obj, contexts);
 	}
-
 
 	@Override
 	public Set<Resource> subjects() {
@@ -176,7 +173,6 @@ public class SimpleUpgradeableModel implements Model {
 		return model.toArray(a);
 	}
 
-
 	@Override
 	public boolean add(Statement statement) {
 		if (model == null) {
@@ -232,7 +228,6 @@ public class SimpleUpgradeableModel implements Model {
 		}
 		model.clear();
 	}
-
 
 	@Override
 	public Set<Namespace> getNamespaces() {
