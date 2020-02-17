@@ -5,6 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.base;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -18,11 +19,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SimpleUpgradeableModel implements Model {
+
+	private static final Resource[] NULL_CTX = new Resource[] { null };
 
 	private Set<Statement> statements = ConcurrentHashMap.newKeySet();
 
@@ -62,6 +66,10 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (contexts.length == 0) {
+			contexts = NULL_CTX;
+		}
+
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
