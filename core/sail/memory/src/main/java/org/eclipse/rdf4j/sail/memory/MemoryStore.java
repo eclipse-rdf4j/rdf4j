@@ -278,6 +278,8 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					SailSink inferred = store.getInferredSailSource().sink(IsolationLevels.NONE);
 					try {
 						new FileIO(store.getValueFactory()).read(dataFile, explicit, inferred);
+						// explicitly increment snapshot to be able to read restored data.
+						((MemorySailStore) store).incrementSnapshot();
 						logger.debug("Data file read successfully");
 					} catch (IOException e) {
 						logger.error("Failed to read data file", e);
