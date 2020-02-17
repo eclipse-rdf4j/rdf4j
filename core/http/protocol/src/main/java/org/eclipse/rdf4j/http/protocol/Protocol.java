@@ -8,9 +8,9 @@
 package org.eclipse.rdf4j.http.protocol;
 
 import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
@@ -418,12 +418,6 @@ public abstract class Protocol {
 	 *         supplied value was <tt>null</tt>.
 	 */
 	public static String encodeValue(Value value) {
-		if (value instanceof BNode) {
-			// SES-2129 special treatment of blank node names to avoid problems with round-tripping.
-			return "_:" + ((BNode) value).getID();
-		}
-
-		// for everything else we just use N-Triples serialization.
 		return NTriplesUtil.toNTriplesString(value);
 	}
 
@@ -503,7 +497,12 @@ public abstract class Protocol {
 		} else if (NULL_PARAM_VALUE.equals(encodedValue)) {
 			return null;
 		} else {
-			return decodeResource(encodedValue, valueFactory);
+			Resource context = decodeResource(encodedValue, valueFactory);
+			// Context must be an IRI or BNode but never Triple
+			if (context instanceof Triple) {
+				throw new IllegalArgumentException("Invalid context value: " + encodedValue);
+			}
+			return context;
 		}
 	}
 
