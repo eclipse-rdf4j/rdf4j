@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.rio.ntriples;
 
 import java.io.IOException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -16,6 +18,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
@@ -27,6 +30,40 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
  * Utility methods for N-Triples encoding/decoding.
  */
 public class NTriplesUtil {
+	/*
+	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
+	 */
+	private static String PN_CHARS_BASE = "[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
+			+ "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD"
+			+ "\uD800\uDC00-\uDB7F\uDFFF]"; // <- \u10000-\uEFFFF expressed with surrogate pairs
+	private static String PN_CHARS_U = "(?:" + PN_CHARS_BASE + "|_)";
+	private static String PN_CHARS = "(?:" + PN_CHARS_U + "|[0-9\u0300-\u036F\u203F-\u2040\u00B7-])";
+	private static String BNODE_ID = "(?:" + PN_CHARS_U + "|[0-9])(?:(?:" + PN_CHARS + "|\\.)*" + PN_CHARS + ")?";
+	private static String BNODE = "_:" + BNODE_ID;
+
+	private static String HEX = "[0-9A-Fa-f]";
+	private static String UCHAR = "(?:\\\\u" + HEX + "{4}|\\\\U" + HEX + "{8})";
+	private static String IRI = "<(?:[^\u0000-\u0020<>\"{}|^`\\\\]|" + UCHAR + ")*>";
+
+	private static String ECHAR = "\\\\[tbnrf\"'\\\\]";
+	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*\"";
+	private static String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
+	private static String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
+
+	private static Pattern BNODE_ID_PATTERN = Pattern.compile(BNODE_ID);
+	private static Pattern BNODE_PATTERN = Pattern.compile(BNODE);
+	private static Pattern IRI_PATTERN = Pattern.compile(IRI);
+	private static Pattern LITERAL_PATTERN = Pattern.compile(LITERAL);
+
+	static class TripleMatch {
+		Triple triple;
+		int length;
+
+		TripleMatch(Triple triple, int length) {
+			this.triple = triple;
+			this.length = length;
+		}
+	}
 
 	/**
 	 * Parses an N-Triples value, creates an object for it using the supplied ValueFactory and returns this object.
@@ -37,7 +74,9 @@ public class NTriplesUtil {
 	 * @throws IllegalArgumentException If the supplied value could not be parsed correctly.
 	 */
 	public static Value parseValue(String nTriplesValue, ValueFactory valueFactory) throws IllegalArgumentException {
-		if (nTriplesValue.startsWith("<")) {
+		if (nTriplesValue.startsWith("<<")) {
+			return parseTriple(nTriplesValue, valueFactory);
+		} else if (nTriplesValue.startsWith("<")) {
 			return parseURI(nTriplesValue, valueFactory);
 		} else if (nTriplesValue.startsWith("_:")) {
 			return parseBNode(nTriplesValue, valueFactory);
@@ -58,7 +97,9 @@ public class NTriplesUtil {
 	 */
 	public static Resource parseResource(String nTriplesResource, ValueFactory valueFactory)
 			throws IllegalArgumentException {
-		if (nTriplesResource.startsWith("<")) {
+		if (nTriplesResource.startsWith("<<")) {
+			return parseTriple(nTriplesResource, valueFactory);
+		} else if (nTriplesResource.startsWith("<")) {
 			return parseURI(nTriplesResource, valueFactory);
 		} else if (nTriplesResource.startsWith("_:")) {
 			return parseBNode(nTriplesResource, valueFactory);
@@ -78,11 +119,13 @@ public class NTriplesUtil {
 	public static IRI parseURI(String nTriplesURI, ValueFactory valueFactory) throws IllegalArgumentException {
 		if (nTriplesURI.startsWith("<") && nTriplesURI.endsWith(">")) {
 			String uri = nTriplesURI.substring(1, nTriplesURI.length() - 1);
-			uri = unescapeString(uri);
-			return valueFactory.createIRI(uri);
-		} else {
-			throw new IllegalArgumentException("Not a legal N-Triples URI: " + nTriplesURI);
+			// Disambiguate with RDF* triple
+			if (!uri.startsWith("<")) {
+				uri = unescapeString(uri);
+				return valueFactory.createIRI(uri);
+			}
 		}
+		throw new IllegalArgumentException("Not a legal N-Triples URI: " + nTriplesURI);
 	}
 
 	/**
@@ -143,6 +186,110 @@ public class NTriplesUtil {
 		}
 
 		throw new IllegalArgumentException("Not a legal N-Triples literal: " + nTriplesLiteral);
+	}
+
+	/**
+	 * Parses an RDF* triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+	 * returns this object.
+	 *
+	 * @param nTriplesTriple The RDF* triple to parse.
+	 * @param valueFactory   The ValueFactory to use for creating the object.
+	 * @return An object representing the parsed triple.
+	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
+	 */
+	public static Triple parseTriple(String nTriplesTriple, ValueFactory valueFactory) {
+		TripleMatch tm = parseTripleInternal(nTriplesTriple, valueFactory);
+		if (tm.length != nTriplesTriple.length()) {
+			throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+		}
+		return tm.triple;
+	}
+
+	/**
+	 * Parses an RDF* triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+	 * returns an object that contains the parsed triple and the length of the parsed text.
+	 *
+	 * @param nTriplesTriple The RDF* triple to parse.
+	 * @param valueFactory   The ValueFactory to use for creating the object.
+	 * @return An object representing the parsed triple and the length of the matching text.
+	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
+	 */
+	private static TripleMatch parseTripleInternal(String nTriplesTriple, ValueFactory valueFactory) {
+		if (nTriplesTriple.startsWith("<<")) {
+			String triple = nTriplesTriple.substring(2);
+			int offset = 2;
+
+			while (triple.length() > 0 && Character.isWhitespace(triple.charAt(0))) {
+				triple = triple.substring(1);
+				++offset;
+			}
+
+			Resource subject = null;
+			IRI predicate = null;
+			Value object = null;
+
+			for (int i = 0; i < 3; i++) {
+				Value v = null;
+				if (triple.startsWith("_:")) {
+					Matcher bNodeMatcher = BNODE_PATTERN.matcher(triple);
+					if (bNodeMatcher.find() && bNodeMatcher.start() == 0) {
+						String value = bNodeMatcher.group();
+						v = NTriplesUtil.parseBNode(value, valueFactory);
+						triple = triple.substring(bNodeMatcher.end());
+						offset += bNodeMatcher.end();
+					}
+				} else if (triple.startsWith("<<")) {
+					TripleMatch tm = parseTripleInternal(triple, valueFactory);
+					triple = triple.substring(tm.length);
+					offset += tm.length;
+					v = tm.triple;
+				} else if (triple.startsWith("<")) {
+					Matcher iriMatcher = IRI_PATTERN.matcher(triple);
+					if (iriMatcher.find() && iriMatcher.start() == 0) {
+						String value = iriMatcher.group();
+						v = NTriplesUtil.parseURI(value, valueFactory);
+						triple = triple.substring(iriMatcher.end());
+						offset += iriMatcher.end();
+					}
+				} else if (triple.startsWith("\"")) {
+					Matcher literalMatcher = LITERAL_PATTERN.matcher(triple);
+					if (literalMatcher.find() && literalMatcher.start() == 0) {
+						String value = literalMatcher.group();
+						v = NTriplesUtil.parseLiteral(value, valueFactory);
+						triple = triple.substring(literalMatcher.end());
+						offset += literalMatcher.end();
+					}
+				}
+
+				if (i == 0) {
+					if (!(v instanceof Resource)) {
+						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+					}
+					subject = (Resource) v;
+				} else if (i == 1) {
+					if (!(v instanceof IRI)) {
+						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+					}
+					predicate = (org.eclipse.rdf4j.model.IRI) v;
+				} else if (i == 2) {
+					if (v == null) {
+						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+					}
+					object = v;
+				}
+				while (triple.length() > 0 && Character.isWhitespace(triple.charAt(0))) {
+					triple = triple.substring(1);
+					++offset;
+				}
+			}
+
+			if (triple.endsWith(">>")) {
+				offset += 2;
+				return new TripleMatch(valueFactory.createTriple(subject, predicate, object), offset);
+			}
+		}
+
+		throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
 	}
 
 	/**
@@ -252,6 +399,8 @@ public class NTriplesUtil {
 			return toNTriplesString((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return toNTriplesString((BNode) resource);
+		} else if (resource instanceof Triple) {
+			return toNTriplesString((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass());
 		}
@@ -269,6 +418,8 @@ public class NTriplesUtil {
 			append((IRI) resource, appendable);
 		} else if (resource instanceof BNode) {
 			append((BNode) resource, appendable);
+		} else if (resource instanceof Triple) {
+			append((Triple) resource, appendable);
 		} else {
 			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass());
 		}
@@ -336,23 +487,12 @@ public class NTriplesUtil {
 		String nextId = bNode.getID();
 		appendable.append("_:");
 
-		if (nextId.isEmpty()) {
+		if (nextId.isEmpty() || !BNODE_ID_PATTERN.matcher(nextId).matches()) {
 			appendable.append("genid");
 			appendable.append(Integer.toHexString(bNode.hashCode()));
 		} else {
-			if (!ASCIIUtil.isLetter(nextId.charAt(0))) {
-				appendable.append("genid");
-				appendable.append(Integer.toHexString(nextId.charAt(0)));
-			}
-
-			for (int i = 0; i < nextId.length(); i++) {
-				if (ASCIIUtil.isLetterOrNumber(nextId.charAt(i))) {
-					appendable.append(nextId.charAt(i));
-				} else {
-					// Append the character as its hex representation
-					appendable.append(Integer.toHexString(nextId.charAt(i)));
-				}
-			}
+			// The regex check via BNODE_ID_PATTERN also covers SES-2129, previous workaround in Protocol.encodeValue()
+			appendable.append(nextId);
 		}
 	}
 
@@ -436,6 +576,35 @@ public class NTriplesUtil {
 				append(lit.getDatatype(), appendable);
 			}
 		}
+	}
+
+	/**
+	 * Creates an N-Triples (non-standard) string for the supplied RDF* triple.
+	 *
+	 * @param triple
+	 * @return string
+	 */
+	public static String toNTriplesString(Triple triple) {
+		return "<<" + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
+				+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + " "
+				+ NTriplesUtil.toNTriplesString(triple.getObject()) + ">>";
+	}
+
+	/**
+	 * Appends the N-Triples (non-standard) representation of the given {@link Triple} to the given {@link Appendable}.
+	 *
+	 * @param triple
+	 * @param appendable
+	 * @throws IOException
+	 */
+	public static void append(Triple triple, Appendable appendable) throws IOException {
+		appendable.append("<<");
+		append(triple.getSubject(), appendable);
+		appendable.append(' ');
+		append(triple.getPredicate(), appendable);
+		appendable.append(' ');
+		append(triple.getObject(), appendable);
+		appendable.append(">>");
 	}
 
 	/**
