@@ -88,6 +88,8 @@ class MemorySailStore implements SailStore {
 	 */
 	private final ReentrantLock txnLockManager = new ReentrantLock();
 
+	private volatile boolean requireCleanup;
+
 	/**
 	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
 	 * {@link #scheduleSnapshotCleanup()}.
@@ -364,8 +366,6 @@ class MemorySailStore implements SailStore {
 
 		private volatile boolean txnLock;
 
-		private boolean requireCleanup;
-
 		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {
 			this.explicit = explicit;
 			if (serializable) {
@@ -430,12 +430,6 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void flush() throws SailException {
-			if (txnLock) {
-				currentSnapshot = getNextSnapshot();
-				if (requireCleanup) {
-					scheduleSnapshotCleanup();
-				}
-			}
 		}
 
 		@Override
@@ -750,6 +744,21 @@ class MemorySailStore implements SailStore {
 					null, null, snapshot);) {
 				return iter.hasNext();
 			}
+		}
+	}
+
+	/**
+	 * increments the current snapshot by 1 and schedules a snapshot cleanup if necessary.
+	 */
+	protected void incrementSnapshot() {
+		txnLockManager.lock();
+		try {
+			currentSnapshot++;
+			if (requireCleanup) {
+				scheduleSnapshotCleanup();
+			}
+		} finally {
+			txnLockManager.unlock();
 		}
 	}
 }

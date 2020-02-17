@@ -7,6 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -38,10 +42,6 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Stream;
 
 /**
  * A {@link SailConnection} implementation that is based on an {@link SailStore} .
@@ -336,9 +336,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	protected void commitInternal() throws SailException {
 		SailSource toCloseInferredBranch = includeInferredBranch;
-		explicitOnlyBranch = null;
-		inferredOnlyBranch = null;
-		includeInferredBranch = null;
+		clearBranchReferences();
 		try {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
@@ -673,6 +671,19 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	public void flushUpdates() throws SailException {
 		flush();
+	}
+
+	protected SailSource getIncludeInferredBranch() {
+		return includeInferredBranch;
+	}
+
+	/**
+	 * Sets internal branch references to {@code null} to allow garbage collection.
+	 */
+	protected void clearBranchReferences() {
+		explicitOnlyBranch = null;
+		inferredOnlyBranch = null;
+		includeInferredBranch = null;
 	}
 
 	@Override

@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
@@ -57,7 +58,20 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void commitInternal() throws SailException {
-		super.commitInternal();
+		SailSource toCloseInferredBranch = getIncludeInferredBranch();
+		clearBranchReferences();
+
+		try {
+			if (toCloseInferredBranch != null) {
+				toCloseInferredBranch.flush();
+			}
+			// after flushing, the MemorySailStore needs its internal snapshot counter updated
+			((MemorySailStore) sail.getSailStore()).incrementSnapshot();
+		} finally {
+			if (toCloseInferredBranch != null) {
+				toCloseInferredBranch.close();
+			}
+		}
 
 		sail.notifySailChanged(sailChangedEvent);
 		sail.scheduleSyncTask();
