@@ -352,7 +352,7 @@ class MemorySailStore implements SailStore {
 				return new MemorySailDataset(explicit);
 			} else {
 				// isolation level NONE
-				return new MemorySailDataset(explicit, currentSnapshot + 1);
+				return new MemorySailDataset(explicit, Integer.MAX_VALUE - 1);
 			}
 		}
 	}
