@@ -512,7 +512,8 @@ class MemorySailStore implements SailStore {
 			requireCleanup = true;
 			if (statement instanceof MemStatement) {
 				MemStatement toDeprecate = (MemStatement) statement;
-				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
+				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
+						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
@@ -520,7 +521,8 @@ class MemorySailStore implements SailStore {
 				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
 				// original statement that can be retrieved here.
 				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
-				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
+				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
+						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else {
