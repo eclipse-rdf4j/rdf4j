@@ -65,8 +65,10 @@ public class MemoryStoreConnection extends SailSourceConnection {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
 			}
-			// after flushing, the MemorySailStore needs its internal snapshot counter updated
-			((MemorySailStore) sail.getSailStore()).incrementSnapshot();
+			if (sailChangedEvent.statementsAdded() || sailChangedEvent.statementsRemoved()) {
+				// after flushing, the MemorySailStore needs its internal snapshot counter updated
+				((MemorySailStore) sail.getSailStore()).incrementSnapshot();
+			}
 		} finally {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.close();
