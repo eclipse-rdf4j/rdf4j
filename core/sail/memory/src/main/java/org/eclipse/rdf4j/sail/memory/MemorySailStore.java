@@ -750,14 +750,9 @@ class MemorySailStore implements SailStore {
 	 * increments the current snapshot by 1 and schedules a snapshot cleanup if necessary.
 	 */
 	protected void incrementSnapshot() {
-		txnLockManager.lock();
-		try {
-			currentSnapshot++;
-			if (requireCleanup) {
-				scheduleSnapshotCleanup();
-			}
-		} finally {
-			txnLockManager.unlock();
+		currentSnapshot++;
+		if (requireCleanup) {
+			scheduleSnapshotCleanup();
 		}
 	}
 }
