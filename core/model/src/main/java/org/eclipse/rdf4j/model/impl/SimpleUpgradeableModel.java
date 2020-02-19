@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.base;
+package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -15,22 +15,33 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The
+ * SimpleUpgradeableModel postpones this cost until such access is actually needed. It stores all data in a
+ * ConcurrentHashMap (Set) and supports adding, retrieving and removing data. The model will upgrade to a full model
+ * (provided by the modelFactory) if more complex operations are called, for instance removing data according to a
+ * pattern (eg. all statements with rdf:type as predicate).
+ *
+ * @author Håvard Mikkelsen Ottestad
+ */
 public class SimpleUpgradeableModel implements Model {
+
+	private static final long serialVersionUID = -9162104133818983614L;
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Set<Statement> statements = ConcurrentHashMap.newKeySet();
+	private Set<Statement> statements = new LinkedHashSet<>();
+	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
-	private Model model = null;
+	volatile private Model model = null;
 
 	private final ModelFactory modelFactory;
 
@@ -40,22 +51,44 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public Model unmodifiable() {
-		throw new UnsupportedOperationException();
+		upgrade();
+		return model.unmodifiable();
+	}
+
+	@Override
+	public Optional<Namespace> getNamespace(String prefix) {
+		for (Namespace nextNamespace : namespaces) {
+			if (prefix.equals(nextNamespace.getPrefix())) {
+				return Optional.of(nextNamespace);
+			}
+		}
+		return Optional.empty();
+	}
+
+	@Override
+	public Set<Namespace> getNamespaces() {
+		return namespaces;
 	}
 
 	@Override
 	public Namespace setNamespace(String prefix, String name) {
-		throw new UnsupportedOperationException();
+		removeNamespace(prefix);
+		Namespace result = new SimpleNamespace(prefix, name);
+		namespaces.add(result);
+		return result;
 	}
 
 	@Override
 	public void setNamespace(Namespace namespace) {
-		throw new UnsupportedOperationException();
+		removeNamespace(namespace.getPrefix());
+		namespaces.add(namespace);
 	}
 
 	@Override
 	public Optional<Namespace> removeNamespace(String prefix) {
-		throw new UnsupportedOperationException();
+		Optional<Namespace> result = getNamespace(prefix);
+		result.ifPresent(namespaces::remove);
+		return result;
 	}
 
 	@Override
@@ -187,6 +220,7 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean add(Statement statement) {
+		Objects.requireNonNull(statement);
 		if (model == null) {
 			return statements.add(statement);
 		}
@@ -195,6 +229,7 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean remove(Object o) {
+		Objects.requireNonNull(o);
 		if (model == null) {
 			return statements.remove(o);
 		}
@@ -203,6 +238,7 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean containsAll(Collection<?> c) {
+		Objects.requireNonNull(c);
 		if (model == null) {
 			return statements.containsAll(c);
 		}
@@ -211,7 +247,9 @@ public class SimpleUpgradeableModel implements Model {
 
 	@Override
 	public boolean addAll(Collection<? extends Statement> c) {
+		Objects.requireNonNull(c);
 		if (model == null) {
+			c.forEach(Objects::requireNonNull);
 			return statements.addAll(c);
 		}
 		return model.addAll(c);
@@ -242,23 +280,50 @@ public class SimpleUpgradeableModel implements Model {
 		}
 	}
 
-	@Override
-	public Set<Namespace> getNamespaces() {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
-		throw new UnsupportedOperationException();
-	}
-
-	synchronized private void upgrade() {
+	private void upgrade() {
 		if (model == null) {
-			Model tempModel = modelFactory.createEmptyModel();
-			tempModel.addAll(statements);
-			statements = null;
-			model = tempModel;
+			synchronized (this) {
+				if (model == null) {
+					Model tempModel = modelFactory.createEmptyModel();
+					tempModel.addAll(statements);
+					statements = null;
+					model = tempModel;
+				}
+			}
 		}
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Set)) {
+			return false;
+		}
+
+		Collection c = (Collection) o;
+		if (c.size() != size()) {
+			return false;
+		}
+
+		return containsAll(c);
+	}
+
+	@Override
+	public int hashCode() {
+		if (model != null) {
+			return model.hashCode();
+		} else {
+			int h = 0;
+			for (Statement obj : this) {
+				if (obj != null) {
+					h += obj.hashCode();
+				}
+			}
+			return h;
+
+		}
+
+	}
 }
