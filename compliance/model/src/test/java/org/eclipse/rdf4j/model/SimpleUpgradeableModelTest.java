@@ -5,24 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.model.impl;
+package org.eclipse.rdf4j.model;
 
-import org.eclipse.rdf4j.model.ModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModel;
 
-import java.io.Serializable;
-
-/**
- * Creates {@link LinkedHashModel}.
- *
- * @author James Leigh
- */
-public class LinkedHashModelFactory implements ModelFactory, Serializable {
-
-	private static final long serialVersionUID = -9152104133818783614L;
+public class SimpleUpgradeableModelTest extends AbstractModelTest {
 
 	@Override
-	public LinkedHashModel createEmptyModel() {
-		return new LinkedHashModel();
+	protected Model getNewModel() {
+		return new SimpleUpgradeableModel(new LinkedHashModelFactory());
 	}
 
 }
