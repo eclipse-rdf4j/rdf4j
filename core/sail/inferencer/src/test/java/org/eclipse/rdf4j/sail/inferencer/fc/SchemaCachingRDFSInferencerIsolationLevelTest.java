@@ -28,8 +28,8 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 		return new SchemaCachingRDFSInferencer(new MemoryStore());
 	}
 
-	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// See: https://github.com/eclipse/rdf4j/issues/1795
-	}
+//	@Override
+//	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+//		// See: https://github.com/eclipse/rdf4j/issues/1795
+//	}
 }

@@ -427,16 +427,18 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void flush() throws SailException {
+
+		}
+
+		@Override
+		public void close() {
 			if (txnLock) {
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
 				}
 			}
-		}
 
-		@Override
-		public void close() {
 			try {
 				boolean toCloseTxnLock = txnLock;
 				txnLock = false;

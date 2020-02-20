@@ -260,13 +260,13 @@ class SailSourceBranch implements SailSource {
 				}
 				flush(prepared);
 				prepared.flush();
-				try {
-					if (prepared != serializable) {
-						prepared.close();
-					}
-				} finally {
-					prepared = null;
-				}
+//				try {
+//					if (prepared != serializable) {
+//						prepared.close();
+//					}
+//				} finally {
+//					prepared = null;
+//				}
 			}
 		} finally {
 			semaphore.unlock();

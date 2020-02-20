@@ -27,8 +27,8 @@ public class ShaclIsolationLevelTest extends SailIsolationLevelTest {
 		return shaclSail;
 	}
 
-	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// see: https://github.com/eclipse/rdf4j/issues/1795
-	}
+//	@Override
+//	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+//		// see: https://github.com/eclipse/rdf4j/issues/1795
+//	}
 }
