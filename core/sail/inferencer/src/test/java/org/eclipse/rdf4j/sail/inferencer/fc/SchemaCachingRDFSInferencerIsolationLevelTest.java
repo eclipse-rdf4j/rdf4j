@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
@@ -73,27 +74,23 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 
 			AtomicBoolean failure = new AtomicBoolean(false);
 
+			CountDownLatch countDownLatch = new CountDownLatch(1);
+
 			Runnable runnable = () -> {
 
 				try (SailConnection connection = store.getConnection()) {
 					while (true) {
 						try {
 
+							countDownLatch.await();
 							connection.begin(isolationLevel);
-							List<Statement> statements = Iterations
-									.asList(connection.getStatements(null, null, null, true));
+							long actualCount = connection.getStatements(null, null, null, true).stream().count();
 							connection.commit();
-							if (statements.size() != triplesInEmptyStore) {
-								if (statements.size() != count * 2 + triplesInEmptyStore) {
-									logger.error("Size was {}. Expected {} or {}", statements.size(),
+							if (actualCount != triplesInEmptyStore) {
+								if (actualCount != count * 2 + triplesInEmptyStore) {
+									logger.error("Size was {}. Expected {} or {}", actualCount,
 											triplesInEmptyStore,
 											count * 2 + triplesInEmptyStore);
-									logger.error("\n[\n\t{}\n]",
-											statements.stream()
-													.map(Object::toString)
-													.reduce((a, b) -> a + " , \n\t" + b)
-													.get());
-
 									failure.set(true);
 								}
 								break;
@@ -101,6 +98,8 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 							}
 						} catch (SailConflictException ignored) {
 							connection.rollback();
+						} catch (InterruptedException e) {
+							e.printStackTrace();
 						}
 
 						Thread.yield();
@@ -118,7 +117,7 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 				for (int i = 0; i < count; i++) {
 					connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i));
 				}
-				logger.debug("Commit");
+				countDownLatch.countDown();
 				connection.commit();
 
 				assertEquals(count, connection.size());

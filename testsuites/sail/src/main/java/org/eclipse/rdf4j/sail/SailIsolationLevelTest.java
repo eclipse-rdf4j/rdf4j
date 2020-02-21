@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -29,6 +30,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -191,7 +194,7 @@ public abstract class SailIsolationLevelTest {
 	@Test
 	public void testLargeTransactionSerializable() throws InterruptedException {
 		if (isSupported(IsolationLevels.SERIALIZABLE)) {
-			testLargeTransaction(IsolationLevels.SERIALIZABLE, 10);
+			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1);
 		} else {
 			logger.warn("Isolation level not supporter.");
 		}
@@ -205,9 +208,17 @@ public abstract class SailIsolationLevelTest {
 
 		IntStream.range(0, iterations).forEach(iteration -> {
 
-			if (store != null) {
-				store.shutDown();
+			store.shutDown();
+
+			File dataDir = store.getDataDir();
+			if (dataDir != null) {
+				try {
+					FileUtils.deleteDirectory(dataDir);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
+
 			store = createSail();
 
 			int count = 1000;
@@ -216,7 +227,7 @@ public abstract class SailIsolationLevelTest {
 				connection.begin();
 				connection.addStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
 				connection.commit();
-				connection.begin(IsolationLevels.NONE);
+				connection.begin();
 				connection.clear();
 				connection.commit();
 			}
