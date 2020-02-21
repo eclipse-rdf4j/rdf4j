@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -47,76 +48,84 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 	 * statements.
 	 */
 	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int iterations) {
 
-		long triplesInEmptyStore;
+		IntStream.range(0, iterations).forEach(iteration -> {
 
-		try (SailConnection connection = store.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.commit();
-
-			triplesInEmptyStore = connection.getStatements(null, null, null, true).stream().count();
-		}
-
-		AtomicBoolean failure = new AtomicBoolean(false);
-
-		Runnable runnable = () -> {
+			int count = 1000;
+			long triplesInEmptyStore;
 
 			try (SailConnection connection = store.getConnection()) {
-				while (true) {
-					try {
+				connection.begin(IsolationLevels.NONE);
+				connection.clear();
+				connection.commit();
 
-						connection.begin(isolationLevel);
-						List<Statement> statements = Iterations
-								.asList(connection.getStatements(null, null, null, true));
-						connection.commit();
-						if (statements.size() != triplesInEmptyStore) {
-							if (statements.size() != count * 2 + triplesInEmptyStore) {
-								logger.error("Size was {}. Expected {} or {}", statements.size(), triplesInEmptyStore,
-										count * 2 + triplesInEmptyStore);
-								logger.error("\n[\n\t{}\n]",
-										statements.stream()
-												.map(Object::toString)
-												.reduce((a, b) -> a + " , \n\t" + b)
-												.get());
+				triplesInEmptyStore = connection.getStatements(null, null, null, true).stream().count();
+			}
 
-								failure.set(true);
+			AtomicBoolean failure = new AtomicBoolean(false);
+
+			Runnable runnable = () -> {
+
+				try (SailConnection connection = store.getConnection()) {
+					while (true) {
+						try {
+
+							connection.begin(isolationLevel);
+							List<Statement> statements = Iterations
+									.asList(connection.getStatements(null, null, null, true));
+							connection.commit();
+							if (statements.size() != triplesInEmptyStore) {
+								if (statements.size() != count * 2 + triplesInEmptyStore) {
+									logger.error("Size was {}. Expected {} or {}", statements.size(),
+											triplesInEmptyStore,
+											count * 2 + triplesInEmptyStore);
+									logger.error("\n[\n\t{}\n]",
+											statements.stream()
+													.map(Object::toString)
+													.reduce((a, b) -> a + " , \n\t" + b)
+													.get());
+
+									failure.set(true);
+								}
+								break;
+
 							}
-							break;
-
+						} catch (SailConflictException ignored) {
+							connection.rollback();
 						}
-					} catch (SailConflictException ignored) {
-						connection.rollback();
+
+						Thread.yield();
 					}
-
-					Thread.yield();
 				}
+			};
+
+			Thread thread = new Thread(runnable);
+			thread.start();
+
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(isolationLevel);
+				for (int i = 0; i < count; i++) {
+					connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i));
+				}
+				logger.debug("Commit");
+				connection.commit();
+
+				assertEquals(count, connection.size());
+
 			}
-		};
 
-		Thread thread = new Thread(runnable);
-		thread.start();
-
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-		try (SailConnection connection = store.getConnection()) {
-			connection.begin(isolationLevel);
-			for (int i = 0; i < count; i++) {
-				connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i));
+			logger.debug("Joining thread");
+			try {
+				thread.join();
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
 			}
-			logger.debug("Commit");
-			connection.commit();
 
-			assertEquals(count, connection.size());
-
-		}
-
-		logger.debug("Joining thread");
-		thread.join();
-
-		assertFalse(failure.get());
-
+			assertFalse(failure.get());
+		});
 	}
 
 }

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -163,7 +164,7 @@ public abstract class SailIsolationLevelTest {
 	@Test
 	public void testLargeTransactionReadCommitted() throws InterruptedException {
 		if (isSupported(IsolationLevels.READ_COMMITTED)) {
-			testLargeTransaction(IsolationLevels.READ_COMMITTED, 1000);
+			testLargeTransaction(IsolationLevels.READ_COMMITTED, 100);
 		} else {
 			logger.warn("Isolation level not supporter.");
 		}
@@ -172,7 +173,7 @@ public abstract class SailIsolationLevelTest {
 	@Test
 	public void testLargeTransactionSnapshot() throws InterruptedException {
 		if (isSupported(IsolationLevels.SNAPSHOT)) {
-			testLargeTransaction(IsolationLevels.SNAPSHOT, 1000);
+			testLargeTransaction(IsolationLevels.SNAPSHOT, 100);
 		} else {
 			logger.warn("Isolation level not supporter.");
 		}
@@ -181,7 +182,7 @@ public abstract class SailIsolationLevelTest {
 	@Test
 	public void testLargeTransactionSnapshotRead() throws InterruptedException {
 		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
-			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 1000);
+			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 100);
 		} else {
 			logger.warn("Isolation level not supporter.");
 		}
@@ -190,7 +191,7 @@ public abstract class SailIsolationLevelTest {
 	@Test
 	public void testLargeTransactionSerializable() throws InterruptedException {
 		if (isSupported(IsolationLevels.SERIALIZABLE)) {
-			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1000);
+			testLargeTransaction(IsolationLevels.SERIALIZABLE, 10);
 		} else {
 			logger.warn("Isolation level not supporter.");
 		}
@@ -200,69 +201,77 @@ public abstract class SailIsolationLevelTest {
 	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
 	 * transaction should see either nothing added or everything added. Nothing in between.
 	 */
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+	public void testLargeTransaction(IsolationLevel isolationLevel, int iterations) {
 
-		try (SailConnection connection = store.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.commit();
-		}
+		IntStream.range(0, iterations).forEach(iteration -> {
 
-		AtomicBoolean failure = new AtomicBoolean(false);
-
-		Runnable runnable = () -> {
+			int count = 1000;
 
 			try (SailConnection connection = store.getConnection()) {
-				while (true) {
-					try {
-						connection.begin(isolationLevel);
-						List<Statement> statements = Iterations
-								.asList(connection.getStatements(null, null, null, false));
-						connection.commit();
-						if (statements.size() != 0) {
-							if (statements.size() != count) {
-								logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
-								logger.error("\n[\n\t{}\n]",
-										statements.stream()
-												.map(Object::toString)
-												.reduce((a, b) -> a + " , \n\t" + b)
-												.get());
+				connection.begin(IsolationLevels.NONE);
+				connection.clear();
+				connection.commit();
+			}
 
-								failure.set(true);
+			AtomicBoolean failure = new AtomicBoolean(false);
+
+			Runnable runnable = () -> {
+
+				try (SailConnection connection = store.getConnection()) {
+					while (true) {
+						try {
+							connection.begin(isolationLevel);
+							List<Statement> statements = Iterations
+									.asList(connection.getStatements(null, null, null, false));
+							connection.commit();
+							if (statements.size() != 0) {
+								if (statements.size() != count) {
+									logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
+									logger.error("\n[\n\t{}\n]",
+											statements.stream()
+													.map(Object::toString)
+													.reduce((a, b) -> a + " , \n\t" + b)
+													.get());
+
+									failure.set(true);
+								}
+								break;
 							}
-							break;
+						} catch (SailConflictException ignored) {
+							connection.rollback();
 						}
-					} catch (SailConflictException ignored) {
-						connection.rollback();
+
+						Thread.yield();
 					}
-
-					Thread.yield();
 				}
+			};
+
+			Thread thread = new Thread(runnable);
+			thread.start();
+
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(isolationLevel);
+				for (int i = 0; i < count; i++) {
+					connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));
+				}
+				logger.debug("Commit");
+				connection.commit();
+
+				assertEquals(count, connection.size());
+
 			}
-		};
 
-		Thread thread = new Thread(runnable);
-		thread.start();
-
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-		try (SailConnection connection = store.getConnection()) {
-			connection.begin(isolationLevel);
-			for (int i = 0; i < count; i++) {
-				connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));
+			logger.debug("Joining thread");
+			try {
+				thread.join();
+			} catch (InterruptedException e) {
+				throw new RuntimeException();
 			}
-			logger.debug("Commit");
-			connection.commit();
 
-			assertEquals(count, connection.size());
-
-		}
-
-		logger.debug("Joining thread");
-		thread.join();
-
-		assertFalse(failure.get());
-
+			assertFalse(failure.get());
+		});
 	}
 
 	/**
