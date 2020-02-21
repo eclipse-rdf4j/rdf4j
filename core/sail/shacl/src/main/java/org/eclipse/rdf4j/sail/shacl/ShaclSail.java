@@ -50,6 +50,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 //@formatter:off
+
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
  * <p>
@@ -131,7 +132,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *  			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
  *  			try {
  *  				connection.commit();
- *  			} catch (RepositoryException exception) {
+ *            } catch (RepositoryException exception) {
  *  				Throwable cause = exception.getCause();
  *  				if (cause instanceof ShaclSailValidationException) {
  *  					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
@@ -139,11 +140,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *  					// use validationReport or validationReportModel to understand validation violations
  *
  *  					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *  				}
+ *                }
  *  				throw exception;
- *  			}
- *  		}
- *  	}
+ *            }
+ *        }
+ *    }
  * }
  * </pre>
  *
@@ -376,6 +377,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
+		if (!initialized.get()) {
+			initialize();
+		}
 
 		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
 				super.getConnection(), super.getConnection(), super.getConnection(),

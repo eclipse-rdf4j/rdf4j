@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -52,10 +53,17 @@ public class SchemaCachingRDFSInferencerIsolationLevelTest extends SailIsolation
 
 		IntStream.range(0, iterations).forEach(iteration -> {
 
+			if (store != null)
+				store.shutDown();
+			store = createSail();
+
 			int count = 1000;
 			long triplesInEmptyStore;
 
 			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+				connection.commit();
 				connection.begin(IsolationLevels.NONE);
 				connection.clear();
 				connection.commit();

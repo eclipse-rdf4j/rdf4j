@@ -58,7 +58,7 @@ public abstract class SailIsolationLevelTest {
 
 	protected Sail store;
 
-	private ValueFactory vf;
+	protected ValueFactory vf;
 
 	private String failedMessage;
 
@@ -205,9 +205,17 @@ public abstract class SailIsolationLevelTest {
 
 		IntStream.range(0, iterations).forEach(iteration -> {
 
+			if (store != null) {
+				store.shutDown();
+			}
+			store = createSail();
+
 			int count = 1000;
 
 			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+				connection.commit();
 				connection.begin(IsolationLevels.NONE);
 				connection.clear();
 				connection.commit();
