@@ -49,7 +49,7 @@ public abstract class SailIsolationLevelTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);
+	protected final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);
 
 	/*-----------*
 	 * Variables *
