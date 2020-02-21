@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -22,6 +23,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author jeen
@@ -201,6 +205,31 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));
 		assertTrue("input triple should be explicitly present",
 				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, false));
+
+	}
+
+	@Test
+	public void addingAndClearing() {
+		long originalNumberOfStatements;
+		try (RepositoryConnection connection = testRepository.getConnection()) {
+			originalNumberOfStatements = connection.getStatements(null, null, null, true).stream().count();
+		}
+
+		try (RepositoryConnection connection = testRepository.getConnection()) {
+			connection.begin(level);
+			connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+			connection.begin(level);
+			connection.clear();
+			connection.commit();
+		}
+
+		try (RepositoryConnection connection = testRepository.getConnection()) {
+			List<Statement> collect = connection.getStatements(null, null, null, true)
+					.stream()
+					.collect(Collectors.toList());
+			assertEquals(originalNumberOfStatements, collect.size());
+		}
 
 	}
 
