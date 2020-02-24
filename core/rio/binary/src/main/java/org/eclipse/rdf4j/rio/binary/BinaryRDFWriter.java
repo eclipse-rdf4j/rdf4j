@@ -66,6 +66,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	public BinaryRDFWriter(OutputStream out, int bufferSize) {
+		super(out);
 		this.out = new DataOutputStream(new BufferedOutputStream(out));
 		this.statementQueue = new ArrayBlockingQueue<>(bufferSize);
 		this.valueFreq = new HashMap<>(3 * bufferSize);

@@ -17,7 +17,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -53,7 +52,9 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the N-Triples document to.
 	 */
 	public NTriplesWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		super(out);
+		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+		this.writingStarted = false;
 	}
 
 	/**

@@ -7,9 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -26,17 +29,29 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Mapping from namespace prefixes to namespace names.
 	 */
-	protected Map<String, String> namespaceTable;
+	protected Map<String, String> namespaceTable = new LinkedHashMap<>();
 
 	/**
 	 * A collection of configuration options for this writer.
 	 */
 	private WriterConfig writerConfig = new WriterConfig();
 
+	private final OutputStream outputStream;
+
 	/**
 	 * Default constructor.
 	 */
 	protected AbstractRDFWriter() {
+		this(null);
+	}
+
+	protected AbstractRDFWriter(OutputStream out) {
+		this.outputStream = out;
+	}
+
+	@Override
+	public Optional<OutputStream> getOutputStream() {
+		return Optional.ofNullable(outputStream);
 	}
 
 	@Override
