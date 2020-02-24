@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
@@ -42,7 +43,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * @author James Leigh
  * @since 2.3
  */
-class ArrangedWriter implements RDFWriter {
+class ArrangedWriter extends AbstractRDFWriter {
 
 	private final static int DEFAULT_QUEUE_SIZE = 100;
 
@@ -112,6 +113,7 @@ class ArrangedWriter implements RDFWriter {
 	}
 
 	public ArrangedWriter(RDFWriter delegate, int size, boolean repeatBlankNodes) {
+		super(delegate.getOutputStream().orElse(null));
 		this.delegate = delegate;
 		this.targetQueueSize = size;
 		this.repeatBlankNodes = repeatBlankNodes;

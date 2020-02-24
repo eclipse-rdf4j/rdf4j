@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
+import java.io.OutputStream;
 import java.util.Collection;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -25,6 +27,13 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * Gets the query result format that this writer uses.
 	 */
 	QueryResultFormat getQueryResultFormat();
+
+	/**
+	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
+	 * 
+	 * @return an optional OutputStream
+	 */
+	Optional<OutputStream> getOutputStream();
 
 	/**
 	 * Handles a namespace prefix declaration. If this is called, it should be called before {@link #startDocument()} to

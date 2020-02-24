@@ -88,6 +88,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	 *--------------*/
 
 	public BinaryQueryResultWriter(OutputStream out) {
+		super(out);
 		this.out = new DataOutputStream(out);
 	}
 

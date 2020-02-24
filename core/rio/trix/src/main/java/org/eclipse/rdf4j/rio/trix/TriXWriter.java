@@ -50,11 +50,11 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private XMLWriter xmlWriter;
 
-	private boolean writingStarted;
+	private boolean writingStarted = false;
 
-	private boolean inActiveContext;
+	private boolean inActiveContext = false;
 
-	private Resource currentContext;
+	private Resource currentContext = null;
 
 	/*--------------*
 	 * Constructors *
@@ -66,7 +66,9 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public TriXWriter(OutputStream out) {
-		this(new XMLWriter(out));
+		super(out);
+		this.xmlWriter = new XMLWriter(out);
+		this.xmlWriter.setPrettyPrint(true);
 	}
 
 	/**
@@ -81,10 +83,6 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	protected TriXWriter(XMLWriter xmlWriter) {
 		this.xmlWriter = xmlWriter;
 		this.xmlWriter.setPrettyPrint(true);
-
-		writingStarted = false;
-		inActiveContext = false;
-		currentContext = null;
 	}
 
 	/*---------*

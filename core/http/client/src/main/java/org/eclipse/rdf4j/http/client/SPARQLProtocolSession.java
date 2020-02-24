@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.http.client;
 import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpEntity;
@@ -80,6 +83,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserRegistry;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -90,6 +94,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
+import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
@@ -688,6 +693,21 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats)
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
+
+				// Check if we can pass through to the output stream directly
+				if (handler instanceof TupleQueryResultWriter) {
+					TupleQueryResultWriter tqrWriter = (TupleQueryResultWriter) handler;
+					if (tqrWriter.getTupleQueryResultFormat().equals(format)) {
+						OutputStream out = tqrWriter.getOutputStream().orElse(null);
+						if (out != null) {
+							InputStream in = response.getEntity().getContent();
+							IOUtils.copy(in, out);
+							return;
+						}
+					}
+				}
+
+				// we need to parse the result and re-serialize.
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
 				parser.setQueryResultHandler(handler);
 				parser.parseQueryResult(response.getEntity().getContent());
@@ -842,6 +862,20 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats)
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
+				// Check if we can pass through to the output stream directly
+				if (handler instanceof RDFWriter) {
+					RDFWriter rdfWriter = (RDFWriter) handler;
+					if (rdfWriter.getRDFFormat().equals(format)) {
+						OutputStream out = rdfWriter.getOutputStream().orElse(null);
+						if (out != null) {
+							InputStream in = response.getEntity().getContent();
+							IOUtils.copy(in, out);
+							return;
+						}
+					}
+				}
+
+				// we need to parse the result and re-serialize.
 				RDFParser parser = Rio.createParser(format, getValueFactory());
 				parser.setParserConfig(getParserConfig());
 				parser.setParseErrorListener(new ParseErrorLogger());

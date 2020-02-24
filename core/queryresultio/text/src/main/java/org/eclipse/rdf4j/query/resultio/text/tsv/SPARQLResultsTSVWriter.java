@@ -49,6 +49,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsTSVWriter(OutputStream out) {
+		super(out);
 		Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		writer = new BufferedWriter(w, 1024);
 	}

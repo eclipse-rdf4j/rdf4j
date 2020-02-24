@@ -54,6 +54,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
+		super(out);
 		this.outputStream = out;
 		this.actualFormat = actualFormat;
 	}

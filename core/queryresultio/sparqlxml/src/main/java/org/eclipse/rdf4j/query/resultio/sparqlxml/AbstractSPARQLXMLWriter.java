@@ -94,7 +94,9 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 *--------------*/
 
 	protected AbstractSPARQLXMLWriter(OutputStream out) {
-		this(new XMLWriter(out));
+		super(out);
+		this.xmlWriter = new XMLWriter(out);
+		this.xmlWriter.setPrettyPrint(true);
 	}
 
 	protected AbstractSPARQLXMLWriter(XMLWriter xmlWriter) {

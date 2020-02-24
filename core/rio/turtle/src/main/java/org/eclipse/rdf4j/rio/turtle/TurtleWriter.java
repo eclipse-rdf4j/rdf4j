@@ -13,7 +13,6 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Deque;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.StringTokenizer;
@@ -62,12 +61,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected ParsedIRI baseIRI;
 	protected IndentingWriter writer;
-	protected boolean writingStarted;
+	protected boolean writingStarted = false;
 
 	/**
 	 * Flag indicating whether the last written statement has been closed.
 	 */
-	protected boolean statementClosed;
+	protected boolean statementClosed = true;
 	protected Resource lastWrittenSubject;
 	protected IRI lastWrittenPredicate;
 
@@ -104,7 +103,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
+		super(out);
+		this.baseIRI = baseIRI;
+		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 	}
 
 	/**
@@ -125,11 +126,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
-		namespaceTable = new LinkedHashMap<>();
-		writingStarted = false;
-		statementClosed = true;
-		lastWrittenSubject = null;
-		lastWrittenPredicate = null;
 	}
 
 	/*---------*
