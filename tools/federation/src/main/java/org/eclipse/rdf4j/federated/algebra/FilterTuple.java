@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated.algebra;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * Expressions implementing this interface can apply some {@link FilterValueExpr} during evaluation.
@@ -61,4 +62,11 @@ public interface FilterTuple {
 	 * @return the free variables of this expression
 	 */
 	public List<String> getFreeVars();
+
+	/**
+	 * Returns bound filter bindings, that need to be added as additional bindings to the final result
+	 * 
+	 * @return the bound filters, or <code>null</code>
+	 */
+	public BindingSet getBoundFilters();
 }
