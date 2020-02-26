@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -204,6 +205,11 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		public void meetOther(QueryModelNode node) {
 
 			if (node instanceof FilterTuple) {
+				if (node instanceof ExclusiveGroup) {
+					// for ExclusiveGroup also visit the children to insert
+					// filter expressions and bound values
+					node.visitChildren(this);
+				}
 				handleFilter((FilterTuple) node, filterExpr);
 			}
 

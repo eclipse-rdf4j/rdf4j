@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -126,6 +125,11 @@ public abstract class FedXStatementPattern extends StatementPattern
 	@Override
 	public FilterValueExpr getFilterExpr() {
 		return filterExpr;
+	}
+
+	@Override
+	public BindingSet getBoundFilters() {
+		return this.boundFilters;
 	}
 
 	@Override

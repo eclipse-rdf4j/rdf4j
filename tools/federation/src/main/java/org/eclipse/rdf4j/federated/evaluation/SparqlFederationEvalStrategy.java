@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinConversionIterat
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GroupedCheckConversionIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
@@ -178,8 +179,15 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {
 			/* no projection vars, e.g. local vars only, can occur in joins */
-			if (tripleSource.hasStatements(group, bindings))
-				return new SingleBindingSetIteration(bindings);
+			if (tripleSource.hasStatements(group, bindings)) {
+				CloseableIteration<BindingSet, QueryEvaluationException> res = new SingleBindingSetIteration(bindings);
+				if (group.getBoundFilters() != null) {
+					// make sure to insert any values from FILTER expressions that are directly
+					// bound in this expression
+					res = new InsertBindingsIteration(res, group.getBoundFilters());
+				}
+				return res;
+			}
 			return new EmptyIteration<>();
 		}
 
