@@ -106,7 +106,7 @@ public class TriGWriter extends TurtleWriter {
 	}
 
 	@Override
-	protected void handleStatementInternal(Statement st) {
+	protected void handleStatementImpl(Statement st) {
 		// If we are pretty-printing, all writing is buffered until endRDF is called
 		if (prettyPrintModel != null) {
 			prettyPrintModel.add(st);

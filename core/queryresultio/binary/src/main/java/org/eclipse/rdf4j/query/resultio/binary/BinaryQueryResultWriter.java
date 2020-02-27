@@ -22,6 +22,7 @@ import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.QUERY_EVALUATION_ERROR;
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.REPEAT_RECORD_MARKER;
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TABLE_END_RECORD_MARKER;
+import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TRIPLE_RECORD_MARKER;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -39,6 +40,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -119,6 +121,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		tupleVariablesFound = true;
 
 		if (!documentStarted) {
@@ -159,7 +163,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (!tupleVariablesFound) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}
@@ -175,14 +179,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 						writeNull();
 					} else if (value.equals(previousBindings.getValue(bindingName))) {
 						writeRepeat();
-					} else if (value instanceof IRI) {
-						writeQName((IRI) value);
-					} else if (value instanceof BNode) {
-						writeBNode((BNode) value);
-					} else if (value instanceof Literal) {
-						writeLiteral((Literal) value);
 					} else {
-						throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
+						writeValue(value);
 					}
 				}
 
@@ -199,6 +197,20 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	private void writeRepeat() throws IOException {
 		out.writeByte(REPEAT_RECORD_MARKER);
+	}
+
+	private void writeValue(Value value) throws IOException {
+		if (value instanceof IRI) {
+			writeQName((IRI) value);
+		} else if (value instanceof BNode) {
+			writeBNode((BNode) value);
+		} else if (value instanceof Literal) {
+			writeLiteral((Literal) value);
+		} else if (value instanceof Triple) {
+			writeTriple((Triple) value);
+		} else {
+			throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
+		}
 	}
 
 	private void writeEmptyRow() throws IOException {
@@ -258,6 +270,13 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		} else {
 			writeQName(datatype);
 		}
+	}
+
+	private void writeTriple(Triple triple) throws IOException {
+		out.writeByte(TRIPLE_RECORD_MARKER);
+		writeValue(triple.getSubject());
+		writeValue(triple.getPredicate());
+		writeValue(triple.getObject());
 	}
 
 	/**

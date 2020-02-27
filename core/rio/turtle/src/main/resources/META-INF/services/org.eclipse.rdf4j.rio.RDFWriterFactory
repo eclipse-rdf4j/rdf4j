@@ -1,1 +1,2 @@
 org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory
+org.eclipse.rdf4j.rio.turtlestar.TurtleStarWriterFactory

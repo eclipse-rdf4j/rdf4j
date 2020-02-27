@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 
 /**
@@ -37,11 +38,9 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected final Writer writer;
-	protected boolean writingStarted;
 
 	private boolean xsdStringToPlainLiteral = true;
 	private boolean escapeUnicode;
-	private boolean convertRDFStar;
 
 	/*--------------*
 	 * Constructors *
@@ -65,7 +64,6 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 */
 	public NTriplesWriter(Writer writer) {
 		this.writer = writer;
-		writingStarted = false;
 	}
 
 	/*---------*
@@ -79,50 +77,29 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RuntimeException("Document writing has already started");
-		}
-
-		writingStarted = true;
+		super.startRDF();
 		xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 		escapeUnicode = getWriterConfig().get(NTriplesWriterSettings.ESCAPE_UNICODE);
-		convertRDFStar = getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) {
+		checkWritingStarted();
 		// N-Triples does not support namespace prefixes.
 	}
 
 	@Override
-	public final void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet been started");
-		}
-
-		if (convertRDFStar) {
-			convertRDFStarToReification(st, this::handleStatementInternal);
-		} else {
-			handleStatementInternal(st);
-		}
-	}
-
-	protected void handleStatementInternal(Statement st) {
+	protected void handleStatementImpl(Statement st) {
 		try {
 			writeValue(st.getSubject());
 			writer.write(" ");
@@ -138,6 +115,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			writer.write("# ");
 			writer.write(comment);

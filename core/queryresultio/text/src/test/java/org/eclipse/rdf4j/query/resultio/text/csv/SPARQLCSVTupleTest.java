@@ -95,7 +95,9 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		assertRegex("a\r\n" + "foo:bar\r\n" + "2.0(E0)?\r\n" + "_:bnode3\r\n" + "''single-quoted string\r\n"
 				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
 				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
-				+ "\"newline at the end \n\"(\r\n)?", out.toString("UTF-8"));
+				+ "\"newline at the end \n\"(\r\n)?"
+				+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
+				out.toString("UTF-8"));
 	}
 
 	@Test

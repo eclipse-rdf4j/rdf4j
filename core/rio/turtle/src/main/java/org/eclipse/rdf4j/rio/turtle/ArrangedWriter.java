@@ -75,8 +75,9 @@ public class ArrangedWriter extends AbstractRDFWriter {
 			return 1;
 		}
 		int cmp = p1.stringValue().compareTo(p2.stringValue());
-		if (cmp != 0)
+		if (cmp != 0) {
 			return cmp;
+		}
 		Value o1 = s1.getObject();
 		Value o2 = s2.getObject();
 		if (o1.equals(o2)) {
@@ -185,7 +186,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	@Override
-	public synchronized void handleStatement(Statement st) throws RDFHandlerException {
+	protected synchronized void handleStatementImpl(Statement st) throws RDFHandlerException {
 		if (targetQueueSize == 0) {
 			delegate.handleStatement(st);
 		} else {
@@ -397,20 +398,26 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 		@Override
 		public boolean equals(Object obj) {
-			if (this == obj)
+			if (this == obj) {
 				return true;
-			if (obj == null)
+			}
+			if (obj == null) {
 				return false;
-			if (getClass() != obj.getClass())
+			}
+			if (getClass() != obj.getClass()) {
 				return false;
+			}
 			SubjectInContext other = (SubjectInContext) obj;
-			if (!subject.equals(other.subject))
+			if (!subject.equals(other.subject)) {
 				return false;
+			}
 			if (context == null) {
-				if (other.context != null)
+				if (other.context != null) {
 					return false;
-			} else if (!context.equals(other.context))
+				}
+			} else if (!context.equals(other.context)) {
 				return false;
+			}
 			return true;
 		}
 	}

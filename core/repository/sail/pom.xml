@@ -47,7 +47,7 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-rio-trigstar</artifactId>
+			<artifactId>rdf4j-rio-trig</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

@@ -48,7 +48,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Resource lastWrittenSubject = null;
 	protected char quote = '"';
 	protected boolean entityQuote = false;
-	protected boolean convertRDFStar;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -96,15 +95,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
-	}
-
-	@Override
-	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RDFHandlerException("Document writing has already started");
-		}
-		writingStarted = true;
-		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	protected void writeHeader() throws IOException {
@@ -158,10 +148,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();
@@ -178,14 +165,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
-			headerWritten = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) {
+		checkWritingStarted();
 		setNamespace(prefix, name);
 	}
 
@@ -225,19 +210,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public final void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet been started");
-		}
-
-		if (convertRDFStar) {
-			convertRDFStarToReification(st, this::handleStatementInternal);
-		} else {
-			handleStatementInternal(st);
-		}
-	}
-
-	protected void handleStatementInternal(Statement st) {
+	protected void handleStatementImpl(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -343,6 +316,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();

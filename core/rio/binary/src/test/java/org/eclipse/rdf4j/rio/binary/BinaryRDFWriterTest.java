@@ -15,6 +15,6 @@ import org.eclipse.rdf4j.rio.RDFWriterTest;
 public class BinaryRDFWriterTest extends RDFWriterTest {
 
 	public BinaryRDFWriterTest() {
-		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory(), true);
+		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory());
 	}
 }

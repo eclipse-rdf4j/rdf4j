@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParseLocationListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 /**
  * Base class for {@link QueryResultParser}s offering common functionality for query result parsers.
@@ -84,6 +85,9 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 
 	@Override
 	public QueryResultParser setQueryResultHandler(QueryResultHandler handler) {
+		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
+			handler = new RDFStarDecodingQueryResultHandler(handler);
+		}
 		this.handler = handler;
 		return this;
 	}

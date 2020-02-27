@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.RDFWriterTest;
 public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 
 	public BinaryRDFWriterBackgroundTest() {
-		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory(), true);
+		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory());
 	}
 
 	@Override

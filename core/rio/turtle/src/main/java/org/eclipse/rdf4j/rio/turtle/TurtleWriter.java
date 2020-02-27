@@ -83,7 +83,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	private Boolean xsdStringToPlainLiteral;
 	private Boolean prettyPrint;
 	private boolean inlineBNodes;
-	private boolean convertRDFStar;
 
 	/*--------------*
 	 * Constructors *
@@ -141,17 +140,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RuntimeException("Document writing has already started");
-		}
-
-		writingStarted = true;
+		super.startRDF();
 
 		try {
 			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);
 			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
-			convertRDFStar = getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 			if (prettyPrint) {
 				writer.setIndentationString("  ");
 			} else {
@@ -179,22 +173,18 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			closePreviousStatement();
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (!namespaceTable.containsKey(name)) {
 				// Namespace not yet mapped to a prefix, try to give it the
@@ -222,11 +212,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 				namespaceTable.put(name, prefix);
 
-				if (writingStarted) {
-					closePreviousStatement();
+				closePreviousStatement();
 
-					writeNamespace(prefix, name);
-				}
+				writeNamespace(prefix, name);
 			}
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
@@ -234,19 +222,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public final void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet been started");
-		}
-
-		if (convertRDFStar) {
-			convertRDFStarToReification(st, this::handleStatementInternal);
-		} else {
-			handleStatementInternal(st);
-		}
-	}
-
-	protected void handleStatementInternal(Statement st) throws RDFHandlerException {
+	protected void handleStatementImpl(Statement st) throws RDFHandlerException {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();
@@ -336,6 +312,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			closePreviousStatement();
 
@@ -526,9 +503,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		// Ideally RDF* triples might be serialized as RDF reification but should that happen automatically
-		// or only when requested via some way? If we do it for Turtle, should we also do it for all other non-RDF*
-		// parsers too?
 		throw new IOException(getRDFFormat().getName() + " does not support RDF* triples");
 	}
 
