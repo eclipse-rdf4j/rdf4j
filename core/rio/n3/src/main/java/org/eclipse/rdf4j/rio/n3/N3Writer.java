@@ -9,26 +9,34 @@ package org.eclipse.rdf4j.rio.n3;
 
 import java.io.OutputStream;
 import java.io.Writer;
+import java.util.Collection;
+import java.util.Collections;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in N3 format. Note: the current implementation
  * simply wraps a {@link TurtleWriter} and writes documents in Turtle format, which is a subset of N3.
  */
-public class N3Writer extends AbstractRDFWriter implements RDFWriter {
+public class N3Writer implements RDFWriter {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
 	private TurtleWriter ttlWriter;
+
+	/**
+	 * A collection of configuration options for this writer.
+	 */
+	private WriterConfig writerConfig = new WriterConfig();
 
 	/*--------------*
 	 * Constructors *
@@ -79,6 +87,28 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.N3;
+	}
+
+	@Override
+	public RDFWriter setWriterConfig(WriterConfig config) {
+		this.writerConfig = config;
+		return this;
+	}
+
+	@Override
+	public WriterConfig getWriterConfig() {
+		return writerConfig;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		return Collections.emptyList();
+	}
+
+	@Override
+	public <T> RDFWriter set(RioSetting<T> setting, T value) {
+		getWriterConfig().set(setting, value);
+		return this;
 	}
 
 	@Override

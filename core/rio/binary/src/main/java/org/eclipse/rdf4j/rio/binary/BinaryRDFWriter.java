@@ -60,10 +60,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private final DataOutputStream out;
 
-	private boolean writingStarted = false;
-
-	private boolean convertRDFStar;
-
 	private byte[] buf;
 
 	public BinaryRDFWriter(OutputStream out) {
@@ -84,28 +80,24 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			writingStarted = true;
-			convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
-			try {
-				out.write(MAGIC_NUMBER);
-				out.writeInt(FORMAT_VERSION);
-			} catch (IOException e) {
-				throw new RDFHandlerException(e);
-			}
+		super.startRDF();
+		try {
+			out.write(MAGIC_NUMBER);
+			out.writeInt(FORMAT_VERSION);
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			while (!statementQueue.isEmpty()) {
 				writeStatement();
 			}
 			out.writeByte(END_OF_DATA);
 			out.flush();
-			writingStarted = false;
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
@@ -113,7 +105,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			out.writeByte(NAMESPACE_DECL);
 			writeString(prefix);
@@ -125,7 +117,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			out.writeByte(COMMENT);
 			writeString(comment);
@@ -135,15 +127,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public final void handleStatement(Statement st) throws RDFHandlerException {
-		if (convertRDFStar) {
-			convertRDFStarToReification(st, this::handleStatementInternal);
-		} else {
-			handleStatementInternal(st);
-		}
-	}
-
-	protected void handleStatementInternal(Statement st) {
+	protected void handleStatementImpl(Statement st) {
 		statementQueue.add(st);
 		incValueFreq(st.getSubject());
 		incValueFreq(st.getPredicate());
@@ -156,7 +140,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		// Process the first statement from the queue
-		startRDF();
 		try {
 			writeStatement();
 		} catch (IOException e) {

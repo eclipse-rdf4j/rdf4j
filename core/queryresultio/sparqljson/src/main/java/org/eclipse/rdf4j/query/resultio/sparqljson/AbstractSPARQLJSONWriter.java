@@ -75,7 +75,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected boolean linksFound = false;
 
-	private final JsonGenerator jg;
+	protected final JsonGenerator jg;
 
 	protected AbstractSPARQLJSONWriter(OutputStream out) {
 		try {
@@ -107,6 +107,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	@Override
 	public void startQueryResult(List<String> columnHeaders) throws TupleQueryResultHandlerException {
+		super.startQueryResult(columnHeaders);
+
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -128,7 +130,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();

@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  */
 public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
 
-	private Writer writer;
+	protected Writer writer;
 
 	private List<String> bindingNames;
 
@@ -55,6 +55,8 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		tupleVariablesFound = true;
 
 		this.bindingNames = bindingNames;
@@ -88,7 +90,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (!tupleVariablesFound) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}
@@ -112,7 +114,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.TSV;
 	}
 

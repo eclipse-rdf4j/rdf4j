@@ -23,8 +23,6 @@
 		<module>rdfxml</module>
 		<module>trix</module>
 		<module>turtle</module>
-		<module>turtlestar</module>
 		<module>trig</module>
-		<module>trigstar</module>
 	</modules>
 </project>

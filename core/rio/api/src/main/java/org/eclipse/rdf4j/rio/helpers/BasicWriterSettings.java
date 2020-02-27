@@ -99,6 +99,21 @@ public class BasicWriterSettings {
 			"org.eclipse.rdf4j.rio.convert_rdf_star", "Convert RDF* statements to RDF reification", Boolean.FALSE);
 
 	/**
+	 * Boolean setting for writer to determine whether it should encode RDF* triple values to RDF-compatible special
+	 * IRIs. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of the N-Triples serialization of
+	 * the RDF* triple value.
+	 * <p>
+	 * Writers that support RDF* natively will ignore this setting and always serialize RDF* triples.
+	 * <p>
+	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.encode_rdf_star}.
+	 */
+	public static final RioSetting<Boolean> ENCODE_RDF_STAR = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.encode_rdf_star",
+			"Encodes RDF* triples to special IRIs for compatibility with RDF", Boolean.TRUE);
+
+	/**
 	 * Private default constructor.
 	 */
 	private BasicWriterSettings() {

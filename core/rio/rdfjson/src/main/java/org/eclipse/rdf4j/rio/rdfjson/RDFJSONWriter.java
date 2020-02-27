@@ -51,8 +51,6 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private Model graph;
 
-	private boolean convertRDFStar;
-
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
@@ -67,6 +65,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (this.writer != null) {
 				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
@@ -104,27 +103,25 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(final String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		// Comments are ignored.
 	}
 
 	@Override
 	public void handleNamespace(final String prefix, final String uri) throws RDFHandlerException {
+		checkWritingStarted();
 		// Namespace prefixes are not used in RDF/JSON.
 	}
 
 	@Override
-	public void handleStatement(final Statement statement) throws RDFHandlerException {
-		if (convertRDFStar) {
-			convertRDFStarToReification(statement, graph::add);
-		} else {
-			this.graph.add(statement);
-		}
+	public void handleStatementImpl(final Statement statement) throws RDFHandlerException {
+		graph.add(statement);
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		this.graph = new TreeModel();
-		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
 	}
 
 	/**

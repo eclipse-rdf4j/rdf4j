@@ -75,9 +75,9 @@ public class JSONLDWriterTest extends RDFWriterTest {
 
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(w);
 		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("", exNs);
 		rdfWriter.handleNamespace(DCTERMS.PREFIX, DCTERMS.NAMESPACE);
-		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, DCTERMS.TITLE, vf.createBNode()));
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri2, vf.createBNode()));
 		rdfWriter.endRDF();
@@ -96,8 +96,8 @@ public class JSONLDWriterTest extends RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
-		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(st1);
 		rdfWriter.endRDF();
 

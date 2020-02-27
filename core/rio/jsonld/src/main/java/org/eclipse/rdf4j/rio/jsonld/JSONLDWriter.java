@@ -55,8 +55,6 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private final Writer writer;
 
-	private boolean convertRDFStar;
-
 	/**
 	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
 	 *
@@ -98,18 +96,20 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+		checkWritingStarted();
 		model.setNamespace(prefix, uri);
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		convertRDFStar = getWriterConfig().isSet(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION);
+		super.startRDF();
 		statementCollector.clear();
 		model.clear();
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		final JSONLDInternalRDFParser serialiser = new JSONLDInternalRDFParser();
 		try {
 			Object output = JsonLdProcessor.fromRDF(model, serialiser);
@@ -161,16 +161,13 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (convertRDFStar) {
-			convertRDFStarToReification(st, statementCollector::handleStatement);
-		} else {
-			statementCollector.handleStatement(st);
-		}
+	public void handleStatementImpl(Statement st) throws RDFHandlerException {
+		statementCollector.handleStatement(st);
 	}
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 	}
 
 	@Override

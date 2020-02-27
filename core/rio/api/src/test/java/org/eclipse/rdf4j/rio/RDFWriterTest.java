@@ -16,6 +16,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -59,6 +60,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -155,10 +157,6 @@ public abstract class RDFWriterTest {
 	private List<IRI> potentialPredicates;
 
 	protected RDFWriterTest(RDFWriterFactory writerF, RDFParserFactory parserF) {
-		this(writerF, parserF, false);
-	}
-
-	protected RDFWriterTest(RDFWriterFactory writerF, RDFParserFactory parserF, boolean rdfStar) {
 		rdfWriterFactory = writerF;
 		rdfParserFactory = parserF;
 
@@ -216,9 +214,7 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri3);
 		potentialSubjects.add(uri4);
 		potentialSubjects.add(uri5);
-		if (rdfStar) {
-			potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
-		}
+		potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -241,9 +237,7 @@ public abstract class RDFWriterTest {
 		potentialObjects.add(plainLit);
 		potentialObjects.add(dtLit);
 		potentialObjects.add(langLit);
-		if (rdfStar) {
-			potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
-		}
+		potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
 		// FIXME: SES-879: The following break the RDF/XML parser/writer
 		// combination in terms of getting the same number of triples back as we
 		// start with
@@ -385,8 +379,8 @@ public abstract class RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
-		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(st1);
 		rdfWriter.handleStatement(st2);
 		rdfWriter.handleStatement(st3);
@@ -535,8 +529,8 @@ public abstract class RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
-		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(st1);
 		rdfWriter.handleStatement(st2);
 		rdfWriter.handleStatement(st3);
@@ -572,10 +566,10 @@ public abstract class RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("", ns1);
 		rdfWriter.handleNamespace("", ns2);
 		rdfWriter.handleNamespace("", ns3);
-		rdfWriter.startRDF();
 		rdfWriter.handleStatement(st);
 		rdfWriter.endRDF();
 
@@ -609,10 +603,10 @@ public abstract class RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("1", ns1);
 		rdfWriter.handleNamespace("_", ns2);
 		rdfWriter.handleNamespace("a%", ns3);
-		rdfWriter.startRDF();
 		rdfWriter.handleStatement(st);
 		rdfWriter.endRDF();
 
@@ -637,9 +631,9 @@ public abstract class RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("", RDF.NAMESPACE);
 		rdfWriter.handleNamespace("rdf", RDF.NAMESPACE);
-		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(vf.createIRI(RDF.NAMESPACE), RDF.TYPE, OWL.ONTOLOGY));
 		rdfWriter.endRDF();
 	}
@@ -727,8 +721,17 @@ public abstract class RDFWriterTest {
 				obj = vf.createLiteral(big.toString());
 			}
 
+			IRI pred = potentialPredicates.get(prng.nextInt(potentialPredicates.size()));
+			while (obj instanceof Triple && pred.equals(RDF.TYPE)) {
+				// Avoid statements "x rdf:type <<triple>>" as those use the shorter syntax in RDFXMLPrettyWriter
+				// and the writer produces invalid XML in that case. Even though the RDF* triples are encoded as
+				// valid IRIs, XML has limitations on what characters may form an XML tag name and thus a limitation
+				// on what IRIs may be used in predicates (predicates are XML tags) or the short form of rdf:type
+				// (where the type is also an XML tag).
+				obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
+			}
 			model.add(potentialSubjects.get(prng.nextInt(potentialSubjects.size())),
-					potentialPredicates.get(prng.nextInt(potentialPredicates.size())), obj);
+					pred, obj);
 		}
 		logger.debug("Test class: " + this.getClass().getName());
 		logger.debug("Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat() + ")");
@@ -742,12 +745,12 @@ public abstract class RDFWriterTest {
 			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 			setupWriterConfig(rdfWriter.getWriterConfig());
 			// Test prefixed URIs for only some of the URIs available
+			rdfWriter.startRDF();
 			rdfWriter.handleNamespace(RDF.PREFIX, RDF.NAMESPACE);
 			rdfWriter.handleNamespace(SKOS.PREFIX, SKOS.NAMESPACE);
 			rdfWriter.handleNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
 			rdfWriter.handleNamespace(EARL.PREFIX, EARL.NAMESPACE);
 			rdfWriter.handleNamespace("ex", exNs);
-			rdfWriter.startRDF();
 
 			for (Statement nextSt : model) {
 				rdfWriter.handleStatement(nextSt);
@@ -1818,6 +1821,50 @@ public abstract class RDFWriterTest {
 		// 4 for triple5 (contained in triple6)
 		// 4 for triple1 (contained in triple5)
 		assertEquals(22, parsedOutput.size());
+	}
+
+	@Test
+	public void testHandlingSequenceCloseableWriter() throws IOException {
+		// If an RDFWriter is a Closeable and it calls endRDF() explicitly on close() we should check
+		// it's consistent in various situations. Currently only RDFXMLPrettyWriter is a Closeable.
+		boolean[][] options = {
+				// call endRDF(), don't call close()
+				{ true, false },
+				// don't call endRDF(), call close()
+				{ false, true },
+				// call endRDF(), call close()
+				{ true, true },
+		};
+
+		Set<Integer> sizes = new HashSet<>();
+		for (boolean[] opts : options) {
+			try (ByteArrayOutputStream outs = new ByteArrayOutputStream()) {
+				RDFWriter rdfWriter = rdfWriterFactory.getWriter(outs);
+
+				Assume.assumeTrue("Test makes sense only if RDFWriter is a Closeable",
+						rdfWriter instanceof Closeable);
+
+				rdfWriter.startRDF();
+				rdfWriter.handleNamespace("ex", "http://example.com/");
+				rdfWriter.handleStatement(vf.createStatement(vf.createIRI("urn:a"), RDF.TYPE, RDF.STATEMENT));
+				rdfWriter.handleComment("this is a comment");
+
+				if (opts[0]) {
+					rdfWriter.endRDF();
+					sizes.add(outs.size());
+				}
+
+				if (opts[1]) {
+					((Closeable) rdfWriter).close();
+					sizes.add(outs.size());
+					// Calling close() more than once shouldn't break things
+					((Closeable) rdfWriter).close();
+					sizes.add(outs.size());
+				}
+			}
+		}
+
+		assertEquals(1, sizes.size());
 	}
 
 	private void assertSameModel(Model expected, Model actual) {

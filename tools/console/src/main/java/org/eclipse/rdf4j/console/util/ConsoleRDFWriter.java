@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.util;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -32,6 +33,8 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
+	private RDFFormat rdfFormat = new RDFFormat("Console RDF", "application/x-dummy", StandardCharsets.UTF_8,
+			"dummy", true, false, true);
 
 	/**
 	 * Constructor
@@ -46,28 +49,24 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
+		checkWritingStarted();
 		// use uri as the key, so the prefix can be retrieved and shown on the console
 		namespaces.put(uri, prefix);
 	}
 
 	@Override
 	public RDFFormat getRDFFormat() {
-		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
-																		// Tools | Templates.
-	}
-
-	@Override
-	public void startRDF() throws RDFHandlerException {
-		// do nothing
+		return rdfFormat;
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		// do nothing
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public void handleStatementImpl(Statement st) throws RDFHandlerException {
 		consoleIO.write(Util.getPrefixedValue(st.getSubject(), namespaces));
 		consoleIO.write("   ");
 		consoleIO.write(Util.getPrefixedValue(st.getPredicate(), namespaces));
@@ -78,6 +77,7 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		// do nothing
 	}
 }

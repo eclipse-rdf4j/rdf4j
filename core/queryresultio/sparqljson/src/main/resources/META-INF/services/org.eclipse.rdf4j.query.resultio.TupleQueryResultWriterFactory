@@ -1,1 +1,2 @@
 org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriterFactory
+org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONWriterFactory

@@ -51,6 +51,8 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		this.bindingNames = bindingNames;
 
 		try {
@@ -80,7 +82,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (bindingNames == null) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}
