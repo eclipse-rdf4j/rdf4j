@@ -114,6 +114,27 @@ public class WriteTest extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void testSimpleUpdateQuery_insertData() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Iterator<Endpoint> iter = federationContext().getEndpointManager().getAvailableEndpoints().iterator();
+		EndpointBase ep1 = (EndpointBase) iter.next();
+		ep1.setWritable(true);
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
+					"PREFIX ex: <http://example.org/> INSERT DATA { ex:subject a ex:Person } ");
+			update.execute();
+
+			// test that statement is returned from federation
+			List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, true));
+			Assertions.assertEquals(1, stmts.size());
+			Assertions.assertEquals(RDF.TYPE, stmts.get(0).getPredicate());
+		}
+	}
+
+	@Test
 	public void testSimpleRemove() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
 
