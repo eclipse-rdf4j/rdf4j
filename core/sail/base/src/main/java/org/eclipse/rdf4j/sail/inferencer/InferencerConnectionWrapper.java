@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.inferencer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -18,13 +19,17 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An extension of ConnectionWrapper that implements the {@link InferencerConnection} interface.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper implements InferencerConnection {
+
+	private static final Logger logger = LoggerFactory.getLogger(InferencerConnectionWrapper.class);
 
 	/*--------------*
 	 * Constructors *
@@ -43,7 +48,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 
 	/**
 	 * Gets the connection that is wrapped by this object.
-	 * 
+	 *
 	 * @return The connection that was supplied to the constructor of this class.
 	 */
 	@Override
@@ -93,7 +98,12 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	@Override
 	public void commit() throws SailException {
 		flushUpdates();
+		long count = getWrappedConnection().getStatements(null, null, null, true).stream().distinct().count();
 		super.commit();
+		long count2 = getWrappedConnection().getStatements(null, null, null, true).stream().distinct().count();
+		if (count != count2) {
+			System.out.println(count + " != " + count2);
+		}
 	}
 
 	/**

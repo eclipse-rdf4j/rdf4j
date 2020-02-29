@@ -13,6 +13,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -210,27 +211,24 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@Test
 	public void addingAndClearing() {
-		long originalNumberOfStatements;
-		try (RepositoryConnection connection = testRepository.getConnection()) {
-			originalNumberOfStatements = connection.getStatements(null, null, null, true).stream().count();
-		}
+		BNode bNode = vf.createBNode();
 
 		try (RepositoryConnection connection = testRepository.getConnection()) {
 			connection.begin(level);
-			connection.add(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE);
+			connection.add(bNode, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+
+			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, false));
+
 			connection.begin(level);
 			connection.clear();
 			connection.commit();
-		}
 
-		try (RepositoryConnection connection = testRepository.getConnection()) {
-			List<Statement> collect = connection.getStatements(null, null, null, true)
-					.stream()
-					.collect(Collectors.toList());
-			assertEquals(originalNumberOfStatements, collect.size());
-		}
+			// bug with the SchemaCachingRDFSInferencer and the NativeStore causes inferred statement to exist after
+			// commit()
+			assertFalse(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, true));
 
+		}
 	}
 
 }
