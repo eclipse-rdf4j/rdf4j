@@ -103,6 +103,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 		long count2 = getWrappedConnection().getStatements(null, null, null, true).stream().distinct().count();
 		if (count != count2) {
 			System.out.println(count + " != " + count2);
+			assert count == count2;
 		}
 	}
 
