@@ -27,7 +27,7 @@ import static junit.framework.TestCase.assertEquals;
 /**
  * @author Håvard Ottestad
  */
-public class TestPlanNodeOrdering {
+public class PlanNodeOrderingTest {
 
 	@Test
 	public void testSelect() {

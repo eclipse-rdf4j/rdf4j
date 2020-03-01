@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;

@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -74,7 +75,8 @@ public class GroupByCount implements PlanNode {
 
 				}
 
-				List<Value> line = Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count));
+				List<Value> line = new ArrayList<>(
+						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
 
 				next.line = line;
 

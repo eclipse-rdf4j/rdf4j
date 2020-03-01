@@ -7,6 +7,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
@@ -48,7 +50,7 @@ public class ShaclProperties {
 	String flags = "";
 
 	Set<Resource> targetClass = new HashSet<>(0);
-	Set<Value> targetNode = new HashSet<>(0);
+	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
 	Set<IRI> targetSubjectsOf = new HashSet<>(0);
 	Set<IRI> targetObjectsOf = new HashSet<>(0);
 

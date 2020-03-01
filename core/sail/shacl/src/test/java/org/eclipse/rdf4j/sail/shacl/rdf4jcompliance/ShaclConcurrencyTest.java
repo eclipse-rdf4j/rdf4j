@@ -6,20 +6,33 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.rdf4jcompliance;
 
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConcurrencyTest;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.junit.Ignore;
+import org.junit.Test;
 
-public class ShaclRepositoryTest extends RepositoryTest {
+public class ShaclConcurrencyTest extends SailConcurrencyTest {
+
+	/*---------*
+	 * Methods *
+	 *---------*/
 
 	@Override
-	protected Repository createRepository() {
+	protected Sail createSail() throws SailException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setIgnoreNoShapesLoadedException(true);
+		return shaclSail;
+	}
 
-		return new SailRepository(shaclSail);
+	@Ignore
+	@Test
+	@Override
+	public void testConcurrentAddLargeTxnRollback() throws Exception {
+		// empty since this test is ignored
 	}
 }
