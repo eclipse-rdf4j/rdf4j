@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Models;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -298,16 +299,23 @@ public class SimpleUpgradeableModel implements Model {
 		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof Set)) {
-			return false;
+
+		if (o instanceof Model) {
+			Model model = (Model) o;
+			return Models.isomorphic(this, model);
+		} else if (o instanceof Set) {
+			if (this.size() != ((Set<?>) o).size()) {
+				return false;
+			}
+			try {
+				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
+			} catch (ClassCastException e) {
+				return false;
+			}
 		}
 
-		Collection c = (Collection) o;
-		if (c.size() != size()) {
-			return false;
-		}
+		return false;
 
-		return containsAll(c);
 	}
 
 	@Override
