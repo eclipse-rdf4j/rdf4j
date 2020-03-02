@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.SilentIteration;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -77,8 +78,9 @@ public class RepositoryFederatedService implements FederatedService {
 
 				ArrayList<BindingSet> blockBindings = new ArrayList<>(blockSize);
 				for (int i = 0; i < blockSize; i++) {
-					if (!leftIter.hasNext())
+					if (!leftIter.hasNext()) {
 						break;
+					}
 					blockBindings.add(leftIter.next());
 				}
 				CloseableIteration<BindingSet, QueryEvaluationException> materializedIter = new CollectionIteration<>(
@@ -217,8 +219,9 @@ public class RepositoryFederatedService implements FederatedService {
 			Iterator<Binding> bIter = bindings.iterator();
 			while (bIter.hasNext()) {
 				Binding b = bIter.next();
-				if (service.getServiceVars().contains(b.getName()))
+				if (service.getServiceVars().contains(b.getName())) {
 					query.setBinding(b.getName(), b.getValue());
+				}
 			}
 
 			TupleQueryResult res = query.evaluate();
@@ -230,10 +233,11 @@ public class RepositoryFederatedService implements FederatedService {
 				result = new CloseConnectionIteration(result, conn);
 			}
 
-			if (service.isSilent())
-				return new SilentIteration(result);
-			else
+			if (service.isSilent()) {
+				return new SilentIteration<BindingSet, QueryEvaluationException>(result);
+			} else {
 				return result;
+			}
 		} catch (MalformedQueryException e) {
 			if (useFreshConnection) {
 				closeQuietly(conn);
@@ -270,8 +274,9 @@ public class RepositoryFederatedService implements FederatedService {
 			Iterator<Binding> bIter = bindings.iterator();
 			while (bIter.hasNext()) {
 				Binding b = bIter.next();
-				if (service.getServiceVars().contains(b.getName()))
+				if (service.getServiceVars().contains(b.getName())) {
 					query.setBinding(b.getName(), b.getValue());
+				}
 			}
 
 			return query.evaluate();
@@ -361,12 +366,13 @@ public class RepositoryFederatedService implements FederatedService {
 											// from actual setting?
 			res = query.evaluate();
 
-			if (relevantBindingNames.isEmpty())
+			if (relevantBindingNames.isEmpty()) {
 				result = new SPARQLCrossProductIteration(res, allBindings); // cross
-			// product
-			else
+				// product
+			} else {
 				result = new ServiceJoinConversionIteration(res, allBindings); // common
 																				// join
+			}
 
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);
@@ -380,8 +386,9 @@ public class RepositoryFederatedService implements FederatedService {
 				closeQuietly(conn);
 			}
 			Iterations.closeCloseable(result);
-			if (service.isSilent())
+			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
+			}
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} catch (MalformedQueryException e) {
@@ -398,8 +405,9 @@ public class RepositoryFederatedService implements FederatedService {
 				closeQuietly(conn);
 			}
 			Iterations.closeCloseable(result);
-			if (service.isSilent())
+			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
+			}
 			throw e;
 		} catch (RuntimeException e) {
 			if (useFreshConnection) {
@@ -408,8 +416,9 @@ public class RepositoryFederatedService implements FederatedService {
 			Iterations.closeCloseable(result);
 			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 			// QueryEval) if silent
-			if (service.isSilent())
+			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
+			}
 			throw e;
 		}
 	}
@@ -561,8 +570,9 @@ public class RepositoryFederatedService implements FederatedService {
 
 		List<String> relevantBindingNames = new ArrayList<>(5);
 		for (String bName : bindings.get(0).getBindingNames()) {
-			if (serviceVars.contains(bName))
+			if (serviceVars.contains(bName)) {
 				relevantBindingNames.add(bName);
+			}
 		}
 
 		return relevantBindingNames;
