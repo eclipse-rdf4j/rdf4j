@@ -214,6 +214,18 @@ public class RDFFormat extends FileFormat {
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDFa"), SUPPORTS_NAMESPACES,
 			NO_CONTEXTS);
 
+	/**
+	 * The <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT</a> file format, an RDF serialization format.
+	 * <p>
+	 * The file extension <code>.hdt</code> is recommended for HDT documents.
+	 * </p>
+	 *
+	 * @see <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT v1.0</a>
+	 */
+	public static final RDFFormat HDT = new RDFFormat("HDT",
+			Arrays.asList("application/vnd.hdt"), null, Arrays.asList("hdt"), null,
+			SUPPORTS_NAMESPACES, NO_CONTEXTS);
+
 	/*----------------*
 	 * Static methods *
 	 *----------------*/
