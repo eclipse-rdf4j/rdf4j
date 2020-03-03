@@ -8,13 +8,15 @@
 package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.InputStream;
+import java.io.StringWriter;
+import java.util.Comparator;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
@@ -37,8 +39,17 @@ public class HDTParserTest {
 
 	@Test
 	public void parseSimpleSPO() {
-		Model m = new LinkedHashModel();
+		// load original N-Triples file
+		Model orig = new LinkedHashModel();
+		try (InputStream is = HDTParserTest.class.getResourceAsStream("/test-orig.nt")) {
+			RDFParser nt = Rio.createParser(RDFFormat.NTRIPLES);
+			nt.setRDFHandler(new StatementCollector(orig));
+			nt.parse(is, "");
+		} catch (Exception e) {
+			fail(e.getMessage());
+		}
 
+		Model m = new LinkedHashModel();
 		try (InputStream is = HDTParserTest.class.getResourceAsStream("/test.hdt")) {
 			parser.setRDFHandler(new StatementCollector(m));
 			parser.parse(is, "");
@@ -46,6 +57,9 @@ public class HDTParserTest {
 		} catch (Exception e) {
 			fail(e.getMessage());
 		}
+
+		orig.removeAll(m);
+		assertEquals("HDT model does not match original NT file", 0, orig.size());
 	}
 
 	@Test

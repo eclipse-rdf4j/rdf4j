@@ -257,11 +257,11 @@ public class HDTParser extends AbstractRDFParser {
 			for (; i > 1 && b[i] != '"'; i--) {
 				if (b[i] == '@') {
 					String lang = new String(b, i + 1, b.length - i - 1, StandardCharsets.US_ASCII);
-					valueFactory.createLiteral(new String(b, 1, i - 2, StandardCharsets.UTF_8), lang);
+					return valueFactory.createLiteral(new String(b, 1, i - 2, StandardCharsets.UTF_8), lang);
 				} else if (b[i] == '^') {
 					IRI datatype = valueFactory
 							.createIRI(new String(b, i + i, b.length - i - 1, StandardCharsets.US_ASCII));
-					valueFactory.createLiteral(new String(b, 1, i - 3, StandardCharsets.UTF_8), datatype);
+					return valueFactory.createLiteral(new String(b, 1, i - 3, StandardCharsets.UTF_8), datatype);
 				}
 			}
 			return valueFactory.createLiteral(new String(b, 1, i - 1, StandardCharsets.UTF_8));

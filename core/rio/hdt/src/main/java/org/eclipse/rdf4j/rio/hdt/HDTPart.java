@@ -131,7 +131,7 @@ abstract class HDTPart {
 		if (len == BUFLEN) {
 			throw new IOException("Buffer for reading properties exceeded, max " + BUFLEN);
 		}
-		return Arrays.copyOf(buf, len + 1);
+		return Arrays.copyOf(buf, len);
 	}
 
 	/**

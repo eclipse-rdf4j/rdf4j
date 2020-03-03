@@ -50,8 +50,6 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	private int posY = 0;
 	private int posZ = 0;
 
-	private int toggleY = 0;
-
 	@Override
 	public boolean hasNext() {
 		// we only need to check if we've reach the end of the "lowest" level
@@ -60,22 +58,19 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 	@Override
 	public int[] next() {
-		int x = posX;
-		// move to next X position (subject) when there is no Y (predicate) left
-		// EXCEPT when there are more Z (objects) to process, e.g. very last one in the bitmap
-		// otherwise the P,O will be attached to the wrong S, or the S won't be found at all
-		if (bitmapY.get(posY) == 1 && posY != toggleY && posY != sizeY - 1) {
-			toggleY = posY;
-			posX++;
-		}
-
-		// move to next Y position (predicate) when there is no Z (predicate) left
+		int z = arrZ.get(posZ);
 		int y = arrY.get(posY);
-		if (bitmapZ.get(posZ) == 1) {
+		int x = posX;
+
+		if (bitmapZ.get(posZ) == 1 && posZ < sizeZ) {
+			// move to next Y position (predicate) when there is no Z (predicate) left
+			if (bitmapY.get(posY) == 1 && posY < sizeY) {
+				// move to next X position (subject) when there is no Y (predicate) left
+				posX++;
+			}
 			posY++;
 		}
-
-		int z = arrZ.get(posZ++);
+		posZ++;
 
 		return new int[] { x, y, z };
 	}
