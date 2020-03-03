@@ -39,7 +39,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Set<Statement> statements = new LinkedHashSet<>();
+	private LinkedHashSet<Statement> statements = new LinkedHashSet<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -142,6 +142,35 @@ public class DynamicModel implements Model {
 
 	@Override
 	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (model == null && statements.size() == 0) {
+			return new EmptyModel(this);
+		}
+
+		if (model == null && subj != null && pred != null && obj != null && contexts.length == 1) {
+			Statement needle = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, contexts[0]);
+			if (statements.size() == 1) {
+				Statement s = (Statement) statements.toArray()[0];
+
+				DynamicModel ret = new DynamicModel(modelFactory);
+
+				if (s.equals(needle)) {
+					ret.add(s);
+				}
+				
+				return ret;
+			}
+
+			DynamicModel ret = new DynamicModel(modelFactory);
+			if (statements.contains(needle)) {
+				ret.add(needle);
+			}
+			return ret;
+		}
+
+		if (subj == null && pred == null && obj == null && contexts.length == 0) {
+			return this;
+		}
+
 		upgrade();
 		return model.filter(subj, pred, obj, contexts);
 	}
