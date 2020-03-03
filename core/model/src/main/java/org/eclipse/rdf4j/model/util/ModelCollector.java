@@ -18,8 +18,7 @@ import java.util.stream.Collector;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModelFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 
 /**
@@ -35,7 +34,7 @@ public class ModelCollector implements Collector<Statement, Model, Model> {
 	 * Constructor
 	 */
 	public ModelCollector() {
-		this.factory = new SimpleUpgradeableModelFactory();
+		this.factory = new DynamicModelFactory();
 	}
 
 	/**

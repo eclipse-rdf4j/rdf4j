@@ -35,9 +35,8 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModel;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
@@ -68,7 +67,7 @@ public class QueryResults extends Iterations {
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
 			throws QueryEvaluationException {
-		Model model = new SimpleUpgradeableModel(new LinkedHashModelFactory());
+		Model model = new DynamicModel(new LinkedHashModelFactory());
 		addAll(iteration, model);
 		return model;
 	}

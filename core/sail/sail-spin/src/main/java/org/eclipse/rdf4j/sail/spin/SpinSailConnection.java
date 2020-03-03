@@ -19,9 +19,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModel;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModelFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -357,7 +355,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	@Override
 	protected Model createModel() {
-		return new SimpleUpgradeableModelFactory().createEmptyModel();
+		return new DynamicModelFactory().createEmptyModel();
 	}
 
 	private final static List<Statement> schemaSp;

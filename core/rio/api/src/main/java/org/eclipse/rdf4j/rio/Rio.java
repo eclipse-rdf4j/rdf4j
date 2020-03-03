@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModel;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
@@ -259,12 +259,12 @@ public class Rio {
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
 			throws IOException, RDFParseException, UnsupportedRDFormatException {
-		Model result = new SimpleUpgradeableModel(new LinkedHashModelFactory());
+		Model result = new DynamicModel(new LinkedHashModelFactory());
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
 		parser.setParseErrorListener(errors);
 		parser.setRDFHandler(new ContextStatementCollector(result, valueFactory, contexts));
-		// SimpleUpgradeableModel and ContextStatementCollector should not throw
+		// DynamicModel and ContextStatementCollector should not throw
 		// RDFHandlerException exceptions
 		parser.parse(in, baseURI);
 		return result;
@@ -293,12 +293,12 @@ public class Rio {
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
 			throws IOException, RDFParseException, UnsupportedRDFormatException {
-		Model result = new SimpleUpgradeableModel(new LinkedHashModelFactory());
+		Model result = new DynamicModel(new LinkedHashModelFactory());
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
 		parser.setParseErrorListener(errors);
 		parser.setRDFHandler(new ContextStatementCollector(result, valueFactory, contexts));
-		// SimpleUpgradeableModel and ContextStatementCollector should not throw
+		// DynamicModel and ContextStatementCollector should not throw
 		// RDFHandlerException exceptions
 		parser.parse(reader, baseURI);
 		return result;
