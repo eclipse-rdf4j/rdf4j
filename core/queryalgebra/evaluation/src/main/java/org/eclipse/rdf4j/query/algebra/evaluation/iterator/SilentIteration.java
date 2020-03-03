@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -16,27 +16,16 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * Wrap an inner iteration and suppress exceptions silently
  * 
  * @author Andreas Schwarte
+ * 
+ * @deprecated since 3.1.2. Use {@link org.eclipse.rdf4j.common.iteration.SilentIteration } instead.
  */
-public class SilentIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
-
-	protected CloseableIteration<BindingSet, QueryEvaluationException> iter;
+@Deprecated
+@InternalUseOnly
+public class SilentIteration
+		extends org.eclipse.rdf4j.common.iteration.SilentIteration<BindingSet, QueryEvaluationException> {
 
 	public SilentIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
-		super();
-		this.iter = iter;
-	}
-
-	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
-
-		try {
-			if (iter.hasNext())
-				return iter.next();
-		} catch (Exception e) {
-			// suppress
-		}
-
-		return null;
+		super(iter);
 	}
 
 }
