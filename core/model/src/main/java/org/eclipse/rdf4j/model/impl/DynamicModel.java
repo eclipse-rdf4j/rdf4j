@@ -156,7 +156,7 @@ public class DynamicModel implements Model {
 				if (s.equals(needle)) {
 					ret.add(s);
 				}
-				
+
 				return ret;
 			}
 
