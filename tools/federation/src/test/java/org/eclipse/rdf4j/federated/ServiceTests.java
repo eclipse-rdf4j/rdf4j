@@ -27,9 +27,13 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.repository.util.Repositories;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -326,6 +330,39 @@ public class ServiceTests extends SPARQLBaseTest {
 				.getService("http://localhost:18080/repositories/endpoint1"));
 		Assertions.assertEquals(50, tfs.serviceRequestCount.get());
 		Assertions.assertEquals(0, tfs.boundJoinRequestCount.get());
+	}
+
+	@Test
+	public void test10_serviceSilent() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		Repository localStore = new SailRepository(new MemoryStore());
+
+		SPARQLServiceResolver serviceResolver = new SPARQLServiceResolver() {
+			@Override
+			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
+				if (serviceUrl.equals("urn:memStore")) {
+					return new RepositoryFederatedService(localStore, true);
+				}
+				return new TestSparqlFederatedService(serviceUrl, getHttpClientSessionManager());
+			}
+		};
+
+		// workaround for test: shutdown and re-initialize in order to set a custom service resolver
+		FedXRepository repo = fedxRule.getRepository();
+		repo.shutDown();
+		repo.setFederatedServiceResolver(serviceResolver);
+		repo.init();
+
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
+				"/tests/data/data4.ttl"));
+		List<BindingSet> bs = Repositories.tupleQueryNoTransaction(fedxRule.repository,
+				"SELECT * WHERE { VALUES ?input { 'input1'  } . SERVICE SILENT <urn:memStore> { BIND (CONCAT(?input, '_processed') AS ?output) } }",
+				iter -> QueryResults.asList(iter));
+		assertContainsAll(bs, "output", Sets.newHashSet(l("input1_processed")));
+
+		serviceResolver.shutDown();
 	}
 
 	@Test
