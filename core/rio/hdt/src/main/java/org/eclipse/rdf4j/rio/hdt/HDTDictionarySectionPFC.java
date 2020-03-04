@@ -12,6 +12,8 @@ import java.io.InputStream;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.zip.CheckedInputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
@@ -29,12 +31,12 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * Structure:
  * 
  * <pre>
- * +------+-----------+---------+-------+------+-------+--------+...+-------+
- * | type | nrstrings | bufsize | array | CRC8 | index | buffer |...| CRC32 | 
- * +------+-----------+---------+-------+------+-------+--------+...+-------+
+ * +------+--------------+--------------+-------+------+-------+--------+...+-------+
+ * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 | 
+ * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * </pre>
  * 
- * Each buffer starts with a full string, followed by a maximum of <code>bufsize</code> - 1 pair of a VByte-encoded
+ * Each buffer starts with a full string, followed by a maximum of <code>stringsBlock</code> - 1 pair of a VByte-encoded
  * number of characters this string has in common with the _previous_ string, and the (different) suffix.
  * 
  * E.g. <code>abcdef 2 gh 3 ij</code> will result in <code>abcde, abgh, abgij</code>.
@@ -50,19 +52,51 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 class HDTDictionarySectionPFC extends HDTDictionarySection {
-	private ArrayList<byte[]> arr;
-	private int nrstrings;
-	private long buflen;
-	private int bufsize;
+	private byte[] buffer;
 
-	@Override
-	protected int size() {
-		return nrstrings;
+	private int totalStrings;
+	private int stringsBlock;
+	private HDTArray blockStarts;
+
+	// keep most recently used blocks in memory as decoded values
+	private final LinkedHashMap<Integer, ArrayList<byte[]>> cache = new LinkedHashMap<Integer, ArrayList<byte[]>>(100,
+			1, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry eldest) {
+			return size() > 99;
+		}
+	};
+
+	/**
+	 * Constructor
+	 * 
+	 * @param name
+	 * @param pos
+	 */
+	protected HDTDictionarySectionPFC(String name, long pos) {
+		super(name, pos);
 	}
 
 	@Override
-	protected byte[] get(int i) {
-		return arr.get(i - 1);
+	protected int size() {
+		return totalStrings;
+	}
+
+	@Override
+	protected byte[] get(int i) throws IOException {
+		// HDT index start counting from 1
+		int idx = i - 1;
+
+		// get the block this string belongs to, and maintain the cache of recently used blocks
+		int block = idx / stringsBlock;
+
+		ArrayList<byte[]> strings = cache.get(block);
+		if (strings == null) {
+			int blockStart = blockStarts.get(block);
+			strings = decodeBlock(block, blockStart);
+			cache.put(block, strings);
+		}
+		return strings.get(idx - (block * stringsBlock));
 	}
 
 	@Override
@@ -70,67 +104,81 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		CRC8 crc8 = new CRC8();
 		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());
 
+		int buflen;
+
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
 
 			long val = VByte.decode(cis);
-			if (nrstrings > Integer.MAX_VALUE) {
-				throw new UnsupportedOperationException("Maximum number of strings in dictionary exceeded: " + val);
+			if (totalStrings > Integer.MAX_VALUE) {
+				throw new UnsupportedOperationException(getDebugPartStr() + " max number of strings exceeded: " + val);
 			}
-			nrstrings = (int) val;
-
-			buflen = VByte.decode(cis);
+			totalStrings = (int) val;
 
 			val = VByte.decode(cis);
 			if (val > Integer.MAX_VALUE) {
-				throw new UnsupportedOperationException("Maximum number of bufsize in dictionary exceeded: " + val);
+				throw new UnsupportedOperationException(getDebugPartStr() + " max buffer length exceeded: " + val);
 			}
-			bufsize = (int) val;
+			buflen = (int) val;
+
+			val = VByte.decode(cis);
+			if (val > Integer.MAX_VALUE) {
+				throw new UnsupportedOperationException(
+						getDebugPartStr() + "max number of strings per exceeded: " + val);
+			}
+			stringsBlock = (int) val;
 
 			checkCRC(cis, is, 1);
 		}
 
-		HDTArray ha = HDTArrayFactory.parse(is);
-		ha.parse(is);
+		// keep track of starting positions of the blocks
+		blockStarts = HDTArrayFactory.parse(is);
+		blockStarts.parse(is);
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 
-			arr = new ArrayList<>(nrstrings);
-			parseBlocks(cis, nrstrings, bufsize);
-
+			buffer = new byte[buflen];
+			cis.read(buffer);
 			checkCRC(cis, is, 4);
 		}
 	}
 
 	/**
-	 * Parse a buffer (though a better name would be a "block") of strings
+	 * Parse a single block
 	 * 
-	 * @param is        input stream
-	 * @param nrstrings total number of strings of all buffers
-	 * @param bufsize   max number of strings in 1 buffer
+	 * @param block block number
+	 * @param start starting position
+	 * @return list of decoded byte strings
 	 * @throws IOException
 	 */
-	private void parseBlocks(InputStream is, int nrstrings, int bufsize) throws IOException {
-		// minimum one block
-		int blocks = (nrstrings + bufsize - 1) / bufsize;
+	private ArrayList<byte[]> decodeBlock(int block, int start) throws IOException {
+		ArrayList<byte[]> arr = new ArrayList<>(stringsBlock);
 
-		for (int i = 0; i < blocks; i++) {
-			byte[] str = HDTPart.readToNull(is);
+		// initial string
+		int idx = start;
+		int end = HDTPart.countToNull(buffer, idx);
+		byte[] str = Arrays.copyOfRange(buffer, idx, end);
+		arr.add(str);
+		idx = end + 1;
+
+		// read the remaining strings, with a maximum of stringsBlock
+		int remaining = totalStrings - (block * stringsBlock);
+		for (int j = 1; j < stringsBlock && j < remaining; j++) {
+			int common = (int) VByte.decodeFrom(buffer, idx);
+			idx += VByte.encodedLength(common);
+			end = HDTPart.countToNull(buffer, idx);
+			byte[] suffix = Arrays.copyOfRange(buffer, idx, end);
+
+			// copy the common part and add the suffix
+			str = Arrays.copyOf(str, common + suffix.length);
+			System.arraycopy(suffix, 0, str, common, suffix.length);
 			arr.add(str);
 
-			// read the remaining strings, with a maximum of bufsize at a time
-			int remaining = nrstrings - (i * bufsize);
-			for (int j = 1; j < bufsize && j < remaining; j++) {
-				int common = (int) VByte.decode(is);
-				byte[] suffix = HDTPart.readToNull(is);
-				// copy the common part and add the suffix
-				str = Arrays.copyOf(str, common + suffix.length);
-				System.arraycopy(suffix, 0, str, common, suffix.length);
-				arr.add(str);
-			}
+			idx = end + 1;
 		}
+		return arr;
 	}
 }

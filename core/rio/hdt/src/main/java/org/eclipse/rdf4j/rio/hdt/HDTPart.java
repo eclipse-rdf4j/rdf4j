@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+
 import java.nio.charset.StandardCharsets;
 
 import java.util.Arrays;
@@ -55,10 +56,12 @@ abstract class HDTPart {
 
 	protected final static byte[] COOKIE = "$HDT".getBytes(StandardCharsets.US_ASCII);
 
-	protected Map<String, String> properties;
-
 	// TODO: make configurable, buffer for reading object values
 	private final static int BUFLEN = 1 * 1024 * 1024;
+	// for debugging purposes
+	protected final String name;
+	protected final long pos;
+	protected Map<String, String> properties;
 
 	/**
 	 * Parse from input stream
@@ -75,6 +78,36 @@ abstract class HDTPart {
 	 */
 	protected Map<String, String> getProperties() {
 		return properties;
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param name part name
+	 * @param pos  starting position in input stream
+	 */
+	protected HDTPart(String name, long pos) {
+		this.name = name;
+		this.pos = pos;
+	}
+
+	/**
+	 * Constructor
+	 */
+	protected HDTPart() {
+		this("", -1);
+	}
+
+	/**
+	 * Get a string for debugging purposes, containing the name and starting position of this part.
+	 * 
+	 * @return string
+	 */
+	protected String getDebugPartStr() {
+		if (name == null || name.isEmpty()) {
+			return "";
+		}
+		return (pos != -1) ? name + " (starts at byte " + pos + ")" : name;
 	}
 
 	/**
@@ -132,6 +165,22 @@ abstract class HDTPart {
 			throw new IOException("Buffer for reading properties exceeded, max " + BUFLEN);
 		}
 		return Arrays.copyOf(buf, len);
+	}
+
+	/**
+	 * Get the first position of the NULL byte within an array of bytes
+	 * 
+	 * @param b     byte array
+	 * @param start position to start from
+	 * @return position of first NULL byte
+	 */
+	protected static int countToNull(byte[] b, int start) throws IOException {
+		for (int i = start; i < b.length; i++) {
+			if (b[i] == 0b00) {
+				return i;
+			}
+		}
+		throw new IOException("No null byte found in buffer starting at byte " + start);
 	}
 
 	/**

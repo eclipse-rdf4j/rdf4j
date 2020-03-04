@@ -58,7 +58,7 @@ public class VByte {
 	}
 
 	/**
-	 * Decode a maximum of 8 bytes from the inputstream.
+	 * Decode a maximum of 8 bytes from the input stream.
 	 * 
 	 * @param is input stream
 	 * @return decode value
@@ -72,5 +72,45 @@ public class VByte {
 			buffer[i] = (byte) is.read();
 		} while (i < buffer.length && hasNext(buffer[i++]));
 		return decode(buffer, i);
+	}
+
+	/**
+	 * Decode a maximum of 8 bytes from a byte array.
+	 * 
+	 * @param b     byte array
+	 * @param start starting position
+	 * @return decode value
+	 * @throws IOException
+	 */
+	public static long decodeFrom(byte[] b, int start) throws IOException {
+		byte[] buffer = new byte[8];
+
+		int i = 0;
+		do {
+			buffer[i] = b[start + i];
+		} while (i < buffer.length && hasNext(buffer[i++]));
+		return decode(buffer, i);
+	}
+
+	/**
+	 * Calculate the number of bytes needed for encoding a value
+	 * 
+	 * @param value numeric value
+	 * @return number of bytes
+	 */
+	public static int encodedLength(long value) {
+		if (value < 127) {
+			return 1;
+		}
+		if (value < 16_384) {
+			return 2;
+		}
+		if (value < 2_097_152) {
+			return 3;
+		}
+		if (value < 268_435_456) {
+			return 4;
+		}
+		return 5;
 	}
 }
