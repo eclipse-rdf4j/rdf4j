@@ -148,7 +148,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	private final int maximumUrlLength;
 
-	final Logger logger = LoggerFactory.getLogger(this.getClass());
+	final Logger logger = LoggerFactory.getLogger(SPARQLProtocolSession.class);
 
 	/*-----------*
 	 * Variables *
