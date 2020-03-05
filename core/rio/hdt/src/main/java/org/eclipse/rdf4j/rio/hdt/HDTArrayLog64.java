@@ -50,7 +50,7 @@ class HDTArrayLog64 extends HDTArray {
 		long val = 0L;
 		// little-endian to big-endian
 		for (int j = 0; j < tmplen; j++) {
-			val |= (buffer[bytePos + j] & 0xFF) << (j * 8);
+			val |= (buffer[bytePos + j] & 0xFFL) << (j * 8);
 		}
 
 		val >>= bitPos;

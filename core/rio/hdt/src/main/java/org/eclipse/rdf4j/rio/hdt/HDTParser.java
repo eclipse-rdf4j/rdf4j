@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -67,9 +66,6 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
  * @see <a href="https://www.w3.org/Submission/2011/03/">W3C Member Submission (2011)</a>
  */
 public class HDTParser extends AbstractRDFParser {
-	// buffer for input stream
-	private final static int BUFLEN = 16384;
-
 	/**
 	 * Creates a new HDTParser that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
@@ -125,7 +121,7 @@ public class HDTParser extends AbstractRDFParser {
 		HDTTriplesSection section = null;
 
 		// not using try-with-resources, since the counter is needed in the catch clause (JDK8)
-		CountingInputStream bis = new CountingInputStream(new BufferedInputStream(in, BUFLEN));
+		CountingInputStream bis = new CountingInputStream(in);
 		try {
 			reportLocation(0, -1);
 			HDTGlobal global = new HDTGlobal();
@@ -143,20 +139,24 @@ public class HDTParser extends AbstractRDFParser {
 			reportLocation(bis.getByteCount(), -1);
 			new HDTDictionary().parse(bis);
 
-			reportLocation(bis.getByteCount(), -1);
-			shared = HDTDictionarySectionFactory.parse(bis);
+			long dpos = bis.getByteCount();
+			reportLocation(dpos, -1);
+			shared = HDTDictionarySectionFactory.parse(bis, "S+O", dpos);
 			shared.parse(bis);
 
-			reportLocation(bis.getByteCount(), -1);
-			subjects = HDTDictionarySectionFactory.parse(bis);
+			dpos = bis.getByteCount();
+			reportLocation(dpos, -1);
+			subjects = HDTDictionarySectionFactory.parse(bis, "S", dpos);
 			subjects.parse(bis);
 
-			reportLocation(bis.getByteCount(), -1);
-			predicates = HDTDictionarySectionFactory.parse(bis);
+			dpos = bis.getByteCount();
+			reportLocation(dpos, -1);
+			predicates = HDTDictionarySectionFactory.parse(bis, "P", dpos);
 			predicates.parse(bis);
 
-			reportLocation(bis.getByteCount(), -1);
-			objects = HDTDictionarySectionFactory.parse(bis);
+			dpos = bis.getByteCount();
+			reportLocation(dpos, -1);
+			objects = HDTDictionarySectionFactory.parse(bis, "O", dpos);
 			objects.parse(bis);
 
 			reportLocation(bis.getByteCount(), -1);
@@ -184,7 +184,6 @@ public class HDTParser extends AbstractRDFParser {
 			byte[] s = getSO(t[0], size, shared, subjects);
 			byte[] p = predicates.get(t[1]);
 			byte[] o = getSO(t[2], size, shared, objects);
-
 			Statement stmt = valueFactory.createStatement(createSubject(s), createPredicate(p), createObject(o));
 
 			if (rdfHandler != null) {
@@ -215,7 +214,8 @@ public class HDTParser extends AbstractRDFParser {
 	 * @param other  specific Dictionary
 	 * @return subject or object
 	 */
-	private byte[] getSO(int pos, int size, HDTDictionarySection shared, HDTDictionarySection other) {
+	private byte[] getSO(int pos, int size, HDTDictionarySection shared, HDTDictionarySection other)
+			throws IOException {
 		return (pos <= size) ? shared.get(pos) : other.get(pos - size);
 	}
 
@@ -260,7 +260,7 @@ public class HDTParser extends AbstractRDFParser {
 					return valueFactory.createLiteral(new String(b, 1, i - 2, StandardCharsets.UTF_8), lang);
 				} else if (b[i] == '^') {
 					IRI datatype = valueFactory
-							.createIRI(new String(b, i + i, b.length - i - 1, StandardCharsets.US_ASCII));
+							.createIRI(new String(b, i + 2, b.length - i - 3, StandardCharsets.US_ASCII));
 					return valueFactory.createLiteral(new String(b, 1, i - 3, StandardCharsets.UTF_8), datatype);
 				}
 			}

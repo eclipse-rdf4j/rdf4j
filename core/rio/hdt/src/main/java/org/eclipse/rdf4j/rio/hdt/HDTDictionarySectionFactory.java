@@ -16,12 +16,21 @@ import java.io.InputStream;
  * @author Bart Hanssens
  */
 class HDTDictionarySectionFactory {
-	protected static HDTDictionarySection parse(InputStream is) throws IOException {
+	/**
+	 * Create a dictionary section from input stream. The name an starting position are provided for debugging purposes.
+	 * 
+	 * @param is   input stream
+	 * @param name name
+	 * @param pos  starting position
+	 * @return dictionary section
+	 * @throws IOException
+	 */
+	protected static HDTDictionarySection parse(InputStream is, String name, long pos) throws IOException {
 		int dtype = is.read();
 		if (dtype != HDTDictionarySection.Type.FRONT.getValue()) {
-			throw new UnsupportedOperationException("Dictionary section: encoding " + Long.toHexString(dtype) +
-					", but only front encoding is supported");
+			throw new UnsupportedOperationException("Dictionary " + name + ": encoding "
+					+ Long.toHexString(dtype) + ", but only front encoding is supported");
 		}
-		return new HDTDictionarySectionPFC();
+		return new HDTDictionarySectionPFC(name, pos);
 	}
 }

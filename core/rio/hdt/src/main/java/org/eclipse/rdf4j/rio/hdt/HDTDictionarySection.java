@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
+import java.io.IOException;
+
 /**
  * HDT DictionarySection part. Various encodings exist.
  * 
@@ -44,5 +46,15 @@ abstract class HDTDictionarySection extends HDTPart {
 	 * @param i zero-based index
 	 * @return
 	 */
-	protected abstract byte[] get(int i);
+	protected abstract byte[] get(int i) throws IOException;
+
+	/**
+	 * Constructor
+	 * 
+	 * @param pos  position
+	 * @param name name
+	 */
+	protected HDTDictionarySection(String name, long pos) {
+		super(name, pos);
+	}
 }
