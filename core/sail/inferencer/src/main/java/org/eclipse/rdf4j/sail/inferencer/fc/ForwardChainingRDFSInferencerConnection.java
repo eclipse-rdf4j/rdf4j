@@ -14,7 +14,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.Sail;
@@ -28,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February 2004)</a>. This
  * inferencer can be used to add RDF Schema semantics to any Sail that returns {@link InferencerConnection}s from their
  * {@link Sail#getConnection()} method.
- * 
+ *
  * @deprecated since 2.5. This inferencer implementation will be phased out. Consider switching to the
  *             {@link SchemaCachingRDFSInferencer} instead.
  */
@@ -73,7 +76,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	// Called by base sail
 	@Override
 	protected Model createModel() {
-		return new TreeModel();
+		return new DynamicModelFactory().createEmptyModel();
 	}
 
 	/**

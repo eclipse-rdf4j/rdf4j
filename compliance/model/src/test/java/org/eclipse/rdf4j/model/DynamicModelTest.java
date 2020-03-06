@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.model;
 
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleUpgradeableModel;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 
-public class SimpleUpgradeableModelTest extends AbstractModelTest {
+public class DynamicModelTest extends AbstractModelTest {
 
 	@Override
 	protected Model getNewModel() {
-		return new SimpleUpgradeableModel(new LinkedHashModelFactory());
+		return new DynamicModel(new LinkedHashModelFactory());
 	}
 
 }

@@ -10,14 +10,14 @@ package org.eclipse.rdf4j.model.impl;
 import org.eclipse.rdf4j.model.ModelFactory;
 
 /**
- * Creates {@link SimpleUpgradeableModel}.
+ * Creates {@link DynamicModel}.
  *
  */
-public class SimpleUpgradeableModelFactory implements ModelFactory {
+public class DynamicModelFactory implements ModelFactory {
 
 	@Override
-	public SimpleUpgradeableModel createEmptyModel() {
-		return new SimpleUpgradeableModel(new LinkedHashModelFactory());
+	public DynamicModel createEmptyModel() {
+		return new DynamicModel(new LinkedHashModelFactory());
 	}
 
 }

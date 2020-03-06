@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Models;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -24,15 +25,15 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The
- * SimpleUpgradeableModel postpones this cost until such access is actually needed. It stores all data in a
- * ConcurrentHashMap (Set) and supports adding, retrieving and removing data. The model will upgrade to a full model
- * (provided by the modelFactory) if more complex operations are called, for instance removing data according to a
- * pattern (eg. all statements with rdf:type as predicate).
+ * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The DynamicModel
+ * postpones this cost until such access is actually needed. It stores all data in a LinkedHashSet and supports adding,
+ * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
+ * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
+ * predicate).
  *
  * @author Håvard Mikkelsen Ottestad
  */
-public class SimpleUpgradeableModel implements Model {
+public class DynamicModel implements Model {
 
 	private static final long serialVersionUID = -9162104133818983614L;
 
@@ -45,7 +46,7 @@ public class SimpleUpgradeableModel implements Model {
 
 	private final ModelFactory modelFactory;
 
-	public SimpleUpgradeableModel(ModelFactory modelFactory) {
+	public DynamicModel(ModelFactory modelFactory) {
 		this.modelFactory = modelFactory;
 	}
 
@@ -298,16 +299,23 @@ public class SimpleUpgradeableModel implements Model {
 		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof Set)) {
-			return false;
+
+		if (o instanceof Model) {
+			Model model = (Model) o;
+			return Models.isomorphic(this, model);
+		} else if (o instanceof Set) {
+			if (this.size() != ((Set<?>) o).size()) {
+				return false;
+			}
+			try {
+				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
+			} catch (ClassCastException e) {
+				return false;
+			}
 		}
 
-		Collection c = (Collection) o;
-		if (c.size() != size()) {
-			return false;
-		}
+		return false;
 
-		return containsAll(c);
 	}
 
 	@Override

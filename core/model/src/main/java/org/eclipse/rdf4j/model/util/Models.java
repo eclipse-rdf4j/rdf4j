@@ -507,7 +507,7 @@ public class Models {
 			} else {
 				return st;
 			}
-		}).collect(Collectors.toCollection(LinkedHashModel::new));
+		}).collect(ModelCollector.toModel());
 	}
 
 	private static boolean isSubsetInternal(Set<Statement> model1, Model model2) {
