@@ -19,13 +19,13 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
@@ -259,7 +259,34 @@ public class Rio {
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
 			throws IOException, RDFParseException, UnsupportedRDFormatException {
-		Model result = new DynamicModel(new LinkedHashModelFactory());
+
+		return parse(in, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);
+	}
+
+	/**
+	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+	 *
+	 * @param in           An InputStream from which RDF data can be read.
+	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against.
+	 * @param dataFormat   The serialization format of the data.
+	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+	 *                     not generate an {@link RDFParseException}.
+	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+	 * @param contexts     The contexts to add the data to. If one or more contexts are supplied the method ignores
+	 *                     contextual information in the actual data. If no contexts are supplied the contextual
+	 *                     information in the input stream is used, if no context information is available the data is
+	 *                     added without any context.
+	 * @return A {@link Model} containing the parsed statements.
+	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 */
+	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		Model result = modelFactory.createEmptyModel();
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
 		parser.setParseErrorListener(errors);
@@ -293,12 +320,40 @@ public class Rio {
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
 			throws IOException, RDFParseException, UnsupportedRDFormatException {
-		Model result = new DynamicModel(new LinkedHashModelFactory());
+
+		return parse(reader, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);
+	}
+
+	/**
+	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. <b>Note: using
+	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data's character encoding
+	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+	 * to be preferred.</b>
+	 *
+	 * @param reader       A Reader from which RDF data can be read.
+	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against.
+	 * @param dataFormat   The serialization format of the data.
+	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+	 *                     not generate an {@link RDFParseException}.
+	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+	 * @param contexts     The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *                     these contexts, ignoring any context information in the data itself.
+	 * @return A {@link Model} containing the parsed statements.
+	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 */
+	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		Model result = modelFactory.createEmptyModel();
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
 		parser.setParseErrorListener(errors);
 		parser.setRDFHandler(new ContextStatementCollector(result, valueFactory, contexts));
-		// DynamicModel and ContextStatementCollector should not throw
+		// Model and ContextStatementCollector should not throw
 		// RDFHandlerException exceptions
 		parser.parse(reader, baseURI);
 		return result;

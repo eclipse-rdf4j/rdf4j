@@ -26,10 +26,10 @@ import java.util.Set;
 
 /**
  * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The DynamicModel
- * postpones this cost until such access is actually needed. It stores all data in a ConcurrentHashMap (Set) and
- * supports adding, retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory)
- * if more complex operations are called, for instance removing data according to a pattern (eg. all statements with
- * rdf:type as predicate).
+ * postpones this cost until such access is actually needed. It stores all data in a LinkedHashSet and supports adding,
+ * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
+ * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
+ * predicate).
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -39,7 +39,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private LinkedHashSet<Statement> statements = new LinkedHashSet<>();
+	private Set<Statement> statements = new LinkedHashSet<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;

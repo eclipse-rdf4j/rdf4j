@@ -32,9 +32,11 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.util.Models;
@@ -67,7 +69,22 @@ public class QueryResults extends Iterations {
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
 			throws QueryEvaluationException {
-		Model model = new DynamicModel(new LinkedHashModelFactory());
+		return asModel(iteration, new DynamicModelFactory());
+	}
+
+	/**
+	 * Get a {@link Model} containing all elements obtained from the specified query result.
+	 *
+	 * @param iteration    the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
+	 *                     {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
+	 *                     &lt;Statement&gt;}
+	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
+	 */
+	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration,
+			ModelFactory modelFactory)
+			throws QueryEvaluationException {
+		Model model = modelFactory.createEmptyModel();
 		addAll(iteration, model);
 		return model;
 	}
