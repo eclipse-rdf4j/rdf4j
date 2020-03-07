@@ -80,19 +80,22 @@ public class TargetNode extends NodeShape {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return targetNodeSet.stream()
-				.map(node -> {
-					if (node instanceof Resource) {
-						return "<" + node + ">";
+				.map(value -> {
+					if (value instanceof Resource) {
+						return "<" + value + ">";
 					}
-					if (node instanceof Literal) {
-						IRI datatype = ((Literal) node).getDatatype();
+					if (value instanceof Literal) {
+						IRI datatype = ((Literal) value).getDatatype();
 						if (datatype == null) {
-							return "\"" + node.stringValue() + "\"";
+							return "\"" + value.stringValue() + "\"";
 						}
-						return "\"" + node.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+						if (((Literal) value).getLanguage().isPresent()) {
+							return "\"" + value.stringValue() + "\"@" + ((Literal) value).getLanguage().get();
+						}
+						return "\"" + value.stringValue() + "\"^^<" + datatype.stringValue() + ">";
 					}
 
-					throw new IllegalStateException(node.getClass().getSimpleName());
+					throw new IllegalStateException(value.getClass().getSimpleName());
 
 				})
 				.map(r -> "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 "
