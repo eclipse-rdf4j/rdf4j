@@ -88,6 +88,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/datatype/simple",
 		"test-cases/datatype/targetNode",
 		"test-cases/datatype/targetNode2",
+		"test-cases/datatype/targetNodeLang",
 		"test-cases/datatype/targetObjectsOf",
 		"test-cases/datatype/targetSubjectsOf",
 		"test-cases/datatype/targetSubjectsOfSingle",
