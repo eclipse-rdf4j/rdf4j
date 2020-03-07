@@ -206,8 +206,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				}
 			}
 
-			// long count = 0;
-
 			while (iter.hasNext()) {
 				BindingSet sol;
 				try {
@@ -334,10 +332,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 						sol.setBinding(name, value);
 					}
 				} catch (ValueExprEvaluationException ex) {
-					// There was a type error when calculating the value of the
-					// aggregate.
-					// We silently ignore the error, resulting in no result value
-					// being bound.
+					// There was a type error when calculating the value of the aggregate. We silently ignore the error,
+					// resulting in no result value being bound.
 				}
 			}
 		}
@@ -487,6 +483,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getValue() {
+			if (min == null) {
+				throw new ValueExprEvaluationException("MIN undefined");
+			}
 			return min;
 		}
 	}
@@ -514,9 +513,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public Value getValue() {
+		public Value getValue() throws ValueExprEvaluationException {
+			if (max == null) {
+				throw new ValueExprEvaluationException("max undefined");
+			}
 			return max;
 		}
+
 	}
 
 	private class SumAggregate extends Aggregate {
@@ -645,6 +648,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getValue() {
+			if (sample == null) {
+				throw new ValueExprEvaluationException("SAMPLE undefined");
+			}
 			return sample;
 		}
 	}
