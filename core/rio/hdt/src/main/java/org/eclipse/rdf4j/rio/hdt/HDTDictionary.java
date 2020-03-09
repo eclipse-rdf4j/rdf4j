@@ -47,7 +47,7 @@ class HDTDictionary extends HDTPart {
 			checkControl(cis, HDTPart.Type.DICTIONARY);
 			checkFormat(cis, DICT_FORMAT);
 
-			properties = getProperties(cis);
+			properties = readProperties(cis);
 
 			checkCRC(cis, is, 2);
 		}

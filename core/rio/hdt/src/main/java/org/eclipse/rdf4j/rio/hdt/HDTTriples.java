@@ -9,10 +9,16 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  * HDT Triples Part.
@@ -87,7 +93,7 @@ class HDTTriples extends HDTPart {
 			checkControl(cis, HDTPart.Type.TRIPLES);
 			checkFormat(cis, FORMAT_BITMAP);
 
-			properties = getProperties(cis);
+			properties = readProperties(cis);
 
 			int i = getIntegerProperty(properties, ORDER, "order");
 			if (i != HDTTriples.Order.SPO.getValue()) {
@@ -96,6 +102,23 @@ class HDTTriples extends HDTPart {
 			}
 
 			checkCRC(cis, is, 2);
+		}
+	}
+	
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		// don't close CheckedOutputstream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC16())) {
+
+			writeControl(cos, HDTPart.Type.TRIPLES);
+			writeFormat(cos, FORMAT_BITMAP);
+
+			Map<String,String> props = new HashMap<>();
+			props.put(ORDER, String.valueOf(HDTTriples.Order.SPO.getValue()));
+			writeProperties(cos, props);
+
+			writeCRC(cos, os, 2);
 		}
 	}
 }

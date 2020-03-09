@@ -9,13 +9,16 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import java.nio.charset.StandardCharsets;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 /**
  * Helper class for different HDT parts.
@@ -70,6 +73,14 @@ abstract class HDTPart {
 	 * @throws IOException
 	 */
 	protected abstract void parse(InputStream is) throws IOException;
+
+	/**
+	 * Write to output stream
+	 * 
+	 * @param is
+	 * @throws IOException
+	 */
+	protected void write(OutputStream os) throws IOException {}
 
 	/**
 	 * Get properties, if any.
@@ -131,9 +142,21 @@ abstract class HDTPart {
 	}
 
 	/**
+	 * Write start of part for <code>$HDT</code> and the byte indicating the type
+	 * 
+	 * @param os    output stream
+	 * @param ctype control type
+	 * @throws IOException
+	 */
+	protected static void writeControl(OutputStream os, HDTPart.Type ctype) throws IOException {
+		os.write(COOKIE);
+		os.write(ctype.getValue());
+	}
+
+	/**
 	 * Check for <code>null</code> terminated format string.
 	 * 
-	 * @param is
+	 * @param is input stream
 	 * @param format
 	 * @throws IOException
 	 */
@@ -144,6 +167,18 @@ abstract class HDTPart {
 			throw new IOException("Unknown format, expected " + new String(format, StandardCharsets.US_ASCII));
 		}
 		is.read(); // also read null byte
+	}
+
+	/**
+	 * Write <code>null</code> terminated format string.
+	 * 
+	 * @param os output stream
+	 * @param format
+	 * @throws IOException
+	 */
+	protected static void writeFormat(OutputStream os, byte[] format) throws IOException {
+		os.write(format);
+		os.write(0b00); // also write null byte
 	}
 
 	/**
@@ -165,6 +200,18 @@ abstract class HDTPart {
 			throw new IOException("Buffer for reading properties exceeded, max " + BUFLEN);
 		}
 		return Arrays.copyOf(buf, len);
+	}
+
+	/**
+	 * Write null terminated series of bytes
+	 * 
+	 * @param os output stream
+	 * @param b byte buffer
+	 * @return
+	 * @throws IOException
+	 */
+	protected static void writeWithNull(OutputStream os, byte[] b) throws IOException {
+		os.write(0b00);
 	}
 
 	/**
@@ -191,8 +238,20 @@ abstract class HDTPart {
 	 * @return key,value map
 	 * @throws IOException
 	 */
-	protected static Map<String, String> getProperties(InputStream is) throws IOException {
+	protected static Map<String, String> readProperties(InputStream is) throws IOException {
 		return mapProperties(readToNull(is));
+	}
+
+	/**
+	 * Set the properties for the output stream. The properties are encoded as a
+	 * <code>key=value;</code> string and must be <code>null</code> terminated.
+	 * 
+	 * @param is output stream
+	 * @param prop key,value map
+	 * @throws IOException
+	 */
+	protected static void writeProperties(OutputStream os, Map<String, String> props) throws IOException {
+		writeWithNull(os, stringProperties(props));
 	}
 
 	/**
@@ -215,6 +274,22 @@ abstract class HDTPart {
 			}
 		}
 		return map;
+	}
+	
+	/**
+	 * Flatten a key, value map to a ';' separated string
+	 * 
+	 * @param props key,value map
+	 * @return array of bytes
+	 */
+	protected static byte[] stringProperties(Map<String, String> props) {
+		if (props == null || props.isEmpty()) {
+			return new byte[0];
+		}		
+		StringBuilder builder = new StringBuilder(props.size() * 16 * 2); // estimate
+		props.forEach((k,v) -> { builder.append(k).append('=').append(v).append(';'); });
+
+		return builder.toString().getBytes(StandardCharsets.US_ASCII);
 	}
 
 	/**
@@ -267,5 +342,27 @@ abstract class HDTPart {
 			throw new IOException("CRC does not match: calculated " +
 					Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
 		}
+	}
+	
+	/**
+	 * Write the CRC
+	 * 
+	 * @param cos checked output stream
+	 * @param os  (unchecked) output stream
+	 * @param len number of bytes of the checksum
+	 * @throws IOException
+	 */
+	protected static void writeCRC(CheckedOutputStream cos, OutputStream os, int len) throws IOException {
+		long calc = cos.getChecksum().getValue();
+
+		byte[] checksum = new byte[len];
+		
+		// big-endian to little-endian, e.g. HDT-It stores checksum 7635 as 0x35 0x76 (at least on x86)
+		for (int i = 0; i < len; i++) {
+			checksum[i] = (byte) (calc & 0xFF);
+			calc >>= 8;
+		}
+
+		os.write(checksum);
 	}
 }

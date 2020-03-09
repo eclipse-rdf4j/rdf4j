@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * HDT Array factory.
@@ -16,13 +17,36 @@ import java.io.InputStream;
  * @author Bart Hanssens
  */
 class HDTArrayFactory {
-
+	/**
+	 * Parse array from input stream
+	 * 
+	 * @param is input stream
+	 * @return array
+	 * @throws IOException 
+	 */
 	protected static HDTArray parse(InputStream is) throws IOException {
 		int dtype = is.read();
 		if (dtype != HDTArray.Type.LOG64.getValue()) {
 			throw new UnsupportedOperationException("Array section: encoding " + Long.toHexString(dtype) +
 					", but only Log64 encoding is supported");
 		}
+		return new HDTArrayLog64();
+	}
+	
+	/**
+	 * Write array to output stream
+	 * 
+	 * @param os output stream
+	 * @param dtype array type
+	 * @return array
+	 * @throws IOException 
+	 */
+	protected static HDTArray write(OutputStream os, HDTArray.Type dtype) throws IOException {
+		if (dtype != HDTArray.Type.LOG64) {
+			throw new UnsupportedOperationException("Array section: encoding " + dtype.getValue() +
+					", but only Log64 encoding is supported");
+		}
+		os.write(HDTArray.Type.LOG64.getValue());
 		return new HDTArrayLog64();
 	}
 }

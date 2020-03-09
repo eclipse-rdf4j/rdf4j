@@ -9,9 +9,12 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  * HDT Array
@@ -105,6 +108,22 @@ abstract class HDTArray extends HDTPart {
 			entries = (int) l;
 
 			checkCRC(cis, is, 1);
+		}
+	}
+
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		CRC8 crc8 = new CRC8();
+		crc8.update(getType());
+
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, crc8)) {
+
+			cos.write(nrbits);
+			VByte.encode(cos, entries);
+
+			writeCRC(cos, os, 1);
 		}
 	}
 }

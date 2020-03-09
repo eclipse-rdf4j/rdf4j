@@ -47,7 +47,7 @@ class HDTHeader extends HDTPart {
 
 			checkControl(cis, HDTPart.Type.HEADER);
 			checkFormat(cis, HEADER_FORMAT);
-			properties = getProperties(cis);
+			properties = readProperties(cis);
 
 			checkCRC(cis, is, 2);
 		}

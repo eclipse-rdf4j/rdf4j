@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * HDT Triples section.
@@ -81,6 +82,11 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	}
 
 	@Override
+	protected void write(OutputStream os) throws IOException {
+		write(os, HDTTriples.Order.SPO);
+	}
+	
+	@Override
 	protected void parse(InputStream is, HDTTriples.Order order) throws IOException {
 		bitmapY = new HDTBitmap();
 		bitmapY.parse(is);
@@ -95,5 +101,15 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 		arrZ = HDTArrayFactory.parse(is);
 		arrZ.parse(is);
+	}
+	
+	@Override
+	protected void write(OutputStream os, HDTTriples.Order order) throws IOException {
+		bitmapY = new HDTBitmap();
+		bitmapZ = new HDTBitmap();
+
+		arrY = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+
+		arrZ = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
 	}
 }

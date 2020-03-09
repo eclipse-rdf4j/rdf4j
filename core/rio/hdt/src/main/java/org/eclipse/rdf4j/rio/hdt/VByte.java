@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * Variable byte encoding for numbers.
@@ -58,6 +59,24 @@ public class VByte {
 	}
 
 	/**
+	 * Encode a value to a series of encoded bytes
+	 * 
+	 * @param value
+	 * @return bytes byte array
+	 */
+	public static byte[] encode(long value) {
+		int len = VByte.encodedLength(value);
+		byte b[] = new byte[len];
+
+		// big-endian to little-endian, e.g. HDT-It stores vbyte 0x81 0x00 as 0x00 0x81 (at least on x86)
+		for (int i = 0; i < len; i++) {
+			b[i] = (byte) (value & 0x7F);
+			value >>= 7;
+		}
+		return b;
+	}
+
+	/**
 	 * Decode a maximum of 8 bytes from the input stream.
 	 * 
 	 * @param is input stream
@@ -72,6 +91,17 @@ public class VByte {
 			buffer[i] = (byte) is.read();
 		} while (i < buffer.length && hasNext(buffer[i++]));
 		return decode(buffer, i);
+	}
+
+	/**
+	 * Encode a maximum of 8 bytes to the output stream.
+	 * 
+	 * @param os output stream
+	 * @param value
+	 * @throws IOException
+	 */
+	public static void encode(OutputStream os, long value) throws IOException {
+		os.write(encode(value));
 	}
 
 	/**
@@ -111,6 +141,12 @@ public class VByte {
 		if (value < 268_435_456) {
 			return 4;
 		}
-		return 5;
+		if (value < 34_359_738_368L) {
+			return 5;
+		}
+		if (value < 4_398_046_511_104L) {
+			return 6;
+		}
+		return 7;
 	}
 }
