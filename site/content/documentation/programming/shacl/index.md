@@ -108,7 +108,7 @@ As of writing this documentation the following features are supported.
 - `sh:pattern` and `sh:flags`
 - `sh:nodeKind`
 - `sh:languageIn`
-- `sh:unique_lang`
+- `sh:uniqueLang`
 - `sh:datatype`
 - `sh:class`
 - `sh:minExclusive`
@@ -249,8 +249,7 @@ ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,ps
 // significantly reduce required memory
 shaclSail.setCacheSelectNodes(false);
 
-// run validation in parallel as much as possible,
-// this can be disabled to reduce memory load further
+// further reduce required memory by not running validation in parallel
 shaclSail.setParallelValidation(false);
 
 SailRepository sailRepository = new SailRepository(shaclSail);
