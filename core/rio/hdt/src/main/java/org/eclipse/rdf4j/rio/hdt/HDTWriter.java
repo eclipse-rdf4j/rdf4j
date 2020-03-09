@@ -7,39 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.Reader;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import org.apache.commons.io.output.CountingOutputStream;
 
-import org.apache.commons.io.input.CountingInputStream;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 
 /**
- * RDF writer for HDT v1.0 files. This writer is not thread-safe, therefore its public methods are synchronized.
+ * <strong>Experimental<strong> RDF writer for HDT v1.0 files. This writer is not thread-safe, therefore its public methods are synchronized.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
@@ -106,7 +92,8 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-
+		// not using try-with-resources, since the counter is needed in the catch clause (JDK8)
+		CountingOutputStream bos = new CountingOutputStream(out);
 		try {
 			HDTGlobal global = new HDTGlobal();
 			global.write(out);
@@ -114,7 +101,13 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTHeader header = new HDTHeader();
 			header.write(out);
 		} catch (IOException ioe) {
-			throw new RDFHandlerException(ioe);
+			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
+		} finally {
+			try {
+				bos.close();
+			} catch (IOException ex) {
+				//
+			}
 		}
 	}
 
