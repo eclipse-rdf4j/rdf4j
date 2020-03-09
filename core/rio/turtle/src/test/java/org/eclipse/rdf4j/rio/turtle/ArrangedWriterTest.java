@@ -62,9 +62,10 @@ public class ArrangedWriterTest {
 		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
 
-		String expectedResult = "@prefix net: <http://example.net/> .\n" +
-				"@prefix org: <http://example.org/> .\n\n" +
-				"net:uri0 org:uri1 org:uri2 .\n";
+		String sep = System.lineSeparator();
+		String expectedResult = "@prefix net: <http://example.net/> ." + sep +
+				"@prefix org: <http://example.org/> ." + sep + sep +
+				"net:uri0 org:uri1 org:uri2 ." + sep;
 
 		assertEquals(expectedResult, outputWriter.toString());
 	}
