@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -35,4 +39,13 @@ public class SPARQLConnectionTest {
 		verify(client, times(1)).setParserConfig(config);
 	}
 
+	@Test
+	public void commitOnEmptyTxnDoesNothing() throws Exception {
+		subject.begin();
+		subject.commit();
+
+		// verify both method signatures for sendUpdate never get called.
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), any());
+	}
 }
