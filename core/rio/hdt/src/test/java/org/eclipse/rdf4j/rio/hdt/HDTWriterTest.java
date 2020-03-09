@@ -35,15 +35,15 @@ import org.junit.rules.TemporaryFolder;
 public class HDTWriterTest {
 	@Rule
 	public TemporaryFolder folder = new TemporaryFolder();
-		
+
 	private RDFWriter writer;
 
 	@Before
 	public void setUp() throws Exception {
-		//File f = folder.newFile();
+		// File f = folder.newFile();
 		File f = new File("c:/data/test.hdt");
 		OutputStream os = Files.newOutputStream(f.toPath(),
-			StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 		writer = Rio.createWriter(RDFFormat.HDT, os);
 	}
 
@@ -57,7 +57,7 @@ public class HDTWriterTest {
 		} catch (Exception e) {
 			fail(e.getMessage());
 		}
-		
-		//assertEquals("HDT file does not match original NT file", 0, f.size());
+
+		// assertEquals("HDT file does not match original NT file", 0, f.size());
 	}
 }

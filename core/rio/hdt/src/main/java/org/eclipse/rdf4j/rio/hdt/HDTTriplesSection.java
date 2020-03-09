@@ -21,16 +21,16 @@ abstract class HDTTriplesSection extends HDTPart implements Iterator<int[]> {
 	/**
 	 * Parse triples section and return the triple parts in the correct S,P,O order.
 	 * 
-	 * @param is input stream
+	 * @param is    input stream
 	 * @param order
 	 * @throws IOException
 	 */
 	protected abstract void parse(InputStream is, HDTTriples.Order order) throws IOException;
-	
+
 	/**
 	 * Write triples section in a specific order.
 	 * 
-	 * @param os output stream
+	 * @param os    output stream
 	 * @param order
 	 * @throws IOException
 	 */

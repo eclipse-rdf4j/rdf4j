@@ -96,7 +96,7 @@ public class VByte {
 	/**
 	 * Encode a maximum of 8 bytes to the output stream.
 	 * 
-	 * @param os output stream
+	 * @param os    output stream
 	 * @param value
 	 * @throws IOException
 	 */

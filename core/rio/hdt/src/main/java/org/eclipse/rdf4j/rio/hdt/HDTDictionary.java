@@ -37,7 +37,8 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
  * @author Bart Hanssens
  */
 class HDTDictionary extends HDTPart {
-	protected final static byte[] DICT_FORMAT = HDT.DICTIONARY_FOUR.stringValue().getBytes(StandardCharsets.US_ASCII);
+	protected final static byte[] DICT_FORMAT = ("<" + HDT.DICTIONARY_FOUR.stringValue() + ">")
+			.getBytes(StandardCharsets.US_ASCII);
 	protected final static String DICT_MAPPING = "mapping";
 	protected final static String DICT_ELEMENTS = "elements";
 
@@ -55,7 +56,7 @@ class HDTDictionary extends HDTPart {
 			checkCRC(cis, is, 2);
 		}
 	}
-	
+
 	@Override
 	protected void write(OutputStream os) throws IOException {
 		// don't close CheckedOutputStream, as it will close the underlying outputstream

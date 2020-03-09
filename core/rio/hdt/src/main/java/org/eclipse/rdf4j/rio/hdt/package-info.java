@@ -5,7 +5,7 @@
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
  * with HDT-It 1.0.
  * 
- * It assumes S-P-O ordering, plain-front-coding for all dictionaries and LogArray encoding for triples bitmap arrays. 
+ * It assumes S-P-O ordering, plain-front-coding for all dictionaries and LogArray encoding for triples bitmap arrays.
  * 
  * File structure:
  * 

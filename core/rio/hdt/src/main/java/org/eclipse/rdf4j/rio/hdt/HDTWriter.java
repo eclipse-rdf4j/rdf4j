@@ -26,7 +26,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 
 /**
- * <strong>Experimental<strong> RDF writer for HDT v1.0 files. This writer is not thread-safe, therefore its public methods are synchronized.
+ * <strong>Experimental<strong> RDF writer for HDT v1.0 files. This writer is not thread-safe, therefore its public
+ * methods are synchronized.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
@@ -63,10 +64,10 @@ public class HDTWriter extends AbstractRDFWriter {
 	// various counters
 	private long triples;
 
-	private final TreeMap<byte[],Integer> shared = new TreeMap<>();
-	private final TreeMap<byte[],Integer> s = new TreeMap<>();
-	private final TreeMap<byte[],Integer> p = new TreeMap<>();
-	private final TreeMap<byte[],Integer> o = new TreeMap<>();
+	private final TreeMap<byte[], Integer> shared = new TreeMap<>();
+	private final TreeMap<byte[], Integer> s = new TreeMap<>();
+	private final TreeMap<byte[], Integer> p = new TreeMap<>();
+	private final TreeMap<byte[], Integer> o = new TreeMap<>();
 
 	/**
 	 * Creates a new HDTWriter.
@@ -98,7 +99,7 @@ public class HDTWriter extends AbstractRDFWriter {
 		try {
 			HDTGlobal global = new HDTGlobal();
 			global.write(out);
-			
+
 			HDTHeader header = new HDTHeader();
 			header.write(out);
 		} catch (IOException ioe) {
@@ -117,7 +118,7 @@ public class HDTWriter extends AbstractRDFWriter {
 		byte[] s = st.getSubject().stringValue().getBytes(StandardCharsets.UTF_8);
 		byte[] p = st.getObject().stringValue().getBytes(StandardCharsets.UTF_8);
 		byte[] o = st.getPredicate().stringValue().getBytes(StandardCharsets.UTF_8);
-		
+
 		triples++;
 	}
 

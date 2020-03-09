@@ -36,7 +36,8 @@ public class HDTWriterFactory implements RDFWriterFactory {
 
 	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
+																		// Tools | Templates.
 	}
 
 	@Override

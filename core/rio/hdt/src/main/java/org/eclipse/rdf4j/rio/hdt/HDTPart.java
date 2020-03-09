@@ -79,7 +79,8 @@ abstract class HDTPart {
 	 * @param is
 	 * @throws IOException
 	 */
-	protected void write(OutputStream os) throws IOException {}
+	protected void write(OutputStream os) throws IOException {
+	}
 
 	/**
 	 * Get properties, if any.
@@ -155,7 +156,7 @@ abstract class HDTPart {
 	/**
 	 * Check for <code>null</code> terminated format string.
 	 * 
-	 * @param is input stream
+	 * @param is     input stream
 	 * @param format
 	 * @throws IOException
 	 */
@@ -171,7 +172,7 @@ abstract class HDTPart {
 	/**
 	 * Write <code>null</code> terminated format string.
 	 * 
-	 * @param os output stream
+	 * @param os     output stream
 	 * @param format
 	 * @throws IOException
 	 */
@@ -205,7 +206,7 @@ abstract class HDTPart {
 	 * Write null terminated series of bytes
 	 * 
 	 * @param os output stream
-	 * @param b byte buffer
+	 * @param b  byte buffer
 	 * @return
 	 * @throws IOException
 	 */
@@ -242,10 +243,10 @@ abstract class HDTPart {
 	}
 
 	/**
-	 * Set the properties for the output stream. The properties are encoded as a
-	 * <code>key=value;</code> string and must be <code>null</code> terminated.
+	 * Set the properties for the output stream. The properties are encoded as a <code>key=value;</code> string and must
+	 * be <code>null</code> terminated.
 	 * 
-	 * @param is output stream
+	 * @param is   output stream
 	 * @param prop key,value map
 	 * @throws IOException
 	 */
@@ -274,7 +275,7 @@ abstract class HDTPart {
 		}
 		return map;
 	}
-	
+
 	/**
 	 * Flatten a key, value map to a ';' separated string
 	 * 
@@ -284,9 +285,11 @@ abstract class HDTPart {
 	protected static byte[] stringProperties(Map<String, String> props) {
 		if (props == null || props.isEmpty()) {
 			return new byte[0];
-		}		
+		}
 		StringBuilder builder = new StringBuilder(props.size() * 16 * 2); // estimate
-		props.forEach((k,v) -> { builder.append(k).append('=').append(v).append(';'); });
+		props.forEach((k, v) -> {
+			builder.append(k).append('=').append(v).append(';');
+		});
 
 		return builder.toString().getBytes(StandardCharsets.US_ASCII);
 	}
@@ -342,7 +345,7 @@ abstract class HDTPart {
 					Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
 		}
 	}
-	
+
 	/**
 	 * Write the CRC
 	 * 
@@ -355,7 +358,7 @@ abstract class HDTPart {
 		long calc = cos.getChecksum().getValue();
 
 		byte[] checksum = new byte[len];
-		
+
 		// big-endian to little-endian, e.g. HDT-It stores checksum 7635 as 0x35 0x76 (at least on x86)
 		for (int i = 0; i < len; i++) {
 			checksum[i] = (byte) (calc & 0xFF);

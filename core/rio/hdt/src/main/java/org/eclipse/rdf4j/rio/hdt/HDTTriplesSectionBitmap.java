@@ -85,7 +85,7 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	protected void write(OutputStream os) throws IOException {
 		write(os, HDTTriples.Order.SPO);
 	}
-	
+
 	@Override
 	protected void parse(InputStream is, HDTTriples.Order order) throws IOException {
 		bitmapY = new HDTBitmap();
@@ -102,7 +102,7 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 		arrZ = HDTArrayFactory.parse(is);
 		arrZ.parse(is);
 	}
-	
+
 	@Override
 	protected void write(OutputStream os, HDTTriples.Order order) throws IOException {
 		bitmapY = new HDTBitmap();

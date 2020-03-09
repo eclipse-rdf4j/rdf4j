@@ -104,7 +104,7 @@ class HDTTriples extends HDTPart {
 			checkCRC(cis, is, 2);
 		}
 	}
-	
+
 	@Override
 	protected void write(OutputStream os) throws IOException {
 		// don't close CheckedOutputstream, as it will close the underlying outputstream
@@ -114,7 +114,7 @@ class HDTTriples extends HDTPart {
 			writeControl(cos, HDTPart.Type.TRIPLES);
 			writeFormat(cos, FORMAT_BITMAP);
 
-			Map<String,String> props = new HashMap<>();
+			Map<String, String> props = new HashMap<>();
 			props.put(ORDER, String.valueOf(HDTTriples.Order.SPO.getValue()));
 			writeProperties(cos, props);
 

@@ -39,7 +39,8 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
  * @author Bart Hanssens
  */
 class HDTGlobal extends HDTPart {
-	protected final static byte[] GLOBAL_FORMAT = HDT.HDT_V1.stringValue().getBytes(StandardCharsets.US_ASCII);
+	protected final static byte[] GLOBAL_FORMAT = ("<" + HDT.HDT_V1.stringValue() + ">")
+			.getBytes(StandardCharsets.US_ASCII);
 	protected final static String GLOBAL_BASEURI = "BaseUri";
 	protected final static String GLOBAL_SOFTWARE = "Software";
 
@@ -56,7 +57,7 @@ class HDTGlobal extends HDTPart {
 			checkCRC(cis, is, 2);
 		}
 	}
-	
+
 	@Override
 	protected void write(OutputStream os) throws IOException {
 		// don't close CheckedOutputStream, as it will close the underlying outputstream

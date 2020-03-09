@@ -22,7 +22,7 @@ class HDTArrayFactory {
 	 * 
 	 * @param is input stream
 	 * @return array
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	protected static HDTArray parse(InputStream is) throws IOException {
 		int dtype = is.read();
@@ -32,14 +32,14 @@ class HDTArrayFactory {
 		}
 		return new HDTArrayLog64();
 	}
-	
+
 	/**
 	 * Write array to output stream
 	 * 
-	 * @param os output stream
+	 * @param os    output stream
 	 * @param dtype array type
 	 * @return array
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	protected static HDTArray write(OutputStream os, HDTArray.Type dtype) throws IOException {
 		if (dtype != HDTArray.Type.LOG64) {

@@ -14,10 +14,10 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * HDT Vocabulary helper class. 
+ * HDT Vocabulary helper class.
  * 
  * Kept to the bare minimum, since it is not an "official" vocabulary, just to be compatible with HDT-It
- *  
+ * 
  * @author Bart Hanssens
  */
 class HDT {
@@ -47,7 +47,7 @@ class HDT {
 	 * hdt:dictionary
 	 */
 	public static final IRI DICTIONARY;
-	
+
 	/**
 	 * hdt:dictionaryblockSize
 	 */
@@ -98,7 +98,21 @@ class HDT {
 	 */
 	public static final IRI TRIPLES;
 
-	
+	/**
+	 * hdt:triplesBitmap
+	 */
+	public static final IRI TRIPLES_BITMAP;
+
+	/**
+	 * hdt:triplesnumTriples
+	 */
+	public static final IRI TRIPLES_NUMTRIPLES;
+
+	/**
+	 * hdt:triplesOrder
+	 */
+	public static final IRI TRIPLES_ORDER;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 
@@ -115,5 +129,8 @@ class HDT {
 		PUBLICATION_INFORMATION = factory.createIRI(NAMESPACE, "publicationInformation");
 		STATISTICAL_INFORMATION = factory.createIRI(NAMESPACE, "statisticalInformation");
 		TRIPLES = factory.createIRI(NAMESPACE, "triples");
+		TRIPLES_BITMAP = factory.createIRI(NAMESPACE, "triplesBitmap");
+		TRIPLES_NUMTRIPLES = factory.createIRI(NAMESPACE, "triplesnumTriples");
+		TRIPLES_ORDER = factory.createIRI(NAMESPACE, "triplesOrder");
 	}
 }
