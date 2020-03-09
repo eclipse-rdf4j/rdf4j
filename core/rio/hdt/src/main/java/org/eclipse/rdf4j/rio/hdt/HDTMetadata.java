@@ -20,8 +20,11 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.VOID;
 
 /**
  * HDT Metadata helper class
@@ -61,18 +64,51 @@ public class HDTMetadata  {
 	}
 	
 	/**
-	 * Write the metadata part to the output stream. Not using the n-triples writer.
+	 * Write the metadata part to the output stream. 
+	 * Currently not using the n-triples writer to avoid dragging this runtime dependency.
 	 * 
 	 * @param os
 	 * @throws IOException 
 	 */
 	protected void write(OutputStream os) throws IOException {
 		String root = base.toString();
-		os.write(buildTriple(root, RDF.TYPE.toString(), ""));
+		os.write(buildTriple(root, RDF.TYPE, HDT.DATASET));
+		os.write(buildTriple(root, RDF.TYPE, VOID.DATASET));
+		os.write(buildTriple(root, VOID.TRIPLES, ""));
+		os.write(buildTriple(root, VOID.PROPERTIES, ""));
+		os.write(buildTriple(root, VOID.DISTINCT_SUBJECTS, ""));
+		os.write(buildTriple(root, VOID.DISTINCT_OBJECTS, ""));		
+		os.write(buildTriple(root, HDT.STATISTICAL_INFORMATION, "_:statistics"));		
+		os.write(buildTriple(root, HDT.PUBLICATION_INFORMATION, "_:publicationInformation"));	
+		os.write(buildTriple(root, HDT.FORMAT_INFORMATION, "_:format"));	
+		os.write(buildTriple("_:format", HDT.DICTIONARY, "_:dictionary"));
+		os.write(buildTriple("_:dictionary", DCTERMS.FORMAT, "_:dictionary"));
 	}
 	
-	private byte[] buildTriple(String s, String p, String o) {
-		String t = "<" + s + "> <" + p + "> <" + o + "> .\n";
+	/**
+	 * Build triple into a byte array
+	 * 
+	 * @param s subject string
+	 * @param p predicate IRI
+	 * @param o object string
+	 * @return byte array
+	 */
+	private byte[] buildTriple(String s, IRI p, String o) {
+		String t = s.startsWith("_") ? s : "<" + s + ">"; 
+		t += " <" + p.stringValue() + "> " + o + ".\n";
+		return t.getBytes(StandardCharsets.UTF_8);
+	}
+
+	/**
+	 * Build triple into a byte array
+	 * 
+	 * @param s subject string
+	 * @param p predicate IRI
+	 * @param o object value
+	 * @return byte array
+	 */
+	private byte[] buildTriple(String s, IRI p, Value o) {
+		String t = "<" + s + "> <" + p.toString() + "> <" + o.stringValue() + "> .\n";
 		return t.getBytes(StandardCharsets.UTF_8);
 	}
 }

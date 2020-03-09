@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
 

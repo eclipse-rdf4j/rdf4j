@@ -44,9 +44,44 @@ class HDT {
 
 	// Properties
 	/**
+	 * hdt:dictionary
+	 */
+	public static final IRI DICTIONARY;
+	
+	/**
+	 * hdt:dictionaryblockSize
+	 */
+	public static final IRI DICTIONARY_BLOCK_SIZE;
+
+	/**
+	 * hdt:dictionaryFour
+	 */
+	public static final IRI DICTIONARY_FOUR;
+
+	/**
+	 * hdt:dictionarymapping
+	 */
+	public static final IRI DICTIONARY_MAPPING;
+
+	/**
+	 * hdt:dictionarynumSharedSubjectObject
+	 */
+	public static final IRI DICTIONARY_NUMSHARED;
+
+	/**
+	 * hdt:dictionarysizeStrings
+	 */
+	public static final IRI DICTIONARY_SIZE_STRINGS;
+
+	/**
 	 * hdt:formatInformation
 	 */
 	public static final IRI FORMAT_INFORMATION;
+
+	/**
+	 * hdt:HDTv1
+	 */
+	public static final IRI HDT_V1;
 
 	/**
 	 * hdt:publicationInformation
@@ -58,13 +93,27 @@ class HDT {
 	 */
 	public static final IRI STATISTICAL_INFORMATION;
 
+	/**
+	 * hdt:triples
+	 */
+	public static final IRI TRIPLES;
+
+	
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 
 		DATASET = factory.createIRI(NAMESPACE, "Dataset");
 
+		DICTIONARY = factory.createIRI(NAMESPACE, "dictionary");
+		DICTIONARY_BLOCK_SIZE = factory.createIRI(NAMESPACE, "dictionaryblockSize");
+		DICTIONARY_FOUR = factory.createIRI(NAMESPACE, "dictionaryFour");
+		DICTIONARY_MAPPING = factory.createIRI(NAMESPACE, "dictionarymapping");
+		DICTIONARY_NUMSHARED = factory.createIRI(NAMESPACE, "dictionarynumSharedSubjectObject");
+		DICTIONARY_SIZE_STRINGS = factory.createIRI(NAMESPACE, "dictionarysizeStrings");
 		FORMAT_INFORMATION = factory.createIRI(NAMESPACE, "formatInformation");
+		HDT_V1 = factory.createIRI(NAMESPACE, "HDTv1");
 		PUBLICATION_INFORMATION = factory.createIRI(NAMESPACE, "publicationInformation");
 		STATISTICAL_INFORMATION = factory.createIRI(NAMESPACE, "statisticalInformation");
+		TRIPLES = factory.createIRI(NAMESPACE, "triples");
 	}
 }

@@ -1,9 +1,11 @@
 /**
- * Parser/writer for the <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT v1.0 format</a>.
+ * Experimental parser/writer for the <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT v1.0 format</a>.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
  * with HDT-It 1.0.
+ * 
+ * It assumes S-P-O ordering, plain-front-coding for all dictionaries and LogArray encoding for triples bitmap arrays. 
  * 
  * File structure:
  * 
