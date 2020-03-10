@@ -17,7 +17,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 import org.apache.commons.io.output.CountingOutputStream;
 
@@ -30,8 +29,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 
 /**
- * <strong>Experimental<strong> RDF writer for HDT v1.0 files. This writer is not thread-safe, therefore its public
- * methods are synchronized.
+ * <strong>Experimental<strong> RDF writer for HDT v1.0 files. 
+ * Currently only suitable for input that can fit into memory.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
@@ -66,15 +65,15 @@ public class HDTWriter extends AbstractRDFWriter {
 	private final OutputStream out;
 
 	// various counters
-	private long triples;
 	private long cnt;
 
+	// TODO: rewrite this to cater for larger input
 	// create dictionaries and triples, with some size estimations
 	private final int SIZE = 1_048_576;
-	private final Map<byte[], Integer> dictShared = new HashMap<>(SIZE / 4);
-	private final Map<byte[], Integer> dictS = new HashMap<>(SIZE / 8);
-	private final Map<byte[], Integer> dictP = new HashMap<>(SIZE / 1024);
-	private final Map<byte[], Integer> dictO = new HashMap<>(SIZE / 2);
+	private final Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
+	private final Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
+	private final Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
+	private final Map<String, Integer> dictO = new HashMap<>(SIZE / 2);
 	private final List<int[]> t = new ArrayList<>(SIZE);
 
 	/**
@@ -111,14 +110,22 @@ public class HDTWriter extends AbstractRDFWriter {
 			global.write(out);
 
 			HDTMetadata meta = new HDTMetadata();
-			meta.setTriples(triples);
-			meta.setDistinctObj(dictO.size());
 			meta.setDistinctSubj(dictS.size());
+			meta.setProperties(dictP.size());
+			meta.setTriples(t.size());
+			meta.setDistinctObj(dictO.size());
 			meta.setDistinctShared(dictShared.size());
 
 			HDTHeader header = new HDTHeader();
 			header.setHeaderData(meta.get());
 			header.write(out);
+			
+			HDTDictionary shared = new HDTDictionary();
+			HDTDictionarySection subjects = null;
+			HDTDictionarySection predicates = null;
+			HDTDictionarySection objects = null;
+			HDTTriplesSection section = null;
+			
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
 		} finally {
@@ -132,17 +139,15 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	@Override
 	public void handleStatement(Statement st) throws RDFHandlerException {
-		byte[] bs = st.getSubject().stringValue().getBytes(StandardCharsets.UTF_8);
-		byte[] bp = st.getObject().stringValue().getBytes(StandardCharsets.UTF_8);
-		byte[] bo = st.getPredicate().stringValue().getBytes(StandardCharsets.UTF_8);
+		String bs = st.getSubject().stringValue();
+		String bp = st.getPredicate().stringValue();
+		String bo = st.getObject().stringValue();
 
 		int s = putSO(bs, dictShared, dictS, dictO);
 		int p = putX(bp, dictP);
 		int o = putSO(bo, dictShared, dictO, dictS);
 
 		t.add(new int[] { s, p, o });
-
-		triples++;
 	}
 
 	@Override
@@ -161,7 +166,7 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @param other  other dictionary (O or S)
 	 * @return index of the part
 	 */
-	private int putSO(byte[] part, Map<byte[], Integer> shared, Map<byte[], Integer> dict, Map<byte[], Integer> other) {
+	private int putSO(String part, Map<String, Integer> shared, Map<String, Integer> dict, Map<String, Integer> other) {
 		Integer i = shared.get(part);
 		if (i != null) {
 			return i;
@@ -188,7 +193,7 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @param dict dictionary
 	 * @return index of the part
 	 */
-	private int putX(byte[] part, Map<byte[], Integer> dict) {
+	private int putX(String part, Map<String, Integer> dict) {
 		Integer p = dict.get(part);
 		if (p != null) {
 			return p;

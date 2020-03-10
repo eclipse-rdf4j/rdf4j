@@ -211,6 +211,7 @@ abstract class HDTPart {
 	 * @throws IOException
 	 */
 	protected static void writeWithNull(OutputStream os, byte[] b) throws IOException {
+		os.write(b);
 		os.write(0b00);
 	}
 

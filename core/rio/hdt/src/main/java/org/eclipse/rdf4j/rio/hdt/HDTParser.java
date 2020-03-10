@@ -34,11 +34,13 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**
- * RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
+ * Experimental RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
  * with HDT-It 1.0.
+ * 
+ * It assumes S-P-O ordering, plain-front-coding for all dictionaries and LogArray encoding for triples bitmap arrays.
  * 
  * The most important parts are the Dictionaries containing the actual values (S, P, O part of a triple), and the
  * Triples containing the numeric references to construct the triples.

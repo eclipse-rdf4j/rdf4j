@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.VOID;
  */
 public class HDTMetadata {
 	private final String DICTIONARY = "_:dictionary";
+	private final String FORMAT = "_:format";
+	private final String STATISTICS = "_:statistics";
 	private final String TRIPLES = "_:triples";
 
 	private Resource base = SimpleValueFactory.getInstance().createBNode("dataset");
@@ -119,13 +121,13 @@ public class HDTMetadata {
 		addTriple(sb, root, RDF.TYPE, VOID.DATASET);
 		addTriple(sb, root, VOID.TRIPLES, String.valueOf(triples));
 		addTriple(sb, root, VOID.PROPERTIES, String.valueOf(properties));
-		addTriple(sb, root, VOID.DISTINCT_SUBJECTS, String.valueOf(distinctSubjects));
-		addTriple(sb, root, VOID.DISTINCT_OBJECTS, String.valueOf(distinctObjects));
-		addTriple(sb, root, HDT.STATISTICAL_INFORMATION, "_:statistics");
+		addTriple(sb, root, VOID.DISTINCT_SUBJECTS, String.valueOf(distinctSubjects + distinctShared));
+		addTriple(sb, root, VOID.DISTINCT_OBJECTS, String.valueOf(distinctObjects + distinctShared));
+		addTriple(sb, root, HDT.STATISTICAL_INFORMATION, STATISTICS);
 		addTriple(sb, root, HDT.PUBLICATION_INFORMATION, "_:publicationInformation");
-		addTriple(sb, root, HDT.FORMAT_INFORMATION, "_:format");
-		addTriple(sb, "_:format", HDT.DICTIONARY, DICTIONARY);
-		addTriple(sb, "_:format", HDT.TRIPLES, TRIPLES);
+		addTriple(sb, root, HDT.FORMAT_INFORMATION, FORMAT);
+		addTriple(sb, FORMAT, HDT.DICTIONARY, DICTIONARY);
+		addTriple(sb, FORMAT, HDT.TRIPLES, TRIPLES);
 		addTriple(sb, DICTIONARY, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR);
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, "1");
@@ -134,6 +136,9 @@ public class HDTMetadata {
 		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
 		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
 		addTriple(sb, TRIPLES, HDT.TRIPLES_ORDER, "SPO");
+		addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, "");
+		addTriple(sb, STATISTICS, HDT.HDT_SIZE, "");
+		addTriple(sb, "_:publicationInformation", DCTERMS.ISSUED, "");
 
 		return sb.toString().getBytes(StandardCharsets.US_ASCII);
 	}

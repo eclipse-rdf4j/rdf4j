@@ -79,9 +79,19 @@ class HDT {
 	public static final IRI FORMAT_INFORMATION;
 
 	/**
+	 * hdt:hdtSize
+	 */
+	public static final IRI HDT_SIZE;
+
+	/**
 	 * hdt:HDTv1
 	 */
 	public static final IRI HDT_V1;
+
+	/**
+	 * hdt:originalSize
+	 */
+	public static final IRI ORIGINAL_SIZE;
 
 	/**
 	 * hdt:publicationInformation
@@ -125,7 +135,9 @@ class HDT {
 		DICTIONARY_NUMSHARED = factory.createIRI(NAMESPACE, "dictionarynumSharedSubjectObject");
 		DICTIONARY_SIZE_STRINGS = factory.createIRI(NAMESPACE, "dictionarysizeStrings");
 		FORMAT_INFORMATION = factory.createIRI(NAMESPACE, "formatInformation");
+		HDT_SIZE = factory.createIRI(NAMESPACE, "hdtSize");
 		HDT_V1 = factory.createIRI(NAMESPACE, "HDTv1");
+		ORIGINAL_SIZE = factory.createIRI(NAMESPACE, "originalSize");
 		PUBLICATION_INFORMATION = factory.createIRI(NAMESPACE, "publicationInformation");
 		STATISTICAL_INFORMATION = factory.createIRI(NAMESPACE, "statisticalInformation");
 		TRIPLES = factory.createIRI(NAMESPACE, "triples");
