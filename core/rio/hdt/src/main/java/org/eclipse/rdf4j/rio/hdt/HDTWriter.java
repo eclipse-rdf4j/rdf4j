@@ -7,11 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,10 +32,11 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.HDTWriterSettings;
 
 /**
- * <strong>Experimental<strong> RDF writer for HDT v1.0 files. 
- * Currently only suitable for input that can fit into memory.
+ * <strong>Experimental<strong> RDF writer for HDT v1.0 files. Currently only suitable for input that can fit into
+ * memory.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
@@ -92,7 +98,7 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<>();
+		Set<RioSetting<?>> result = Collections.singleton(HDTWriterSettings.ORIGINAL_FILE);
 		return result;
 	}
 
@@ -109,23 +115,30 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTGlobal global = new HDTGlobal();
 			global.write(out);
 
+			String file = getWriterConfig().get(HDTWriterSettings.ORIGINAL_FILE);
+			long len = getFileSize(file);
+
 			HDTMetadata meta = new HDTMetadata();
+			meta.setBase(file);
 			meta.setDistinctSubj(dictS.size());
 			meta.setProperties(dictP.size());
 			meta.setTriples(t.size());
 			meta.setDistinctObj(dictO.size());
 			meta.setDistinctShared(dictShared.size());
+			meta.setInitialSize(len);
 
 			HDTHeader header = new HDTHeader();
 			header.setHeaderData(meta.get());
 			header.write(out);
-			
-			HDTDictionary shared = new HDTDictionary();
-			HDTDictionarySection subjects = null;
-			HDTDictionarySection predicates = null;
-			HDTDictionarySection objects = null;
+
+			HDTDictionary dict = new HDTDictionary();
+			dict.write(out);
+
+			HDTDictionary subjects = new HDTDictionary();
+			HDTDictionary predicates = new HDTDictionary();
+			HDTDictionary objects = null;
 			HDTTriplesSection section = null;
-			
+
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
 		} finally {
@@ -206,5 +219,21 @@ public class HDTWriter extends AbstractRDFWriter {
 		dict.put(part, p);
 
 		return p;
+	}
+
+	/**
+	 * Get fie size
+	 * 
+	 * @param file
+	 * @return
+	 */
+	private static long getFileSize(String file) {
+		System.err.println("file = " + file);
+		Path path = Paths.get(file);
+		try {
+			return Files.size(path);
+		} catch (IOException ioe) {
+			return -1;
+		}
 	}
 }

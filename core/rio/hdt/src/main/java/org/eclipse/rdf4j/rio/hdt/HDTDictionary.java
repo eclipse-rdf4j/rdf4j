@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
 
@@ -41,6 +42,7 @@ class HDTDictionary extends HDTPart {
 			.getBytes(StandardCharsets.US_ASCII);
 	protected final static String DICT_MAPPING = "mapping";
 	protected final static String DICT_ELEMENTS = "elements";
+	protected final static String DICT_SIZE = "sizeStrings";
 
 	@Override
 	protected void parse(InputStream is) throws IOException {
@@ -66,7 +68,8 @@ class HDTDictionary extends HDTPart {
 			writeControl(cos, HDTPart.Type.DICTIONARY);
 			writeFormat(cos, DICT_FORMAT);
 
-			writeProperties(cos, Collections.EMPTY_MAP);
+			Map<String, String> props = Collections.singletonMap(DICT_MAPPING, "1");
+			writeProperties(cos, props);
 
 			writeCRC(cos, os, 2);
 		}

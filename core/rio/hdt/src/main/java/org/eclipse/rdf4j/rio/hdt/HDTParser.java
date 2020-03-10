@@ -34,7 +34,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**
- * Experimental RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
+ * Experimental RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are
+ * synchronized.
  * 
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible

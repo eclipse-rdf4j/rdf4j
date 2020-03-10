@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.HDTWriterSettings;
 
 import static org.junit.Assert.*;
 import org.junit.Before;
@@ -48,6 +49,7 @@ public class HDTWriterTest {
 		// load original N-Triples file
 		try (InputStream is = HDTWriterTest.class.getResourceAsStream("/test-orig.nt")) {
 			RDFParser nt = Rio.createParser(RDFFormat.NTRIPLES);
+			writer.getWriterConfig().set(HDTWriterSettings.ORIGINAL_FILE, "C:/Datagov/data/fodbosa/enhanced.nt");
 			nt.setRDFHandler(writer);
 			nt.parse(is, "");
 		} catch (Exception e) {

@@ -14,7 +14,7 @@ import java.util.Date;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -36,7 +36,7 @@ public class HDTMetadata {
 	private final String STATISTICS = "_:statistics";
 	private final String TRIPLES = "_:triples";
 
-	private Resource base = SimpleValueFactory.getInstance().createBNode("dataset");
+	private Resource base;
 	private long triples;
 	private int properties;
 	private int distinctSubjects;
@@ -52,8 +52,13 @@ public class HDTMetadata {
 	 * 
 	 * @param base
 	 */
-	protected void setBase(Resource base) {
-		this.base = base;
+	protected void setBase(String base) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		if (base == null || base.isEmpty()) {
+			this.base = vf.createBNode("dataset");
+			return;
+		}
+		this.base = base.startsWith("http") ? vf.createIRI(base) : vf.createIRI("file://" + base);
 	}
 
 	/**
@@ -101,6 +106,22 @@ public class HDTMetadata {
 		this.properties = properties;
 	}
 
+	/**
+	 * Set the file size of the original file
+	 * 
+	 * @param initialSize
+	 */
+	protected void setInitialSize(long initialSize) {
+		this.initialSize = initialSize;
+	}
+
+	/**
+	 * Parse input
+	 * 
+	 * @param is  input stream
+	 * @param len
+	 * @throws IOException
+	 */
 	protected void parse(InputStream is, int len) throws IOException {
 		byte[] b = new byte[len];
 		is.read(b);
@@ -132,11 +153,11 @@ public class HDTMetadata {
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, "1");
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, "");
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, "");
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, "16");
 		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
 		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
 		addTriple(sb, TRIPLES, HDT.TRIPLES_ORDER, "SPO");
-		addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, "");
+		addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, String.valueOf(initialSize > 0 ? initialSize : ""));
 		addTriple(sb, STATISTICS, HDT.HDT_SIZE, "");
 		addTriple(sb, "_:publicationInformation", DCTERMS.ISSUED, "");
 
