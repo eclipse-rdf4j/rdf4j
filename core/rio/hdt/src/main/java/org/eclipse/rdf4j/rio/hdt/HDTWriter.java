@@ -115,20 +115,8 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTGlobal global = new HDTGlobal();
 			global.write(out);
 
-			String file = getWriterConfig().get(HDTWriterSettings.ORIGINAL_FILE);
-			long len = getFileSize(file);
-
-			HDTMetadata meta = new HDTMetadata();
-			meta.setBase(file);
-			meta.setDistinctSubj(dictS.size());
-			meta.setProperties(dictP.size());
-			meta.setTriples(t.size());
-			meta.setDistinctObj(dictO.size());
-			meta.setDistinctShared(dictShared.size());
-			meta.setInitialSize(len);
-
 			HDTHeader header = new HDTHeader();
-			header.setHeaderData(meta.get());
+			header.setHeaderData(getMetadata());
 			header.write(out);
 
 			HDTDictionary dict = new HDTDictionary();
@@ -222,18 +210,34 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	/**
-	 * Get fie size
+	 * Get metadata for the HDT Header part
 	 * 
-	 * @param file
-	 * @return
+	 * @return byte array
 	 */
-	private static long getFileSize(String file) {
-		System.err.println("file = " + file);
+	private byte[] getMetadata() {
+		String file = getWriterConfig().get(HDTWriterSettings.ORIGINAL_FILE);
+
 		Path path = Paths.get(file);
+		long len = -1;
 		try {
-			return Files.size(path);
+			len = Files.size(path);
 		} catch (IOException ioe) {
-			return -1;
+			//
 		}
+
+		HDTMetadata meta = new HDTMetadata();
+		meta.setBase(file);
+		meta.setDistinctSubj(dictS.size());
+		meta.setProperties(dictP.size());
+		meta.setTriples(t.size());
+		meta.setDistinctObj(dictO.size());
+		meta.setDistinctShared(dictShared.size());
+		meta.setInitialSize(len);
+		meta.setHDTSize(3254);
+		meta.setMapping(HDTArray.Type.LOG64.getValue());
+		meta.setBlockSize(16);
+		meta.setSizeStrings(2943);
+
+		return meta.get();
 	}
 }

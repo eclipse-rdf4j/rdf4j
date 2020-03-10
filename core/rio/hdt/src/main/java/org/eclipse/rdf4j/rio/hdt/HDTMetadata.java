@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.VOID;
 public class HDTMetadata {
 	private final String DICTIONARY = "_:dictionary";
 	private final String FORMAT = "_:format";
+	private final String PUBL_INFO = "_:publicationInformation";
 	private final String STATISTICS = "_:statistics";
 	private final String TRIPLES = "_:triples";
 
@@ -42,7 +43,9 @@ public class HDTMetadata {
 	private int distinctSubjects;
 	private int distinctObjects;
 	private int distinctShared;
-	private byte[] triplesOrder;
+	private int mapping;
+	private int sizeStrings;
+	private int blockSize;
 	private long initialSize;
 	private long hdtSize;
 	private Date issued;
@@ -107,6 +110,42 @@ public class HDTMetadata {
 	}
 
 	/**
+	 * Set the dictionary mapping
+	 * 
+	 * @param mapping
+	 */
+	protected void setMapping(int mapping) {
+		this.mapping = mapping;
+	}
+
+	/**
+	 * Set the dictionary block size
+	 * 
+	 * @param blockSize
+	 */
+	protected void setBlockSize(int blockSize) {
+		this.blockSize = blockSize;
+	}
+
+	/**
+	 * Set the dictionary strings size
+	 * 
+	 * @param sizeStrings
+	 */
+	protected void setSizeStrings(int sizeStrings) {
+		this.sizeStrings = sizeStrings;
+	}
+
+	/**
+	 * Set the file size of the HDT file
+	 * 
+	 * @param hdtSize
+	 */
+	protected void setHDTSize(long hdtSize) {
+		this.hdtSize = hdtSize;
+	}
+
+	/**
 	 * Set the file size of the original file
 	 * 
 	 * @param initialSize
@@ -132,9 +171,8 @@ public class HDTMetadata {
 	 * runtime dependency.
 	 * 
 	 * @return byte array
-	 * @throws IOException
 	 */
-	protected byte[] get() throws IOException {
+	protected byte[] get() {
 		StringBuilder sb = new StringBuilder(4096);
 		String root = base.toString();
 
@@ -145,21 +183,21 @@ public class HDTMetadata {
 		addTriple(sb, root, VOID.DISTINCT_SUBJECTS, String.valueOf(distinctSubjects + distinctShared));
 		addTriple(sb, root, VOID.DISTINCT_OBJECTS, String.valueOf(distinctObjects + distinctShared));
 		addTriple(sb, root, HDT.STATISTICAL_INFORMATION, STATISTICS);
-		addTriple(sb, root, HDT.PUBLICATION_INFORMATION, "_:publicationInformation");
+		addTriple(sb, root, HDT.PUBLICATION_INFORMATION, PUBL_INFO);
 		addTriple(sb, root, HDT.FORMAT_INFORMATION, FORMAT);
 		addTriple(sb, FORMAT, HDT.DICTIONARY, DICTIONARY);
 		addTriple(sb, FORMAT, HDT.TRIPLES, TRIPLES);
 		addTriple(sb, DICTIONARY, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR);
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, "1");
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, "");
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, "16");
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, String.valueOf(mapping));
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, String.valueOf(sizeStrings));
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, String.valueOf(blockSize));
 		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
 		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
 		addTriple(sb, TRIPLES, HDT.TRIPLES_ORDER, "SPO");
 		addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, String.valueOf(initialSize > 0 ? initialSize : ""));
-		addTriple(sb, STATISTICS, HDT.HDT_SIZE, "");
-		addTriple(sb, "_:publicationInformation", DCTERMS.ISSUED, "");
+		addTriple(sb, STATISTICS, HDT.HDT_SIZE, String.valueOf(hdtSize));
+		addTriple(sb, PUBL_INFO, DCTERMS.ISSUED, "");
 
 		return sb.toString().getBytes(StandardCharsets.US_ASCII);
 	}
