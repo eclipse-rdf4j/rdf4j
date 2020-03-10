@@ -9,10 +9,14 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  * HDT Header Part.
@@ -39,6 +43,24 @@ class HDTHeader extends HDTPart {
 
 	private byte[] headerData;
 
+	/**
+	 * Get raw header data (byte array data stored as NTriples)
+	 * 
+	 * @return byte array
+	 */
+	protected byte[] getHeaderData() {
+		return headerData;
+	}
+
+	/**
+	 * Set raw header data (byte array data stored as NTriples)
+	 * 
+	 * @return byte array
+	 */
+	protected void setHeaderData(byte[] headerData) {
+		this.headerData = headerData;
+	}
+
 	@Override
 	protected void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
@@ -55,25 +77,43 @@ class HDTHeader extends HDTPart {
 		headerData = parseHeaderData(is, hlen);
 	}
 
-	/**
-	 * Get raw header data (byte array data stored as NTriples)
-	 * 
-	 * @return byte array
-	 */
-	protected byte[] getHeaderData() {
-		return headerData;
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC16())) {
+
+			String hlen = String.valueOf(headerData.length);
+
+			writeControl(cos, HDTPart.Type.HEADER);
+			writeFormat(cos, HEADER_FORMAT);
+			writeProperties(cos, Collections.singletonMap(HEADER_LENGTH, hlen));
+
+			writeCRC(cos, os, 2);
+		}
+		writeHeaderData(os);
 	}
 
 	/**
 	 * Parse header data with metadata in NTriples format.
 	 * 
-	 * @param is
-	 * @param len
+	 * @param is  input stream
+	 * @param len length
 	 * @throws IOException
 	 */
 	private byte[] parseHeaderData(InputStream is, int len) throws IOException {
 		byte b[] = new byte[len];
 		is.read(b);
 		return b;
+	}
+
+	/**
+	 * Write header data with metadata in NTriples format.
+	 * 
+	 * @param os output stream
+	 * @throws IOException
+	 */
+	private void writeHeaderData(OutputStream os) throws IOException {
+		os.write(headerData);
 	}
 }

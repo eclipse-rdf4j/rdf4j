@@ -10,8 +10,12 @@ package org.eclipse.rdf4j.rio.hdt;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -63,14 +67,20 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	// various counters
 	private long triples;
+	private long cnt;
 
-	private final TreeMap<byte[], Integer> shared = new TreeMap<>();
-	private final TreeMap<byte[], Integer> s = new TreeMap<>();
-	private final TreeMap<byte[], Integer> p = new TreeMap<>();
-	private final TreeMap<byte[], Integer> o = new TreeMap<>();
+	// create dictionaries and triples, with some size estimations
+	private final int SIZE = 1_048_576;
+	private final Map<byte[], Integer> dictShared = new HashMap<>(SIZE / 4);
+	private final Map<byte[], Integer> dictS = new HashMap<>(SIZE / 8);
+	private final Map<byte[], Integer> dictP = new HashMap<>(SIZE / 1024);
+	private final Map<byte[], Integer> dictO = new HashMap<>(SIZE / 2);
+	private final List<int[]> t = new ArrayList<>(SIZE);
 
 	/**
 	 * Creates a new HDTWriter.
+	 * 
+	 * @param out
 	 */
 	public HDTWriter(OutputStream out) {
 		this.out = out;
@@ -100,7 +110,14 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTGlobal global = new HDTGlobal();
 			global.write(out);
 
+			HDTMetadata meta = new HDTMetadata();
+			meta.setTriples(triples);
+			meta.setDistinctObj(dictO.size());
+			meta.setDistinctSubj(dictS.size());
+			meta.setDistinctShared(dictShared.size());
+
 			HDTHeader header = new HDTHeader();
+			header.setHeaderData(meta.get());
 			header.write(out);
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
@@ -115,9 +132,15 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	@Override
 	public void handleStatement(Statement st) throws RDFHandlerException {
-		byte[] s = st.getSubject().stringValue().getBytes(StandardCharsets.UTF_8);
-		byte[] p = st.getObject().stringValue().getBytes(StandardCharsets.UTF_8);
-		byte[] o = st.getPredicate().stringValue().getBytes(StandardCharsets.UTF_8);
+		byte[] bs = st.getSubject().stringValue().getBytes(StandardCharsets.UTF_8);
+		byte[] bp = st.getObject().stringValue().getBytes(StandardCharsets.UTF_8);
+		byte[] bo = st.getPredicate().stringValue().getBytes(StandardCharsets.UTF_8);
+
+		int s = putSO(bs, dictShared, dictS, dictO);
+		int p = putX(bp, dictP);
+		int o = putSO(bo, dictShared, dictO, dictS);
+
+		t.add(new int[] { s, p, o });
 
 		triples++;
 	}
@@ -125,5 +148,58 @@ public class HDTWriter extends AbstractRDFWriter {
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
 		// ignore
+	}
+
+	/**
+	 * Add a subject or object to either the shared or the S/O dictionary, if not already present.
+	 * 
+	 * An index will be returned, which is to be used to encode the triple parts.
+	 * 
+	 * @param part   S or O to add
+	 * @param shared shared dictionary
+	 * @param dict   dictionary (S or O)
+	 * @param other  other dictionary (O or S)
+	 * @return index of the part
+	 */
+	private int putSO(byte[] part, Map<byte[], Integer> shared, Map<byte[], Integer> dict, Map<byte[], Integer> other) {
+		Integer i = shared.get(part);
+		if (i != null) {
+			return i;
+		}
+		i = dict.get(part);
+		if (i != null) {
+			return i;
+		}
+		// if the part is present in the 'other' dictionary, it must be moved to the shared dictionary
+		i = other.get(part);
+		if (i != null) {
+			shared.put(part, i);
+			other.remove(part);
+			return i;
+		}
+		// nowhere to be found, so add it
+		return putX(part, dict);
+	}
+
+	/**
+	 * Put a triple part (S, P or O) into a dictionary, if not already present
+	 * 
+	 * @param part part to add
+	 * @param dict dictionary
+	 * @return index of the part
+	 */
+	private int putX(byte[] part, Map<byte[], Integer> dict) {
+		Integer p = dict.get(part);
+		if (p != null) {
+			return p;
+
+		}
+		if (++cnt > Integer.MAX_VALUE) {
+			throw new UnsupportedOperationException("Maximum count exceeded when preparing dictionary: " + cnt);
+		}
+		p = (int) cnt;
+		dict.put(part, p);
+
+		return p;
 	}
 }

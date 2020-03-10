@@ -17,6 +17,7 @@ import java.util.Map;
 
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
+
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
@@ -114,8 +115,8 @@ class HDTTriples extends HDTPart {
 			writeControl(cos, HDTPart.Type.TRIPLES);
 			writeFormat(cos, FORMAT_BITMAP);
 
-			Map<String, String> props = new HashMap<>();
-			props.put(ORDER, String.valueOf(HDTTriples.Order.SPO.getValue()));
+			Map<String, String> props = Collections.singletonMap(ORDER,
+					String.valueOf(HDTTriples.Order.SPO.getValue()));
 			writeProperties(cos, props);
 
 			writeCRC(cos, os, 2);

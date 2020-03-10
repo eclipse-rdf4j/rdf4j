@@ -9,15 +9,9 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.Date;
-import java.util.zip.CheckedInputStream;
-import java.util.zip.CheckedOutputStream;
 
-import org.eclipse.rdf4j.common.io.UncloseableInputStream;
-import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -37,24 +31,72 @@ import org.eclipse.rdf4j.model.vocabulary.VOID;
  * @author Bart Hanssens
  */
 public class HDTMetadata {
-	private Resource base;
+	private final String DICTIONARY = "_:dictionary";
+	private final String TRIPLES = "_:triples";
+
+	private Resource base = SimpleValueFactory.getInstance().createBNode("dataset");
 	private long triples;
-	private long properties;
-	private long dinstinctSubjects;
-	private long dinstinctObjects;
+	private int properties;
+	private int distinctSubjects;
+	private int distinctObjects;
+	private int distinctShared;
 	private byte[] triplesOrder;
 	private long initialSize;
 	private long hdtSize;
 	private Date issued;
 
 	/**
-	 * Set the IRI (typically: file location) or blank node to be used for the metadata root. If the base is null, an
-	 * unnamed blank node will be used.
+	 * Set the IRI (typically: file location) or blank node to be used for the metadata root.
 	 * 
 	 * @param base
 	 */
-	public void setBase(Resource base) {
-		this.base = (base != null) ? base : SimpleValueFactory.getInstance().createBNode();
+	protected void setBase(Resource base) {
+		this.base = base;
+	}
+
+	/**
+	 * Set the number of triples
+	 * 
+	 * @param triples
+	 */
+	protected void setTriples(long triples) {
+		this.triples = triples;
+	}
+
+	/**
+	 * Set the number of distinct objects
+	 * 
+	 * @param distinctObjects
+	 */
+	protected void setDistinctObj(int distinctObjects) {
+		this.distinctObjects = distinctObjects;
+	}
+
+	/**
+	 * Set the number of distinct subjects
+	 * 
+	 * @param distinctSubjects
+	 */
+	protected void setDistinctSubj(int distinctSubjects) {
+		this.distinctSubjects = distinctSubjects;
+	}
+
+	/**
+	 * Set the number of distinct shared parts
+	 * 
+	 * @param distinctShared
+	 */
+	protected void setDistinctShared(int distinctShared) {
+		this.distinctShared = distinctShared;
+	}
+
+	/**
+	 * Set the number of distinct properties
+	 * 
+	 * @param properties
+	 */
+	protected void setProperties(int properties) {
+		this.properties = properties;
 	}
 
 	protected void parse(InputStream is, int len) throws IOException {
@@ -66,59 +108,63 @@ public class HDTMetadata {
 	 * Write the metadata part to the output stream. Currently not using the n-triples writer to avoid dragging this
 	 * runtime dependency.
 	 * 
-	 * @param os
+	 * @return byte array
 	 * @throws IOException
 	 */
-	protected void write(OutputStream os) throws IOException {
+	protected byte[] get() throws IOException {
+		StringBuilder sb = new StringBuilder(4096);
 		String root = base.toString();
-		String dictionary = "_:dictionary";
-		String triples = "_:triples";
 
-		os.write(buildTriple(root, RDF.TYPE, HDT.DATASET));
-		os.write(buildTriple(root, RDF.TYPE, VOID.DATASET));
-		os.write(buildTriple(root, VOID.TRIPLES, ""));
-		os.write(buildTriple(root, VOID.PROPERTIES, ""));
-		os.write(buildTriple(root, VOID.DISTINCT_SUBJECTS, ""));
-		os.write(buildTriple(root, VOID.DISTINCT_OBJECTS, ""));
-		os.write(buildTriple(root, HDT.STATISTICAL_INFORMATION, "_:statistics"));
-		os.write(buildTriple(root, HDT.PUBLICATION_INFORMATION, "_:publicationInformation"));
-		os.write(buildTriple(root, HDT.FORMAT_INFORMATION, "_:format"));
-		os.write(buildTriple("_:format", HDT.DICTIONARY, dictionary));
-		os.write(buildTriple("_:format", HDT.TRIPLES, triples));
-		os.write(buildTriple(dictionary, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR));
-		os.write(buildTriple(dictionary, HDT.DICTIONARY_NUMSHARED, ""));
-		os.write(buildTriple(dictionary, HDT.DICTIONARY_MAPPING, ""));
-		os.write(buildTriple(dictionary, HDT.DICTIONARY_SIZE_STRINGS, ""));
-		os.write(buildTriple(dictionary, HDT.DICTIONARY_BLOCK_SIZE, ""));
-		os.write(buildTriple(triples, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP));
-		os.write(buildTriple(triples, HDT.TRIPLES_NUMTRIPLES, ""));
-		os.write(buildTriple(triples, HDT.TRIPLES_ORDER, ""));
+		addTriple(sb, root, RDF.TYPE, HDT.DATASET);
+		addTriple(sb, root, RDF.TYPE, VOID.DATASET);
+		addTriple(sb, root, VOID.TRIPLES, String.valueOf(triples));
+		addTriple(sb, root, VOID.PROPERTIES, String.valueOf(properties));
+		addTriple(sb, root, VOID.DISTINCT_SUBJECTS, String.valueOf(distinctSubjects));
+		addTriple(sb, root, VOID.DISTINCT_OBJECTS, String.valueOf(distinctObjects));
+		addTriple(sb, root, HDT.STATISTICAL_INFORMATION, "_:statistics");
+		addTriple(sb, root, HDT.PUBLICATION_INFORMATION, "_:publicationInformation");
+		addTriple(sb, root, HDT.FORMAT_INFORMATION, "_:format");
+		addTriple(sb, "_:format", HDT.DICTIONARY, DICTIONARY);
+		addTriple(sb, "_:format", HDT.TRIPLES, TRIPLES);
+		addTriple(sb, DICTIONARY, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR);
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, "1");
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, "");
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, "");
+		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
+		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
+		addTriple(sb, TRIPLES, HDT.TRIPLES_ORDER, "SPO");
+
+		return sb.toString().getBytes(StandardCharsets.US_ASCII);
 	}
 
 	/**
 	 * Build triple into a byte array
 	 * 
-	 * @param s subject string
-	 * @param p predicate IRI
-	 * @param o object string
-	 * @return byte array
+	 * @param sb string builder
+	 * @param s  subject string
+	 * @param p  predicate IRI
+	 * @param o  object string
 	 */
-	private byte[] buildTriple(String s, IRI p, String o) {
-		String t = s.startsWith("_") ? s : "<" + s + ">";
-		t += " <" + p.stringValue() + "> " + o + ".\n";
-		return t.getBytes(StandardCharsets.UTF_8);
-	}
+	private void addTriple(StringBuilder sb, String s, IRI p, Object obj) {
+		if (s.startsWith("_:")) {
+			sb.append(s);
+		} else {
+			sb.append('<').append(s).append('>');
+		}
 
-	/**
-	 * Build triple into a byte array
-	 * 
-	 * @param s subject string
-	 * @param p predicate IRI
-	 * @param o object value
-	 * @return byte array
-	 */
-	private byte[] buildTriple(String s, IRI p, Value o) {
-		String t = "<" + s + "> <" + p.toString() + "> <" + o.stringValue() + "> .\n";
-		return t.getBytes(StandardCharsets.UTF_8);
+		sb.append(" <").append(p.stringValue()).append("> ");
+
+		if (obj instanceof String) {
+			String o = (String) obj;
+			if (o.startsWith("_:")) {
+				sb.append(o);
+			} else {
+				sb.append('"').append(o).append('"');
+			}
+		} else {
+			sb.append('<').append(((Resource) obj).stringValue()).append('>');
+		}
+		sb.append(" .\n");
 	}
 }
