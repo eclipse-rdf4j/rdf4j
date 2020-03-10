@@ -272,6 +272,74 @@ public abstract class AbstractModelTest {
 		assertFalse(filter2.isEmpty());
 	}
 
+	@Test
+	public final void testFilter_AddToEmptyFilteredModel() {
+		Model model = getNewEmptyModel();
+		Model filter = model.filter(null, null, null);
+		assertTrue(filter.isEmpty());
+
+		filter.add(uri2, RDFS.LABEL, literal1);
+		assertTrue(model.contains(uri2, RDFS.LABEL, literal1));
+		assertTrue(filter.contains(uri2, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public final void testFilter_RemoveFromFilter() {
+		Model model = getNewEmptyModel();
+		model.add(uri1, RDFS.LABEL, literal1, uri1);
+		Model filter = model.filter(uri1, RDFS.LABEL, literal1, uri1);
+		assertTrue(filter.contains(uri1, RDFS.LABEL, literal1));
+
+		filter.remove(uri1, RDFS.LABEL, literal1, uri1);
+		assertFalse(model.contains(uri1, RDFS.LABEL, literal1));
+		assertFalse(filter.contains(uri1, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public final void testFilter_AddToNonEmptyFilteredModel() {
+		Model model = getNewModelObjectSingleLiteral();
+		Model filter = model.filter(null, null, literal1);
+		assertFalse(filter.isEmpty());
+
+		filter.add(uri2, RDFS.LABEL, literal1);
+		assertTrue(model.contains(uri2, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public final void testFilter_AddToEmptyOriginalModel() {
+		Model model = getNewEmptyModel();
+		Model filter = model.filter(null, null, null);
+		assertTrue(filter.isEmpty());
+
+		model.add(uri2, RDFS.LABEL, literal1);
+		assertTrue(model.contains(uri2, RDFS.LABEL, literal1));
+		assertTrue(filter.contains(uri2, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public final void testFilter_RemoveFromOriginal() {
+		Model model = getNewEmptyModel();
+		model.add(uri1, RDFS.LABEL, literal1, uri1);
+		Model filter = model.filter(uri1, RDFS.LABEL, literal1, uri1);
+		assertTrue(filter.contains(uri1, RDFS.LABEL, literal1));
+
+		model.remove(uri1, RDFS.LABEL, literal1, uri1);
+		assertFalse(model.contains(uri1, RDFS.LABEL, literal1));
+		assertFalse(filter.contains(uri1, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public final void testFilter_AddToOriginalModel() {
+		Model model = getNewModelObjectSingleLiteral();
+		Model filter = model.filter(null, null, literal1);
+		assertFalse(filter.isEmpty());
+		assertTrue(filter.contains(uri1, RDFS.LABEL, literal1));
+		assertFalse(filter.contains(uri2, RDFS.LABEL, literal1));
+
+		model.add(uri2, RDFS.LABEL, literal1);
+		assertTrue(filter.contains(uri2, RDFS.LABEL, literal1));
+	}
+
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#contains(Resource, IRI, Value, Resource...)} .
 	 */

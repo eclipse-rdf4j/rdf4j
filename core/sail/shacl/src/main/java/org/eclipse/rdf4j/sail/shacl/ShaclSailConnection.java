@@ -20,10 +20,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
@@ -57,12 +59,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private List<NodeShape> nodeShapes;
 
-	private final NotifyingSailConnection previousStateConnection;
-	private final NotifyingSailConnection serializableConnection;
-	private final NotifyingSailConnection previousStateSerializableConnection;
+	private final SailConnection previousStateConnection;
+	private final SailConnection serializableConnection;
+	private final SailConnection previousStateSerializableConnection;
 
-	MemoryStore addedStatements;
-	MemoryStore removedStatements;
+	Sail addedStatements;
+	Sail removedStatements;
 
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
@@ -89,8 +91,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private IsolationLevel currentIsolationLevel = null;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			NotifyingSailConnection previousStateConnection, NotifyingSailConnection serializableConnection,
-			NotifyingSailConnection previousStateSerializableConnection,
+			SailConnection previousStateConnection, SailConnection serializableConnection,
+			SailConnection previousStateSerializableConnection,
 			SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
@@ -143,7 +145,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	private MemoryStore getNewMemorySail() {
+	private Sail getNewMemorySail() {
 		MemoryStore sail = new MemoryStore();
 		sail.setDefaultIsolationLevel(IsolationLevels.NONE);
 		sail.init();
@@ -452,14 +454,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if ((rdfsSubClassOfReasoner == null || rdfsSubClassOfReasoner.isEmpty())
 					&& sail.getBaseSail() instanceof MemoryStore && this.getIsolationLevel() == IsolationLevels.NONE) {
-				addedStatements = (MemoryStore) sail.getBaseSail();
+				addedStatements = sail.getBaseSail();
 				removedStatements = getNewMemorySail();
 			} else {
 				addedStatements = getNewMemorySail();
 				removedStatements = getNewMemorySail();
 
 				try (Stream<? extends Statement> stream = getStatements(null, null, null, false).stream()) {
-					try (NotifyingSailConnection connection = addedStatements.getConnection()) {
+					try (SailConnection connection = addedStatements.getConnection()) {
 						connection.begin(IsolationLevels.NONE);
 						stream
 								.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
@@ -477,7 +479,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.parallel()
 					.forEach(set -> {
 						Set<Statement> otherSet;
-						MemoryStore repository;
+						Sail repository;
 						if (set == addedStatementsSet) {
 							otherSet = removedStatementsSet;
 
@@ -668,12 +670,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					stats.setBaseSailEmpty(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
 
-					try (NotifyingSailConnection connection = addedStatements.getConnection()) {
+					try (SailConnection connection = addedStatements.getConnection()) {
 						SailConnection baseConnection = connectionsGroup.getBaseConnection();
 						ConnectionHelper.transferStatements(connection, baseConnection::addStatement);
 					}
 
-					try (NotifyingSailConnection connection = removedStatements.getConnection()) {
+					try (SailConnection connection = removedStatements.getConnection()) {
 						SailConnection baseConnection = connectionsGroup.getBaseConnection();
 						ConnectionHelper.transferStatements(connection, baseConnection::removeStatements);
 

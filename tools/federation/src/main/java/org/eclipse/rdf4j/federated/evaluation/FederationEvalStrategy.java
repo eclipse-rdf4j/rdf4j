@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.federated.optimizer.StatementGroupAndJoinOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -187,7 +188,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		info.optimize(query);
 
 		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService())
+		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService()
+				&& queryInfo.getQueryType() != QueryType.UPDATE)
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 
 		if (log.isTraceEnabled()) {
@@ -207,8 +209,10 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		/* custom optimizers, execute only when needed */
 
 		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
+		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
+		// write strategy
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
-		if (relevantSources.size() == 1 && !info.hasService())
+		if (relevantSources.size() == 1 && !info.hasService() && queryInfo.getQueryType() != QueryType.UPDATE)
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
 
 		if (info.hasService())

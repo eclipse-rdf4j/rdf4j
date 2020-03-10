@@ -8,8 +8,14 @@
 package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
+import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.jupiter.api.Test;
+
+import com.google.common.collect.Sets;
 
 public class FilterTests extends SPARQLBaseTest {
 
@@ -57,5 +63,26 @@ public class FilterTests extends SPARQLBaseTest {
 	public void testFilterPushing() throws Exception {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data4.ttl"));
 		execute("/tests/filter/query06.rq", "/tests/filter/query06.srx", false);
+	}
+
+	@Test
+	public void testSimpleFilterExclusiveGroup() throws Exception {
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
+
+		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX ns1: <http://namespace1.org/> "
+				+ "SELECT * WHERE { "
+				+ "?person a foaf:Person ."
+				+ "?person foaf:name \"Person1\" .\n"
+				+ "?person foaf:age 20 . "
+				+ "FILTER (?person=ns1:Person_1)"
+				+ "}";
+
+		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
+
+			List<BindingSet> res = Iterations.asList(tqr);
+			assertContainsAll(res, "person",
+					Sets.newHashSet(iri("http://namespace1.org/", "Person_1")));
+		}
 	}
 }

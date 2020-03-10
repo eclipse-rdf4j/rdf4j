@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
@@ -260,7 +261,7 @@
 		<solr.version>7.5.0</solr.version>
 		<elasticsearch.version>6.5.4</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>
-		<spring.version>5.2.1.RELEASE</spring.version>
+		<spring.version>5.2.4.RELEASE</spring.version>
 		<guava.version>18.0</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 	</properties>
@@ -279,8 +280,8 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level,
-        but in practice is still being released for 2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for 
+				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-annotations</artifactId>
@@ -547,13 +548,28 @@
 				<version>${jsonldjava.version}</version>
 				<type>jar</type>
 				<scope>compile</scope>
-			</dependency>
-			<dependency>
-				<groupId>com.github.jsonld-java</groupId>
-				<artifactId>jsonld-java</artifactId>
-				<version>${jsonldjava.version}</version>
-				<type>test-jar</type>
-				<scope>test</scope>
+				<exclusions>
+					<exclusion>
+						<groupId>org.apache.httpcomponents</groupId>
+						<artifactId>fluent-hc</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.apache.httpcomponents</groupId>
+						<artifactId>httpcore-nio</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.apache.httpcomponents</groupId>
+						<artifactId>httpcore-osgi</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.apache.httpcomponents</groupId>
+						<artifactId>httpclient-osgi</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.apache.httpcomponents</groupId>
+						<artifactId>httpmime</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.mapdb</groupId>
@@ -763,7 +779,7 @@
 							</file>
 						</newVersion>
 						<parameter>
-							<ignoreMissingClasses>true</ignoreMissingClasses>&gt;
+							<ignoreMissingClasses>true</ignoreMissingClasses>
 							<!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
 						</parameter>

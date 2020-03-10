@@ -511,13 +511,18 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
 			if (statement instanceof MemStatement) {
-				((MemStatement) statement).setTillSnapshot(nextSnapshot);
+				MemStatement toDeprecate = (MemStatement) statement;
+				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
+						&& toDeprecate.isExplicit() == explicit) {
+					toDeprecate.setTillSnapshot(nextSnapshot);
+				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
 				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
 				// original statement that can be retrieved here.
 				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
-				if (toDeprecate.getTillSnapshot() > nextSnapshot && toDeprecate.isExplicit() == explicit) {
+				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
+						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else {

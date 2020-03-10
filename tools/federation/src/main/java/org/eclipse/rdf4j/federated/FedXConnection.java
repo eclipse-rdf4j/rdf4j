@@ -280,7 +280,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void removeNamespaceInternal(String prefix) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
+		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override
@@ -304,7 +304,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void setNamespaceInternal(String prefix, String name) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
+		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override
