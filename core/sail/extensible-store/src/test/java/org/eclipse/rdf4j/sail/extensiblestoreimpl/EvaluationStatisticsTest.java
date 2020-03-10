@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,8 @@ import static junit.framework.TestCase.assertEquals;
 public class EvaluationStatisticsTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(EvaluationStatisticsTest.class);
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ExtensibleStatementHelper ex = ExtensibleStatementHelper.getDefaultImpl();
 
 	Model parse;
 
@@ -105,26 +108,25 @@ public class EvaluationStatisticsTest {
 
 	@Test
 	public void testStaleStats() throws InterruptedException {
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 		double staleness1 = extensibleDynamicEvaluationStatistics.staleness(parse.size());
 		assertEquals(0, Math.round(staleness1));
 
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.remove(s, false));
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.remove(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 		double staleness2 = extensibleDynamicEvaluationStatistics.staleness(0);
 		assertEquals(0, Math.round(staleness2));
 
 		IntStream.range(0, 100).forEach(i -> {
 			extensibleDynamicEvaluationStatistics
-					.add(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "a")), false);
+					.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "a")), false));
 		});
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
 		double staleness3 = extensibleDynamicEvaluationStatistics.staleness(100 + parse.size());
@@ -132,7 +134,7 @@ public class EvaluationStatisticsTest {
 
 		IntStream.range(0, 100000).forEach(i -> {
 			extensibleDynamicEvaluationStatistics
-					.add(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "b")), false);
+					.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "b")), false));
 		});
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
@@ -150,7 +152,7 @@ public class EvaluationStatisticsTest {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
 		double staleness1 = extensibleDynamicEvaluationStatistics.staleness(parse.size());

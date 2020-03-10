@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleDynamicEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -73,7 +74,8 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
 				null);
 
-		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(s, false));
+		parse.forEach(s -> extensibleDynamicEvaluationStatistics
+				.add(ExtensibleStatementHelper.getDefaultImpl().fromStatement(s, false)));
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 

@@ -13,30 +13,33 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.DynamicEvaluationStatisticsRefreshHook;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.DynamicStatistics;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsWrapper;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleEvaluationStatistics;
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ExtensibleSailStore implements SailStore {
+public class ExtensibleSailStore implements SailStore, DynamicEvaluationStatisticsRefreshHook {
 
 	private ExtensibleSailSource sailSource;
 	private ExtensibleSailSource sailSourceInferred;
 	private ExtensibleEvaluationStatistics evaluationStatistics;
+	private Thread evaluationStatisticsMaintainerThread;
+	private DataStructureInterface dataStructure;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure,
 			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
 			ExtensibleStatementHelper extensibleStatementHelper) {
 		evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
-
+		this.dataStructure = dataStructure;
 		if (evaluationStatistics instanceof DynamicStatistics) {
-			dataStructure = new EvaluationStatisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics,
-					false);
+			dataStructure = new EvaluationStatisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics);
+			((DynamicStatistics) evaluationStatistics).setRefreshHook(this);
+
 		}
 
 		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, false, extensibleStatementHelper);
@@ -74,6 +77,13 @@ public class ExtensibleSailStore implements SailStore {
 	public void init() {
 		sailSource.init();
 		sailSourceInferred.init();
+	}
+
+	public void triggerDynamicEvaluationStatisticsRefreshHook() {
+		double staleness = ((DynamicStatistics) evaluationStatistics).staleness(dataStructure.getEstimatedSize());
+
+		System.out.println("Staleness: " + staleness);
+
 	}
 
 }

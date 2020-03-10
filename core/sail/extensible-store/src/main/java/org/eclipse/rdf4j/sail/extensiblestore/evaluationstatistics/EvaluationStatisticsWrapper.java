@@ -19,26 +19,23 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 public class EvaluationStatisticsWrapper implements DataStructureInterface {
 
 	private final DynamicStatistics dynamicStatistics;
-	private final boolean inferred;
 	private final DataStructureInterface delegate;
 
-	public EvaluationStatisticsWrapper(DataStructureInterface delegate, DynamicStatistics dynamicStatistics,
-			boolean inferred) {
+	public EvaluationStatisticsWrapper(DataStructureInterface delegate, DynamicStatistics dynamicStatistics) {
 		this.delegate = delegate;
 		this.dynamicStatistics = dynamicStatistics;
-		this.inferred = inferred;
 	}
 
 	@Override
 	public void addStatement(ExtensibleStatement statement) {
 		delegate.addStatement(statement);
-		dynamicStatistics.add(statement, inferred);
+		dynamicStatistics.add(statement);
 	}
 
 	@Override
 	public void removeStatement(ExtensibleStatement statement) {
 		delegate.removeStatement(statement);
-		dynamicStatistics.remove(statement, inferred);
+		dynamicStatistics.remove(statement);
 
 	}
 

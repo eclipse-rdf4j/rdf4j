@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleSailStore;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +32,8 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 	private static final int QUEUE_LIMIT = 128;
 	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
+	private static final int FULL_REFRESH_TRIGGER_LIMIT = 10000;
+	private int fullRefreshCounter = 0;
 
 	ConcurrentLinkedQueue<StatemetQueueItem> queue = new ConcurrentLinkedQueue<StatemetQueueItem>();
 
@@ -61,6 +64,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private final HyperLogLogCollector[][] subjectPredicateIndex_removed = new HyperLogLogCollector[64][64];
 	private final HyperLogLogCollector[][] predicateObjectIndex_removed = new HyperLogLogCollector[64][64];
 	volatile private Thread queueThread;
+	private DynamicEvaluationStatisticsRefreshHook fullRefreshHook;
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
@@ -82,7 +86,12 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	public double staleness(int actualSize) {
+	public void setRefreshHook(DynamicEvaluationStatisticsRefreshHook dynamicEvaluationStatisticsRefreshHook) {
+		this.fullRefreshHook = dynamicEvaluationStatisticsRefreshHook;
+	}
+
+	@Override
+	public double staleness(long actualSize) {
 
 		double estimatedSize = size.estimateCardinality() - size_removed.estimateCardinality();
 
@@ -181,17 +190,15 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	public void add(Statement statement, boolean inferred) {
+	public void add(ExtensibleStatement statement) {
 
-		queue.add(new StatemetQueueItem(statement, inferred, StatemetQueueItem.Type.added));
+		queue.add(new StatemetQueueItem(statement, StatemetQueueItem.Type.added));
 
 		int size = queueSize.incrementAndGet();
 		if (size > QUEUE_LIMIT && queueThread == null) {
 			startQueueThread();
 		}
 	}
-
-	int staleIndexCounter = 0;
 
 	synchronized private void startQueueThread() {
 		if (queueThread == null) {
@@ -226,6 +233,10 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 							} catch (InterruptedException ignored) {
 
 							}
+						}
+
+						if (fullRefreshHook != null && fullRefreshCounter++ % FULL_REFRESH_TRIGGER_LIMIT == 0) {
+							fullRefreshHook.triggerDynamicEvaluationStatisticsRefreshHook();
 						}
 					}
 				} finally {
@@ -265,13 +276,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	static class StatemetQueueItem {
-		Statement statement;
-		boolean inferred;
+		ExtensibleStatement statement;
 		Type type;
 
-		public StatemetQueueItem(Statement statement, boolean inferred, Type type) {
+		public StatemetQueueItem(ExtensibleStatement statement, Type type) {
 			this.statement = statement;
-			this.inferred = inferred;
 			this.type = type;
 		}
 
@@ -297,9 +306,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	public void remove(Statement statement, boolean inferred) {
+	public void remove(ExtensibleStatement statement) {
 
-		queue.add(new StatemetQueueItem(statement, inferred, StatemetQueueItem.Type.removed));
+		queue.add(new StatemetQueueItem(statement, StatemetQueueItem.Type.removed));
 
 		int size = queueSize.incrementAndGet();
 		if (size > QUEUE_LIMIT && queueThread == null) {

@@ -81,4 +81,8 @@ public interface DataStructureInterface {
 		return deleted;
 
 	}
+
+	default long getEstimatedSize() {
+		return getStatements(null, null, null, true).stream().count();
+	}
 }
