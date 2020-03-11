@@ -9,9 +9,12 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  * Log64
@@ -26,7 +29,8 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * ...+---------+-------+
  * </pre>
  * 
- * Entries are stored little-endian, with each entry using <code>nrbits</code> bits
+ * Entries are stored little-endian, with each entry using <code>nrbits</code> bits, which is the log2(max_value).
+ * E.g. to store a maximum value of 1024 only 10 bits are needed, instead of storing a 16-bit <code>short</code>. 
  * 
  * @author Bart Hanssens
  */
@@ -76,6 +80,26 @@ class HDTArrayLog64 extends HDTArray {
 			cis.read(buffer);
 
 			checkCRC(cis, is, 4);
+		}
+	}
+	
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		super.write(os);
+
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
+			// read bytes, minimum 1
+			long bytes = (nrbits * entries + 7) / 8;
+			if (bytes > Integer.MAX_VALUE) {
+				throw new UnsupportedOperationException("Maximum number of bytes in array exceeded: " + bytes);
+			}
+
+			buffer = new byte[(int) bytes];
+			cos.write(buffer);
+
+			writeCRC(cos, os, 4);
 		}
 	}
 }

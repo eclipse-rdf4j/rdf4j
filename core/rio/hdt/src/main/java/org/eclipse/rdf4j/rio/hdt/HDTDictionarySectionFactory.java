@@ -51,6 +51,10 @@ class HDTDictionarySectionFactory {
 					+ Long.toHexString(dtype.getValue()) + ", but only front encoding is supported");
 		}
 		os.write(HDTDictionarySection.Type.FRONT.getValue());
-		return new HDTDictionarySectionPFC(name, pos);
+
+		HDTDictionarySectionPFC pfc = new HDTDictionarySectionPFC(name, pos);
+		pfc.setBlockSize(16);
+
+		return pfc;
 	}
 }

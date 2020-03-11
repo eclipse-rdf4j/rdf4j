@@ -10,9 +10,11 @@ package org.eclipse.rdf4j.rio.hdt;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.zip.CheckedInputStream;
@@ -56,6 +58,7 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
  */
 class HDTDictionarySectionPFC extends HDTDictionarySection {
 	private byte[] readBuffer;
+	private byte[][] writeBuffers;
 
 	private int totalStrings;
 	private int stringsBlock;
@@ -83,6 +86,15 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	@Override
 	protected int size() {
 		return totalStrings;
+	}
+
+	@Override
+	protected void setSize(int size) {
+		this.totalStrings = size;
+	}
+	
+	protected void setBlockSize(int stringBlocks) {
+		this.stringsBlock = stringBlocks;
 	}
 
 	@Override
@@ -150,6 +162,11 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	}
 
 	@Override
+	protected void set(Iterator<String> iter) {
+		encodeBlock(iter);
+	}
+	
+	@Override
 	protected void write(OutputStream os) throws IOException {
 		CRC8 crc8 = new CRC8();
 		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());
@@ -164,6 +181,9 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 			writeCRC(cos, os, 1);
 		}
+		// keep track of starting positions of the blocks
+		blockStarts = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		blockStarts.write(os);
 		
 		// don't close CheckedOutputStream, as it will close the underlying outputstream
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
@@ -208,5 +228,52 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			idx = end + 1;
 		}
 		return arr;
+	}
+	
+	private byte[] encodeBlock(Iterator<String> iter) {
+		if (!iter.hasNext()) {
+			return new byte[0];
+		}
+		byte[][] tmp = new byte[stringsBlock][];
+		int i = 0;
+
+		byte[] base = iter.next().getBytes(StandardCharsets.UTF_8);
+		iter.remove();
+		// copy base into first entry, with a trailing NULL
+		tmp[i] = new byte[base.length + 1];
+		System.arraycopy(base, 0, tmp[i], 0, base.length);
+
+		byte[] prev = base;
+
+		// encode a block, with a maximum of strings per block
+		while (iter.hasNext() && i++ < stringsBlock) {
+			byte[] str = iter.next().getBytes(StandardCharsets.UTF_8);
+			iter.remove();
+
+			int common = Arrays.compare(prev, str);
+			byte[] c = VByte.encode(common);
+			tmp[i] = new byte[c.length + str.length-common +1];
+			System.arraycopy(c, 0, tmp[i], 0, c.length);
+			System.arraycopy(str, common, tmp[i], c.length, str.length-common);
+
+			prev = str;
+		}
+
+		// flatten 2-dimensional byte array to a single byte array
+		if (i == 0) {
+			return tmp[0];
+		}
+
+		int len = 0;
+		for (int j = 0; j < i; j++) {
+			len += tmp[j].length;
+		}
+		
+		byte[] ret = new byte[len];
+		for (int j = 0, idx = 0; j < i; j++) {
+			System.arraycopy(tmp[j], 0, ret, idx, tmp[j].length);
+			idx += tmp[j].length;
+		}
+		return ret;
 	}
 }

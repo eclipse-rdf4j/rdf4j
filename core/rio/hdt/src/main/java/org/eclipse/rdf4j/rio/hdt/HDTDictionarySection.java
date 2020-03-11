@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
+import java.util.Iterator;
 
 /**
  * HDT DictionarySection part. Various encodings exist.
@@ -36,9 +37,16 @@ abstract class HDTDictionarySection extends HDTPart {
 	/**
 	 * Get the size
 	 * 
-	 * @return
+	 * @return size
 	 */
 	protected abstract int size();
+
+	/**
+	 * Set the size
+	 * 
+	 * @param size
+	 */
+	protected abstract void setSize(int size);
 
 	/**
 	 * Get the entry
@@ -47,6 +55,13 @@ abstract class HDTDictionarySection extends HDTPart {
 	 * @return
 	 */
 	protected abstract byte[] get(int i) throws IOException;
+
+	/**
+	 * Set from an iterator, allowing to remove strings from memory while processing
+	 * 
+	 * @param iter
+	 */
+	protected abstract void set(Iterator<String> iter) throws IOException;
 
 	/**
 	 * Constructor
