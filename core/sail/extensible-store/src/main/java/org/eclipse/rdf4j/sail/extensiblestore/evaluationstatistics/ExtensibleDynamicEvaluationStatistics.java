@@ -28,6 +28,37 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+/**
+ * <p>
+ * ExtensibleDynamicEvaluationStatistics aims to keep an internal estimate of the cardinality of various statement
+ * patterns.
+ * </p>
+ *
+ * <p>
+ * It support getting the overall size, any single dimension cardinality (eg. ?a rdf:type ?b) and also two
+ * multidimensional patterns (:Peter rdf:type ?b; and ?a rdf:type foaf:Person).
+ * </p>
+ *
+ * <p>
+ * Since evaluation statistics are best-effort, we use HyperLogLog as sets to keep the number of statements for each
+ * pattern we support. Furthermore we hash each pattern into a fixed bucket size, 1024 for single dimension and 64 per
+ * dimension for multidimensional patterns.
+ * </p>
+ *
+ * <p>
+ * This means that adding ':peter rdf:type foaf:Person' and ':lisa rdf:type foaf:Person' could potentially return
+ * getCardinality(:peter, ?b, ?c) = 2 if both :peter and :lisa hash to the same of the 1024 buckets in subjectIndex.
+ * </p>
+ *
+ * <p>
+ * HyperLogLog does not support "remove" operations, so there are two sets of every index. One for all added statements
+ * and one for all removed statements. If the user adds, removes and re-adds the same statement then the cardinality for
+ * that statement will be incorrect. We call this effect "staleness". To prevent staleness from affecting the returned
+ * cardinalities this class needs to be monitored by calling the staleness(...) method. This will automatically be done
+ * every 60 seconds by the ExtensibleSailStore.
+ * </p>
+ *
+ */
 public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 	private static final int QUEUE_LIMIT = 128;
@@ -107,16 +138,25 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 			min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
 			min = Math.min(min, getObjectCardinality(sp.getObjectVar()));
 
+			// skip more complex evaluations if min is unlikely to get lower
+			if (min < 2) {
+				return min;
+			}
+
 			if (sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null) {
 				min = Math.min(min,
-						getHllCardinality(subjectPredicateIndex, subjectPredicateIndex_removed,
+						getHllCardinality(
+								subjectPredicateIndex,
+								subjectPredicateIndex_removed,
 								sp.getSubjectVar().getValue(),
 								sp.getPredicateVar().getValue()));
 			}
 
 			if (sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null) {
 				min = Math.min(min,
-						getHllCardinality(predicateObjectIndex, predicateObjectIndex_removed,
+						getHllCardinality(
+								predicateObjectIndex,
+								predicateObjectIndex_removed,
 								sp.getPredicateVar().getValue(),
 								sp.getObjectVar().getValue()));
 			}
@@ -165,11 +205,16 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	private double getHllCardinality(HyperLogLogCollector[][] index, HyperLogLogCollector[][] index_removed,
 			Value value1, Value value2) {
-		return index[Math.abs(value1.hashCode() % index.length)][Math.abs(value2.hashCode() % index.length)]
-				.estimateCardinality()
-				- index_removed[Math.abs(value1.hashCode() % index_removed.length)][Math
-						.abs(value2.hashCode() % index_removed.length)]
-								.estimateCardinality();
+
+		int value1IndexIntoAdded = Math.abs(value1.hashCode() % index.length);
+		int value2IndexIntoAdded = Math.abs(value2.hashCode() % index.length);
+		double cardinalityAdded = index[value1IndexIntoAdded][value2IndexIntoAdded].estimateCardinality();
+
+		int value1IndexIntoRemoved = Math.abs(value1.hashCode() % index_removed.length);
+		int value2IndexIntoRemoved = Math.abs(value2.hashCode() % index_removed.length);
+		double removedStatements = index_removed[value1IndexIntoRemoved][value2IndexIntoRemoved].estimateCardinality();
+
+		return cardinalityAdded - removedStatements;
 	}
 
 	private double getHllCardinality(Map<Integer, HyperLogLogCollector> index,
@@ -282,7 +327,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	private void indexTwoValues(byte[] statementHash, HyperLogLogCollector[][] index, int indexHash, int indexHash2) {
 		index[Math.abs(indexHash % index.length)][Math.abs(indexHash2 % index.length)].add(statementHash);
-
 	}
 
 	private void indexOneValue(byte[] statementHash, Map<Integer, HyperLogLogCollector> index, int indexHash) {
@@ -308,36 +352,8 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	@Override
 	public void removeByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource... contexts) {
-		// logger.info("removed by query: ?????");
-
-	}
-
-	public String getDistribution() {
-
-		StringBuilder stringBuilder = new StringBuilder();
-//		HashMap<String, HyperLogLogCollector[]> stringHashMap = new LinkedHashMap<>();
-//
-//		stringHashMap.put("subjectIndex", subjectIndex);
-//		stringHashMap.put("predicateIndex", predicateIndex);
-//		stringHashMap.put("objectIndex", objectIndex);
-//		stringHashMap.put("contextIndex", contextIndex);
-//
-//		stringHashMap.forEach((key, val) -> {
-//			stringBuilder
-//				.append(StringUtils.rightPad(key, 20, " ")).append(": \t")
-//				.append(Arrays
-//					.stream(val)
-//					.map(HyperLogLogCollector::estimateCardinality)
-//					.map(count -> ((int) (1000 / size.estimateCardinality() * count)) / 10.0)
-//					.map(percentage -> StringUtils.leftPad(percentage + "", 4, " "))
-//					.map(percentage -> "[" + percentage + "%]")
-//					.reduce((a, b) -> a + ", " + b)
-//					.orElse(" - "))
-//				.append("\n");
-//		});
-
-		return stringBuilder.toString();
-
+		// not implemented yet
+		// we should be able to handle cases where we are removing with up to two specified dimensions.
 	}
 
 	public void waitForQueue() throws InterruptedException {
