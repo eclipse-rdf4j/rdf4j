@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -287,16 +288,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	public void flushForReading() {
 
-		Client client = clientProvider.getClient();
-
 		flushAddStatementBuffer();
 		flushRemoveStatementBuffer();
 
-		client.admin()
-				.indices()
-				.prepareRefresh(index)
-				.get();
-
+		refreshIndex();
 	}
 
 	private void flushAddStatementBuffer() {
@@ -475,12 +470,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	}
 
 	private List<BulkItemResponse> getBulkItemResponses(BulkResponse bulkResponse) {
-		List<BulkItemResponse> bulkItemResponses = new ArrayList<>();
-
-		for (BulkItemResponse bulkItemResponse : bulkResponse) {
-			bulkItemResponses.add(bulkItemResponse);
-		}
-		return bulkItemResponses;
+		return Arrays.asList(bulkResponse.getItems());
 	}
 
 	synchronized private void flushRemoveStatementBuffer() {
@@ -541,8 +531,12 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			clientProvider.getClient().admin().indices().create(request).actionGet();
 		}
 
-		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
+		refreshIndex();
 
+	}
+
+	private void refreshIndex() {
+		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
 	}
 
 	void setElasticsearchScrollTimeout(int timeout) {
