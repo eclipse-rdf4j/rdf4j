@@ -33,7 +33,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private static final int QUEUE_LIMIT = 128;
 	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
 
-	ConcurrentLinkedQueue<StatemetQueueItem> queue = new ConcurrentLinkedQueue<StatemetQueueItem>();
+	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<StatementQueueItem>();
 
 	AtomicInteger queueSize = new AtomicInteger();
 
@@ -61,7 +61,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	private final HyperLogLogCollector[][] subjectPredicateIndex_removed = new HyperLogLogCollector[64][64];
 	private final HyperLogLogCollector[][] predicateObjectIndex_removed = new HyperLogLogCollector[64][64];
-	volatile private Thread queueThread;
+	volatile private Thread queueConsumingThread;
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
@@ -186,34 +186,34 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	@Override
 	public void add(ExtensibleStatement statement) {
 
-		queue.add(new StatemetQueueItem(statement, StatemetQueueItem.Type.added));
+		queue.add(new StatementQueueItem(statement, StatementQueueItem.Type.added));
 
 		int size = queueSize.incrementAndGet();
-		if (size > QUEUE_LIMIT && queueThread == null) {
-			startQueueThread();
+		if (size > QUEUE_LIMIT && queueConsumingThread == null) {
+			startQueueConsumingThread();
 		}
 	}
 
-	synchronized private void startQueueThread() {
-		if (queueThread == null) {
-			queueThread = new Thread(() -> {
+	synchronized private void startQueueConsumingThread() {
+		if (queueConsumingThread == null) {
+			queueConsumingThread = new Thread(() -> {
 				try {
 					while (!queue.isEmpty()) {
-						StatemetQueueItem poll = queue.poll();
+						StatementQueueItem poll = queue.poll();
 						queueSize.decrementAndGet();
 						Statement statement = poll.statement;
 						byte[] statementHash = HASH_FUNCTION
 								.hashString(statement.toString(), StandardCharsets.UTF_8)
 								.asBytes();
 
-						if (poll.type == StatemetQueueItem.Type.added) {
+						if (poll.type == StatementQueueItem.Type.added) {
 
 							handleStatement(statement, statementHash, size, subjectIndex, predicateIndex, objectIndex,
 									subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
 
 						} else { // removed
 
-							assert poll.type == StatemetQueueItem.Type.removed;
+							assert poll.type == StatementQueueItem.Type.removed;
 
 							handleStatement(statement, statementHash, size_removed, subjectIndex_removed,
 									predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
@@ -230,13 +230,13 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						}
 					}
 				} finally {
-					queueThread = null;
+					queueConsumingThread = null;
 				}
 
 			});
 
-			queueThread.setDaemon(true);
-			queueThread.start();
+			queueConsumingThread.setDaemon(true);
+			queueConsumingThread.start();
 
 		}
 	}
@@ -265,11 +265,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	static class StatemetQueueItem {
+	static class StatementQueueItem {
 		ExtensibleStatement statement;
 		Type type;
 
-		public StatemetQueueItem(ExtensibleStatement statement, Type type) {
+		public StatementQueueItem(ExtensibleStatement statement, Type type) {
 			this.statement = statement;
 			this.type = type;
 		}
@@ -298,11 +298,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	@Override
 	public void remove(ExtensibleStatement statement) {
 
-		queue.add(new StatemetQueueItem(statement, StatemetQueueItem.Type.removed));
+		queue.add(new StatementQueueItem(statement, StatementQueueItem.Type.removed));
 
 		int size = queueSize.incrementAndGet();
-		if (size > QUEUE_LIMIT && queueThread == null) {
-			startQueueThread();
+		if (size > QUEUE_LIMIT && queueConsumingThread == null) {
+			startQueueConsumingThread();
 		}
 	}
 
@@ -341,9 +341,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	public void waitForQueue() throws InterruptedException {
-		while (queueThread != null) {
+		while (queueConsumingThread != null) {
 			try {
-				queueThread.join();
+				queueConsumingThread.join();
 			} catch (NullPointerException ignored) {
 			}
 		}
