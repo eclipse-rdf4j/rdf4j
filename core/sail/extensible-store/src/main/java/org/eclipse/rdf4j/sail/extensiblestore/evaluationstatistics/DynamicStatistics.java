@@ -7,11 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
+/**
+ * Interface to support evaluation statistics that keep their own internal estimates and need to be notified of added or
+ * removed statements.
+ */
+@Experimental
 public interface DynamicStatistics {
 
 	void add(ExtensibleStatement statement);

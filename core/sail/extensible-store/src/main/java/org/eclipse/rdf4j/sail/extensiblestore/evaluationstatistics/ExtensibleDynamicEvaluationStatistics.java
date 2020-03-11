@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.apache.druid.hll.HyperLogLogCollector;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -59,6 +60,7 @@ import java.util.stream.Stream;
  * </p>
  *
  */
+@Experimental
 public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 	private static final int QUEUE_LIMIT = 128;

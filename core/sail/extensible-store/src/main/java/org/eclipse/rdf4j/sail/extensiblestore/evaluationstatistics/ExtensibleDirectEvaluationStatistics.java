@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
@@ -21,6 +22,10 @@ import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleSailStore;
 
 import java.util.stream.Stream;
 
+/**
+ * ExtensibleDirectEvaluationStatistics provides evaluation statistics by directly querying the underlying data source.
+ */
+@Experimental
 public class ExtensibleDirectEvaluationStatistics extends ExtensibleEvaluationStatistics {
 	public ExtensibleDirectEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);

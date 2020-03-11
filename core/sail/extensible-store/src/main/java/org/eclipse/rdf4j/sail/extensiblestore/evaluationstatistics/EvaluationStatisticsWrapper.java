@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -18,6 +19,11 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 import java.util.Collection;
 
+/**
+ * A wrapper around a data structure to support evaluation statistics that need to be notified of added or removed
+ * statements.
+ */
+@Experimental
 public class EvaluationStatisticsWrapper implements DataStructureInterface {
 
 	private DynamicStatistics dynamicStatistics;
