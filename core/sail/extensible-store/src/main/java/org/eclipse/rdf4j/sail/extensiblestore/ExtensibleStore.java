@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyF
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;

@@ -123,9 +123,4 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 			Iterations.closeCloseable(wrappedIter);
 		}
 	}
-
-	@Override
-	public String toString() {
-		return wrappedIter.toString();
-	}
 }
