@@ -42,8 +42,8 @@ import java.util.stream.Stream;
  *
  * <p>
  * Since evaluation statistics are best-effort, we use HyperLogLog as sets to keep the number of statements for each
- * pattern we support. Furthermore we hash each pattern into a fixed bucket size, 1024 for single dimension and 64 per
- * dimension for multidimensional patterns.
+ * pattern we support. HyperLogLog is a very memory efficient set implementation. Furthermore we hash each pattern into
+ * a fixed bucket size, 1024 for single dimension and 64 per dimension for multidimensional patterns.
  * </p>
  *
  * <p>
@@ -112,7 +112,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	@Override
 	protected CardinalityCalculator createCardinalityCalculator() {
-		return cardinalityCalculator;
+		return new ExtensibleDynamicEvaluationStatisticsCardinalityCalculator();
 	}
 
 	@Override
@@ -130,7 +130,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	}
 
-	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
+	class ExtensibleDynamicEvaluationStatisticsCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
 		synchronized protected double getCardinality(StatementPattern sp) {

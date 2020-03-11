@@ -5,13 +5,11 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
-import org.eclipse.rdf4j.sail.extensiblestore.SimpleMemoryNamespaceStore;
 
 public class ExtensibleStoreImplForTests
 		extends ExtensibleStore<NaiveHashSetDataStructure, SimpleMemoryNamespaceStore> {

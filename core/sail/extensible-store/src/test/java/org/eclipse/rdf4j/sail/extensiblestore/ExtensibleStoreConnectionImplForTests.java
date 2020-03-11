@@ -5,19 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class TransactionIsolationAndWalTests {
-
-	private static final Logger logger = LoggerFactory.getLogger(TransactionIsolationAndWalTests.class);
-
-	@Test
-	public void noTestsHereYet() {
-
+public class ExtensibleStoreConnectionImplForTests extends ExtensibleStoreConnection<ExtensibleStoreImplForTests> {
+	protected ExtensibleStoreConnectionImplForTests(ExtensibleStoreImplForTests sail) {
+		super(sail);
 	}
-
 }

@@ -5,12 +5,18 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl;
+package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
-import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreConnection;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 
-public class ExtensibleStoreConnectionImplForTests extends ExtensibleStoreConnection<ExtensibleStoreImplForTests> {
-	protected ExtensibleStoreConnectionImplForTests(ExtensibleStoreImplForTests sail) {
-		super(sail);
+public class ExtensibleStoreIsolationLevelTest extends SailIsolationLevelTest {
+
+	@Override
+	protected NotifyingSail createSail() throws SailException {
+		return new ExtensibleStoreImplForTests();
 	}
+
 }

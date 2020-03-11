@@ -5,16 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
+package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.TupleQueryResultTest;
+import org.eclipse.rdf4j.repository.SparqlOrderByTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 
 import java.io.IOException;
 
-public class ExtensibleStoreTupleQueryResultTest extends TupleQueryResultTest {
+public class ExtensibleStoreSparqlOrderByTest extends SparqlOrderByTest {
 
 	@Override
 	protected Repository newRepository() throws IOException {

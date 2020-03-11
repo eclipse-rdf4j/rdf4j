@@ -5,15 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
+package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.SailInterruptTest;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 
-public class ExtensibleStoreConcurrencyTest extends SailConcurrencyTest {
-
+public class ExtensibleStoreInterruptTest extends SailInterruptTest {
 	@Override
 	protected NotifyingSail createSail() throws SailException {
 		return new ExtensibleStoreImplForTests();
