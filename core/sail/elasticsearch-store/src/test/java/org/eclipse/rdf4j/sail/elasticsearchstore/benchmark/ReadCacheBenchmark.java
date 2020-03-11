@@ -76,8 +76,6 @@ public class ReadCacheBenchmark {
 		}
 	}
 
-	private List<Statement> statementList;
-
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
