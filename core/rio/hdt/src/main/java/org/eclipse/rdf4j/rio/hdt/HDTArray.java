@@ -84,12 +84,29 @@ abstract class HDTArray extends HDTPart {
 	}
 
 	/**
+	 * Set number of entries in this array
+	 * 
+	 * @return positive integer value
+	 */
+	protected void size(int size) {
+		this.entries = size;
+	}
+
+	/**
 	 * Get entry from this array
 	 * 
 	 * @param i zero-based index
 	 * @return entry
 	 */
 	protected abstract int get(int i);
+
+	/**
+	 * Set entry to this array
+	 * 
+	 * @param i zero-based index
+	 * @param entry
+	 */
+	protected abstract int set(int i, int entry);
 
 	@Override
 	protected void parse(InputStream is) throws IOException {

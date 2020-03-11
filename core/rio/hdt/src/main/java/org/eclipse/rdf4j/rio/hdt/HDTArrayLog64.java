@@ -82,7 +82,12 @@ class HDTArrayLog64 extends HDTArray {
 			checkCRC(cis, is, 4);
 		}
 	}
-	
+
+	@Override
+	protected int set(int i, int entry) {
+		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+	}
+
 	@Override
 	protected void write(OutputStream os) throws IOException {
 		super.write(os);

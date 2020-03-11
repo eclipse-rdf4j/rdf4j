@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
 
@@ -59,6 +60,7 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 class HDTDictionarySectionPFC extends HDTDictionarySection {
 	private byte[] readBuffer;
 	private byte[][] writeBuffers;
+	private int wbpos;
 
 	private int totalStrings;
 	private int stringsBlock;
@@ -91,6 +93,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	@Override
 	protected void setSize(int size) {
 		this.totalStrings = size;
+		writeBuffers = new byte[size][];
 	}
 	
 	protected void setBlockSize(int stringBlocks) {
@@ -163,7 +166,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 	@Override
 	protected void set(Iterator<String> iter) {
-		encodeBlock(iter);
+		writeBuffers[wbpos++] = encodeBlock(iter);
 	}
 	
 	@Override
@@ -183,6 +186,10 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		}
 		// keep track of starting positions of the blocks
 		blockStarts = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		blockStarts.set(0, 0);
+		for (int i = 1; i < writeBuffers.length; i++) {
+			blockStarts.set(i, writeBuffers[i-1].length);
+		}
 		blockStarts.write(os);
 		
 		// don't close CheckedOutputStream, as it will close the underlying outputstream
@@ -229,7 +236,13 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		}
 		return arr;
 	}
-	
+
+	/**
+	 * Encode a single block, removing the input strings to conserve memory
+	 * 
+	 * @param iter
+	 * @return encoded block
+	 */
 	private byte[] encodeBlock(Iterator<String> iter) {
 		if (!iter.hasNext()) {
 			return new byte[0];
@@ -239,7 +252,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 		byte[] base = iter.next().getBytes(StandardCharsets.UTF_8);
 		iter.remove();
-		// copy base into first entry, with a trailing NULL
+		// copy base string into first entry, with a trailing NULL
 		tmp[i] = new byte[base.length + 1];
 		System.arraycopy(base, 0, tmp[i], 0, base.length);
 
@@ -250,6 +263,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			byte[] str = iter.next().getBytes(StandardCharsets.UTF_8);
 			iter.remove();
 
+			// remove the common part, and only store the offset and the suffix and trailing NULL
 			int common = Arrays.compare(prev, str);
 			byte[] c = VByte.encode(common);
 			tmp[i] = new byte[c.length + str.length-common +1];
@@ -259,11 +273,11 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			prev = str;
 		}
 
-		// flatten 2-dimensional byte array to a single byte array
 		if (i == 0) {
 			return tmp[0];
 		}
 
+		// flatten 2-dimensional byte array to a single byte array
 		int len = 0;
 		for (int j = 0; j < i; j++) {
 			len += tmp[j].length;
