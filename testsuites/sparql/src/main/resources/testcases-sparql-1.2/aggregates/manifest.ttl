@@ -1,0 +1,34 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix : <http://www.w3.org/2009/sparql/docs/tests/data-sparql11/aggregates/manifest#> .
+@prefix rdfs:	<http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf:     <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt:     <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+@prefix dawgt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> .
+@prefix sparql:  <http://www.w3.org/ns/sparql#> .
+
+<>  rdf:type mf:Manifest ;
+    rdfs:label "Aggregates" ;
+    mf:entries
+    ( 
+    :agg-empty-group-1
+    :agg-empty-group-2
+) .
+
+
+:agg-empty-group-1 rdf:type mf:QueryEvaluationTest ;
+	mf:name "agg on empty set, explicit grouping" ;
+	mf:feature sparql:aggregate ;
+    mf:action
+         [ qt:query  <agg-empty-group-1.rq> ;
+           qt:data   <empty.ttl> ] ;
+    mf:result  <agg-empty-group-1.srx>
+    .    
+
+:agg-empty-group-2 rdf:type mf:QueryEvaluationTest ;
+	mf:name "agg on empty set, no grouping" ;
+	mf:feature sparql:aggregate ;
+    mf:action
+         [ qt:query  <agg-empty-group-2.rq> ;
+           qt:data   <empty.ttl> ] ;
+    mf:result  <agg-empty-group-2.srx>
+    .    

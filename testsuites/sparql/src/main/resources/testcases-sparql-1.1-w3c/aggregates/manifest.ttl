@@ -37,7 +37,8 @@
     :agg-sample-01 
     :agg-err-01
     :agg-err-02
-    :agg-empty-group
+    # disabling test that is factually incorrect. See https://github.com/eclipse/rdf4j/issues/1978
+    # :agg-empty-group
 ) .
 
 
@@ -335,7 +336,6 @@
 
 :agg-empty-group rdf:type mf:QueryEvaluationTest ;
 	mf:name "agg empty group" ;
-    mf:name "Aggregate over empty group resulting in a row with unbound variables" ;
 	mf:feature sparql:aggregate ;
 	rdfs:seeAlso <http://answers.semanticweb.com/questions/17410/semantics-of-sparql-aggregates> ;
     dawgt:approval dawgt:Approved ;

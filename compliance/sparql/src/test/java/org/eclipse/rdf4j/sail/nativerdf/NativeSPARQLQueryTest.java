@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.Dataset;
@@ -17,15 +18,15 @@ import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 import junit.framework.Test;
 
 public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
-		return SPARQL11ManifestTest.suite(new Factory() {
+		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.1-w3c/manifest-all.ttl");
 
+		return SPARQL11ManifestTest.suite(new Factory() {
 			@Override
 			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
@@ -50,7 +51,7 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 			}
 			// skip 'service' tests because it requires the test rig to start up
 			// a remote endpoint
-		}, true, true, false, "service");
+		}, manifestUrl.toString(), true, "service");
 	}
 
 	private File dataDir;
