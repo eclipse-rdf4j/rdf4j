@@ -32,8 +32,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);
 	private static final int QUEUE_LIMIT = 128;
 	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
-	private static final int FULL_REFRESH_TRIGGER_LIMIT = 10000;
-	private int fullRefreshCounter = 0;
 
 	ConcurrentLinkedQueue<StatemetQueueItem> queue = new ConcurrentLinkedQueue<StatemetQueueItem>();
 
@@ -64,7 +62,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private final HyperLogLogCollector[][] subjectPredicateIndex_removed = new HyperLogLogCollector[64][64];
 	private final HyperLogLogCollector[][] predicateObjectIndex_removed = new HyperLogLogCollector[64][64];
 	volatile private Thread queueThread;
-	private DynamicEvaluationStatisticsRefreshHook fullRefreshHook;
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
 		super(extensibleSailStore);
@@ -86,18 +83,15 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	public void setRefreshHook(DynamicEvaluationStatisticsRefreshHook dynamicEvaluationStatisticsRefreshHook) {
-		this.fullRefreshHook = dynamicEvaluationStatisticsRefreshHook;
-	}
-
-	@Override
-	public double staleness(long actualSize) {
+	synchronized public double staleness(long actualSize) {
 
 		double estimatedSize = size.estimateCardinality() - size_removed.estimateCardinality();
 
 		double diff = Math.abs(estimatedSize - actualSize);
 
 		double staleness = 1.0 / Math.max(estimatedSize, actualSize) * diff;
+
+		logger.debug("Actual size: {}; estimated size: {}; staleness: {}", actualSize, estimatedSize, staleness);
 
 		return staleness;
 
@@ -106,7 +100,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
 
 		@Override
-		protected double getCardinality(StatementPattern sp) {
+		synchronized protected double getCardinality(StatementPattern sp) {
 			double min = size.estimateCardinality() - size_removed.estimateCardinality();
 
 			min = Math.min(min, getSubjectCardinality(sp.getSubjectVar()));
@@ -132,7 +126,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 
 		@Override
-		protected double getSubjectCardinality(Var var) {
+		synchronized protected double getSubjectCardinality(Var var) {
 			if (var.getValue() == null) {
 				return size.estimateCardinality();
 			} else {
@@ -142,7 +136,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 
 		@Override
-		protected double getPredicateCardinality(Var var) {
+		synchronized protected double getPredicateCardinality(Var var) {
 			if (var.getValue() == null) {
 				return size.estimateCardinality();
 			} else {
@@ -151,7 +145,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 
 		@Override
-		protected double getObjectCardinality(Var var) {
+		synchronized protected double getObjectCardinality(Var var) {
 			if (var.getValue() == null) {
 				return size.estimateCardinality();
 			} else {
@@ -160,7 +154,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 
 		@Override
-		protected double getContextCardinality(Var var) {
+		synchronized protected double getContextCardinality(Var var) {
 			if (var.getValue() == null) {
 				return defaultContext.estimateCardinality() - defaultContext_removed.estimateCardinality();
 			} else {
@@ -234,10 +228,6 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 							}
 						}
-
-						if (fullRefreshHook != null && fullRefreshCounter++ % FULL_REFRESH_TRIGGER_LIMIT == 0) {
-							fullRefreshHook.triggerDynamicEvaluationStatisticsRefreshHook();
-						}
 					}
 				} finally {
 					queueThread = null;
@@ -251,7 +241,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	private void handleStatement(Statement statement, byte[] statementHash, HyperLogLogCollector size,
+	synchronized private void handleStatement(Statement statement, byte[] statementHash, HyperLogLogCollector size,
 			Map<Integer, HyperLogLogCollector> subjectIndex, Map<Integer, HyperLogLogCollector> predicateIndex,
 			Map<Integer, HyperLogLogCollector> objectIndex, HyperLogLogCollector[][] subjectPredicateIndex,
 			HyperLogLogCollector[][] predicateObjectIndex, HyperLogLogCollector defaultContext,

@@ -83,6 +83,8 @@ public interface DataStructureInterface {
 	}
 
 	default long getEstimatedSize() {
-		return getStatements(null, null, null, true).stream().count();
+		long inferred = getStatements(null, null, null, true).stream().count();
+		long explicit = getStatements(null, null, null, false).stream().count();
+		return inferred + explicit;
 	}
 }

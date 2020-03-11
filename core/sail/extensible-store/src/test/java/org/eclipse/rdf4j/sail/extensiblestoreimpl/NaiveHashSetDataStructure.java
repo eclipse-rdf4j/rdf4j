@@ -58,4 +58,9 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 	public void flushForCommit() {
 
 	}
+
+	@Override
+	public long getEstimatedSize() {
+		return statements.size();
+	}
 }

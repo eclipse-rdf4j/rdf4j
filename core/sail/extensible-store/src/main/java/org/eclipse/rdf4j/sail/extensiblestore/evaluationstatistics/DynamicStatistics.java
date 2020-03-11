@@ -28,5 +28,4 @@ public interface DynamicStatistics {
 	 */
 	double staleness(long count);
 
-	void setRefreshHook(DynamicEvaluationStatisticsRefreshHook extensibleSailStore);
 }

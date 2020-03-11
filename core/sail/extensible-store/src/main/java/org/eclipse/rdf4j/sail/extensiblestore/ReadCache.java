@@ -188,4 +188,9 @@ public class ReadCache implements DataStructureInterface {
 		}
 
 	}
+
+	@Override
+	public long getEstimatedSize() {
+		return delegate.getEstimatedSize();
+	}
 }

@@ -22,10 +22,12 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
+import org.elasticsearch.action.admin.indices.stats.IndicesStatsResponse;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.client.IndicesAdminClient;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.engine.VersionConflictEngineException;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -710,5 +712,16 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 	public void setElasticsearchBulkSize(int size) {
 		this.BUFFER_THRESHOLD = size;
+	}
+
+	@Override
+	public long getEstimatedSize() {
+		Client client = clientProvider.getClient();
+
+		IndicesAdminClient indices = client.admin().indices();
+		IndicesStatsResponse indicesStatsResponse = indices.prepareStats(index).get();
+
+		return indicesStatsResponse.getTotal().docs.getCount();
+
 	}
 }

@@ -16,9 +16,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
+import java.util.Collection;
+
 public class EvaluationStatisticsWrapper implements DataStructureInterface {
 
-	private final DynamicStatistics dynamicStatistics;
+	private DynamicStatistics dynamicStatistics;
 	private final DataStructureInterface delegate;
 
 	public EvaluationStatisticsWrapper(DataStructureInterface delegate, DynamicStatistics dynamicStatistics) {
@@ -70,5 +72,26 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 	public boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource[] contexts) {
 		dynamicStatistics.removeByQuery(subj, pred, obj, inferred, contexts);
 		return delegate.removeStatementsByQuery(subj, pred, obj, inferred, contexts);
+	}
+
+	@Override
+	public void addStatement(Collection<ExtensibleStatement> statements) {
+		delegate.addStatement(statements);
+		statements.forEach(dynamicStatistics::add);
+	}
+
+	@Override
+	public void removeStatement(Collection<ExtensibleStatement> statements) {
+		delegate.addStatement(statements);
+		statements.forEach(dynamicStatistics::remove);
+	}
+
+	@Override
+	public long getEstimatedSize() {
+		return delegate.getEstimatedSize();
+	}
+
+	public void setEvaluationStatistics(DynamicStatistics dynamicStatistics) {
+		this.dynamicStatistics = dynamicStatistics;
 	}
 }
