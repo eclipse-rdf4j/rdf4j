@@ -9,14 +9,17 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  * HDT DictionarySection Plain Front Coding.
@@ -52,7 +55,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * @author Bart Hanssens
  */
 class HDTDictionarySectionPFC extends HDTDictionarySection {
-	private byte[] buffer;
+	private byte[] readBuffer;
 
 	private int totalStrings;
 	private int stringsBlock;
@@ -93,7 +96,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		ArrayList<byte[]> strings = cache.get(block);
 		if (strings == null) {
 			int blockStart = blockStarts.get(block);
-			strings = decodeBlock(block, blockStart);
+			strings = decodeBlock(readBuffer, block, blockStart);
 			cache.put(block, strings);
 		}
 		return strings.get(idx - (block * stringsBlock));
@@ -125,7 +128,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			val = VByte.decode(cis);
 			if (val > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException(
-						getDebugPartStr() + "max number of strings per exceeded: " + val);
+						getDebugPartStr() + " max number of strings per block exceeded: " + val);
 			}
 			stringsBlock = (int) val;
 
@@ -140,9 +143,34 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 
-			buffer = new byte[buflen];
-			cis.read(buffer);
+			readBuffer = new byte[buflen];
+			cis.read(readBuffer);
 			checkCRC(cis, is, 4);
+		}
+	}
+
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		CRC8 crc8 = new CRC8();
+		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());
+		
+		byte[] buffer = new byte[1];
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, crc8)) {
+			VByte.encode(cos, totalStrings);
+			VByte.encode(cos, buffer.length);
+			VByte.encode(cos, stringsBlock);
+
+			writeCRC(cos, os, 1);
+		}
+		
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
+
+			cos.write(buffer);
+			writeCRC(cos, os, 4);
 		}
 	}
 
@@ -154,7 +182,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	 * @return list of decoded byte strings
 	 * @throws IOException
 	 */
-	private ArrayList<byte[]> decodeBlock(int block, int start) throws IOException {
+	private ArrayList<byte[]> decodeBlock(byte[] buffer, int block, int start) throws IOException {
 		ArrayList<byte[]> arr = new ArrayList<>(stringsBlock);
 
 		// initial string

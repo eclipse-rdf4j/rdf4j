@@ -185,7 +185,7 @@ abstract class HDTPart {
 	 * Read null terminated series of bytes
 	 * 
 	 * @param is input stream
-	 * @return
+	 * @return byte array
 	 * @throws IOException
 	 */
 	protected static byte[] readToNull(InputStream is) throws IOException {
@@ -207,7 +207,6 @@ abstract class HDTPart {
 	 * 
 	 * @param os output stream
 	 * @param b  byte buffer
-	 * @return
 	 * @throws IOException
 	 */
 	protected static void writeWithNull(OutputStream os, byte[] b) throws IOException {

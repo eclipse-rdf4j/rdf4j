@@ -19,9 +19,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import org.apache.commons.io.output.CountingOutputStream;
 
@@ -75,12 +79,12 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	// TODO: rewrite this to cater for larger input
 	// create dictionaries and triples, with some size estimations
-	private final int SIZE = 1_048_576;
-	private final Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
-	private final Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
-	private final Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
-	private final Map<String, Integer> dictO = new HashMap<>(SIZE / 2);
-	private final List<int[]> t = new ArrayList<>(SIZE);
+	private int SIZE = 1_048_576;
+	private Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
+	private Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
+	private Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
+	private Map<String, Integer> dictO = new HashMap<>(SIZE / 2);
+	private List<int[]> t = new ArrayList<>(SIZE);
 
 	/**
 	 * Creates a new HDTWriter.
@@ -122,11 +126,27 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionary dict = new HDTDictionary();
 			dict.write(out);
 
-			HDTDictionary subjects = new HDTDictionary();
-			HDTDictionary predicates = new HDTDictionary();
-			HDTDictionary objects = null;
-			HDTTriplesSection section = null;
+			long dpos = bos.getByteCount();
+			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos, HDTDictionarySection.Type.FRONT);
+			dictShared = sortMap(dictShared);
+			shared.write(out);
+			
+			dpos = bos.getByteCount();
+			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos, HDTDictionarySection.Type.FRONT);
+			dictS = sortMap(dictS);
+			
+			dpos = bos.getByteCount();
+			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos, HDTDictionarySection.Type.FRONT);
+			dictP = sortMap(dictP);
 
+			dpos = bos.getByteCount();
+			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos, HDTDictionarySection.Type.FRONT);
+			dictO = sortMap(dictO);
+			
+			getLookup(dictShared);
+			getLookup(dictS);
+			getLookup(dictP);
+			getLookup(dictO);
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
 		} finally {
@@ -239,5 +259,41 @@ public class HDTWriter extends AbstractRDFWriter {
 		meta.setSizeStrings(2943);
 
 		return meta.get();
+	}
+	
+	/**
+	 * Move key,values from a map to a sorted map (i.e. it removes entries from the unsorted while ordering to save memory)
+	 * 
+	 * @param map
+	 * @return sorted map
+	 */
+	private static SortedMap<String, Integer> sortMap(Map<String,Integer> unsorted) {
+		TreeMap<String,Integer> sorted = new TreeMap<>();
+
+		Iterator<Entry<String,Integer>> iter = unsorted.entrySet().iterator();
+		while (iter.hasNext()) {
+			Entry<String,Integer> e = iter.next();
+			sorted.put(e.getKey(), e.getValue());
+			iter.remove();
+		}
+		return sorted;
+	}
+
+	/**
+	 * Create lookup table containing the new position at the index of the old position
+	 * 
+	 * @param map map
+	 * @return array of 
+	 */
+	private static int[] getLookup(Map<String,Integer> map) {
+		// positions in HDT are counted from 1, leave 0-th element empty to avoid minus/plus 1
+		int[] swap = new int[map.size()+1];
+
+		int newpos = 1;
+		for (int oldpos: map.values()) {
+			swap[oldpos] = newpos++;
+		}
+
+		return swap;
 	}
 }
