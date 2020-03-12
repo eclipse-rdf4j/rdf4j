@@ -120,8 +120,10 @@ git push -u origin ${BRANCH}
 git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "You need to tell jenkins to start the release process."
-echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
+echo "You need to tell Jenkins to start the release deployment processes, for SDK and maven artifacts"
+echo "- SDK deployment: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/ "
+echo "- Maven deployment: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ "
+echo "(if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
 echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -153,7 +155,7 @@ read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n"
 echo "";
 
 echo "Creating pull request to merge release branch back into master"
-hub pull-request -f -m "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}" -b origin:master
+hub pull-request -f -m "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}"
 
 echo "";
 echo "Preparing a merge-branch to merge into develop"
@@ -175,7 +177,7 @@ git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
 echo "Creating pull request to merge the merge-branch into develop"
-hub pull-request -f -m "sync develop branch after release ${MVN_VERSION_RELEASE}" -b origin:develop
+hub pull-request -f -m "sync develop branch after release ${MVN_VERSION_RELEASE}"
 echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
