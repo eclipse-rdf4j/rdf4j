@@ -117,7 +117,7 @@ read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n"
 
 # push release branch and tag
 git push -u origin ${BRANCH}
-git push "${MVN_VERSION_RELEASE}"
+git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
 echo "You need to tell jenkins to start the release process."
