@@ -59,7 +59,9 @@ public class DeleteBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
-
+		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
+		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
+		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
 				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
