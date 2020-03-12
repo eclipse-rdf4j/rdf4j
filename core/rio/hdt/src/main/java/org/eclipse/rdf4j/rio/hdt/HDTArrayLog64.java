@@ -29,8 +29,8 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
  * ...+---------+-------+
  * </pre>
  * 
- * Entries are stored little-endian, with each entry using <code>nrbits</code> bits, which is the log2(max_value).
- * E.g. to store a maximum value of 1024 only 10 bits are needed, instead of storing a 16-bit <code>short</code>. 
+ * Entries are stored little-endian, with each entry using <code>nrbits</code> bits, which is the log2(max_value). E.g.
+ * to store a maximum value of 1024 only 10 bits are needed, instead of storing a 16-bit <code>short</code>.
  * 
  * @author Bart Hanssens
  */
@@ -85,7 +85,8 @@ class HDTArrayLog64 extends HDTArray {
 
 	@Override
 	protected int set(int i, int entry) {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
+																		// Tools | Templates.
 	}
 
 	@Override

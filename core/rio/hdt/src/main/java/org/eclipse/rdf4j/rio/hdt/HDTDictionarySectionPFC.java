@@ -95,7 +95,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		this.totalStrings = size;
 		writeBuffers = new byte[size][];
 	}
-	
+
 	protected void setBlockSize(int stringBlocks) {
 		this.stringsBlock = stringBlocks;
 	}
@@ -168,35 +168,47 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	protected void set(Iterator<String> iter) {
 		writeBuffers[wbpos++] = encodeBlock(iter);
 	}
-	
+
 	@Override
 	protected void write(OutputStream os) throws IOException {
 		CRC8 crc8 = new CRC8();
 		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());
-		
-		byte[] buffer = new byte[1];
+
+		// calculate total buffer length
+		int buflen = 0;
+		for (int i = 0; i < writeBuffers.length; i++) {
+			buflen += writeBuffers[i].length;
+		}
+
 		// don't close CheckedOutputStream, as it will close the underlying outputstream
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, crc8)) {
 			VByte.encode(cos, totalStrings);
-			VByte.encode(cos, buffer.length);
+			VByte.encode(cos, buflen);
 			VByte.encode(cos, stringsBlock);
 
 			writeCRC(cos, os, 1);
 		}
+
+		// calculate number of bits required to encode maximum length
+		int nrbits = VByte.encodedLength(writeBuffers[writeBuffers.length - 1].length);
+
 		// keep track of starting positions of the blocks
 		blockStarts = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		blockStarts.setNrBits(nrbits);
+		blockStarts.setSize(writeBuffers.length);
 		blockStarts.set(0, 0);
 		for (int i = 1; i < writeBuffers.length; i++) {
-			blockStarts.set(i, writeBuffers[i-1].length);
+			blockStarts.set(i, writeBuffers[i - 1].length);
 		}
 		blockStarts.write(os);
-		
+
 		// don't close CheckedOutputStream, as it will close the underlying outputstream
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
-
-			cos.write(buffer);
+			for (int i = 0; i < writeBuffers.length; i++) {
+				cos.write(writeBuffers[i]);
+			}
 			writeCRC(cos, os, 4);
 		}
 	}
@@ -266,9 +278,9 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			// remove the common part, and only store the offset and the suffix and trailing NULL
 			int common = Arrays.compare(prev, str);
 			byte[] c = VByte.encode(common);
-			tmp[i] = new byte[c.length + str.length-common +1];
+			tmp[i] = new byte[c.length + str.length - common + 1];
 			System.arraycopy(c, 0, tmp[i], 0, c.length);
-			System.arraycopy(str, common, tmp[i], c.length, str.length-common);
+			System.arraycopy(str, common, tmp[i], c.length, str.length - common);
 
 			prev = str;
 		}
@@ -282,7 +294,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		for (int j = 0; j < i; j++) {
 			len += tmp[j].length;
 		}
-		
+
 		byte[] ret = new byte[len];
 		for (int j = 0, idx = 0; j < i; j++) {
 			System.arraycopy(tmp[j], 0, ret, idx, tmp[j].length);

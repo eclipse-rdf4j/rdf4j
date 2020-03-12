@@ -75,12 +75,30 @@ abstract class HDTArray extends HDTPart {
 	}
 
 	/**
+	 * Set number of bits used to encode an entry
+	 * 
+	 * @param positive integer value
+	 */
+	protected void setNrBits(int nrbits) {
+		this.nrbits = nrbits;
+	}
+
+	/**
 	 * Get number of entries in this array
 	 * 
 	 * @return positive integer value
 	 */
 	protected int size() {
 		return entries;
+	}
+
+	/**
+	 * Set number of entries in this array
+	 * 
+	 * @param positive integer value
+	 */
+	protected void setSize(int entries) {
+		this.entries = entries;
 	}
 
 	/**
@@ -103,7 +121,7 @@ abstract class HDTArray extends HDTPart {
 	/**
 	 * Set entry to this array
 	 * 
-	 * @param i zero-based index
+	 * @param i     zero-based index
 	 * @param entry
 	 */
 	protected abstract int set(int i, int entry);

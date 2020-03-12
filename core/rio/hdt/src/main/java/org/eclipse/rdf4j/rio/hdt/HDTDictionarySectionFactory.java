@@ -34,18 +34,19 @@ class HDTDictionarySectionFactory {
 		}
 		return new HDTDictionarySectionPFC(name, pos);
 	}
-	
+
 	/**
 	 * Create a dictionary section for output stream. The name an starting position are provided for debugging purposes.
 	 * 
-	 * @param is   output stream
-	 * @param name name
-	 * @param pos  starting position
+	 * @param is    output stream
+	 * @param name  name
+	 * @param pos   starting position
 	 * @param dtype type
 	 * @return dictionary section
 	 * @throws IOException
 	 */
-	protected static HDTDictionarySection write(OutputStream os, String name, long pos, HDTDictionarySection.Type dtype) throws IOException {
+	protected static HDTDictionarySection write(OutputStream os, String name, long pos, HDTDictionarySection.Type dtype)
+			throws IOException {
 		if (dtype != HDTDictionarySection.Type.FRONT) {
 			throw new UnsupportedOperationException("Dictionary " + name + ": encoding "
 					+ Long.toHexString(dtype.getValue()) + ", but only front encoding is supported");

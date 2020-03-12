@@ -127,22 +127,26 @@ public class HDTWriter extends AbstractRDFWriter {
 			dict.write(out);
 
 			long dpos = bos.getByteCount();
-			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos, HDTDictionarySection.Type.FRONT);
+			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos,
+					HDTDictionarySection.Type.FRONT);
 			dictShared = sortMap(dictShared);
 			shared.write(out);
-			
+
 			dpos = bos.getByteCount();
-			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos, HDTDictionarySection.Type.FRONT);
+			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos,
+					HDTDictionarySection.Type.FRONT);
 			dictS = sortMap(dictS);
-			
+
 			dpos = bos.getByteCount();
-			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos, HDTDictionarySection.Type.FRONT);
+			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos,
+					HDTDictionarySection.Type.FRONT);
 			dictP = sortMap(dictP);
 
 			dpos = bos.getByteCount();
-			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos, HDTDictionarySection.Type.FRONT);
+			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos,
+					HDTDictionarySection.Type.FRONT);
 			dictO = sortMap(dictO);
-			
+
 			getLookup(dictShared);
 			getLookup(dictS);
 			getLookup(dictP);
@@ -260,19 +264,20 @@ public class HDTWriter extends AbstractRDFWriter {
 
 		return meta.get();
 	}
-	
+
 	/**
-	 * Move key,values from a map to a sorted map (i.e. it removes entries from the unsorted while ordering to save memory)
+	 * Move key,values from a map to a sorted map (i.e. it removes entries from the unsorted while ordering to save
+	 * memory)
 	 * 
 	 * @param map
 	 * @return sorted map
 	 */
-	private static SortedMap<String, Integer> sortMap(Map<String,Integer> unsorted) {
-		TreeMap<String,Integer> sorted = new TreeMap<>();
+	private static SortedMap<String, Integer> sortMap(Map<String, Integer> unsorted) {
+		TreeMap<String, Integer> sorted = new TreeMap<>();
 
-		Iterator<Entry<String,Integer>> iter = unsorted.entrySet().iterator();
+		Iterator<Entry<String, Integer>> iter = unsorted.entrySet().iterator();
 		while (iter.hasNext()) {
-			Entry<String,Integer> e = iter.next();
+			Entry<String, Integer> e = iter.next();
 			sorted.put(e.getKey(), e.getValue());
 			iter.remove();
 		}
@@ -283,14 +288,14 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * Create lookup table containing the new position at the index of the old position
 	 * 
 	 * @param map map
-	 * @return array of 
+	 * @return array of
 	 */
-	private static int[] getLookup(Map<String,Integer> map) {
+	private static int[] getLookup(Map<String, Integer> map) {
 		// positions in HDT are counted from 1, leave 0-th element empty to avoid minus/plus 1
-		int[] swap = new int[map.size()+1];
+		int[] swap = new int[map.size() + 1];
 
 		int newpos = 1;
-		for (int oldpos: map.values()) {
+		for (int oldpos : map.values()) {
 			swap[oldpos] = newpos++;
 		}
 
