@@ -5,51 +5,43 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.eclipse.rdf4j.sail.extensiblestore.FilteringIteration;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {
 
-	Set<Statement> statements = new HashSet<>();
+	Set<ExtensibleStatement> statements = ConcurrentHashMap.newKeySet();
 
 	@Override
-	synchronized public void addStatement(Statement statement) {
+	synchronized public void addStatement(ExtensibleStatement statement) {
 		statements.add(statement);
 
 	}
 
 	@Override
-	synchronized public void removeStatement(Statement statement) {
+	synchronized public void removeStatement(ExtensibleStatement statement) {
 		statements.remove(statement);
 
 	}
 
 	@Override
-	synchronized public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
+	synchronized public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
 			IRI predicate,
-			Value object, Resource... context) {
+			Value object, boolean inferred, Resource... context) {
 		return new FilteringIteration<>(
-				new IteratorIteration<Statement, SailException>(new ArrayList<>(statements).iterator()), subject,
-				predicate, object, context);
+				new IteratorIteration<>(statements.iterator()), subject, predicate, object, inferred, context);
 	}
 
 	@Override
@@ -65,5 +57,10 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 	@Override
 	public void flushForCommit() {
 
+	}
+
+	@Override
+	public long getEstimatedSize() {
+		return statements.size();
 	}
 }

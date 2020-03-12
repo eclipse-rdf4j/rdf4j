@@ -5,17 +5,19 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
+package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class ExtensibleStoreContextTest extends RDFNotifyingStoreTest {
+public class TransactionIsolationAndWalTests {
 
-	@Override
-	protected NotifyingSail createSail() throws SailException {
-		return new ExtensibleStoreImplForTests();
+	private static final Logger logger = LoggerFactory.getLogger(TransactionIsolationAndWalTests.class);
+
+	@Test
+	public void noTestsHereYet() {
+
 	}
+
 }

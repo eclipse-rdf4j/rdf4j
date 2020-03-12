@@ -16,16 +16,18 @@ import java.util.Objects;
 
 public class PartialStatement {
 
+	private final boolean inferred;
 	Resource subject;
 	IRI predicate;
 	Value object;
 	Resource[] context;
 
-	public PartialStatement(Resource subject, IRI predicate, Value object, Resource... context) {
+	public PartialStatement(Resource subject, IRI predicate, Value object, boolean inferred, Resource... context) {
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
 		this.context = context;
+		this.inferred = inferred;
 	}
 
 	@Override
@@ -37,7 +39,8 @@ public class PartialStatement {
 			return false;
 		}
 		PartialStatement that = (PartialStatement) o;
-		return Objects.equals(subject, that.subject) &&
+		return inferred == that.inferred &&
+				Objects.equals(subject, that.subject) &&
 				Objects.equals(predicate, that.predicate) &&
 				Objects.equals(object, that.object) &&
 				Arrays.equals(context, that.context);
@@ -45,7 +48,7 @@ public class PartialStatement {
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(subject, predicate, object);
+		int result = Objects.hash(subject, predicate, object, inferred);
 		result = 31 * result + Arrays.hashCode(context);
 		return result;
 	}

@@ -11,17 +11,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.ContextStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleContextStatement;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchContextStatement extends ContextStatement implements ElasticsearchId {
+class ElasticsearchContextStatement extends ExtensibleContextStatement implements ElasticsearchId {
 
 	private String elasticsearchId;
 
 	ElasticsearchContextStatement(String elasticsearchId, Resource subject, IRI predicate, Value object,
-			Resource context) {
-		super(subject, predicate, object, context);
+			Resource context, boolean inferred) {
+		super(subject, predicate, object, context, inferred);
 		this.elasticsearchId = elasticsearchId;
 	}
 

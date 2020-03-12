@@ -5,17 +5,19 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.extensiblestoreimpl.compliance;
+package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
+import org.eclipse.rdf4j.repository.TupleQueryResultTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 
-public class ExtensibleStoreRepositoryTest extends RepositoryTest {
+import java.io.IOException;
+
+public class ExtensibleStoreTupleQueryResultTest extends TupleQueryResultTest {
 
 	@Override
-	protected Repository createRepository() {
+	protected Repository newRepository() throws IOException {
 		return new SailRepository(new ExtensibleStoreImplForTests());
 	}
 

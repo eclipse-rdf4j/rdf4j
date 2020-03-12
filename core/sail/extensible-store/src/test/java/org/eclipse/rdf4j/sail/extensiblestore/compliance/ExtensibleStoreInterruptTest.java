@@ -5,13 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.elasticsearchstore;
+package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.SailInterruptTest;
+import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
 
-/**
- * @author Håvard Mikkelsen Ottestad
- */
-interface ElasticsearchId extends ExtensibleStatement {
-	String getElasticsearchId();
+public class ExtensibleStoreInterruptTest extends SailInterruptTest {
+	@Override
+	protected NotifyingSail createSail() throws SailException {
+		return new ExtensibleStoreImplForTests();
+	}
 }

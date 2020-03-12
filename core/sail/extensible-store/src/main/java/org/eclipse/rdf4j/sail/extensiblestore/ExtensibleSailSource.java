@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -33,10 +34,15 @@ class ExtensibleSailSource implements SailSource {
 
 	private final DataStructureInterface dataStructure;
 	private final NamespaceStoreInterface namespaceStore;
+	private final boolean inferred;
+	private final ExtensibleStatementHelper extensibleStatementHelper;
 
-	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore) {
+	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore,
+			boolean inferred, ExtensibleStatementHelper extensibleStatementHelper) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
+		this.inferred = inferred;
+		this.extensibleStatementHelper = extensibleStatementHelper;
 
 	}
 
@@ -46,7 +52,8 @@ class ExtensibleSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore);
+		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore, inferred,
+				extensibleStatementHelper);
 	}
 
 	@Override
@@ -79,7 +86,7 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public void clear(Resource... contexts) throws SailException {
-				dataStructure.clear(contexts);
+				dataStructure.clear(inferred, contexts);
 			}
 
 			@Override
@@ -90,12 +97,14 @@ class ExtensibleSailSource implements SailSource {
 			@Override
 			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
-				dataStructure.addStatement(statement);
+
+				dataStructure.addStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
 			public void approve(Statement statement) throws SailException {
-				dataStructure.addStatement(statement);
+
+				dataStructure.addStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
@@ -105,12 +114,12 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public void deprecate(Statement statement) throws SailException {
-				dataStructure.removeStatement(statement);
+				dataStructure.removeStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
 			public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-				return dataStructure.removeStatementsByQuery(subj, pred, obj, contexts);
+				return dataStructure.removeStatementsByQuery(subj, pred, obj, inferred, contexts);
 			}
 
 			@Override
@@ -199,7 +208,7 @@ class ExtensibleSailSource implements SailSource {
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 					Value obj, Resource... contexts) throws SailException {
-				return dataStructure.getStatements(subj, pred, obj, contexts);
+				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}
 
 		};

@@ -7,30 +7,65 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.DynamicStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsWrapper;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.ExtensibleEvaluationStatistics;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ExtensibleSailStore implements SailStore {
+public class ExtensibleSailStore implements SailStore {
+
+	private static final Logger logger = LoggerFactory.getLogger(ExtensibleSailStore.class);
+	public static final int EVALUATION_STATISTICS_STALENESS_CHECK_INTERVAL = 1000 * 60;
 
 	private ExtensibleSailSource sailSource;
 	private ExtensibleSailSource sailSourceInferred;
+	private final EvaluationStatisticsEnum evaluationStatisticsEnum;
+	private ExtensibleEvaluationStatistics evaluationStatistics;
+	private Thread evaluationStatisticsMaintainerThread;
+	private DataStructureInterface dataStructure;
+	private volatile boolean closed;
 
-	public ExtensibleSailStore(DataStructureInterface dataStructure, DataStructureInterface dataStructureInferred,
-			NamespaceStoreInterface namespaceStore) {
-		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore);
-		sailSourceInferred = new ExtensibleSailSource(dataStructureInferred, namespaceStore);
+	public ExtensibleSailStore(DataStructureInterface dataStructure,
+			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
+			ExtensibleStatementHelper extensibleStatementHelper) {
+		this.evaluationStatisticsEnum = evaluationStatisticsEnum;
+		evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
+		if (evaluationStatistics instanceof DynamicStatistics) {
+			dataStructure = new EvaluationStatisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics);
+
+			startEvaluationStatisticsMaintainerThread();
+
+		}
+		this.dataStructure = dataStructure;
+		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, false, extensibleStatementHelper);
+		sailSourceInferred = new ExtensibleSailSource(dataStructure, namespaceStore, true, extensibleStatementHelper);
+
+	}
+
+	private void startEvaluationStatisticsMaintainerThread() {
+		evaluationStatisticsMaintainerThread = new Thread(new EvaluationStatisticsThread());
+		evaluationStatisticsMaintainerThread.setDaemon(true);
+		evaluationStatisticsMaintainerThread.start();
 	}
 
 	@Override
 	public void close() throws SailException {
-
+		closed = true;
+		evaluationStatisticsMaintainerThread.interrupt();
 		sailSource.close();
 		sailSourceInferred.close();
 	}
@@ -42,8 +77,7 @@ class ExtensibleSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new EvaluationStatistics() {
-		};
+		return evaluationStatistics;
 	}
 
 	@Override
@@ -59,6 +93,78 @@ class ExtensibleSailStore implements SailStore {
 	public void init() {
 		sailSource.init();
 		sailSourceInferred.init();
+	}
+
+	synchronized private void startRecalculateStatistics() {
+
+		logger.info("Recalculating stats: started");
+		DynamicStatistics instance = (DynamicStatistics) evaluationStatisticsEnum.getInstance(this);
+
+		addToStats(instance, dataStructure.getStatements(null, null, null, false));
+		addToStats(instance, dataStructure.getStatements(null, null, null, true));
+
+		((EvaluationStatisticsWrapper) dataStructure).setEvaluationStatistics(instance);
+
+		evaluationStatistics = (ExtensibleEvaluationStatistics) instance;
+		logger.info("Recalculating stats: complete");
+
+	}
+
+	private void addToStats(DynamicStatistics instance,
+			CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
+		long estimatedSize = dataStructure.getEstimatedSize();
+
+		long counter = 0;
+		while (statements.hasNext()) {
+			ExtensibleStatement next = statements.next();
+			instance.add(next);
+
+			if (Thread.interrupted() || closed) {
+				return;
+			}
+
+			if (++counter % 100000 == 0) {
+				logger.info("Recalculating stats: {}%", Math.round(100.0 / estimatedSize * counter));
+			}
+		}
+
+	}
+
+	class EvaluationStatisticsThread implements Runnable {
+
+		@Override
+		public void run() {
+
+			try {
+				try {
+					Thread.sleep(EVALUATION_STATISTICS_STALENESS_CHECK_INTERVAL);
+				} catch (InterruptedException e) {
+					return;
+				}
+
+				if (closed)
+					return;
+
+				long estimatedSize = dataStructure.getEstimatedSize();
+
+				if (estimatedSize > 1000) {
+					double staleness = ((DynamicStatistics) evaluationStatistics).staleness(estimatedSize);
+
+					if (staleness > 0.2) {
+						logger.info("Evaluation statistics is stale ({}%) and needs to be recalculated",
+								Math.round(staleness * 100));
+						startRecalculateStatistics();
+					}
+
+				}
+
+			} finally {
+				if (!Thread.interrupted() && !closed) {
+					startEvaluationStatisticsMaintainerThread();
+				}
+			}
+
+		}
 	}
 
 }
