@@ -2,6 +2,19 @@
 title: "Eclipse RDF4J release notes"
 layout: "doc"
 ---
+# 3.1.2 
+
+RDF4J 3.1.2 is a patch release, fixing 7 issues:
+
+- [#1978](https://github.com/eclipse/rdf4j/issues/1978): handling of aggregates over empty solutions
+- [#1990](https://github.com/eclipse/rdf4j/issues/1990): NullPointerException in FILTER evaluation when using FedX
+- [#1960](https://github.com/eclipse/rdf4j/issues/1960): handling of empty transaction commit in SPARQLRepository
+- [#1968](https://github.com/eclipse/rdf4j/issues/1968): handling of language tags by SHACLSail
+- [#1970](https://github.com/eclipse/rdf4j/issues/1970): fix internal logger name in SPARQLProtocolSession 
+- [#1958](https://github.com/eclipse/rdf4j/issues/1958): close inner iterations in federated services
+- [#1948](https://github.com/eclipse/rdf4j/issues/1948): fix handling of INSERT DATA in FedX
+
+For a complete overview, see [all issues fixed in 3.1.2](https://github.com/eclipse/rdf4j/milestone/47?closed=1).
 # 3.1.1 
 
 RDF4J 3.1.1 is a patch release with a number of bug fixes.
