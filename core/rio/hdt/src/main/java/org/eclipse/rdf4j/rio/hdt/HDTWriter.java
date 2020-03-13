@@ -7,18 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -79,7 +77,7 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	// TODO: rewrite this to cater for larger input
 	// create dictionaries and triples, with some size estimations
-	private int SIZE = 1_048_576;
+	private static int SIZE = 1_048_576;
 	private Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
 	private Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
 	private Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
@@ -130,22 +128,33 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictShared = sortMap(dictShared);
+			shared.setSize(dictShared.size());
+			shared.set(dictShared.keySet().iterator());
 			shared.write(out);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictS = sortMap(dictS);
+			subjects.setSize(dictS.size());
+			subjects.set(dictS.keySet().iterator());
+			subjects.write(out);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictP = sortMap(dictP);
+			predicates.setSize(dictP.size());
+			predicates.set(dictP.keySet().iterator());
+			predicates.write(out);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictO = sortMap(dictO);
+			objects.setSize(dictO.size());
+			objects.set(dictO.keySet().iterator());
+			objects.write(out);
 
 			getLookup(dictShared);
 			getLookup(dictS);
@@ -257,10 +266,10 @@ public class HDTWriter extends AbstractRDFWriter {
 		meta.setDistinctObj(dictO.size());
 		meta.setDistinctShared(dictShared.size());
 		meta.setInitialSize(len);
-		meta.setHDTSize(3254);
+		meta.setHDTSize(-1);
 		meta.setMapping(HDTArray.Type.LOG64.getValue());
 		meta.setBlockSize(16);
-		meta.setSizeStrings(2943);
+		meta.setSizeStrings(-1);
 
 		return meta.get();
 	}

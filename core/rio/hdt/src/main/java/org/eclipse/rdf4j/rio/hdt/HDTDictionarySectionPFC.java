@@ -93,7 +93,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	@Override
 	protected void setSize(int size) {
 		this.totalStrings = size;
-		writeBuffers = new byte[size][];
+		writeBuffers = new byte[(size - 1 + stringsBlock) / stringsBlock][];
 	}
 
 	protected void setBlockSize(int stringBlocks) {
@@ -276,7 +276,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			iter.remove();
 
 			// remove the common part, and only store the offset and the suffix and trailing NULL
-			int common = Arrays.compare(prev, str);
+			int common = Arrays.mismatch(prev, str);
 			byte[] c = VByte.encode(common);
 			tmp[i] = new byte[c.length + str.length - common + 1];
 			System.arraycopy(c, 0, tmp[i], 0, c.length);
