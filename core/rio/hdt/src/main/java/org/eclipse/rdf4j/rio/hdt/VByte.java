@@ -73,6 +73,7 @@ public class VByte {
 			b[i] = (byte) (value & 0x7F);
 			value >>= 7;
 		}
+		b[len - 1] |= 0x80; // set most significant bit to indicate this is the last byte
 		return b;
 	}
 
@@ -129,7 +130,7 @@ public class VByte {
 	 * @return number of bytes
 	 */
 	public static int encodedLength(long value) {
-		if (value < 127) {
+		if (value < 128) {
 			return 1;
 		}
 		if (value < 16_384) {

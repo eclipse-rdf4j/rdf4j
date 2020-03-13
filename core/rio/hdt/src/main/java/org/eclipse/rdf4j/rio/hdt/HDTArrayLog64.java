@@ -84,9 +84,25 @@ class HDTArrayLog64 extends HDTArray {
 	}
 
 	@Override
-	protected int set(int i, int entry) {
-		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
-																		// Tools | Templates.
+	protected void setSize(int entries) {
+		buffer = new byte[(entries - 1 + nrbits) / nrbits];
+	}
+
+	@Override
+	protected void set(int i, int entry) {
+		// start byte of the value, and start bit in that start byte
+		int bytePos = (i * nrbits) / 8;
+		int bitPos = (i * nrbits) % 8;
+
+		// value bits may be encoded across boundaries of bytes
+		int tmplen = (bitPos + nrbits + 7) / 8;
+
+		long val = entry << bitPos;
+		// big-endian to little-endian
+
+		for (int j = 0; j < tmplen; j++) {
+			buffer[bytePos + j] = (byte) ((val >> (j * 8)) & 0xFF);
+		}
 	}
 
 	@Override

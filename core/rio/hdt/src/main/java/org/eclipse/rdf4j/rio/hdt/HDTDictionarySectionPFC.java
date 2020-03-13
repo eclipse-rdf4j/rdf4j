@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Stream;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
 
@@ -166,7 +165,9 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 	@Override
 	protected void set(Iterator<String> iter) {
-		writeBuffers[wbpos++] = encodeBlock(iter);
+		while (iter.hasNext()) {
+			writeBuffers[wbpos++] = encodeBlock(iter);
+		}
 	}
 
 	@Override
@@ -256,9 +257,6 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	 * @return encoded block
 	 */
 	private byte[] encodeBlock(Iterator<String> iter) {
-		if (!iter.hasNext()) {
-			return new byte[0];
-		}
 		byte[][] tmp = new byte[stringsBlock][];
 		int i = 0;
 
@@ -271,7 +269,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		byte[] prev = base;
 
 		// encode a block, with a maximum of strings per block
-		while (iter.hasNext() && i++ < stringsBlock) {
+		while (iter.hasNext() && ++i < stringsBlock) {
 			byte[] str = iter.next().getBytes(StandardCharsets.UTF_8);
 			iter.remove();
 

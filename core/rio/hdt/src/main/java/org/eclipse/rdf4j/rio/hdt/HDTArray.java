@@ -124,7 +124,7 @@ abstract class HDTArray extends HDTPart {
 	 * @param i     zero-based index
 	 * @param entry
 	 */
-	protected abstract int set(int i, int entry);
+	protected abstract void set(int i, int entry);
 
 	@Override
 	protected void parse(InputStream is) throws IOException {

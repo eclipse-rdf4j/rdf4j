@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.rio.hdt;
 import org.eclipse.rdf4j.rio.hdt.VByte;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import org.junit.Assert;
+import static org.junit.Assert.assertArrayEquals;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -21,13 +23,23 @@ import org.junit.Test;
  */
 public class VByteTest {
 	@Test
-	public void test127() {
+	public void testDecode127() {
 		assertEquals("127 not correctly decoded", 127, VByte.decode(new byte[] { (byte) 0xff }, 1));
 	}
 
 	@Test
-	public void test128() {
+	public void testDecode128() {
 		assertEquals("128 not correctly decoded", 128, VByte.decode(new byte[] { (byte) 0x00, (byte) 0x81 }, 2));
+	}
+
+	@Test
+	public void testEncode127() {
+		assertArrayEquals("127 not correctly encoded", new byte[] { (byte) 0xff }, VByte.encode(127));
+	}
+
+	@Test
+	public void testEncode128() {
+		assertArrayEquals("128 not correctly encoded", new byte[] { (byte) 0x00, (byte) 0x81 }, VByte.encode(128));
 	}
 
 	@Test
