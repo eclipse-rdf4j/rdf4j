@@ -71,13 +71,24 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testMaxEmptySet() throws QueryEvaluationException {
+	public void testMaxEmptySet_DefaultGroup() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
 		assertThat(gi.hasNext()).isTrue();
 		assertThat(gi.next().size()).isEqualTo(0);
+	}
+
+	@Test
+	public void testMaxEmptySet_Grouped() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
+		group.addGroupBindingName("x"); // we are grouping by variable x
+
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.hasNext()).isFalse();
 	}
 
 	@Test

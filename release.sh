@@ -13,6 +13,12 @@ increment_version() {
  echo "$v" | perl -pe s/$rgx.*$'/${1}'`printf %0${#val}s $(($val+1))`/
 }
 
+echo ""
+echo "The release script requires several external command line tools:"
+echo " - git"
+echo " - mvn"
+echo " - hub (https://hub.github.com/)"
+echo " - xmlllint (http://xmlsoft.org/xmllint.html)"
 
 echo ""
 echo "This script will stop if an unhandled error occurs";
@@ -106,23 +112,23 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "Pushing tag to github"
+echo "Pushing release branch to github"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-# push tag (only tag, not branch)
+# push release branch and tag
+git push -u origin ${BRANCH}
 git push origin "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "You need to tell jenkins to start the release process."
-echo "Go to: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/ (if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
+echo "You need to tell Jenkins to start the release deployment processes, for SDK and maven artifacts"
+echo "- SDK deployment: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-sdk/ "
+echo "- Maven deployment: https://ci.eclipse.org/rdf4j/job/rdf4j-deploy-release-ossrh/ "
+echo "(if you are on linux or windows, remember to use CTRL+SHIFT+C to copy)."
 echo "Log in, then choose 'Build with Parameters' and type in ${MVN_VERSION_RELEASE}"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # Cleanup
-git checkout master
 mvn clean
-git branch --delete --force "${BRANCH}" &>/dev/null
-
 
 # Set a new SNAPSHOT version
 echo "";
@@ -144,6 +150,14 @@ echo "Pushing the new version to github"
 git push
 
 echo "";
+echo "About to create PR"
+read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
+echo "";
+
+echo "Creating pull request to merge release branch back into master"
+hub pull-request -f -m "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}"
+
+echo "";
 echo "Preparing a merge-branch to merge into develop"
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -153,7 +167,7 @@ git pull
 
 MVN_VERSION_DEVELOP=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
-git checkout master
+git checkout ${BRANCH}
 
 git checkout -b "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 mvn versions:set -DnewVersion=${MVN_VERSION_DEVELOP}
@@ -162,12 +176,9 @@ mvn -P compliance versions:commit
 git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
-
-echo "Go to Github and create a new PR"
-echo "You want to merge 'merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}' into develop"
-echo "You can use this link: https://github.com/eclipse/rdf4j/compare/develop...merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
-echo ""
-echo "When you have created the PR you can press any key to continue. It's ok to merge the PR later, so wait for the Jenkins tests to finish."
+echo "Creating pull request to merge the merge-branch into develop"
+hub pull-request -f -m "sync develop branch after release ${MVN_VERSION_RELEASE}"
+echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout $MVN_VERSION_RELEASE

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -17,49 +17,41 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import junit.framework.Test;
 
-public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
+/**
+ * SPARQL Query tests using testcase from the SPARQL 1.2 Working Group
+ * 
+ * @author Jeen Broekstra
+ *
+ */
+public class SPARQL12QueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
-		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.1-w3c/manifest-all.ttl");
+		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.2/manifest-all.ttl");
 
 		return SPARQL11ManifestTest.suite(new Factory() {
 
 			@Override
-			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+			public SPARQL12QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
 						false);
 			}
 
 			@Override
-			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
+			public SPARQL12QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
-				String[] ignoredTests = {
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRDT   TypeErrors",
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRLANG   TypeErrors",
-						// known issue: SES-937
-						"sq03 - Subquery within graph pattern, graph variable is not bound",
-						// test case is incorrect wrt SPARQL 1.1 spec, see https://github.com/eclipse/rdf4j/issues/1978
-//						"agg empty group",
-//						"Aggregate over empty group resulting in a row with unbound variables" 
-				};
-
-				return new W3CApprovedSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder, ignoredTests);
+				return new SPARQL12QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
+						laxCardinality, checkOrder);
 			}
-		}, manifestUrl.toString(), true, "service");
+		}, manifestUrl.toString(), false);
 	}
 
-	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
+	protected SPARQL12QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
 			Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
 		this(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, false, ignoredTests);
 	}
 
-	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
+	protected SPARQL12QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
 			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
