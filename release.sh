@@ -155,7 +155,7 @@ read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n"
 echo "";
 
 echo "Creating pull request to merge release branch back into master"
-hub pull-request -f -m "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}"
+hub pull-request -f --message="next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}" --message="Merge using merge commit rather than rebase"
 
 echo "";
 echo "Preparing a merge-branch to merge into develop"
@@ -177,7 +177,7 @@ git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
 echo "Creating pull request to merge the merge-branch into develop"
-hub pull-request -f -m "sync develop branch after release ${MVN_VERSION_RELEASE}"
+hub pull-request -f -b develop --message="sync develop branch after release ${MVN_VERSION_RELEASE}" --message="Merge using merge commit rather than rebase"
 echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
