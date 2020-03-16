@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.optimizers;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -82,6 +85,8 @@ public class EvaluationStatistics {
 
 		protected double getCardinality(StatementPattern pattern) {
 			List<Var> vars = pattern.getVarList();
+			Set<Var> varSet = new HashSet<Var>(vars);
+			vars = new ArrayList<Var>(varSet);
 			int constantVarCount = countConstantVars(vars);
 			double unboundVarFactor = (double) (vars.size() - constantVarCount) / vars.size();
 			return Math.pow(1000.0, unboundVarFactor);
