@@ -119,7 +119,7 @@ public class HDTMetadata {
 	}
 
 	/**
-	 * Set the dictionary block size
+	 * Set the dictionary block size, i.e. the number of strings encoded in 1 block.
 	 * 
 	 * @param blockSize
 	 */
@@ -128,7 +128,7 @@ public class HDTMetadata {
 	}
 
 	/**
-	 * Set the dictionary strings size
+	 * Set the sizeStrings, which is (confusingly) just the sum of the byte size size of all dictionaries.
 	 * 
 	 * @param sizeStrings
 	 */

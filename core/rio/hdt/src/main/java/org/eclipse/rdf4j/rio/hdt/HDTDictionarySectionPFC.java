@@ -265,8 +265,8 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 		byte[] prev = base;
 
-		// encode a block, with a maximum of strings per block
-		while (iter.hasNext() && ++i < stringsBlock) {
+		// encode a block, with a maximum of strings per block (minus the first base string)
+		for (i = 1; iter.hasNext() && i < stringsBlock; i++) {
 			byte[] str = iter.next().getBytes(StandardCharsets.UTF_8);
 			iter.remove();
 
@@ -280,18 +280,18 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			prev = str;
 		}
 
-		if (i == 0) {
+		if (i == 1) {
 			return tmp[0];
 		}
 
 		// flatten 2-dimensional byte array to a single byte array
 		int len = 0;
-		for (int j = 0; j <= i; j++) {
+		for (int j = 0; j < i; j++) {
 			len += tmp[j].length;
 		}
 
 		byte[] ret = new byte[len];
-		for (int j = 0, idx = 0; j <= i; j++) {
+		for (int j = 0, idx = 0; j < i; j++) {
 			System.arraycopy(tmp[j], 0, ret, idx, tmp[j].length);
 			idx += tmp[j].length;
 		}

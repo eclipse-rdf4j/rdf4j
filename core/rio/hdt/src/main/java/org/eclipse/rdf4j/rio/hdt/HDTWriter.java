@@ -115,14 +115,14 @@ public class HDTWriter extends AbstractRDFWriter {
 		CountingOutputStream bos = new CountingOutputStream(out);
 		try {
 			HDTGlobal global = new HDTGlobal();
-			global.write(out);
+			global.write(bos);
 
 			HDTHeader header = new HDTHeader();
 			header.setHeaderData(getMetadata());
-			header.write(out);
+			header.write(bos);
 
 			HDTDictionary dict = new HDTDictionary();
-			dict.write(out);
+			dict.write(bos);
 
 			long dpos = bos.getByteCount();
 			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos,
@@ -130,7 +130,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			dictShared = sortMap(dictShared);
 			shared.setSize(dictShared.size());
 			shared.set(dictShared.keySet().iterator());
-			shared.write(out);
+			shared.write(bos);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos,
@@ -138,7 +138,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			dictS = sortMap(dictS);
 			subjects.setSize(dictS.size());
 			subjects.set(dictS.keySet().iterator());
-			subjects.write(out);
+			subjects.write(bos);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos,
@@ -146,7 +146,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			dictP = sortMap(dictP);
 			predicates.setSize(dictP.size());
 			predicates.set(dictP.keySet().iterator());
-			predicates.write(out);
+			predicates.write(bos);
 
 			dpos = bos.getByteCount();
 			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos,
@@ -154,7 +154,10 @@ public class HDTWriter extends AbstractRDFWriter {
 			dictO = sortMap(dictO);
 			objects.setSize(dictO.size());
 			objects.set(dictO.keySet().iterator());
-			objects.write(out);
+			objects.write(bos);
+
+			dpos = bos.getByteCount();
+			System.err.println("pos" + dpos);
 
 			getLookup(dictShared);
 			getLookup(dictS);
@@ -265,11 +268,14 @@ public class HDTWriter extends AbstractRDFWriter {
 		meta.setTriples(t.size());
 		meta.setDistinctObj(dictO.size());
 		meta.setDistinctShared(dictShared.size());
-		meta.setInitialSize(len);
-		meta.setHDTSize(-1);
 		meta.setMapping(HDTArray.Type.LOG64.getValue());
 		meta.setBlockSize(16);
-		meta.setSizeStrings(-1);
+
+		if (len > 0) {
+			meta.setInitialSize(len);
+		}
+		// meta.setHDTSize(-1);
+		// meta.setSizeStrings(-1);
 
 		return meta.get();
 	}
