@@ -156,15 +156,18 @@ public class HDTWriter extends AbstractRDFWriter {
 			objects.set(dictO.keySet().iterator());
 			objects.write(bos);
 
-			dpos = bos.getByteCount();
-			System.err.println("pos" + dpos);
+			HDTTriples triples = new HDTTriples();
+			triples.write(bos);
+
+			HDTTriplesSection section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
+			section.write(bos);
 
 			getLookup(dictShared);
 			getLookup(dictS);
 			getLookup(dictP);
 			getLookup(dictO);
 		} catch (IOException ioe) {
-			throw new RDFHandlerException("At byte: " + bos.getCount(), ioe);
+			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
 		} finally {
 			try {
 				bos.close();
@@ -176,9 +179,9 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	@Override
 	public void handleStatement(Statement st) throws RDFHandlerException {
-		String bs = st.getSubject().stringValue();
-		String bp = st.getPredicate().stringValue();
-		String bo = st.getObject().stringValue();
+		String bs = st.getSubject().toString();
+		String bp = st.getPredicate().toString();
+		String bo = st.getObject().toString();
 
 		int s = putSO(bs, dictShared, dictS, dictO);
 		int p = putX(bp, dictP);
