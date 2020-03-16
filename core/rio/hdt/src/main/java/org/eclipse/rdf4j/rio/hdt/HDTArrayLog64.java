@@ -38,6 +38,15 @@ class HDTArrayLog64 extends HDTArray {
 	private byte buffer[];
 
 	@Override
+	protected void setMaxValue(int maxval) {
+		// ceil(log2(maxval))
+		int i = 0;
+		while (++i < 32 && (maxval >> i) > 0)
+			;
+		nrbits = i;
+	}
+
+	@Override
 	protected int getType() {
 		return HDTArray.Type.LOG64.getValue();
 	}
@@ -85,7 +94,7 @@ class HDTArrayLog64 extends HDTArray {
 
 	@Override
 	protected void setSize(int entries) {
-		buffer = new byte[(entries - 1 + nrbits) / nrbits];
+		buffer = new byte[(entries * nrbits + 7) / 8];
 	}
 
 	@Override
@@ -112,13 +121,7 @@ class HDTArrayLog64 extends HDTArray {
 		// don't close CheckedOutputStream, as it will close the underlying outputstream
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
-			// read bytes, minimum 1
-			long bytes = (nrbits * entries + 7) / 8;
-			if (bytes > Integer.MAX_VALUE) {
-				throw new UnsupportedOperationException("Maximum number of bytes in array exceeded: " + bytes);
-			}
 
-			buffer = new byte[(int) bytes];
 			cos.write(buffer);
 
 			writeCRC(cos, os, 4);

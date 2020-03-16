@@ -191,15 +191,12 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			writeCRC(cos, os, 1);
 		}
 
-		// calculate number of bits required to encode maximum length
-		int nrbits = VByte.encodedLength(writeBuffers[writeBuffers.length - 1].length);
-
 		// keep track of starting positions of the blocks
 		blockStarts = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
-		blockStarts.setNrBits(nrbits);
-		blockStarts.setSize(writeBuffers.length);
+		blockStarts.setMaxValue(writeBuffers[writeBuffers.length - 1].length);
+		blockStarts.setSize(writeBuffers.length + 1);
 		blockStarts.set(0, 0);
-		for (int i = 1; i < writeBuffers.length; i++) {
+		for (int i = 1; i <= writeBuffers.length; i++) {
 			blockStarts.set(i, writeBuffers[i - 1].length);
 		}
 		blockStarts.write(os);
@@ -289,12 +286,12 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 		// flatten 2-dimensional byte array to a single byte array
 		int len = 0;
-		for (int j = 0; j < i; j++) {
+		for (int j = 0; j <= i; j++) {
 			len += tmp[j].length;
 		}
 
 		byte[] ret = new byte[len];
-		for (int j = 0, idx = 0; j < i; j++) {
+		for (int j = 0, idx = 0; j <= i; j++) {
 			System.arraycopy(tmp[j], 0, ret, idx, tmp[j].length);
 			idx += tmp[j].length;
 		}

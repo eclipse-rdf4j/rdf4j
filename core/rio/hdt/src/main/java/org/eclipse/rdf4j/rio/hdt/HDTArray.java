@@ -75,13 +75,11 @@ abstract class HDTArray extends HDTPart {
 	}
 
 	/**
-	 * Set number of bits used to encode an entry
+	 * Set maximum value to encode an entry
 	 * 
 	 * @param positive integer value
 	 */
-	protected void setNrBits(int nrbits) {
-		this.nrbits = nrbits;
-	}
+	protected abstract void setMaxValue(int maxval);
 
 	/**
 	 * Get number of entries in this array
