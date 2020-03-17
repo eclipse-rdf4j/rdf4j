@@ -12,6 +12,8 @@
     ( 
     :agg-empty-group-1
     :agg-empty-group-2
+    :agg-empty-group-count-01
+    :agg-empty-group-count-02
 ) .
 
 
@@ -32,3 +34,20 @@
            qt:data   <empty.ttl> ] ;
     mf:result  <agg-empty-group-2.srx>
     .    
+
+:agg-empty-group-count-01  rdf:type mf:QueryEvaluationTest ;
+    mf:name "COUNT: no match, no group";
+    mf:action
+         [ qt:query  <agg-empty-group-count-01.rq> ;
+           qt:data   <empty.ttl> ] ;
+    mf:result  <agg-empty-group-count-01.srj>
+    .
+
+:agg-empty-group-count-02  rdf:type mf:QueryEvaluationTest ;
+    mf:name "COUNT: no match, with group";
+    mf:action
+         [ qt:query  <agg-empty-group-count-02.rq> ;
+           qt:data   <empty.ttl> ] ;
+    mf:result  <agg-empty-group-count-02.srj>
+    .
+
