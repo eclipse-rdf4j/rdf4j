@@ -259,7 +259,8 @@
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<solr.version>7.5.0</solr.version>
-		<elasticsearch.version>6.5.4</elasticsearch.version>
+		<elasticsearch.version>6.8.7</elasticsearch.version>
+		<lucene.version>7.5.0</lucene.version>
 		<servlet.version>3.1.0</servlet.version>
 		<spring.version>5.2.4.RELEASE</spring.version>
 		<guava.version>18.0</guava.version>
@@ -280,7 +281,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for 
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
 				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
