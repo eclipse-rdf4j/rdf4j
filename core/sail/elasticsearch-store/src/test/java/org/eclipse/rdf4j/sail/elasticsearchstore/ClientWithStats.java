@@ -161,6 +161,11 @@ public class ClientWithStats implements Client {
 	}
 
 	@Override
+	public BulkRequestBuilder prepareBulk(String s, String s1) {
+		return prepareBulk(s, s1);
+	}
+
+	@Override
 	public ActionFuture<GetResponse> get(GetRequest request) {
 		return wrapped.get(request);
 	}
