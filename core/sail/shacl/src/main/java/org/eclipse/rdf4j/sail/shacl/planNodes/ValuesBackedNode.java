@@ -89,10 +89,7 @@ public class ValuesBackedNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ValuesBackedNode{" +
-				"collection=" + collection +
-				", validationExecutionLogger=" + validationExecutionLogger +
-				", printed=" + printed +
-				'}';
+				"collection=" + collection + '}';
 	}
 
 	@Override

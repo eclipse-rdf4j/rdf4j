@@ -389,7 +389,7 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail();
 		try {
 			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
-			Utils.loadInitialData(shaclRepository, shaclPath + "initialData.ttl");
+			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -460,7 +460,7 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail();
 		try {
 			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
-			Utils.loadInitialData(shaclRepository, shaclPath + "initialData.ttl");
+			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -551,17 +551,17 @@ abstract public class AbstractShaclTest {
 	private static SailRepository getShaclSail() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		SailRepository shaclRepository = new SailRepository(shaclSail);
+		SailRepository repository = new SailRepository(shaclSail);
 
 		shaclSail.setLogValidationPlans(fullLogging);
 		shaclSail.setCacheSelectNodes(true);
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
+		shaclSail.setSerializableValidation(false);
+		repository.init();
 
-		shaclRepository.init();
-
-		return shaclRepository;
+		return repository;
 	}
 
 }
