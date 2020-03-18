@@ -9,9 +9,7 @@
 	<artifactId>rdf4j-solr-compliance</artifactId>
 	<name>RDF4J Solr Sail Tests</name>
 	<description>Tests for Solr Sail.</description>
-	<properties>
-		<solr.version>7.5.0</solr.version>
-	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

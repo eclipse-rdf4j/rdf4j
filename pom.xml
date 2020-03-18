@@ -258,9 +258,9 @@
 		<jsonldjava.version>0.12.5</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
-		<solr.version>7.5.0</solr.version>
+		<solr.version>7.7.2</solr.version>
 		<elasticsearch.version>6.8.7</elasticsearch.version>
-		<lucene.version>7.5.0</lucene.version>
+		<lucene.version>7.7.2</lucene.version>
 		<servlet.version>3.1.0</servlet.version>
 		<spring.version>5.2.4.RELEASE</spring.version>
 		<guava.version>18.0</guava.version>
