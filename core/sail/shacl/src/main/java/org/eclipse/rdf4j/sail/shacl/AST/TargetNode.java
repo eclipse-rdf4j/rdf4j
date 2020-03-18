@@ -138,6 +138,7 @@ public class TargetNode extends NodeShape {
 	public String toString() {
 		return "TargetNode{" +
 				"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
+				", id=" + id +
 				'}';
 	}
 }

@@ -146,6 +146,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		return "UniqueLangPropertyShape{" +
 				"uniqueLang=" + uniqueLang +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 

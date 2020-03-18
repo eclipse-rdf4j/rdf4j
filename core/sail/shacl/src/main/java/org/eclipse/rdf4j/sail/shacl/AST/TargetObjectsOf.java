@@ -142,6 +142,7 @@ public class TargetObjectsOf extends NodeShape {
 	public String toString() {
 		return "TargetObjectsOf{" +
 				"targetObjectsOf=" + Arrays.toString(targetObjectsOf.toArray()) +
+				", id=" + id +
 				'}';
 	}
 }

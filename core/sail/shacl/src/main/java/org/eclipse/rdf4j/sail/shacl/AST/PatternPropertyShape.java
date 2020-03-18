@@ -92,6 +92,7 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 				"pattern='" + pattern + '\'' +
 				", flags='" + flags + '\'' +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

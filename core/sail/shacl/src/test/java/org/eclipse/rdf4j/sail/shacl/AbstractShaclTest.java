@@ -558,7 +558,7 @@ abstract public class AbstractShaclTest {
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
-		shaclSail.setSerializableValidation(false);
+
 		repository.init();
 
 		return repository;

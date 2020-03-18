@@ -46,7 +46,7 @@ import java.util.stream.Stream;
 public abstract class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	final boolean deactivated;
-	private Resource id;
+	final Resource id;
 
 	NodeShape nodeShape;
 	PathPropertyShape parent;
@@ -98,7 +98,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
 				.append("\n");
 
-		stringBuilder.append(System.identityHashCode(connectionsGroup)
+		stringBuilder.append(System.identityHashCode(connectionsGroup.getBaseConnection())
 				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 		stringBuilder
 				.append(System.identityHashCode(connectionsGroup.getPreviousStateConnection())
