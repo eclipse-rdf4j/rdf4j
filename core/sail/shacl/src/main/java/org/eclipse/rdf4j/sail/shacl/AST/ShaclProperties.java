@@ -58,6 +58,9 @@ public class ShaclProperties {
 
 	boolean uniqueLang = false;
 
+	public ShaclProperties() {
+	}
+
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
 		try (Stream<Statement> stream = connection.getStatements(propertyShapeId, null, null).stream()) {
@@ -194,4 +197,103 @@ public class ShaclProperties {
 
 	}
 
+	public List<Resource> getClazz() {
+		return clazz;
+	}
+
+	public List<Resource> getOr() {
+		return or;
+	}
+
+	public List<Resource> getAnd() {
+		return and;
+	}
+
+	public List<Resource> getNot() {
+		return not;
+	}
+
+	public Long getMinCount() {
+		return minCount;
+	}
+
+	public Long getMaxCount() {
+		return maxCount;
+	}
+
+	public Resource getDatatype() {
+		return datatype;
+	}
+
+	public Resource getIn() {
+		return in;
+	}
+
+	public Long getMinLength() {
+		return minLength;
+	}
+
+	public Long getMaxLength() {
+		return maxLength;
+	}
+
+	public Resource getLanguageIn() {
+		return languageIn;
+	}
+
+	public Resource getNodeKind() {
+		return nodeKind;
+	}
+
+	public Resource getPath() {
+		return path;
+	}
+
+	public Literal getMinExclusive() {
+		return minExclusive;
+	}
+
+	public Literal getMaxExclusive() {
+		return maxExclusive;
+	}
+
+	public Literal getMinInclusive() {
+		return minInclusive;
+	}
+
+	public Literal getMaxInclusive() {
+		return maxInclusive;
+	}
+
+	public List<String> getPattern() {
+		return pattern;
+	}
+
+	public String getFlags() {
+		return flags;
+	}
+
+	public Set<Resource> getTargetClass() {
+		return targetClass;
+	}
+
+	public TreeSet<Value> getTargetNode() {
+		return targetNode;
+	}
+
+	public Set<IRI> getTargetSubjectsOf() {
+		return targetSubjectsOf;
+	}
+
+	public Set<IRI> getTargetObjectsOf() {
+		return targetObjectsOf;
+	}
+
+	public boolean isDeactivated() {
+		return deactivated;
+	}
+
+	public boolean isUniqueLang() {
+		return uniqueLang;
+	}
 }

@@ -73,6 +73,7 @@ public class Utils {
 
 	public static void loadShapeData(SailRepository repo, URL resourceName)
 			throws RDF4JException, UnsupportedRDFormatException, IOException {
+		((ShaclSail) repo.getSail()).disableValidation();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
@@ -80,6 +81,7 @@ public class Utils {
 
 			conn.commit();
 		}
+		((ShaclSail) repo.getSail()).enableValidation();
 
 	}
 
