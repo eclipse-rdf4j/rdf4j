@@ -7,23 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URISyntaxException;
-import java.nio.charset.Charset;
-import java.nio.charset.IllegalCharsetNameException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
@@ -102,6 +85,24 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.net.HttpURLConnection;
+import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+
+import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
+
 /**
  * The SPARQLProtocolSession provides low level HTTP methods for communication with SPARQL endpoints. All methods are
  * compliant to the <a href="https://www.w3.org/TR/sparql11-protocol/">SPARQL 1.1 Protocol W3C Recommendation</a>.
@@ -113,7 +114,7 @@ import org.slf4j.LoggerFactory;
  * <p/>
  * Functionality specific to the RDF4J HTTP protocol can be found in {@link RDF4JProtocolSession} (which is used by
  * HTTPRepository).
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  * @author Andreas Schwarte
@@ -250,7 +251,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding tuple query results. The {@link TupleQueryResultFormat#BINARY binary}
 	 * format is preferred by default.
-	 * 
+	 *
 	 * @param format The preferred {@link TupleQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
 	 *               preferred.
 	 */
@@ -260,7 +261,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Gets the preferred {@link TupleQueryResultFormat} for encoding tuple query results.
-	 * 
+	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
 	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
@@ -270,7 +271,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding RDF documents. The {@link RDFFormat#TURTLE Turtle} format is preferred by
 	 * default.
-	 * 
+	 *
 	 * @param format The preferred {@link RDFFormat}, or <tt>null</tt> to indicate no specific format is preferred.
 	 */
 	public void setPreferredRDFFormat(RDFFormat format) {
@@ -279,7 +280,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Gets the preferred {@link RDFFormat} for encoding RDF documents.
-	 * 
+	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
 	public RDFFormat getPreferredRDFFormat() {
@@ -289,7 +290,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding boolean query results. The {@link BooleanQueryResultFormat#TEXT binary}
 	 * format is preferred by default.
-	 * 
+	 *
 	 * @param format The preferred {@link BooleanQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
 	 *               preferred.
 	 */
@@ -299,7 +300,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Gets the preferred {@link BooleanQueryResultFormat} for encoding boolean query results.
-	 * 
+	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
 	public BooleanQueryResultFormat getPreferredBooleanQueryResultFormat() {
@@ -308,7 +309,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Set the username and password for authentication with the remote server.
-	 * 
+	 *
 	 * @param username the username
 	 * @param password the password
 	 */
@@ -450,7 +451,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Get the additional HTTP headers which will be used
-	 * 
+	 *
 	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
@@ -460,7 +461,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
 	 * unusual server configurations.
-	 * 
+	 *
 	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
@@ -479,8 +480,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		String queryUrlWithParams;
 		try {
 			URIBuilder urib = new URIBuilder(getQueryURL());
-			for (NameValuePair nvp : queryParams)
+			for (NameValuePair nvp : queryParams) {
 				urib.addParameter(nvp.getName(), nvp.getValue());
+			}
 			queryUrlWithParams = urib.toString();
 		} catch (URISyntaxException e) {
 			throw new AssertionError(e);
@@ -506,7 +508,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Return whether the provided query should use POST (otherwise use GET)
-	 * 
+	 *
 	 * @param fullQueryUrl the complete URL, including hostname and all HTTP query parameters
 	 */
 	protected boolean shouldUsePost(String fullQueryUrl) {
@@ -530,8 +532,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		method.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));
 
 		if (this.additionalHttpHeaders != null) {
-			for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet())
+			for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet()) {
 				method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+			}
 		}
 
 		return method;
@@ -729,7 +732,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Send the tuple query via HTTP and throws an exception in case anything goes wrong, i.e. only for HTTP 200 the
 	 * method returns without exception. If HTTP status code is not equal to 200, the request is aborted, however pooled
 	 * connections are not released.
-	 * 
+	 *
 	 * @param method
 	 * @throws RepositoryException
 	 * @throws HttpException
@@ -908,7 +911,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Parse the response in this thread using a suitable {@link BooleanQueryResultParser}. All HTTP connections are
 	 * closed and released in this method
-	 * 
+	 *
 	 * @throws RDF4JException
 	 */
 	protected boolean getBoolean(HttpUriRequest method) throws IOException, RDF4JException {
@@ -975,7 +978,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Convenience method to deal with HTTP level errors of tuple, graph and boolean queries in the same way. This
 	 * method aborts the HTTP connection.
-	 * 
+	 *
 	 * @param method
 	 * @throws RDF4JException
 	 */
@@ -1041,6 +1044,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 						throw new MalformedQueryException(errInfo.getErrorMessage());
 					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
 						throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
+					} else if (exceptionIs(response, "ShaclSailValidationException")) {
+						throw new RepositoryException(new RemoteShaclSailValidationException(
+								new StringReader(errInfo.toString()), "", RDFFormat.NQUADS));
+
 					} else if (errInfo.toString().length() > 0) {
 						throw new RepositoryException(errInfo.toString());
 					} else {
@@ -1055,6 +1062,21 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 	}
 
+	private boolean exceptionIs(HttpResponse response, String exceptionName) {
+		Header[] headers = response.getHeaders("X-Eclipse-RDF4J-Exception");
+		if (headers.length == 0) {
+			return false;
+		}
+
+		for (Header header : headers) {
+			if (exceptionName.equals(header.getValue())) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	/*-------------------------*
 	 * General utility methods *
 	 *-------------------------*/
@@ -1063,7 +1085,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Gets the MIME type specified in the response headers of the supplied method, if any. For example, if the response
 	 * headers contain <tt>Content-Type: application/xml;charset=UTF-8</tt>, this method will return
 	 * <tt>application/xml</tt> as the MIME type.
-	 * 
+	 *
 	 * @param method The method to get the reponse MIME type from.
 	 * @return The response MIME type, or <tt>null</tt> if not available.
 	 */
@@ -1098,7 +1120,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Sets the parser configuration used to process HTTP response data.
-	 * 
+	 *
 	 * @param parserConfig The parserConfig to set.
 	 */
 	public void setParserConfig(ParserConfig parserConfig) {
@@ -1124,7 +1146,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Sets the http connection read timeout.
-	 * 
+	 *
 	 * @param timeout timeout in milliseconds. Zero sets to infinity.
 	 */
 	public void setConnectionTimeout(long timeout) {

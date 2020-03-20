@@ -77,6 +77,7 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 			Rio.write(validationReportModel, stringWriter, RDFFormat.NQUADS);
 			errMsg = stringWriter.toString();
 			statusCode = HttpServletResponse.SC_BAD_REQUEST;
+			response.setHeader("X-Eclipse-RDF4J-Exception", ShaclSailValidationException.class.getSimpleName());
 		}
 
 		Map<String, Object> model = new HashMap<>();

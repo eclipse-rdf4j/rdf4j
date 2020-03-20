@@ -7,22 +7,27 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
+import org.eclipse.rdf4j.http.client.RemoteShaclSailValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.StringWriter;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -83,10 +88,22 @@ public class ShaclValidationReportTest {
 				connection.commit();
 				fail();
 			} catch (Throwable e) {
-				assertTrue(e.getMessage(), e.getMessage().contains("<http://www.w3.org/ns/shacl#conforms>"));
+				assertExceptionIsShaclReport(e);
 			}
 		}
 
+	}
+
+	private void assertExceptionIsShaclReport(Throwable e) {
+		RemoteShaclSailValidationException remoteShaclSailValidationException = null;
+		if (e instanceof RemoteShaclSailValidationException) {
+			remoteShaclSailValidationException = (RemoteShaclSailValidationException) e;
+		} else if (e.getCause() instanceof RemoteShaclSailValidationException) {
+			remoteShaclSailValidationException = (RemoteShaclSailValidationException) e.getCause();
+		}
+
+		assert remoteShaclSailValidationException != null;
+		assertTrue(remoteShaclSailValidationException.validationReportAsModel().contains(null, SHACL.CONFORMS, null));
 	}
 
 	@Test
@@ -105,7 +122,7 @@ public class ShaclValidationReportTest {
 				connection.commit();
 				fail();
 			} catch (Exception e) {
-				assertTrue(e.getMessage(), e.getMessage().contains("<http://www.w3.org/ns/shacl#conforms>"));
+				assertExceptionIsShaclReport(e);
 			}
 		}
 
