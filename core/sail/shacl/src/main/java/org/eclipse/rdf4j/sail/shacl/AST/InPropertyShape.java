@@ -92,6 +92,8 @@ public class InPropertyShape extends AbstractSimplePropertyShape {
 		return "InPropertyShape{" +
 				"in=" + Arrays.toString(in.toArray()) +
 				", path=" + getPath() +
+				", id=" + id +
+
 				'}';
 	}
 }

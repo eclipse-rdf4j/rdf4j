@@ -198,6 +198,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		return "MinCountPropertyShape{" +
 				"minCount=" + minCount +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 

@@ -364,7 +364,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
-										+ propertyShape.getId());
+										+ propertyShape.toString());
 							}
 
 							long before = 0;
@@ -386,7 +386,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 								logger.info("Finished execution of plan {} : {}",
 										propertyShape.getNodeShape().toString(),
-										propertyShape.getId());
+										propertyShape.toString());
 							}
 
 							boolean valid = collect.isEmpty();

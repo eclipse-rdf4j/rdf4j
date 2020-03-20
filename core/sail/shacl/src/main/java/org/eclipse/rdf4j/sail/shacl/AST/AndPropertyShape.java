@@ -161,6 +161,7 @@ public class AndPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "AndPropertyShape{" +
 				"and=" + toString(and) +
+				", id=" + id +
 				'}';
 	}
 

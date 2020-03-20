@@ -41,7 +41,7 @@ import java.util.stream.Stream;
  */
 public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
 
-	private Resource id;
+	final Resource id;
 
 	private List<PathPropertyShape> propertyShapes = Collections.emptyList();
 	private List<PathPropertyShape> nodeShapes = Collections.emptyList();

@@ -69,6 +69,7 @@ public class Utils {
 
 	public static void loadShapeData(SailRepository repo, URL resourceName)
 			throws RDF4JException, UnsupportedRDFormatException, IOException {
+		((ShaclSail) repo.getSail()).disableValidation();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
@@ -76,6 +77,7 @@ public class Utils {
 
 			conn.commit();
 		}
+		((ShaclSail) repo.getSail()).enableValidation();
 
 	}
 
@@ -124,6 +126,28 @@ public class Utils {
 			throw new RuntimeException(e);
 		}
 		return sailRepository;
+	}
+
+	public static void loadInitialData(SailRepository repo, String resourceName) throws IOException {
+		((ShaclSail) repo.getSail()).disableValidation();
+
+		try {
+			try (InputStream initialData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+
+				if (initialData == null) {
+					return;
+				}
+
+				try (RepositoryConnection conn = repo.getConnection()) {
+					conn.begin(IsolationLevels.NONE);
+					conn.add(initialData, "", RDFFormat.TURTLE);
+					conn.commit();
+				}
+			}
+		} finally {
+			((ShaclSail) repo.getSail()).enableValidation();
+		}
+
 	}
 
 	static class Ex {
