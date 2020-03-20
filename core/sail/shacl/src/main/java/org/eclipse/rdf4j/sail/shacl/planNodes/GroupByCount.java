@@ -75,6 +75,7 @@ public class GroupByCount implements PlanNode {
 
 				}
 
+				// Arrays.asList(...) is immutable, wrap in ArrayList to make it mutable
 				List<Value> line = new ArrayList<>(
 						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
 
