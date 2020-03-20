@@ -64,6 +64,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		super(ShaclSailFactory.SAIL_TYPE);
 	}
 
+	public ShaclSailConfig(SailImplConfig delegate) {
+		super(ShaclSailFactory.SAIL_TYPE, delegate);
+	}
+
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return undefinedTargetValidatesAllSubjects;
 	}

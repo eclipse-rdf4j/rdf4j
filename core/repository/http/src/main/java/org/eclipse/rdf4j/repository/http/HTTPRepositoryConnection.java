@@ -81,7 +81,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  * RepositoryConnection that communicates with a server using the HTTP protocol. Methods in this class may throw the
  * specific RepositoryException subclasses UnautorizedException and NotAllowedException, the semantics of which are
  * defined by the HTTP protocol.
- * 
+ *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @see org.eclipse.rdf4j.http.protocol.NotAllowedException
  * @author Arjohn Kampman
@@ -170,7 +170,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * to use the more specific {@link #prepareTupleQuery(QueryLanguage, String, String)},
 	 * {@link #prepareBooleanQuery(QueryLanguage, String, String)}, or
 	 * {@link #prepareGraphQuery(QueryLanguage, String, String)} methods instead.
-	 * 
+	 *
 	 * @throws UnsupportedOperationException if the method is not supported for the supplied query language.
 	 */
 	@Override
@@ -294,6 +294,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			client.commitTransaction();
 			active = false;
+		} catch (RepositoryException e) {
+			throw e;
 		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
@@ -311,6 +313,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			client.rollbackTransaction();
 			active = false;
+		} catch (RepositoryException e) {
+			throw e;
 		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}

@@ -7,21 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.web.servlet.ModelAndView;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Simple resolver for Exceptions: returns the correct response code and message to the client.
- * 
+ *
  * @author Herko ter Horst
  */
 public class ProtocolExceptionResolver implements HandlerExceptionResolver {
@@ -47,6 +51,32 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 			}
 		} else {
 			logger.error("Error while handling request", exception);
+		}
+
+		int depth = 10;
+		Throwable temp = exception;
+		while (!(temp instanceof ShaclSailValidationException)) {
+			if (depth-- == 0) {
+				break;
+			}
+			if (temp == null) {
+				break;
+			}
+			temp = temp.getCause();
+		}
+
+		if (temp instanceof ShaclSailValidationException) {
+			// This is currently just a simple fix that causes the validation report to be printed.
+			// This should not be the final solution.
+			Model validationReportModel = ((ShaclSailValidationException) temp).validationReportAsModel();
+
+			StringWriter stringWriter = new StringWriter();
+
+			// We choose NQUADS because we want to support streaming in the future, and because there could be a use for
+			// different graphs in the future
+			Rio.write(validationReportModel, stringWriter, RDFFormat.NQUADS);
+			errMsg = stringWriter.toString();
+			statusCode = HttpServletResponse.SC_BAD_REQUEST;
 		}
 
 		Map<String, Object> model = new HashMap<>();
