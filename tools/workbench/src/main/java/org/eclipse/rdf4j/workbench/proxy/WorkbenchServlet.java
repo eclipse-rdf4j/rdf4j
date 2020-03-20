@@ -7,23 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.proxy;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.util.Base64;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
-import javax.servlet.Servlet;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
+import org.eclipse.rdf4j.http.client.RemoteShaclSailValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -31,6 +17,10 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
@@ -39,6 +29,23 @@ import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.servlet.Servlet;
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public class WorkbenchServlet extends AbstractServlet {
 
@@ -127,7 +134,27 @@ public class WorkbenchServlet extends AbstractServlet {
 		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
 		} catch (RepositoryConfigException | RepositoryException e) {
-			throw new ServletException(e);
+			if (e.getCause() instanceof RemoteShaclSailValidationException) {
+				Model model = ((RemoteShaclSailValidationException) e.getCause()).validationReportAsModel();
+
+				resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+				resp.setContentType(TEXT_PLAIN);
+				PrintWriter writer = resp.getWriter();
+
+				writer.println("SHACL validation failed with the following report:\n");
+				WriterConfig writerConfig = new WriterConfig();
+				writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+				writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+				Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
+
+				writer.println(
+						"\n" +
+								"THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - " +
+								"DO NOT TRY TO PARSE THIS ERROR MESSAGE");
+
+			} else {
+				throw new ServletException(e);
+			}
 		} catch (ServletException e) {
 			if (e.getCause() instanceof UnauthorizedException) {
 				handleUnauthorizedException(req, resp);
@@ -210,7 +237,7 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	/**
 	 * Set the username and password for all requests to the repository.
-	 * 
+	 *
 	 * @param req  the servlet request
 	 * @param resp the servlet response
 	 * @throws MalformedURLException if the repository location is malformed
