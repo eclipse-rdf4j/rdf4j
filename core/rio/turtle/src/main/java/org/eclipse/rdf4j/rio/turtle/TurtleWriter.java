@@ -62,7 +62,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected ParsedIRI baseIRI;
 	protected IndentingWriter writer;
-	protected boolean writingStarted = false;
 
 	/**
 	 * Flag indicating whether the last written statement has been closed.
@@ -222,7 +221,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	protected void handleStatementImpl(Statement st) throws RDFHandlerException {
+	protected void consumeStatement(Statement st) throws RDFHandlerException {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();

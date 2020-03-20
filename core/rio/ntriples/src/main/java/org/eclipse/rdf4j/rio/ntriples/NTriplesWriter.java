@@ -54,7 +54,6 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	public NTriplesWriter(OutputStream out) {
 		super(out);
 		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
-		this.writingStarted = false;
 	}
 
 	/**
@@ -99,7 +98,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	protected void handleStatementImpl(Statement st) {
+	protected void consumeStatement(Statement st) {
 		try {
 			writeValue(st.getSubject());
 			writer.write(" ");

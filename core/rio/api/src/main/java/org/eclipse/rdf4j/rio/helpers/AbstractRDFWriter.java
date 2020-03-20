@@ -42,7 +42,8 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	 */
 	private WriterConfig writerConfig = new WriterConfig();
 
-	protected boolean writingStarted;
+	private boolean writingStarted;
+
 	private final OutputStream outputStream;
 
 	protected Consumer<Statement> statementConsumer;
@@ -101,7 +102,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 
 		writingStarted = true;
 
-		statementConsumer = this::handleStatementImpl;
+		statementConsumer = this::consumeStatement;
 		if (getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION)) {
 			// All writers can convert RDF* to reification on request
 			statementConsumer = this::handleStatementConvertRDFStar;
@@ -119,13 +120,31 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Extending classes must implement this method instead of overriding {@link #handleStatement(Statement)} in order
-	 * to benefit from automatic handling of RDF* conversion or encoding.
+	 * Consume a statement.
+	 * 
+	 * Extending classes must override this method instead of overriding {@link #handleStatement(Statement)} in order to
+	 * benefit from automatic handling of RDF* conversion or encoding.
 	 *
-	 * @param st the statement to handle.
+	 * @param st the statement to consume.
 	 */
-	protected abstract void handleStatementImpl(Statement st);
+	protected void consumeStatement(Statement st) {
+		// this method intended to be abstract, implemented as no-op to provide basic backward compatibility.
+	}
 
+	/**
+	 * See if writing has started
+	 * 
+	 * @return {@code true} if writing has started, {@code false} otherwise
+	 */
+	protected boolean isWritingStarted() {
+		return writingStarted;
+	}
+
+	/**
+	 * Verify that writing has started.
+	 * 
+	 * @throws RDFHandlerException if writing has not yet started.
+	 */
 	protected void checkWritingStarted() {
 		if (!writingStarted) {
 			throw new RDFHandlerException("Document writing has not started yet");
@@ -133,16 +152,16 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	}
 
 	private void handleStatementConvertRDFStar(Statement st) {
-		Statements.convertRDFStarToReification(st, this::handleStatementImpl);
+		Statements.convertRDFStarToReification(st, this::consumeStatement);
 	}
 
 	private void handleStatementEncodeRDFStar(Statement st) {
 		Resource s = st.getSubject();
 		Value o = st.getObject();
 		if (s instanceof Triple || o instanceof Triple) {
-			handleStatementImpl(new RDFStarEncodingStatement(st));
+			consumeStatement(new RDFStarEncodingStatement(st));
 		} else {
-			handleStatementImpl(st);
+			consumeStatement(st);
 		}
 	}
 }

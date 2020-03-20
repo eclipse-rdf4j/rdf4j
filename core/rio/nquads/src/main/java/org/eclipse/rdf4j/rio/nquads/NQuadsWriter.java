@@ -37,7 +37,7 @@ public class NQuadsWriter extends NTriplesWriter {
 	}
 
 	@Override
-	public void handleStatementImpl(Statement st) throws RDFHandlerException {
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		try {
 			// SUBJECT
 			writeValue(st.getSubject());

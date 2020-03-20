@@ -64,7 +64,7 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 	}
 
 	@Override
-	public void handleStatementImpl(Statement st) throws RDFHandlerException {
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		consoleIO.write(Util.getPrefixedValue(st.getSubject(), namespaces));
 		consoleIO.write("   ");
 		consoleIO.write(Util.getPrefixedValue(st.getPredicate(), namespaces));

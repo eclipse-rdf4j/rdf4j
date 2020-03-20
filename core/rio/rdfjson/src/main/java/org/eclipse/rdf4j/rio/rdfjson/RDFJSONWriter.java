@@ -115,7 +115,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatementImpl(final Statement statement) throws RDFHandlerException {
+	public void consumeStatement(final Statement statement) throws RDFHandlerException {
 		graph.add(statement);
 	}
 

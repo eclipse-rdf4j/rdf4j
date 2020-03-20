@@ -163,7 +163,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatementImpl(Statement st) throws RDFHandlerException {
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		statementCollector.handleStatement(st);
 	}
 

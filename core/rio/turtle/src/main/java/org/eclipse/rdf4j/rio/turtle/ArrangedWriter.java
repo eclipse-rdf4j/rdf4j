@@ -153,6 +153,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		if (getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES)) {
 			targetQueueSize = -1;
 			repeatBlankNodes = true;
@@ -186,7 +187,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	@Override
-	protected synchronized void handleStatementImpl(Statement st) throws RDFHandlerException {
+	protected synchronized void consumeStatement(Statement st) throws RDFHandlerException {
 		if (targetQueueSize == 0) {
 			delegate.handleStatement(st);
 		} else {

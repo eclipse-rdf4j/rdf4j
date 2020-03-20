@@ -184,7 +184,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	@Override
 	public void flush() throws IOException {
-		if (writingStarted) {
+		if (isWritingStarted()) {
 			if (!headerWritten) {
 				writeHeader();
 			}
@@ -206,7 +206,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	@Override
 	public void close() throws IOException {
 		try {
-			if (writingStarted && !writingEnded) {
+			if (isWritingStarted() && !writingEnded) {
 				endRDF();
 			}
 		} catch (RDFHandlerException e) {
@@ -319,7 +319,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	@Override
-	public void handleStatementImpl(Statement st) throws RDFHandlerException {
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();

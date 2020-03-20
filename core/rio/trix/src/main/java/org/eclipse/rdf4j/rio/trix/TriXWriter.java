@@ -50,7 +50,6 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private XMLWriter xmlWriter;
 
-	private boolean writingStarted = false;
 	private boolean inActiveContext = false;
 
 	private boolean convertRDFStar;
@@ -134,7 +133,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	protected void handleStatementImpl(Statement st) {
+	protected void consumeStatement(Statement st) {
 		try {
 			Resource context = st.getContext();
 

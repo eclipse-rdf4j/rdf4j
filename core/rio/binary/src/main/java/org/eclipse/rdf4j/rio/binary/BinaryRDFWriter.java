@@ -128,7 +128,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	protected void handleStatementImpl(Statement st) {
+	protected void consumeStatement(Statement st) {
 		statementQueue.add(st);
 		incValueFreq(st.getSubject());
 		incValueFreq(st.getPredicate());

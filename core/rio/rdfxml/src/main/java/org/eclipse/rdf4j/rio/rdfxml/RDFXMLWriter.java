@@ -43,7 +43,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected ParsedIRI baseIRI;
 	protected Writer writer;
 	protected String defaultNamespace;
-	protected boolean writingStarted = false;
 	protected boolean headerWritten = false;
 	protected Resource lastWrittenSubject = null;
 	protected char quote = '"';
@@ -210,7 +209,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	protected void handleStatementImpl(Statement st) {
+	protected void consumeStatement(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
