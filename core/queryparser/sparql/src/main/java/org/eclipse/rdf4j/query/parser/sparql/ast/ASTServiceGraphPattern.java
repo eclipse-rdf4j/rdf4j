@@ -57,11 +57,8 @@ public class ASTServiceGraphPattern extends SimpleNode {
 	public String getPatternString() {
 
 		if (patternString == null) {
-			ASTOperationContainer parentContainer = (ASTOperationContainer) getParentContainer(this);
-
-			String sourceString = parentContainer.getSourceString();
-
 			// snip away line until begin token line position
+			String sourceString = getSourceString();
 			String substring = sourceString;
 			for (int i = 1; i < getBeginTokenLinePos(); i++) {
 				substring = substring.substring(substring.indexOf('\n') + 1);
@@ -82,6 +79,27 @@ public class ASTServiceGraphPattern extends SimpleNode {
 		}
 
 		return patternString;
+	}
+
+	private String getSourceString() {
+		Node theParent = getParentContainer(this);
+		String sourceString = null;
+		if (theParent instanceof ASTOperationContainer) {
+			sourceString = ((ASTOperationContainer) theParent).getSourceString();
+		} else if (theParent instanceof ASTUpdateSequence) {
+			sourceString = ((ASTUpdateSequence) theParent).getSourceString();
+		}
+
+		while (sourceString == null && theParent != null) {
+			theParent = theParent.jjtGetParent();
+			if (theParent == null) {
+				break;
+			}
+			if (theParent instanceof ASTUpdateSequence) {
+				sourceString = ((ASTUpdateSequence) theParent).getSourceString();
+			}
+		}
+		return sourceString;
 	}
 
 	private Node getParentContainer(Node node) {
