@@ -128,6 +128,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictShared = sortMap(dictShared);
+			getLookup((SortedMap) dictShared);
 			shared.setSize(dictShared.size());
 			shared.set(dictShared.keySet().iterator());
 			shared.write(bos);
@@ -136,6 +137,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictS = sortMap(dictS);
+			getLookup((SortedMap) dictS);
 			subjects.setSize(dictS.size());
 			subjects.set(dictS.keySet().iterator());
 			subjects.write(bos);
@@ -144,6 +146,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictP = sortMap(dictP);
+			getLookup((SortedMap) dictP);
 			predicates.setSize(dictP.size());
 			predicates.set(dictP.keySet().iterator());
 			predicates.write(bos);
@@ -152,6 +155,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos,
 					HDTDictionarySection.Type.FRONT);
 			dictO = sortMap(dictO);
+			getLookup((SortedMap) dictO);
 			objects.setSize(dictO.size());
 			objects.set(dictO.keySet().iterator());
 			objects.write(bos);
@@ -161,11 +165,6 @@ public class HDTWriter extends AbstractRDFWriter {
 
 			HDTTriplesSection section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
 			section.write(bos);
-
-			getLookup(dictShared);
-			getLookup(dictS);
-			getLookup(dictP);
-			getLookup(dictO);
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
 		} finally {
@@ -308,13 +307,13 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @param map map
 	 * @return array of
 	 */
-	private static int[] getLookup(Map<String, Integer> map) {
+	private static Map<Integer, Integer> getLookup(SortedMap<String, Integer> map) {
 		// positions in HDT are counted from 1, leave 0-th element empty to avoid minus/plus 1
-		int[] swap = new int[map.size() + 1];
+		Map<Integer, Integer> swap = new HashMap<>(map.size(), 1);
 
 		int newpos = 1;
 		for (int oldpos : map.values()) {
-			swap[oldpos] = newpos++;
+			swap.put(oldpos, newpos++);
 		}
 
 		return swap;

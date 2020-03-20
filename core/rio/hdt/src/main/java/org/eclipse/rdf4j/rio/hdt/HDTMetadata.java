@@ -190,7 +190,7 @@ public class HDTMetadata {
 		addTriple(sb, DICTIONARY, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR);
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, String.valueOf(mapping));
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, String.valueOf(sizeStrings));
+		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, String.valueOf(sizeStrings > 0 ? sizeStrings : ""));
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, String.valueOf(blockSize));
 		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
 		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
