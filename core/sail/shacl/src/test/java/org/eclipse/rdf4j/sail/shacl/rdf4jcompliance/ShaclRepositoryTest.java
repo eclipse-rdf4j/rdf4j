@@ -6,29 +6,21 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.rdf4jcompliance;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryTest;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
-public class ShaclIsolationLevelTest extends SailIsolationLevelTest {
-
-	/*---------*
-	 * Methods *
-	 *---------*/
+public class ShaclRepositoryTest extends RepositoryTest {
 
 	@Override
-	protected Sail createSail() throws SailException {
+	protected Repository createRepository() {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setIgnoreNoShapesLoadedException(true);
-		return shaclSail;
-	}
 
-	@Override
-	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
-		// see: https://github.com/eclipse/rdf4j/issues/1795
+		return new SailRepository(shaclSail);
 	}
 }

@@ -89,6 +89,7 @@ public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 		return "MaxLengthPropertyShape{" +
 				"maxLength=" + maxLength +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

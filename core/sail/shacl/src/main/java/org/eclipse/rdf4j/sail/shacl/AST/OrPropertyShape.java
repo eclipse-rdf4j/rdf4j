@@ -254,6 +254,7 @@ public class OrPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "OrPropertyShape{" +
 				"or=" + toString(or) +
+				", id=" + id +
 				'}';
 	}
 

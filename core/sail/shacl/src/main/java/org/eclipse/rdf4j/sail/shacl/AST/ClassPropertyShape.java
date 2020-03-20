@@ -404,6 +404,8 @@ public class ClassPropertyShape extends PathPropertyShape {
 		return "ClassPropertyShape{" +
 				"classResource=" + classResource +
 				", path=" + getPath() +
+				", id=" + id +
+
 				'}';
 	}
 

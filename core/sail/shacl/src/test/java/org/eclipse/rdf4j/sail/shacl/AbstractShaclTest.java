@@ -12,7 +12,6 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -92,7 +91,6 @@ abstract public class AbstractShaclTest {
 		"test-cases/datatype/targetObjectsOf",
 		"test-cases/datatype/targetSubjectsOf",
 		"test-cases/datatype/targetSubjectsOfSingle",
-		"test-cases/datatype/validateTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape",
@@ -125,6 +123,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/class2",
 		"test-cases/or/classValidateTarget",
 		"test-cases/or/datatype",
+		"test-cases/or/datatype2",
 		"test-cases/or/datatype2",
 		"test-cases/or/datatypeDifferentPaths",
 		"test-cases/or/datatypeNodeShape",
@@ -246,6 +245,7 @@ abstract public class AbstractShaclTest {
 
 		try {
 			Utils.loadShapeData(shaclRepository, shaclFile);
+			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -259,7 +259,17 @@ abstract public class AbstractShaclTest {
 				ValueFactory vf = connection.getValueFactory();
 				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
 						vf.createLiteral("auto-generated!"), vf.createBNode());
-				connection.commit();
+				try {
+					connection.commit();
+				} catch (RepositoryException sailException) {
+					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
+						throw sailException;
+					}
+					exception = true;
+					logger.debug(sailException.getMessage());
+
+					printResults(sailException);
+				}
 			}
 
 		}
@@ -379,6 +389,7 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail();
 		try {
 			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -449,6 +460,7 @@ abstract public class AbstractShaclTest {
 		SailRepository shaclRepository = getShaclSail();
 		try {
 			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -539,7 +551,7 @@ abstract public class AbstractShaclTest {
 	private static SailRepository getShaclSail() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		SailRepository shaclRepository = new SailRepository(shaclSail);
+		SailRepository repository = new SailRepository(shaclSail);
 
 		shaclSail.setLogValidationPlans(fullLogging);
 		shaclSail.setCacheSelectNodes(true);
@@ -547,9 +559,9 @@ abstract public class AbstractShaclTest {
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
 
-		shaclRepository.init();
+		repository.init();
 
-		return shaclRepository;
+		return repository;
 	}
 
 }

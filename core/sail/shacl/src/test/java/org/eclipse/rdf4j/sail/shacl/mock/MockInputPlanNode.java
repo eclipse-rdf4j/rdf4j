@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -28,14 +29,14 @@ import java.util.stream.Collectors;
  */
 public class MockInputPlanNode implements PlanNode {
 
-	List<Tuple> initialData;
+	Collection<Tuple> initialData;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public MockInputPlanNode(List<Tuple> initialData) {
+	public MockInputPlanNode(Collection<Tuple> initialData) {
 		this.initialData = initialData;
 	}
 
-	public MockInputPlanNode(List<String>... list) {
+	public MockInputPlanNode(Collection<String>... list) {
 
 		initialData = Arrays.stream(list)
 				.map(strings -> strings.stream()

@@ -152,6 +152,7 @@ public class TargetClass extends NodeShape {
 	public String toString() {
 		return "TargetClass{" +
 				"targetClass=" + Arrays.asList(targetClass.toArray()) +
+				", id=" + id +
 				'}';
 	}
 }

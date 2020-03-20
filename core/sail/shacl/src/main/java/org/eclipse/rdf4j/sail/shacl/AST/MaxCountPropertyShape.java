@@ -179,6 +179,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		return "MaxCountPropertyShape{" +
 				"maxCount=" + maxCount +
 				", path=" + getPath() +
+				", id=" + id +
+
 				'}';
 	}
 

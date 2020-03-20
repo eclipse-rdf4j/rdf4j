@@ -89,6 +89,7 @@ public class MaxInclusivePropertyShape extends AbstractSimplePropertyShape {
 		return "MaxInclusivePropertyShape{" +
 				"maxInclusive=" + maxInclusive +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }
