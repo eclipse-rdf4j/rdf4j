@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -35,16 +36,10 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
  */
 public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	protected final Writer writer;
-
 	protected boolean writingStarted;
 
 	private boolean xsdStringToPlainLiteral = true;
-
 	private boolean escapeUnicode;
 
 	/*--------------*
@@ -57,7 +52,9 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the N-Triples document to.
 	 */
 	public NTriplesWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		super(out);
+		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+		this.writingStarted = false;
 	}
 
 	/**
@@ -169,7 +166,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	private void writeIRI(IRI iri) throws IOException {
-		NTriplesUtil.append(iri, writer);
+		NTriplesUtil.append(iri, writer, escapeUnicode);
 	}
 
 	private void writeBNode(BNode bNode) throws IOException {
@@ -180,13 +177,13 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.append("genid");
 			writer.append(Integer.toHexString(bNode.hashCode()));
 		} else {
-			if (!NTriplesUtil.isLetter(nextId.charAt(0))) {
+			if (!ASCIIUtil.isLetter(nextId.charAt(0))) {
 				writer.append("genid");
 				writer.append(Integer.toHexString(nextId.charAt(0)));
 			}
 
 			for (int i = 0; i < nextId.length(); i++) {
-				if (NTriplesUtil.isLetterOrNumber(nextId.charAt(i))) {
+				if (ASCIIUtil.isLetterOrNumber(nextId.charAt(i))) {
 					writer.append(nextId.charAt(i));
 				} else {
 					// Append the character as its hex representation

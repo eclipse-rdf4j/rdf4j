@@ -400,6 +400,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
 
+		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
+		if (shaclSailConnection.isEmpty()) {
+			return;
+		}
+
 		long prevSize;
 		long currentSize = shaclSailConnection.size();
 		do {

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -202,7 +203,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	public synchronized void clear(Resource... contexts) {
 		if (contexts != null && contexts.length == 0) {
 			if (approved != null) {
-				approved.remove(null, null, null);
+				approved.clear();
 			}
 			if (approvedContexts != null) {
 				approvedContexts.clear();
@@ -228,7 +229,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(subj, pred, obj, ctx);
 		}
 		if (approved == null) {
-			approved = createEmptyModel();
+			approved = new DynamicModel(this);
 		}
 		approved.add(subj, pred, obj, ctx);
 		if (ctx != null) {
@@ -245,7 +246,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(statement);
 		}
 		if (approved == null) {
-			approved = createEmptyModel();
+			approved = new DynamicModel(this);
 		}
 		approved.add(statement);
 		if (statement.getContext() != null) {
@@ -262,7 +263,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			approved.remove(statement);
 		}
 		if (deprecated == null) {
-			deprecated = createEmptyModel();
+			deprecated = new DynamicModel(this);
 		}
 		deprecated.add(statement);
 		Resource ctx = statement.getContext();

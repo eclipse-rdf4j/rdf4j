@@ -16,53 +16,51 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 public class SubQuery implements Serializable {
 
-	/**
-	 * 
-	 */
 	private static final long serialVersionUID = 8968907794785828994L;
 
-	protected String subj = null;
-	protected String pred = null;
-	protected String obj = null;
+	protected final Resource subj;
+	protected final IRI pred;
+	protected final Value obj;
 
-	public SubQuery(String subj, String pred, String obj) {
+	public SubQuery(Resource subj, IRI pred, Value obj) {
 		super();
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 	}
 
-	public SubQuery(Resource subj, IRI pred, Value obj) {
-		super();
-		if (subj != null)
-			this.subj = subj.stringValue();
-		if (pred != null)
-			this.pred = pred.stringValue();
-		if (obj != null)
-			this.obj = obj.toString();
-		// we need to take toString() here since stringValue for literals does not contain the datatype
+	public SubQuery(StatementPattern stmt) {
+		this((Resource) stmt.getSubjectVar().getValue(), (IRI) stmt.getPredicateVar().getValue(),
+				stmt.getObjectVar().getValue());
 	}
 
-	public SubQuery(StatementPattern stmt) {
-		super();
+	/**
+	 * 
+	 * @return true if this subquery is unbound in all three positions
+	 */
+	public boolean isUnbound() {
+		return subj == null && pred == null && obj == null;
+	}
 
-		if (stmt.getSubjectVar().hasValue())
-			subj = stmt.getSubjectVar().getValue().stringValue();
-		if (stmt.getPredicateVar().hasValue())
-			pred = stmt.getPredicateVar().getValue().stringValue();
-		if (stmt.getObjectVar().hasValue())
-			obj = stmt.getObjectVar().getValue().stringValue();
+	public Resource subject() {
+		return this.subj;
+	}
+
+	public IRI predicate() {
+		return this.pred;
+	}
+
+	public Value object() {
+		return this.obj;
 	}
 
 	@Override
 	public int hashCode() {
-		final int prime1 = 961;
-		final int prime2 = 31;
-		final int prime3 = 1;
+		final int prime = 31;
 		int result = 1;
-		result += ((subj == null) ? 0 : subj.hashCode() * prime1);
-		result += ((pred == null) ? 0 : pred.hashCode() * prime2);
-		result += ((obj == null) ? 0 : obj.hashCode() * prime3);
+		result = prime * result + ((obj == null) ? 0 : obj.hashCode());
+		result = prime * result + ((pred == null) ? 0 : pred.hashCode());
+		result = prime * result + ((subj == null) ? 0 : subj.hashCode());
 		return result;
 	}
 

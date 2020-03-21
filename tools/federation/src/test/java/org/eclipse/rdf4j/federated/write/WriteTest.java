@@ -80,7 +80,13 @@ public class WriteTest extends SPARQLBaseTest {
 		Assertions.assertThrows(UnsupportedOperationException.class, () -> {
 			Statement st = simpleStatement();
 			try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
-				conn.add(st);
+				try {
+					conn.add(st);
+				} catch (RuntimeException e) {
+					// rollback to avoid a stack trace in the output
+					conn.rollback();
+					throw e;
+				}
 			}
 		});
 
@@ -98,6 +104,27 @@ public class WriteTest extends SPARQLBaseTest {
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
 					"PREFIX : <http://example.org/> INSERT { :subject a :Person } WHERE { }");
+			update.execute();
+
+			// test that statement is returned from federation
+			List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, true));
+			Assertions.assertEquals(1, stmts.size());
+			Assertions.assertEquals(RDF.TYPE, stmts.get(0).getPredicate());
+		}
+	}
+
+	@Test
+	public void testSimpleUpdateQuery_insertData() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+
+		Iterator<Endpoint> iter = federationContext().getEndpointManager().getAvailableEndpoints().iterator();
+		EndpointBase ep1 = (EndpointBase) iter.next();
+		ep1.setWritable(true);
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
+					"PREFIX ex: <http://example.org/> INSERT DATA { ex:subject a ex:Person } ");
 			update.execute();
 
 			// test that statement is returned from federation

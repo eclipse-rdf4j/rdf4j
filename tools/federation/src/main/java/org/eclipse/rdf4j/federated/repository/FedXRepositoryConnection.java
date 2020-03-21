@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -112,16 +113,18 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	}
 
 	@Override
-	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
+	public Update prepareUpdate(QueryLanguage ql, String updateString, String baseURI)
 			throws RepositoryException, MalformedQueryException {
-		return super.prepareUpdate(ql, update, baseURI);
+		Update update = super.prepareUpdate(ql, updateString, baseURI);
+		insertOriginalQueryString(update, updateString, QueryType.UPDATE);
+		return update;
 	}
 
 	private void setIncludeInferredDefault(SailQuery query) {
 		query.setIncludeInferred(federationContext.getConfig().getIncludeInferredDefault());
 	}
 
-	private void insertOriginalQueryString(SailQuery query, String queryString, QueryType qt) {
+	private void insertOriginalQueryString(Operation query, String queryString, QueryType qt) {
 		query.setBinding(BINDING_ORIGINAL_QUERY, FedXUtil.literal(queryString));
 		query.setBinding(BINDING_ORIGINAL_QUERY_TYPE, FedXUtil.literal(qt.name()));
 	}

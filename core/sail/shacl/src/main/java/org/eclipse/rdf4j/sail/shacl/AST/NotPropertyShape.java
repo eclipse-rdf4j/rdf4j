@@ -153,6 +153,7 @@ public class NotPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "NotPropertyShape{" +
 				"orPropertyShape=" + orPropertyShape +
+				", id=" + id +
 				'}';
 	}
 

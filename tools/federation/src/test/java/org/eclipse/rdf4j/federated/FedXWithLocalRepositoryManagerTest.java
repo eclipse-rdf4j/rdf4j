@@ -138,15 +138,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 			protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
 				if (serviceUrl.equals("http://serviceRepo")) {
 					Repository serviceRepo = repoManager.getRepository("serviceRepo");
-					return new RepositoryFederatedService(serviceRepo, false) {
-						@Override
-						protected synchronized RepositoryConnection getConnection()
-								throws org.eclipse.rdf4j.repository.RepositoryException {
-							// explicitly make this method synchronized to avoid dangling
-							// connections due to parallel access
-							return super.getConnection();
-						};
-					};
+					return new RepositoryFederatedService(serviceRepo, false);
 				}
 				throw new IllegalArgumentException("Service url cannot be resolved: " + serviceUrl);
 			}

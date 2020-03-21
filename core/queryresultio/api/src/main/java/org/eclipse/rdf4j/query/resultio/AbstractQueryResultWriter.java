@@ -7,8 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
+import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
@@ -22,11 +24,21 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 
 	private WriterConfig writerConfig = new WriterConfig();
+	private final OutputStream outputStream;
 
 	/**
 	 * Default constructor.
 	 */
 	protected AbstractQueryResultWriter() {
+		this(null);
+	}
+
+	protected AbstractQueryResultWriter(OutputStream out) {
+		this.outputStream = out;
+	}
+
+	public Optional<OutputStream> getOutputStream() {
+		return Optional.ofNullable(outputStream);
 	}
 
 	@Override

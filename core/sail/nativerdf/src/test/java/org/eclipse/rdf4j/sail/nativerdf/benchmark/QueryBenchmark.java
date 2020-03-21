@@ -73,7 +73,7 @@ public class QueryBenchmark {
 	List<Statement> statementList;
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void beforeClass() throws IOException {
 
 		file = Files.newTemporaryFolder();
 

@@ -24,31 +24,40 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Represents a group of statements that can only produce results at a single endpoint, the owner.
+ * Represents a group of {@link ExclusiveTupleExpr} that can only produce results at a single endpoint, the
+ * {@link StatementSource}.
  * 
  * @author Andreas Schwarte
  *
  */
-public class ExclusiveGroup extends AbstractQueryModelNode implements StatementTupleExpr, FilterTuple {
+public class ExclusiveGroup extends AbstractQueryModelNode
+		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
 	private static final long serialVersionUID = 9215353191021766797L;
 
-	protected final List<ExclusiveStatement> owned = new ArrayList<>();
-	protected final ArrayList<StatementSource> owner;
+	private static final Logger log = LoggerFactory.getLogger(ExclusiveGroup.class);
+
+	protected final List<ExclusiveTupleExpr> owned = new ArrayList<>();
+	protected final StatementSource owner;
 	protected final Set<String> freeVars = new HashSet<>();
 	protected final String id;
 	protected final transient QueryInfo queryInfo;
-	protected FilterValueExpr filter = null;
+	protected FilterValueExpr filterExpr = null;
+	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
+	// additional bindings
 	protected transient Endpoint ownedEndpoint = null;
 
 	private final FederationEvalStrategy strategy;
 
-	public ExclusiveGroup(Collection<ExclusiveStatement> ownedNodes, StatementSource owner, QueryInfo queryInfo) {
+	public ExclusiveGroup(Collection<? extends ExclusiveTupleExpr> ownedNodes, StatementSource owner,
+			QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
-		this.owner = new ArrayList<>(1);
-		this.owner.add(owner);
+		this.owner = owner;
 		init(); // init free vars + filter expr
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
@@ -58,30 +67,11 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 	}
 
 	/**
-	 * Initialize free variables and filter expressions for owned children.
+	 * Initialize free variables
 	 */
 	protected void init() {
-		HashSet<FilterExpr> conjExpr = new HashSet<>();
-		for (ExclusiveStatement o : owned) {
+		for (ExclusiveTupleExpr o : owned) {
 			freeVars.addAll(o.getFreeVars());
-
-			if (o.hasFilter()) {
-
-				FilterValueExpr expr = o.getFilterExpr();
-				if (expr instanceof ConjunctiveFilterExpr)
-					conjExpr.addAll(((ConjunctiveFilterExpr) expr).getExpressions());
-				else if (expr instanceof FilterExpr)
-					conjExpr.add((FilterExpr) expr);
-				else
-					throw new RuntimeException(
-							"Internal Error: Unexpected filter type: " + expr.getClass().getSimpleName());
-			}
-		}
-
-		if (conjExpr.size() == 1)
-			filter = conjExpr.iterator().next();
-		else if (conjExpr.size() > 1) {
-			filter = new ConjunctiveFilterExpr(conjExpr);
 		}
 	}
 
@@ -89,8 +79,12 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 
-		for (ExclusiveStatement s : owned) {
+		for (ExclusiveTupleExpr s : owned) {
 			s.visit(visitor);
+		}
+
+		if (boundFilters != null) {
+			BoundFiltersNode.visit(visitor, boundFilters);
 		}
 	}
 
@@ -115,26 +109,22 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 		throw new RuntimeException("Operation not supported on this node!");
 	}
 
+	@Override
 	public StatementSource getOwner() {
-		return owner.get(0);
+		return owner;
 	}
 
 	public Endpoint getOwnedEndpoint() {
 		return ownedEndpoint;
 	}
 
-	public List<ExclusiveStatement> getStatements() {
-		// XXX make a copy? (or copyOnWrite list?)
+	public List<ExclusiveTupleExpr> getExclusiveExpressions() {
 		return owned;
 	}
 
 	@Override
 	public int getFreeVarCount() {
 		return freeVars.size();
-	}
-
-	public Set<String> getFreeVarsSet() {
-		return freeVars;
 	}
 
 	@Override
@@ -149,7 +139,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 	@Override
 	public List<StatementSource> getStatementSources() {
-		return owner;
+		return Collections.singletonList(owner);
 	}
 
 	@Override
@@ -175,33 +165,54 @@ public class ExclusiveGroup extends AbstractQueryModelNode implements StatementT
 
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
-		/*
-		 * Note: the operation is obsolete for this class: all filters are added already in the owned children during
-		 * optimization (c.f. FilterOptimizer)
-		 */
-		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName()
-				+ ", filters already to children during optimization.");
+
+		if (filterExpr == null)
+			filterExpr = expr;
+		else if (filterExpr instanceof ConjunctiveFilterExpr) {
+			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
+		} else if (filterExpr instanceof FilterExpr) {
+			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);
+		} else {
+			throw new RuntimeException("Unexpected type: " + filterExpr.getClass().getCanonicalName());
+		}
 
 	}
 
 	@Override
 	public FilterValueExpr getFilterExpr() {
-		return filter;
+		return filterExpr;
+	}
+
+	@Override
+	public BindingSet getBoundFilters() {
+		return this.boundFilters;
 	}
 
 	@Override
 	public boolean hasFilter() {
-		return filter != null;
+		return filterExpr != null;
 	}
 
 	@Override
 	public void addBoundFilter(final String varName, final Value value) {
-		/*
-		 * Note: the operation is obsolete for this class: all bindings are set already in the owned children during
-		 * optimization (c.f. FilterOptimizer)
-		 */
-		throw new UnsupportedOperationException("Operation not supported for " + ExclusiveGroup.class.getCanonicalName()
-				+ ", bindings inserted during optimization.");
+
+		if (!freeVars.contains(varName)) {
+			log.debug("Invalid call to addBoundFilter: variable " + varName + " is not known as a free variable");
+			return;
+		}
+
+		// lazy initialization of bound filters
+		if (boundFilters == null) {
+			boundFilters = new QueryBindingSet();
+		}
+
+		// Note: Var nodes of children are visited in optimizer
+		// => i.e. actual values are set
+
+		boundFilters.addBinding(varName, value);
+
+		freeVars.remove(varName);
+
 	}
 
 	@Override

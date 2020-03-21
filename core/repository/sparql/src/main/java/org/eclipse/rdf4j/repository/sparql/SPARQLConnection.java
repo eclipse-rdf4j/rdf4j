@@ -63,6 +63,7 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLGraphQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLTupleQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLUpdate;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -88,7 +89,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private final SPARQLProtocolSession client;
 
-	private StringBuffer sparqlTransaction;
+	private StringBuilder sparqlTransaction;
 
 	private Object transactionLock = new Object();
 
@@ -107,6 +108,12 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public String toString() {
 		return client.getQueryURL();
+	}
+
+	@Override
+	public void setParserConfig(ParserConfig parserConfig) {
+		client.setParserConfig(parserConfig);
+		super.setParserConfig(parserConfig);
 	}
 
 	@Override
@@ -374,8 +381,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String base)
 			throws RepositoryException, MalformedQueryException {
-		if (SPARQL.equals(ql))
+		if (SPARQL.equals(ql)) {
 			return new SPARQLTupleQuery(client, base, query);
+		}
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
 	}
 
@@ -384,11 +392,14 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		synchronized (transactionLock) {
 			if (isActive()) {
 				synchronized (transactionLock) {
-					SPARQLUpdate transaction = new SPARQLUpdate(client, null, sparqlTransaction.toString());
-					try {
-						transaction.execute();
-					} catch (UpdateExecutionException e) {
-						throw new RepositoryException("error executing transaction", e);
+					// treat commit as a no-op if transaction string is empty
+					if (sparqlTransaction.length() > 0) {
+						SPARQLUpdate transaction = new SPARQLUpdate(client, null, sparqlTransaction.toString());
+						try {
+							transaction.execute();
+						} catch (UpdateExecutionException e) {
+							throw new RepositoryException("error executing transaction", e);
+						}
 					}
 
 					sparqlTransaction = null;
@@ -417,7 +428,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		synchronized (transactionLock) {
 			if (!isActive()) {
 				synchronized (transactionLock) {
-					sparqlTransaction = new StringBuffer();
+					sparqlTransaction = new StringBuilder();
 				}
 			} else {
 				throw new RepositoryException("active transaction already exists");
@@ -924,9 +935,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	/**
 	 * Shall graph information also be retrieved, e.g. for
-	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)
+	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)}
 	 * 
-	 * @return
+	 * @return true if in quad mode
 	 */
 	protected boolean isQuadMode() {
 		return quadMode;

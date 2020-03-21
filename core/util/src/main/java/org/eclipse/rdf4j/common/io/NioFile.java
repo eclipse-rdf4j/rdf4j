@@ -256,11 +256,11 @@ public final class NioFile implements Closeable {
 	}
 
 	/**
-	 * Read a byte array of a specifi length from channel starting at offset.
+	 * Read a byte array of a specific length from channel starting at offset.
 	 * 
 	 * @param offset
 	 * @param length
-	 * @return
+	 * @return byte array
 	 * @throws IOException
 	 */
 	public byte[] readBytes(long offset, int length) throws IOException {

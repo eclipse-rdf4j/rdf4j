@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 
 /**
- * Defines constants for the LuceneSail schema which is used by {@link LuceneSailFactory}s to initialize
- * {@link LuceneSail}s.
+ * Defines constants for the LuceneSail schema which is used by
+ * {@link org.eclipse.rdf4j.sail.lucene.config.LuceneSailFactory}s to initialize {@link LuceneSail}s.
  */
 public class LuceneSailConfigSchema {
 

@@ -106,7 +106,7 @@ public class IndentingWriter extends Writer {
 	/**
 	 * Get the number of characters read since end-of-line.
 	 * 
-	 * @return
+	 * @return number of characters
 	 */
 	public int getCharactersSinceEOL() {
 		return charactersSinceEOL;

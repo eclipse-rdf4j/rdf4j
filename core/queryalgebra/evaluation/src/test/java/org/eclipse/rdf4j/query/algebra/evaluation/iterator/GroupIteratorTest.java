@@ -7,28 +7,32 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.util.ArrayList;
 import java.util.Collections;
-
-import org.junit.Test;
-import static org.junit.Assert.assertEquals;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.junit.Test;
 
 /**
  * @author Bart Hanssens
@@ -40,13 +44,13 @@ public class GroupIteratorTest {
 	private final static BindingSetAssignment EMPTY_ASSIGNMENT;
 	static {
 		EMPTY_ASSIGNMENT = new BindingSetAssignment();
-		EMPTY_ASSIGNMENT.setBindingSets(Collections.EMPTY_LIST);
+		EMPTY_ASSIGNMENT.setBindingSets(Collections.emptyList());
 	}
 
 	private final static BindingSetAssignment NONEMPTY_ASSIGNMENT;
 	static {
 		NONEMPTY_ASSIGNMENT = new BindingSetAssignment();
-		ArrayList list = new ArrayList();
+		ArrayList<BindingSet> list = new ArrayList<>();
 		for (int i = 1; i < 10; i++) {
 			QueryBindingSet bindings = new QueryBindingSet();
 			bindings.addBinding("a", vf.createLiteral(i));
@@ -56,12 +60,66 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testAvgZero() throws QueryEvaluationException {
+	public void testAvgEmptySet() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertEquals(gi.next().getBinding("avg").getValue(), vf.createLiteral("0", XMLSchema.INTEGER));
+		assertThat(gi.next().getBinding("avg").getValue())
+				.describedAs("AVG on empty set should result in 0")
+				.isEqualTo(vf.createLiteral("0", XMLSchema.INTEGER));
+	}
+
+	@Test
+	public void testMaxEmptySet_DefaultGroup() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.hasNext()).isTrue();
+		assertThat(gi.next().size()).isEqualTo(0);
+	}
+
+	@Test
+	public void testMaxEmptySet_Grouped() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
+		group.addGroupBindingName("x"); // we are grouping by variable x
+
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.hasNext()).isFalse();
+	}
+
+	@Test
+	public void testMinEmptySet() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("min", new Min(new Var("a"))));
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.hasNext()).isTrue();
+		assertThat(gi.next().size()).isEqualTo(0);
+	}
+
+	@Test
+	public void testSampleEmptySet() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("sample", new Sample(new Var("a"))));
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.hasNext()).isTrue();
+		assertThat(gi.next().size()).isEqualTo(0);
+	}
+
+	@Test
+	public void testGroupConcatEmptySet() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("groupconcat", new GroupConcat(new Var("a"))));
+		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
+
+		assertThat(gi.next().getBinding("groupconcat").getValue())
+				.describedAs("GROUP_CONCAT on empty set should result in empty string")
+				.isEqualTo(vf.createLiteral(""));
 	}
 
 	@Test
@@ -70,7 +128,7 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertEquals(gi.next().getBinding("avg").getValue(), vf.createLiteral("5", XMLSchema.DECIMAL));
+		assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(vf.createLiteral("5", XMLSchema.DECIMAL));
 	}
 
 	@Test
@@ -79,7 +137,7 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("count", new Count(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertEquals(gi.next().getBinding("count").getValue(), vf.createLiteral("9", XMLSchema.INTEGER));
+		assertThat(gi.next().getBinding("count").getValue()).isEqualTo(vf.createLiteral("9", XMLSchema.INTEGER));
 	}
 
 	@Test
@@ -88,6 +146,6 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("sum", new Sum(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertEquals(gi.next().getBinding("sum").getValue(), vf.createLiteral("45", XMLSchema.INTEGER));
+		assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(vf.createLiteral("45", XMLSchema.INTEGER));
 	}
 }

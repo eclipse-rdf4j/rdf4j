@@ -126,15 +126,17 @@ import org.slf4j.LoggerFactory;
  * method with no arguments. <code>clear()</code>. This will delete the index.</li>
  * </ul>
  * <h2>Handling of Contexts</h2> Each lucene document contains a field for every contextIDs that contributed to the
- * document. <b>NULL</b> contexts are marked using the String {@link LuceneIndex#CONTEXT_NULL} ("null") and stored in
- * the lucene field {@link LuceneIndex#CONTEXT_FIELD_NAME} ("context"). This means that when adding/appending to a
- * document, all additional context-uris are added to the document. When deleting individual triples, the context is
- * ignored. In clear(Resource ...) we make a query on all Lucene-Documents that were possibly created by this
- * context(s). Given a document D that context C(1-n) contributed to. D' is the new document after clear(). - if there
- * is only one C then D can be safely removed. There is no D' (I hope this is the standard case: like in ontologies,
- * where all triples about a resource are in one document) - if there are multiple C, remember the uri of D, delete D,
- * and query (s,p,o, ?) from the underlying store after committing the operation- this returns the literals of D', add
- * D' as new document This will probably be both fast in the common case and capable enough in the multiple-C case.
+ * document. <b>NULL</b> contexts are marked using the String
+ * {@link org.eclipse.rdf4j.sail.lucene.SearchFields#CONTEXT_NULL} ("null") and stored in the lucene field
+ * {@link org.eclipse.rdf4j.sail.lucene.SearchFields#CONTEXT_FIELD_NAME} ("context"). This means that when
+ * adding/appending to a document, all additional context-uris are added to the document. When deleting individual
+ * triples, the context is ignored. In clear(Resource ...) we make a query on all Lucene-Documents that were possibly
+ * created by this context(s). Given a document D that context C(1-n) contributed to. D' is the new document after
+ * clear(). - if there is only one C then D can be safely removed. There is no D' (I hope this is the standard case:
+ * like in ontologies, where all triples about a resource are in one document) - if there are multiple C, remember the
+ * uri of D, delete D, and query (s,p,o, ?) from the underlying store after committing the operation- this returns the
+ * literals of D', add D' as new document This will probably be both fast in the common case and capable enough in the
+ * multiple-C case.
  * <h2 name="indexedfieldssyntax">Defining the indexed Fields</h2> The property {@link #INDEXEDFIELDS} is to configure
  * which fields to index and to project a property to another. Syntax:
  *
@@ -269,7 +271,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/**
 	 * Set this key as sail parameter to influence whether incomplete queries are treated as failure (Malformed queries)
-	 * or whether they are ignored. Set to either "true" or "false". When ommitted in the properties, true is default
+	 * or whether they are ignored. Set to either "true" or "false". When omitted in the properties, true is default
 	 * (failure on incomplete queries). see {@link #isIncompleteQueryFails()}
 	 */
 	public static final String INCOMPLETE_QUERY_FAIL_KEY = "incompletequeryfail";
@@ -398,7 +400,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * The method is relocated to {@link SearchIndexUtils#createSearchIndex(java.util.Properties) }.
 	 *
 	 * @param parameters
-	 * @return
+	 * @return search index
 	 * @throws Exception
 	 * @deprecated
 	 */

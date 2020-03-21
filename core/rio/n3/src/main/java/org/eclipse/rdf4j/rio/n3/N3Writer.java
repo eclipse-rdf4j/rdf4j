@@ -50,6 +50,7 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI used to relativize IRIs to relative IRIs.
 	 */
 	public N3Writer(OutputStream out, ParsedIRI baseIRI) {
+		super(out);
 		ttlWriter = new TurtleWriter(out, baseIRI);
 	}
 

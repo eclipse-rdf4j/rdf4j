@@ -44,8 +44,9 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery,
 			String[] variables) {
 
-		try (Stream<? extends BindingSet> stream = Iterations.stream(
-				connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true))) {
+		try (Stream<? extends BindingSet> stream = connection
+				.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)
+				.stream()) {
 			stream
 					.map(t -> new Tuple(t, variables))
 					.forEachOrdered(right::addFirst);

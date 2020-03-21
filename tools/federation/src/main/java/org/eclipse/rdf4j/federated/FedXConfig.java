@@ -7,16 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import org.eclipse.rdf4j.federated.cache.MemoryCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategyWithValues;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.Query;
+
+import com.google.common.cache.CacheBuilderSpec;
 
 /**
  * Configuration class for FedX
@@ -26,8 +28,6 @@ import org.eclipse.rdf4j.query.Query;
 public class FedXConfig {
 
 	public static FedXConfig DEFAULT_CONFIG = new FedXConfig();
-
-	private String cacheLocation = "cache.db";
 
 	private int joinWorkerThreads = 20;
 
@@ -49,22 +49,24 @@ public class FedXConfig {
 
 	private boolean debugQueryPlan = false;
 
-	private boolean enableJmx = false;
-
 	private boolean includeInferredDefault = true;
+
+	private String sourceSelectionCacheSpec = null;
 
 	private Class<? extends FederationEvalStrategy> sailEvaluationStrategy = SailFederationEvalStrategy.class;
 
-	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategyWithValues.class;
+	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategy.class;
 
 	private String prefixDeclarations = null;
 
 	/* factory like setters */
 
 	/**
-	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()).
+	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()}.
 	 * 
-	 * <p>Can be set after federation construction and initialize.</p>
+	 * <p>
+	 * Can be set after federation construction and initialize.
+	 * </p>
 	 * 
 	 * @param flag
 	 * @return the current config
@@ -161,21 +163,6 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Define the cache location. See {@link #getCacheLocation()}.
-	 * 
-	 * <p>
-	 * Can only be set before federation initialization.
-	 * </p>
-	 * 
-	 * @param cacheLocation
-	 * @return the current config
-	 */
-	public FedXConfig withCacheLocation(String cacheLocation) {
-		this.cacheLocation = cacheLocation;
-		return this;
-	}
-
-	/**
 	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
 	 * 
 	 * <p>
@@ -243,7 +230,7 @@ public class FedXConfig {
 	 * </p>
 	 * 
 	 * @param prefixFile
-	 * @return
+	 * @return config
 	 */
 	public FedXConfig withPrefixDeclarations(String prefixFile) {
 		this.prefixDeclarations = prefixFile;
@@ -278,12 +265,16 @@ public class FedXConfig {
 	}
 
 	/**
-	 * The location of the cache, i.e. currently used in {@link MemoryCache}
+	 * The cache specification for the {@link SourceSelectionMemoryCache}. If not set explicitly, the
+	 * {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
 	 * 
-	 * @return the cache location
+	 * @param cacheSpec the {@link CacheBuilderSpec} for the {@link SourceSelectionCache}
+	 * @return the current config
+	 * @see SourceSelectionMemoryCache
 	 */
-	public String getCacheLocation() {
-		return this.cacheLocation;
+	public FedXConfig withSourceSelectionCacheSpec(String cacheSpec) {
+		this.sourceSelectionCacheSpec = cacheSpec;
+		return this;
 	}
 
 	/**
@@ -388,7 +379,7 @@ public class FedXConfig {
 	 * Flag to enable/disable query logging via {@link QueryLog}. Default=false The {@link QueryLog} facility allows to
 	 * log all queries to a file. See {@link QueryLog} for details.
 	 * 
-	 * Required {@link Config#isEnableMonitoring()} to be active.
+	 * Requires {@link #isEnableMonitoring()} to be active.
 	 * 
 	 * @return whether queries are logged
 	 */
@@ -417,10 +408,21 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Returns the configured {@link CacheBuilderSpec} (if any) for the {@link SourceSelectionMemoryCache}. If not
+	 * defined, the {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
+	 * 
+	 * @return the {@link CacheBuilderSpec} or <code>null</code>
+	 */
+	public String getSourceSelectionCacheSpec() {
+		return this.sourceSelectionCacheSpec;
+	}
+
+	/**
 	 * Returns the class of the {@link FederationEvalStrategy} implementation that is used in the case of SAIL
 	 * implementations, e.g. for native stores.
-	 * 
+	 * <p>
 	 * Default {@link SailFederationEvalStrategy}
+	 * </p>
 	 * 
 	 * @return the evaluation strategy class
 	 */
@@ -431,10 +433,9 @@ public class FedXConfig {
 	/**
 	 * Returns the class of the {@link FederationEvalStrategy} implementation that is used in the case of SPARQL
 	 * implementations, e.g. SPARQL repository or remote repository.
-	 * 
-	 * Default {@link SparqlFederationEvalStrategyWithValues}
-	 * 
-	 * Alternative implementation: {@link SparqlFederationEvalStrategy}
+	 * <p>
+	 * Default {@link SparqlFederationEvalStrategy}
+	 * </p>
 	 * 
 	 * @return the evaluation strategy class
 	 */
@@ -449,14 +450,5 @@ public class FedXConfig {
 	 */
 	public boolean isDebugQueryPlan() {
 		return debugQueryPlan;
-	}
-
-	/**
-	 * Flag to enable/disable JMX monitoring. Default=false
-	 * 
-	 * @return whether JMX is enabled
-	 */
-	public boolean isEnableJMX() {
-		return enableJmx;
 	}
 }

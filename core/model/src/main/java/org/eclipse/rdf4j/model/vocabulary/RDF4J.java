@@ -36,7 +36,7 @@ public class RDF4J {
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
 	/**
-	 * Context identifier for persisting SHACL shape data in the {@link ShaclSail}.
+	 * Context identifier for persisting SHACL shape data in the {@link org.eclipse.rdf4j.sail.shacl.ShaclSail} .
 	 * <tt>http://rdf4j.org/schema/rdf4j#SHACLShapeGraph</tt>
 	 */
 	public final static IRI SHACL_SHAPE_GRAPH = SimpleValueFactory.getInstance()

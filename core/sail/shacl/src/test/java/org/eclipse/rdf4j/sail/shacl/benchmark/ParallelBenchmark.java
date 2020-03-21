@@ -220,8 +220,8 @@ public class ParallelBenchmark {
 						connection.add(statements);
 					} else {
 						// read operation instead of write
-						try (Stream<Statement> stream = Iterations
-								.stream(connection.getStatements(null, RDF.TYPE, null, false))) {
+						try (Stream<Statement> stream = connection.getStatements(null, RDF.TYPE, null, false)
+								.stream()) {
 							long count = stream.count();
 							blackhole.consume(count);
 						}

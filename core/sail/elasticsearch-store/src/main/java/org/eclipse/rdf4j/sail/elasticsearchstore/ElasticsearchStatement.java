@@ -11,16 +11,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementImpl;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchStatement extends SimpleStatement implements ElasticsearchId {
+class ElasticsearchStatement extends ExtensibleStatementImpl implements ElasticsearchId {
 
 	private String elasticsearchId;
 
-	ElasticsearchStatement(String elasticsearchId, Resource subject, IRI predicate, Value object) {
-		super(subject, predicate, object);
+	ElasticsearchStatement(String elasticsearchId, Resource subject, IRI predicate, Value object, boolean inferred) {
+		super(subject, predicate, object, inferred);
 		this.elasticsearchId = elasticsearchId;
 	}
 

@@ -55,7 +55,9 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  *
  * @author James Leigh
  * @author Arjohn Kampman
+ * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
+@Deprecated
 public class Federation implements Sail, Executor, FederatedServiceResolverClient, RepositoryResolverClient,
 		HttpClientDependent, SessionManagerDependent {
 

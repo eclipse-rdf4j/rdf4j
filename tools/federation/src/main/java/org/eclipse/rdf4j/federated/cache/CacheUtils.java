@@ -12,7 +12,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
-import org.eclipse.rdf4j.federated.cache.Cache.StatementSourceAssurance;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
@@ -34,27 +34,20 @@ public class CacheUtils {
 	 * @return
 	 * @throws OptimizationException
 	 */
-	private static boolean checkEndpointForResults(Cache cache, Endpoint endpoint, Resource subj, IRI pred, Value obj,
-			QueryInfo queryInfo)
+	private static boolean checkEndpointForResults(SourceSelectionCache cache, Endpoint endpoint, Resource subj,
+			IRI pred, Value obj, QueryInfo queryInfo)
 			throws OptimizationException {
 		try {
 			TripleSource t = endpoint.getTripleSource();
 			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo);
 
-			CacheEntry entry = createCacheEntry(endpoint, hasResults);
-			cache.updateEntry(new SubQuery(subj, pred, obj), entry);
+			cache.updateInformation(new SubQuery(subj, pred, obj), endpoint, hasResults);
 
 			return hasResults;
 		} catch (Exception e) {
 			throw new OptimizationException(
 					"Error checking results for endpoint " + endpoint.getId() + ": " + e.getMessage(), e);
 		}
-	}
-
-	public static CacheEntry createCacheEntry(Endpoint e, boolean canProvideStatements) {
-		CacheEntryImpl c = new CacheEntryImpl();
-		c.add(new EndpointEntry(e.getId(), canProvideStatements));
-		return c;
 	}
 
 	/**
@@ -68,15 +61,15 @@ public class CacheUtils {
 	 * @param obj
 	 * @return whether some endpoint can provide results
 	 */
-	public static boolean checkCacheUpdateCache(Cache cache, List<Endpoint> endpoints, Resource subj, IRI pred,
+	public static boolean checkCacheUpdateCache(SourceSelectionCache cache, List<Endpoint> endpoints, Resource subj,
+			IRI pred,
 			Value obj, QueryInfo queryInfo) {
 
 		SubQuery q = new SubQuery(subj, pred, obj);
 
 		for (Endpoint e : endpoints) {
-			StatementSourceAssurance a = cache.canProvideStatements(q, e);
-			if (a == StatementSourceAssurance.HAS_LOCAL_STATEMENTS
-					|| a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS)
+			StatementSourceAssurance a = cache.getAssurance(q, e);
+			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS)
 				return true;
 			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
 					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo))
@@ -97,18 +90,17 @@ public class CacheUtils {
 	 * 
 	 * @return the list of relevant statement sources
 	 */
-	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(Cache cache, List<Endpoint> endpoints,
+	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(SourceSelectionCache cache,
+			List<Endpoint> endpoints,
 			Resource subj, IRI pred, Value obj, QueryInfo queryInfo) {
 
 		SubQuery q = new SubQuery(subj, pred, obj);
 		List<StatementSource> sources = new ArrayList<>(endpoints.size());
 
 		for (Endpoint e : endpoints) {
-			StatementSourceAssurance a = cache.canProvideStatements(q, e);
+			StatementSourceAssurance a = cache.getAssurance(q, e);
 
-			if (a == StatementSourceAssurance.HAS_LOCAL_STATEMENTS) {
-				sources.add(new StatementSource(e.getId(), StatementSourceType.LOCAL));
-			} else if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
+			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
 				sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));
 			} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
 

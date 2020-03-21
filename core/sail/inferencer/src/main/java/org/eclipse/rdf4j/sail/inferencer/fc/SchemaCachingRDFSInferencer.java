@@ -225,8 +225,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 				try (RepositoryConnection schemaConnection = schema.getConnection()) {
 					schemaConnection.begin();
-					try (Stream<Statement> stream = Iterations
-							.stream(schemaConnection.getStatements(null, null, null))) {
+					try (Stream<Statement> stream = schemaConnection.getStatements(null, null, null).stream()) {
 						tboxStatments = stream
 								.peek(conn::processForSchemaCache)
 								.collect(Collectors.toList());
@@ -266,7 +265,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 *
 	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
 	 * @param store                 Base sail for storing data.
-	 * @return
+	 * @return inferencer
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
 			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
@@ -280,8 +279,8 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 *
 	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
 	 * @param store                 Base sail for storing data.
-	 * @param useAllRdfsRules       Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
-	 * @return
+	 * @param useAllRdfsRules       Use all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @return inferencer
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
 			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,

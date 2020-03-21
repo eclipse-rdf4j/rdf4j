@@ -1,60 +1,52 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-
-  <modelVersion>4.0.0</modelVersion>
-
-  <parent>
-    <groupId>org.eclipse.rdf4j</groupId>
-    <artifactId>rdf4j</artifactId>
-    <version>3.1.0-SNAPSHOT</version>
-  </parent>
-
-  <artifactId>rdf4j-compliance</artifactId>
-  <packaging>pom</packaging>
-
-  <modules>
-    <module>repository</module>
-    <module>rio</module>
-    <module>model</module>
-    <module>serql</module>
-    <module>sparql</module>
-    <module>shacl</module>
-    <module>lucene</module>
-    <module>solr</module>
-    <module>elasticsearch</module>
-    <module>geosparql</module>
-  </modules>
-
-  <name>RDF4J Compliance tests</name>
-  <description>Eclipse RDF4J compliance and integration tests</description>
-
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>${project.groupId}</groupId>
-        <artifactId>rdf4j-rio-testsuite</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
-
-  <profiles>
-    <profile>
-      <id>ossrh</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.sonatype.plugins</groupId>
-            <artifactId>nexus-staging-maven-plugin</artifactId>
-            <version>1.6.8</version>
-            <configuration>
-              <!-- we do not want to deploy the compliance modules to Sonatype -->
-              <skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.eclipse.rdf4j</groupId>
+		<artifactId>rdf4j</artifactId>
+		<version>3.2.0-SNAPSHOT</version>
+	</parent>
+	<artifactId>rdf4j-compliance</artifactId>
+	<packaging>pom</packaging>
+	<modules>
+		<module>repository</module>
+		<module>rio</module>
+		<module>model</module>
+		<module>serql</module>
+		<module>sparql</module>
+		<module>shacl</module>
+		<module>lucene</module>
+		<module>solr</module>
+		<module>elasticsearch</module>
+		<module>geosparql</module>
+	</modules>
+	<name>RDF4J Compliance tests</name>
+	<description>Eclipse RDF4J compliance and integration tests</description>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>${project.groupId}</groupId>
+				<artifactId>rdf4j-rio-testsuite</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+	<profiles>
+		<profile>
+			<id>ossrh</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.sonatype.plugins</groupId>
+						<artifactId>nexus-staging-maven-plugin</artifactId>
+						<version>1.6.8</version>
+						<configuration>
+							<!-- we do not want to deploy the compliance modules to Sonatype -->
+							<skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

@@ -25,6 +25,10 @@ jobs:
     - name: Verify formatting
       run: mvn -B formatter:validate
     - name: Build
-      run: mvn -B clean install -DskipTests
+      run: mvn -B clean install -DskipTests  
     - name: Run tests
       run: mvn -B verify -Pcompliance --file pom.xml
+    - name: Print test failures
+      if: failure()
+      run: ./printTestResults.sh
+    

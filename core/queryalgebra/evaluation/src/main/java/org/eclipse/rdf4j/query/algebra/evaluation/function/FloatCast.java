@@ -8,7 +8,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:float</tt>.
+ * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
+ * <tt>xsd:float</tt>.
  * 
  * @author Arjohn Kampman
  * @deprecated use {@link org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.FloatCast} instead.

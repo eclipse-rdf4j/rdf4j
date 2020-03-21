@@ -1,0 +1,23 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "person"
+      NUnion
+         Extension
+            ExtensionElem (nameOut)
+               Var (name=name)
+            EmptyNJoin
+               ExclusiveStatement
+                  Var (name=person)
+                  Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
+                  Var (name=name)
+                  StatementSource (id=endpoint1, type=REMOTE)
+               EmptyStatementPattern
+                  Var (name=person)
+                  Var (name=_const_4240a169_uri, value=urn:doesNotExistProp, anonymous)
+                  Var (name=obj)
+         ExclusiveStatement
+            Var (name=person)
+            Var (name=_const_ea9562d5_uri, value=http://xmlns.com/foaf/0.1/interest, anonymous)
+            Var (name=o)
+            StatementSource (id=endpoint2, type=REMOTE)

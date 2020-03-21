@@ -1,60 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>org.eclipse.rdf4j</groupId>
-        <artifactId>rdf4j</artifactId>
-	<version>3.1.0-SNAPSHOT</version>
-    </parent>
-
-    <artifactId>rdf4j-core</artifactId>
-    <packaging>pom</packaging>
-
-    <modules>
-        <module>util</module>
-        <module>model</module>
-        <module>sparqlbuilder</module>
-        <module>rio</module>
-        <module>queryresultio</module>
-        <module>query</module>
-        <module>queryalgebra</module>
-        <module>queryparser</module>
-        <module>http</module>
-        <module>queryrender</module>
-        <module>repository</module>
-        <module>sail</module>
-        <module>spin</module>
-        <module>client</module>
-        <module>storage</module>
-    </modules>
-
-    <name>RDF4J Core</name>
-    <description>Core modules for RDF4J</description>
-
-    <dependencies>
-        <!-- shared test dependencies -->
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.eclipse.rdf4j</groupId>
+		<artifactId>rdf4j</artifactId>
+		<version>3.2.0-SNAPSHOT</version>
+	</parent>
+	<artifactId>rdf4j-core</artifactId>
+	<packaging>pom</packaging>
+	<modules>
+		<module>util</module>
+		<module>model</module>
+		<module>sparqlbuilder</module>
+		<module>rio</module>
+		<module>queryresultio</module>
+		<module>query</module>
+		<module>queryalgebra</module>
+		<module>queryparser</module>
+		<module>http</module>
+		<module>queryrender</module>
+		<module>repository</module>
+		<module>sail</module>
+		<module>spin</module>
+		<module>client</module>
+		<module>storage</module>
+	</modules>
+	<name>RDF4J Core</name>
+	<description>Core modules for RDF4J</description>
+	<dependencies>
+		<!-- shared test dependencies -->
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-classic</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
 </project>

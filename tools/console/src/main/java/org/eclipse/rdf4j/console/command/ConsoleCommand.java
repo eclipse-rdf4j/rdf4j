@@ -62,7 +62,7 @@ public abstract class ConsoleCommand implements Command, Help {
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
-	 * @return
+	 * @return help string
 	 */
 	@Override
 	public String getHelpShort() {

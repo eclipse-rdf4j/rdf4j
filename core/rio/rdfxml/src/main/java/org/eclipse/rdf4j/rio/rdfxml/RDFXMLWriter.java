@@ -43,11 +43,11 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected ParsedIRI baseIRI;
 	protected Writer writer;
 	protected String defaultNamespace;
-	protected boolean writingStarted;
-	protected boolean headerWritten;
-	protected Resource lastWrittenSubject;
-	protected char quote;
-	protected boolean entityQuote;
+	protected boolean writingStarted = false;
+	protected boolean headerWritten = false;
+	protected Resource lastWrittenSubject = null;
+	protected char quote = '"';
+	protected boolean entityQuote = false;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -65,7 +65,10 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
+		super(out);
+		this.baseIRI = baseIRI;
+		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+		namespaceTable = new LinkedHashMap<>();
 	}
 
 	/**
@@ -87,11 +90,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		this.baseIRI = baseIRI;
 		this.writer = writer;
 		namespaceTable = new LinkedHashMap<>();
-		writingStarted = false;
-		headerWritten = false;
-		lastWrittenSubject = null;
-		quote = '"';
-		entityQuote = false;
 	}
 
 	@Override

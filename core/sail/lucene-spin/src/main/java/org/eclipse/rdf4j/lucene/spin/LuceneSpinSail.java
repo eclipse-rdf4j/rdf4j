@@ -158,7 +158,8 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * @return @throws SailException
+	 * @return sail connection
+	 * @throws SailException
 	 */
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {

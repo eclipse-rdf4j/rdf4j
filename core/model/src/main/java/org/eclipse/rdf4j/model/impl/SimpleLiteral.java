@@ -83,7 +83,7 @@ public class SimpleLiteral implements Literal {
 	}
 
 	/**
-	 * Creates a new datyped literal with the supplied label and datatype.
+	 * Creates a new datatyped literal with the supplied label and datatype.
 	 * 
 	 * @param label    The label for the literal, must not be <tt>null</tt>.
 	 * @param datatype The datatype for the literal.
@@ -179,7 +179,7 @@ public class SimpleLiteral implements Literal {
 	 * Returns the label of the literal with its language or datatype. Note that this method does not escape the quoted
 	 * label.
 	 *
-	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(Literal)
+	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(org.eclipse.rdf4j.model.Literal)
 	 */
 	@Override
 	public String toString() {

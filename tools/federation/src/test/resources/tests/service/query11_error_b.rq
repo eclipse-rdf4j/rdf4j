@@ -1,0 +1,13 @@
+PREFIX ns1: <http://namespace1.org/>
+PREFIX ns4: <http://namespace4.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+
+SELECT ?person ?name WHERE {
+	?author a ns4:Author .
+	?author owl:sameAs ?person .
+	SERVICE <http://localhost:18080/repositories/endpoint1> {
+ 		?person foaf:name ?name .
+ 	}
+}

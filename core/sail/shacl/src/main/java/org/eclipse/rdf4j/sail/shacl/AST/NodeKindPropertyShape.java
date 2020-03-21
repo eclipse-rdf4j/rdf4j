@@ -116,6 +116,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		return "NodeKindPropertyShape{" +
 				"nodeKind=" + nodeKind +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

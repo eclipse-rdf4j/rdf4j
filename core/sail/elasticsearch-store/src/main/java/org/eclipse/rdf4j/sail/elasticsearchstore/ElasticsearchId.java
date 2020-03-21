@@ -7,9 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-interface ElasticsearchId {
+interface ElasticsearchId extends ExtensibleStatement {
 	String getElasticsearchId();
 }

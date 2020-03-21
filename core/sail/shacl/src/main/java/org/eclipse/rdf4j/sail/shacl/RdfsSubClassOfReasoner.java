@@ -153,8 +153,8 @@ public class RdfsSubClassOfReasoner {
 
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
-		try (Stream<? extends Statement> stream = Iterations
-				.stream(shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false))) {
+		try (Stream<? extends Statement> stream = shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false)
+				.stream()) {
 			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
 		}
 

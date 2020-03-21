@@ -34,6 +34,12 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+/**
+ * Tests on behavior of SERIALIZABLE transactions.
+ * 
+ * @author jeen
+ *
+ */
 public class SerializableTest {
 
 	@BeforeClass
@@ -182,7 +188,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 	}
@@ -250,7 +257,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			assertEquals(0, size(a, null, RDF.TYPE, PAINTING, false));
 		} finally {
 			b.rollback();
@@ -278,7 +286,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(0, size(a, null, RDF.TYPE, PAINTING, false));
@@ -352,7 +361,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(7, size(a, null, null, null, false));
@@ -379,7 +389,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(7, size(a, null, null, null, false));
@@ -408,7 +419,8 @@ public class SerializableTest {
 			assertEquals(10, size(a, null, null, null, false));
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			assertEquals(7, size(a, null, null, null, false));
 			b.rollback();
 		}
@@ -435,7 +447,8 @@ public class SerializableTest {
 			assertEquals(10, size(a, null, null, null, false));
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			assertEquals(7, size(a, null, null, null, false));
 			b.rollback();
 		}
@@ -467,7 +480,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(9, size(a, null, null, null, false));
@@ -497,7 +511,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(9, size(a, null, null, null, false));
@@ -532,7 +547,8 @@ public class SerializableTest {
 			assertEquals(17, size(a, null, null, null, false));
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			assertEquals(13, size(a, null, null, null, false));
 			b.rollback();
 		}
@@ -566,7 +582,8 @@ public class SerializableTest {
 			assertEquals(17, size(a, null, null, null, false));
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			assertEquals(13, size(a, null, null, null, false));
 			b.rollback();
 		}
@@ -601,7 +618,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(13, size(a, null, null, null, false));
@@ -636,7 +654,8 @@ public class SerializableTest {
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();
-			assertTrue(e.getCause() instanceof SailConflictException);
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
 			b.rollback();
 		}
 		assertEquals(13, size(a, null, null, null, false));

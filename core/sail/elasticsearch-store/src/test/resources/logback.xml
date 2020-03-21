@@ -1,21 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <configuration scan="true">
 	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder>
 			<charset>utf-8</charset>
-			<Pattern>
-				%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
-			</Pattern>
+			<Pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</Pattern>
 		</encoder>
 	</appender>
-
 	<root level="INFO">
 		<appender-ref ref="CONSOLE"/>
 	</root>
-
-    <logger name="org.eclipse.rdf4j.sail.extensiblestore" level="INFO"/>
-
-
-
+	<logger name="org.eclipse.rdf4j.sail.extensiblestore" level="INFO"/>
 </configuration>

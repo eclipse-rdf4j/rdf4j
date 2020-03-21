@@ -106,6 +106,16 @@ To reformat your code before committing, run:
 mvn formatter:format
 ```
 
+### XML indentation
+
+We use a single tab as the indentation in all XML files (including the `pom.xml` files). This is not enforced by the build process, but we ask you to adjust your editors accordingly. If you wish, you can use the following command to check your xml files:
+
+     mvn xml-format:xml-check
+     
+To reformat xml files in bulk, run:
+
+     mvn xml-format:xml-format
+     
 ## Workflow 
 
 The short version for contributors: start from the `master` branch, and create a new, separate branch for every bugfix, improvement, or new feature. We recommend you use `GH-<issuenumber>-short-description` as the branch name, where `<issuenumber>` is the number of the Github issue you're fixing (without the leading `#`), and `short-description` is a few keywords that describe the issue.

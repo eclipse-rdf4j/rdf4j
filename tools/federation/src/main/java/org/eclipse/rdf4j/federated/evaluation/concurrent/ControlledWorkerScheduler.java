@@ -38,14 +38,14 @@ import org.slf4j.LoggerFactory;
  */
 public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
-	protected static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);
+	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);
 
-	protected ExecutorService executor;
+	private final ExecutorService executor;
 
-	protected LinkedBlockingQueue<Runnable> _taskQueue = new LinkedBlockingQueue<>();
+	private final LinkedBlockingQueue<Runnable> _taskQueue = new LinkedBlockingQueue<>();
 
-	protected int nWorkers;
-	protected String name;
+	private final int nWorkers;
+	private final String name;
 
 	/**
 	 * Construct a new instance with 20 workers.
@@ -63,7 +63,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	public ControlledWorkerScheduler(int nWorkers, String name) {
 		this.nWorkers = nWorkers;
 		this.name = name;
-		initWorkerThreads();
+		this.executor = createExecutorService();
 	}
 
 	/**
@@ -106,19 +106,16 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		return nWorkers;
 	}
 
-	public int getNumberOfIdleWorkers() {
-		// TODO
-		return -1;
-	}
-
 	public int getNumberOfTasks() {
 		return _taskQueue.size();
 	}
 
-	protected void initWorkerThreads() {
+	private ExecutorService createExecutorService() {
 
-		executor = new ThreadPoolExecutor(Math.min(10, nWorkers / 2), nWorkers, 30L, TimeUnit.SECONDS, _taskQueue,
+		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,
 				new NamingThreadFactory(name));
+		executor.allowCoreThreadTimeOut(true);
+		return executor;
 	}
 
 	@Override
@@ -182,13 +179,11 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 		throw new RuntimeException("Unsupported Operation for this scheduler.");
 	}
 
-	protected class WorkerRunnable implements Runnable {
+	class WorkerRunnable implements Runnable {
 
-		protected final ParallelTask<T> task;
+		private final ParallelTask<T> task;
 
-		protected boolean inTask = false;
-
-		protected boolean aborted = false;
+		private boolean aborted = false;
 
 		public WorkerRunnable(ParallelTask<T> task) {
 			super();
@@ -204,12 +199,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 			ParallelExecutor<T> taskControl = task.getControl();
 
 			try {
-				inTask = true;
 				if (log.isTraceEnabled()) {
 					log.trace("Performing task " + task.toString() + " in " + Thread.currentThread().getName());
 				}
 				CloseableIteration<T, QueryEvaluationException> res = task.performTask();
-				inTask = false;
 				taskControl.addResult(res);
 
 				taskControl.done(); // in most cases this is a no-op

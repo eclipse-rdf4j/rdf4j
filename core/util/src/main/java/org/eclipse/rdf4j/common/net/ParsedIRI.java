@@ -136,14 +136,12 @@ public class ParsedIRI implements Cloneable, Serializable {
 		for (Object set : sets) {
 			if (set instanceof int[][]) {
 				int[][] ar = (int[][]) set;
-				for (int i = 0; i < ar.length; i++) {
-					list.add(ar[i]);
-				}
+				list.addAll(Arrays.asList(ar));
 			} else if (set instanceof Character) {
 				char chr = (Character) set;
 				list.add(new int[] { chr, chr });
 			} else {
-				assert false;
+				throw new IllegalStateException();
 			}
 		}
 		int[][] dest = list.toArray(new int[][] {});
@@ -153,8 +151,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static int[] flatten(int[]... arrays) {
 		List<Integer> list = new ArrayList<>();
-		for (int i = 0; i < arrays.length; i++) {
-			int[] str = arrays[i];
+		for (int[] str : arrays) {
 			if (str.length == 1) {
 				list.add(str[0]); // character
 			} else if (str.length == 2) {
@@ -162,7 +159,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 					list.add(chr); // range
 				}
 			} else {
-				assert false;
+				throw new IllegalStateException();
 			}
 		}
 		int[] chars = new int[list.size()];
@@ -178,18 +175,18 @@ public class ParsedIRI implements Cloneable, Serializable {
 		String[] result = new String[unencoded.length];
 		for (int i = 0; i < unencoded.length; i++) {
 			String ns = new String(Character.toChars(unencoded[i]));
-			ByteBuffer bb = null;
+			ByteBuffer bb;
 			try {
 				bb = encoder.encode(CharBuffer.wrap(ns));
 			} catch (CharacterCodingException x) {
-				assert false;
+				throw new IllegalStateException();
 			}
 			StringBuilder sb = new StringBuilder();
 			while (bb.hasRemaining()) {
 				byte b = (byte) (bb.get() & 0xff);
 				sb.append('%');
 				sb.appendCodePoint(HEXDIG[(b >> 4) & 0x0f]);
-				sb.appendCodePoint(HEXDIG[(b >> 0) & 0x0f]);
+				sb.appendCodePoint(HEXDIG[(b) & 0x0f]);
 			}
 			result[i] = sb.toString();
 		}
@@ -237,8 +234,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 					}
 				}
 			} catch (UnsupportedEncodingException ex) {
-				assert false;
-				return null;
+				throw new IllegalStateException(ex);
 			}
 		}
 	}
@@ -513,7 +509,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * <p>
 	 * <b>Internationalized Domain Name Normalization</b> of the host component to Unicode.
 	 *
-	 * @return
+	 * @return normalized IRI
 	 */
 	public ParsedIRI normalize() {
 		String _scheme = toLowerCase(scheme);
@@ -656,7 +652,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 
-		if (normalize || path.indexOf("/./") >= 0 || path.indexOf("/../") >= 0) {
+		if (normalize || path.contains("/./") || path.contains("/../")) {
 			path = pathSegmentNormalization(path);
 		}
 
@@ -846,7 +842,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return sb.toString();
 	}
 
-	private String parseScheme() throws URISyntaxException {
+	private String parseScheme() {
 		if (isMember(ALPHA, peek())) {
 			int start = pos;
 			String scheme = parseMember(schar, ':');
@@ -887,7 +883,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			URISyntaxException parsingException = null;
 			int startPos = pos;
 			for (int i = 0; i < 4; i++) {
-				int octet = -1;
+				int octet;
 				try {
 					octet = Integer.parseInt(parseMember(DIGIT, '.'));
 				} catch (NumberFormatException e) {
@@ -974,7 +970,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return iri.substring(start, pos);
 	}
 
-	private String parseMember(int[][] set, int end) throws URISyntaxException {
+	private String parseMember(int[][] set, int end) {
 		int start = pos;
 		while (true) {
 			int chr = peek();
@@ -1086,7 +1082,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		if ("".equals(path)) {
 			return isScheme("http") || isScheme("https") ? "/" : "";
 		} else if (isScheme("file")) {
-			if (path.indexOf("%5C") >= 0) {
+			if (path.contains("%5C")) {
 				// replace "/c:\path\to\file" with "/c:/path/to/file"
 				return normalizePath(path.replace("%5C", "/"));
 			} else if (!path.startsWith("/") && isMember(ALPHA, path.codePointAt(0))
@@ -1109,10 +1105,10 @@ public class ParsedIRI implements Cloneable, Serializable {
 		String[] encodings = listPctEncodings(path);
 		StringBuilder sb = new StringBuilder(path);
 		int pos = 0;
-		for (int i = 0; i < encodings.length; i++) {
-			int idx = sb.indexOf(encodings[i], pos);
-			String decoded = normalizePctEncoding(encodings[i]);
-			sb.replace(idx, idx + encodings[i].length(), decoded);
+		for (String encoding : encodings) {
+			int idx = sb.indexOf(encoding, pos);
+			String decoded = normalizePctEncoding(encoding);
+			sb.replace(idx, idx + encoding.length(), decoded);
 			pos += decoded.length();
 		}
 		return Normalizer.normalize(sb, Normalizer.Form.NFC);
@@ -1136,7 +1132,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 			list.add(path.substring(start, pct + 3));
 		}
-		return list.toArray(new String[list.size()]);
+		return list.toArray(new String[0]);
 	}
 
 	private String normalizePctEncoding(String encoded) {
@@ -1166,8 +1162,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		try {
 			return URLDecoder.decode(encoded, "UTF-8");
 		} catch (UnsupportedEncodingException e) {
-			assert false;
-			return encoded;
+			throw new IllegalStateException(e);
 		}
 	}
 
@@ -1175,8 +1170,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		try {
 			return URLEncoder.encode(new String(Character.toChars(chr)), "UTF-8");
 		} catch (UnsupportedEncodingException e) {
-			assert false;
-			return new String(Character.toChars(chr));
+			throw new IllegalStateException(e);
 		}
 	}
 
@@ -1193,7 +1187,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 		// Remove any '.' segments:
 
 		_path = StringUtil.gsub("/./", "/", _path);
-
+		if (_path == null) {
+			return null;
+		}
 		if (_path.startsWith("./")) {
 			// Remove both characters
 			_path = _path.substring(2);
@@ -1204,7 +1200,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			_path = _path.substring(0, _path.length() - 1);
 		}
 
-		if (_path.indexOf("/../") == -1 && !_path.endsWith("/..")) {
+		if (!_path.contains("/../") && !_path.endsWith("/..")) {
 			// There are no '..' segments that can be removed. We're done and
 			// don't have to execute the time-consuming code following this
 			// if-statement

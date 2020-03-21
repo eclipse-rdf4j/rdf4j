@@ -177,10 +177,11 @@ public class MinCountBenchmarkPrefilled {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection
+				try (Stream<BindingSet> stream = connection
 						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <"
 								+ RDFS.LABEL + "> ?c})}")
-						.evaluate())) {
+						.evaluate()
+						.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

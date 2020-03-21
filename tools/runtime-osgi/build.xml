@@ -1,21 +1,19 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <project name="rdf4j" basedir=".">
 	<target name="enrich-artifact-with-provider-configuration-files">
 		<!-- Unzip the archive containing the provider-configuration files gathered from RDF4J's modules -->
-		<unzip src="${serviceresources.raw.jar}" dest="${serviceresources.raw.dir}" />
-		
+		<unzip src="${serviceresources.raw.jar}" dest="${serviceresources.raw.dir}"/>
 		<!-- Copy the provider-configurations files and remove duplicate entries inside each of them -->
 		<copy todir="${serviceresources.fixed.dir}">
-			<fileset id="serviceFiles" dir="${serviceresources.raw.dir}" includes="META-INF/services/*" />
+			<fileset id="serviceFiles" dir="${serviceresources.raw.dir}" includes="META-INF/services/*"/>
 			<filterchain>
-				<sortfilter />
-				<uniqfilter />
+				<sortfilter/>
+				<uniqfilter/>
 			</filterchain>
 		</copy>
-		
 		<!-- Add the fixed provider-configuration files to the main artifact of this project -->
 		<jar destfile="${jarToEnhance}" update="true">
-			<fileset dir="${serviceresources.fixed.dir}" />
+			<fileset dir="${serviceresources.fixed.dir}"/>
 		</jar>
 	</target>
 </project>

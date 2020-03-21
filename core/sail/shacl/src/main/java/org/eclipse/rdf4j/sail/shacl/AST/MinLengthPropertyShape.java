@@ -88,6 +88,7 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 		return "MinLengthPropertyShape{" +
 				"minLength=" + minLength +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

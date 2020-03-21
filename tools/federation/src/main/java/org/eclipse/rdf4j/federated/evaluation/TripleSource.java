@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
@@ -140,7 +141,7 @@ public interface TripleSource {
 	 * @param subj
 	 * @param pred
 	 * @param obj
-	 * @param includeInferred
+	 * @param queryInfo
 	 * @param contexts
 	 * @return whether the source can provide results
 	 * @throws RepositoryException
@@ -149,18 +150,20 @@ public interface TripleSource {
 			throws RepositoryException;
 
 	/**
-	 * Check if the repository can return results for the given {@link ExclusiveGroup}, i.e. a list of Statements
+	 * Check if the repository can return results for the given {@link ExclusiveTupleExpr}, e.g. for an
+	 * {@link ExclusiveGroup} with a list of Statements.
 	 * 
+	 * @param group
 	 * @param bindings
 	 * @return whether the repository can return results
 	 * @throws RepositoryException
 	 */
-	public boolean hasStatements(ExclusiveGroup group, BindingSet bindings)
+	public boolean hasStatements(ExclusiveTupleExpr expr, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * 
-	 * @return true if a prepared query is to be used preferrably, false otherwise
+	 * @return true if a prepared query is to be used preferably, false otherwise
 	 */
 	public boolean usePreparedQuery();
 

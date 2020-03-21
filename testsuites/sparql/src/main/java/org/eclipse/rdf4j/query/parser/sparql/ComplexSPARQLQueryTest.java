@@ -1114,6 +1114,93 @@ public abstract class ComplexSPARQLQueryTest {
 		}
 	}
 
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testMaxAggregateWithGroupEmptyResult() throws Exception {
+		String query = "select ?s (max(?o) as ?omax) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testMaxAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (max(?o) as ?omax) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.next()).isEmpty();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testMinAggregateWithGroupEmptyResult() throws Exception {
+		String query = "select ?s (min(?o) as ?omin) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testMinAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (min(?o) as ?omin) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.next()).isEmpty();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testSampleAggregateWithGroupEmptyResult() throws Exception {
+		String query = "select ?s (sample(?o) as ?osample) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testSampleAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (sample(?o) as ?osample) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.next()).isEmpty();
+		}
+	}
+
 	@Test
 	public void testSES2052If1() throws Exception {
 		loadTestData("/testdata-query/dataset-query.trig");
@@ -2171,8 +2258,11 @@ public abstract class ComplexSPARQLQueryTest {
 
 	}
 
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1018
+	 */
 	@Test
-	public void testRdf4j1018BindError() throws Exception {
+	public void testBindError() throws Exception {
 		StringBuilder ub = new StringBuilder();
 		ub.append("insert data { <urn:test:subj> <urn:test:pred> _:blank }");
 
@@ -2312,8 +2402,11 @@ public abstract class ComplexSPARQLQueryTest {
 		assertEquals("http://subj1", result.get(0).getValue("s").stringValue());
 	}
 
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1267
+	 */
 	@Test
-	public void testRdf4j1267Seconds() throws Exception {
+	public void testSeconds() throws Exception {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13\"^^xsd:dateTime) AS ?sec) { }";
 
@@ -2325,8 +2418,11 @@ public abstract class ComplexSPARQLQueryTest {
 		}
 	}
 
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1267
+	 */
 	@Test
-	public void testRdf4j1267SecondsMilliseconds() throws Exception {
+	public void testSecondsMilliseconds() throws Exception {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
 				+ "SELECT (SECONDS(\"2011-01-10T14:45:13.815-05:00\"^^xsd:dateTime) AS ?sec) { }";
 

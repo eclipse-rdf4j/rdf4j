@@ -52,7 +52,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * An implementation of RepositoryConnection that uses {@link FederationEvalStrategy} to evaluate provided queries.
- * Prior to evaluation various optimizations are performed, see {@link Optimizer} for further details.
+ * Prior to evaluation various optimizations are performed, see
+ * {@link org.eclipse.rdf4j.federated.optimizer.FedXOptimizer} for further details.
  * <p>
  * 
  * Since 4.0 FedX supports write operations using the supplied {@link WriteStrategy}, e.g. by writing to a designated
@@ -279,7 +280,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void removeNamespaceInternal(String prefix) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
+		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override
@@ -303,7 +304,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void setNamespaceInternal(String prefix, String name) throws SailException {
-		throw new UnsupportedOperationException("Not supported. the federation is readonly.");
+		// do not support this feature, but also do not throw an exception
 	}
 
 	@Override

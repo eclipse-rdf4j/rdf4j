@@ -16,8 +16,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.iterator.LazyMutableClosableIteration;
-import org.eclipse.rdf4j.federated.optimizer.JoinOrderOptimizer;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -48,7 +48,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 		// the total number of bindings
 		int totalBindingsLeft = 0;
 		int totalBindingsRight = 0;
-		Collection<String> rightFreeVars = JoinOrderOptimizer.getFreeVars(rightArg);
+		Collection<String> rightFreeVars = QueryAlgebraUtil.getFreeVars(rightArg);
 		Set<String> joinVars = getJoinVars();
 
 		// evaluate the right join argument

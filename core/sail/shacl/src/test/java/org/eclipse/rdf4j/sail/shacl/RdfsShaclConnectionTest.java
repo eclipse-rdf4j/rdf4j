@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -76,24 +75,24 @@ public class RdfsShaclConnectionTest {
 					connection,
 					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
-			try (Stream<? extends Statement> stream = Iterations
-					.stream(connection2.getStatements(aSubSub, RDF.TYPE, sup, true))) {
+			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
 				assertEquals(expected, collect);
 			}
 
-			try (Stream<? extends Statement> stream = Iterations
-					.stream(connection2.getStatements(aSubSub, RDF.TYPE, sub, true))) {
+			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sub, true)
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
 				assertEquals(expected, collect);
 			}
 
-			try (Stream<? extends Statement> stream = Iterations
-					.stream(connection2.getStatements(aSubSub, RDF.TYPE, subSub, true))) {
+			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, subSub, true)
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
@@ -125,8 +124,8 @@ public class RdfsShaclConnectionTest {
 					connection,
 					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
-			try (Stream<? extends Statement> stream = Iterations
-					.stream(connection2.getStatements(aSubSub, RDF.TYPE, sup, true))) {
+			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
+					.stream()) {
 				List<Statement> collect = stream.peek(System.out::println).collect(Collectors.toList());
 				assertEquals(new HashSet<>(collect).size(), collect.size());
 

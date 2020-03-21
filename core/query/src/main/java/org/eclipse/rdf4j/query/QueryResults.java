@@ -17,6 +17,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -31,10 +32,13 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
@@ -50,14 +54,14 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
  * Utility methods related to query results.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class QueryResults extends Iterations {
 
 	/**
 	 * Get a {@link Model} containing all elements obtained from the specified query result.
-	 * 
+	 *
 	 * @param iteration the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
 	 *                  {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
 	 *                  &lt;Statement&gt;}
@@ -65,52 +69,55 @@ public class QueryResults extends Iterations {
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
 			throws QueryEvaluationException {
-		Model model = new LinkedHashModel();
+		return asModel(iteration, new DynamicModelFactory());
+	}
+
+	/**
+	 * Get a {@link Model} containing all elements obtained from the specified query result.
+	 *
+	 * @param iteration    the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
+	 *                     {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
+	 *                     &lt;Statement&gt;}
+	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
+	 */
+	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration,
+			ModelFactory modelFactory)
+			throws QueryEvaluationException {
+		Model model = modelFactory.createEmptyModel();
 		addAll(iteration, model);
 		return model;
 	}
 
 	/**
 	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
-	 * 
+	 *
 	 * @param result
-	 * @return a single query result element.
+	 * @return a single query result element or null
 	 * @throws QueryEvaluationException
 	 */
 	public static Statement singleResult(GraphQueryResult result) throws QueryEvaluationException {
-		Statement singleResult = null;
-		try {
-			if (result.hasNext()) {
-				singleResult = result.next();
-			}
-		} finally {
-			result.close();
+		try (Stream<Statement> stream = result.stream()) {
+			return stream.findFirst().orElse(null);
 		}
-		return singleResult;
 	}
 
 	/**
 	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
-	 * 
+	 *
 	 * @param result
-	 * @return a single query result element.
+	 * @return a single query result element or null
 	 * @throws QueryEvaluationException
 	 */
 	public static BindingSet singleResult(TupleQueryResult result) throws QueryEvaluationException {
-		BindingSet singleResult = null;
-		try {
-			if (result.hasNext()) {
-				singleResult = result.next();
-			}
-		} finally {
-			result.close();
+		try (Stream<BindingSet> stream = result.stream()) {
+			return stream.findFirst().orElse(null);
 		}
-		return singleResult;
 	}
 
 	/**
 	 * Returns a {@link GraphQueryResult} that filters out any duplicate solutions from the supplied queryResult.
-	 * 
+	 *
 	 * @param queryResult a queryResult containing possible duplicate statements.
 	 * @return a {@link GraphQueryResult} with any duplicates filtered out.
 	 */
@@ -120,7 +127,7 @@ public class QueryResults extends Iterations {
 
 	/**
 	 * Returns a {@link TupleQueryResult} that filters out any duplicate solutions from the supplied queryResult.
-	 * 
+	 *
 	 * @param queryResult a queryResult containing possible duplicate solutions.
 	 * @return a {@link TupleQueryResult} with any duplicates filtered out.
 	 */
@@ -131,7 +138,7 @@ public class QueryResults extends Iterations {
 	/**
 	 * Returns a {@link TupleQueryResult} that returns at most the specified maximum number of solutions, starting at
 	 * the supplied offset.
-	 * 
+	 *
 	 * @param queryResult a query result possibly containing more solutions than the specified maximum.
 	 * @param limit       the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
 	 * @param offset      the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
@@ -157,7 +164,7 @@ public class QueryResults extends Iterations {
 	/**
 	 * Returns a {@link GraphQueryResult} that returns at most the specified maximum number of solutions, starting at
 	 * the supplied offset.
-	 * 
+	 *
 	 * @param queryResult a query result possibly containing more solutions than the specified maximum.
 	 * @param limit       the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
 	 * @param offset      the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
@@ -185,7 +192,7 @@ public class QueryResults extends Iterations {
 	 * background.<br>
 	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the resulting
 	 * GraphQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
-	 * 
+	 *
 	 * @param in      The {@link InputStream} containing the RDF document.
 	 * @param baseURI The base URI for the RDF document.
 	 * @param format  The {@link RDFFormat} of the RDF document.
@@ -201,7 +208,7 @@ public class QueryResults extends Iterations {
 	 * background.<br>
 	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the resulting
 	 * GraphQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
-	 * 
+	 *
 	 * @param in      The {@link InputStream} containing the RDF document.
 	 * @param baseURI The base URI for the RDF document.
 	 * @param parser  The {@link RDFParser}.
@@ -228,13 +235,14 @@ public class QueryResults extends Iterations {
 	 * The {@link TupleQueryResult#close()} method will always be called before this method returns. <br>
 	 * If there is an exception generated by the TupleQueryResult, {@link QueryResultHandler#endQueryResult()} will not
 	 * be called.
-	 * 
+	 *
 	 * @param tqr     The query result to report.
 	 * @param handler The handler to report the query result to.
 	 * @throws TupleQueryResultHandlerException If such an exception is thrown by the used query result writer.
 	 */
 	public static void report(TupleQueryResult tqr, QueryResultHandler handler)
 			throws TupleQueryResultHandlerException, QueryEvaluationException {
+
 		try {
 			handler.startQueryResult(tqr.getBindingNames());
 
@@ -252,7 +260,7 @@ public class QueryResults extends Iterations {
 	 * Reports a graph query result to an {@link RDFHandler}. <br>
 	 * The {@link GraphQueryResult#close()} method will always be called before this method returns.<br>
 	 * If there is an exception generated by the GraphQueryResult, {@link RDFHandler#endRDF()} will not be called.
-	 * 
+	 *
 	 * @param gqr        The query result to report.
 	 * @param rdfHandler The handler to report the query result to.
 	 * @throws RDFHandlerException      If such an exception is thrown by the used RDF writer.
@@ -284,7 +292,7 @@ public class QueryResults extends Iterations {
 	 * contain the same set of {@link BindingSet}s and have the same headers. Blank nodes identifiers are not relevant
 	 * for equality, they are matched by trying to find compatible mappings between BindingSets. Note that the method
 	 * consumes both query results fully.
-	 * 
+	 *
 	 * @param tqr1 the first {@link TupleQueryResult} to compare.
 	 * @param tqr2 the second {@link TupleQueryResult} to compare.
 	 * @return true if equal
@@ -317,12 +325,12 @@ public class QueryResults extends Iterations {
 	/**
 	 * Compares two graph query results and returns {@code true} if they are equal. Two graph query results are
 	 * considered equal if they are isomorphic graphs. Note that the method consumes both query results fully.
-	 * 
+	 *
 	 * @param result1 the first query result to compare
 	 * @param result2 the second query result to compare.
 	 * @return {@code true} if the supplied graph query results are isomorphic graphs, {@code false} otherwise.
 	 * @throws QueryEvaluationException
-	 * @see {@link Models#isomorphic(Iterable, Iterable)}
+	 * @see Models#isomorphic(Iterable, Iterable)
 	 */
 	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) throws QueryEvaluationException {
 		Set<? extends Statement> graph1 = Iterations.asSet(result1);
@@ -340,7 +348,7 @@ public class QueryResults extends Iterations {
 	 * A recursive method for finding a complete mapping between blank nodes in queryResult1 and blank nodes in
 	 * queryResult2. The algorithm does a depth-first search trying to establish a mapping for each blank node occurring
 	 * in queryResult1.
-	 * 
+	 *
 	 * @return true if a complete mapping has been found, false otherwise.
 	 */
 	private static boolean matchBindingSets(List<? extends BindingSet> queryResult1,
@@ -477,7 +485,7 @@ public class QueryResults extends Iterations {
 	/**
 	 * Check whether two {@link BindingSet}s are compatible.Two binding sets are compatible if they have equal values
 	 * for each binding name that occurs in both binding sets.
-	 * 
+	 *
 	 * @param bs1
 	 * @param bs2
 	 * @return true if compatible

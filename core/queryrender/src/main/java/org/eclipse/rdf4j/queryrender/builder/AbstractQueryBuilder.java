@@ -50,7 +50,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  * </p>
  * 
  * @author Michael Grove
- * @deprecated use {@link SparqlBuilder} instead.
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
 @Deprecated
 public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder<T> {

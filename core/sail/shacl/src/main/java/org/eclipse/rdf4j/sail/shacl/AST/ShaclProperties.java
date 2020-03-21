@@ -7,6 +7,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
@@ -48,7 +50,7 @@ public class ShaclProperties {
 	String flags = "";
 
 	Set<Resource> targetClass = new HashSet<>(0);
-	Set<Value> targetNode = new HashSet<>(0);
+	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
 	Set<IRI> targetSubjectsOf = new HashSet<>(0);
 	Set<IRI> targetObjectsOf = new HashSet<>(0);
 
@@ -56,9 +58,12 @@ public class ShaclProperties {
 
 	boolean uniqueLang = false;
 
+	public ShaclProperties() {
+	}
+
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(propertyShapeId, null, null))) {
+		try (Stream<Statement> stream = connection.getStatements(propertyShapeId, null, null).stream()) {
 			stream.forEach(statement -> {
 				String predicate = statement.getPredicate().toString();
 				Value object = statement.getObject();
@@ -192,4 +197,103 @@ public class ShaclProperties {
 
 	}
 
+	public List<Resource> getClazz() {
+		return clazz;
+	}
+
+	public List<Resource> getOr() {
+		return or;
+	}
+
+	public List<Resource> getAnd() {
+		return and;
+	}
+
+	public List<Resource> getNot() {
+		return not;
+	}
+
+	public Long getMinCount() {
+		return minCount;
+	}
+
+	public Long getMaxCount() {
+		return maxCount;
+	}
+
+	public Resource getDatatype() {
+		return datatype;
+	}
+
+	public Resource getIn() {
+		return in;
+	}
+
+	public Long getMinLength() {
+		return minLength;
+	}
+
+	public Long getMaxLength() {
+		return maxLength;
+	}
+
+	public Resource getLanguageIn() {
+		return languageIn;
+	}
+
+	public Resource getNodeKind() {
+		return nodeKind;
+	}
+
+	public Resource getPath() {
+		return path;
+	}
+
+	public Literal getMinExclusive() {
+		return minExclusive;
+	}
+
+	public Literal getMaxExclusive() {
+		return maxExclusive;
+	}
+
+	public Literal getMinInclusive() {
+		return minInclusive;
+	}
+
+	public Literal getMaxInclusive() {
+		return maxInclusive;
+	}
+
+	public List<String> getPattern() {
+		return pattern;
+	}
+
+	public String getFlags() {
+		return flags;
+	}
+
+	public Set<Resource> getTargetClass() {
+		return targetClass;
+	}
+
+	public TreeSet<Value> getTargetNode() {
+		return targetNode;
+	}
+
+	public Set<IRI> getTargetSubjectsOf() {
+		return targetSubjectsOf;
+	}
+
+	public Set<IRI> getTargetObjectsOf() {
+		return targetObjectsOf;
+	}
+
+	public boolean isDeactivated() {
+		return deactivated;
+	}
+
+	public boolean isUniqueLang() {
+		return uniqueLang;
+	}
 }

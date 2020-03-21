@@ -87,6 +87,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	/**
 	 * Gets the value of this expression.
 	 * 
+	 * @param expr
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
 	 */
@@ -96,6 +97,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	/**
 	 * Evaluates the boolean expression on the supplied TripleSource object.
 	 * 
+	 * @param expr
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return The result of the evaluation.
 	 * @throws ValueExprEvaluationException If the value expression could not be evaluated, for example when comparing

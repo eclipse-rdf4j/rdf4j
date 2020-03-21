@@ -15,9 +15,12 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.util.Repositories;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class BasicTests extends SPARQLBaseTest {
@@ -82,6 +85,14 @@ public class BasicTests extends SPARQLBaseTest {
 		/* test query with values clause */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_values.rq", "/tests/basic/query_values.srx", false);
+	}
+
+	@Test
+	public void testBindClause() throws Exception {
+
+		/* test query with bind clause */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		execute("/tests/basic/query_bind.rq", "/tests/basic/query_bind.srx", false);
 	}
 
 	@Test
@@ -179,5 +190,21 @@ public class BasicTests extends SPARQLBaseTest {
 				throw new Exception("Expected single result due to LIMIT 1");
 			}
 		}
+	}
+
+	@Test
+	public void testBeginTransaction() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		Assertions.assertEquals(
+				1, Repositories
+						.tupleQueryNoTransaction(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
+								it -> QueryResults.asList(it))
+						.size());
+
+		Assertions.assertEquals(1,
+				Repositories.tupleQuery(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
+						it -> QueryResults.asList(it)).size());
 	}
 }

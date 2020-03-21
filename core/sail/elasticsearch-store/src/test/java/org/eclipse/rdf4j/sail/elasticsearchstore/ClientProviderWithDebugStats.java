@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.eclipse.rdf4j.sail.SailException;
@@ -14,16 +22,9 @@ public class ClientProviderWithDebugStats implements ClientProvider {
 
 	transient private ClientWithStats client;
 	private transient boolean closed = false;
-	private String hostname;
-	private int port;
-	private String clusterName;
 	private long getClientCalls;
 
 	public ClientProviderWithDebugStats(String hostname, int port, String clusterName) {
-		this.hostname = hostname;
-		this.port = port;
-		this.clusterName = clusterName;
-
 		try {
 			Settings settings = Settings.builder().put("cluster.name", clusterName).build();
 			TransportClient client = new PreBuiltTransportClient(settings);

@@ -769,6 +769,26 @@ public class ElasticsearchStoreTransactionsTest {
 		}
 	}
 
+	@Test
+	public void testClear() {
+		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
+		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
+
+			BNode context = vf.createBNode();
+
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, context);
+			connection.commit();
+
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+
+		}
+
+	}
+
 	private Set<Statement> asSet(Statement... statements) {
 		Set<Statement> set = new TreeSet<>(Comparator.comparing(Object::toString));
 		set.addAll(Arrays.asList(statements));

@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -35,15 +36,19 @@ class ExtensibleSailSource implements SailSource {
 	private final DataStructureInterface dataStructure;
 	private final NamespaceStoreInterface namespaceStore;
 	private final long transactionId;
+	private final boolean inferred;
+	private final ExtensibleStatementHelper extensibleStatementHelper;
 
 	private final AtomicLong transactionCounter;
 
 	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore,
-			AtomicLong transactionCounter) {
+			boolean inferred, ExtensibleStatementHelper extensibleStatementHelper, AtomicLong transactionCounter) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
 		this.transactionCounter = transactionCounter;
 		this.transactionId = transactionCounter.incrementAndGet();
+		this.inferred = inferred;
+		this.extensibleStatementHelper = extensibleStatementHelper;
 
 		System.out.println("Transaction: " + transactionId);
 
@@ -55,8 +60,8 @@ class ExtensibleSailSource implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore,
-				transactionCounter);
+		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore, inferred,
+				extensibleStatementHelper, transactionCounter);
 	}
 
 	@Override
@@ -90,7 +95,7 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public void clear(Resource... contexts) throws SailException {
-				dataStructure.clear(transactionId, contexts);
+				dataStructure.clear(transactionId, inferred, contexts);
 			}
 
 			@Override
@@ -101,12 +106,14 @@ class ExtensibleSailSource implements SailSource {
 			@Override
 			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx);
-				dataStructure.addStatement(transactionId, statement);
+
+				dataStructure.addStatement(transactionId, extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
 			public void approve(Statement statement) throws SailException {
-				dataStructure.addStatement(transactionId, statement);
+
+				dataStructure.addStatement(transactionId, extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
@@ -116,12 +123,13 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public void deprecate(Statement statement) throws SailException {
-				dataStructure.removeStatement(transactionId, statement);
+				dataStructure.removeStatement(transactionId,
+						extensibleStatementHelper.fromStatement(statement, inferred));
 			}
 
 			@Override
 			public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-				return dataStructure.removeStatementsByQuery(transactionId, subj, pred, obj, contexts);
+				return dataStructure.removeStatementsByQuery(transactionId, subj, pred, obj, inferred, contexts);
 			}
 
 			@Override
@@ -210,7 +218,7 @@ class ExtensibleSailSource implements SailSource {
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 					Value obj, Resource... contexts) throws SailException {
-				return dataStructure.getStatements(transactionId, subj, pred, obj, contexts);
+				return dataStructure.getStatements(transactionId, subj, pred, obj, inferred, contexts);
 			}
 
 		};

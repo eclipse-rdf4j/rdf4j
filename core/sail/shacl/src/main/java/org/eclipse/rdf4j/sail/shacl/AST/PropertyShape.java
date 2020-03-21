@@ -46,7 +46,7 @@ import java.util.stream.Stream;
 public abstract class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	final boolean deactivated;
-	private Resource id;
+	final Resource id;
 
 	NodeShape nodeShape;
 	PathPropertyShape parent;
@@ -98,7 +98,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
 				.append("\n");
 
-		stringBuilder.append(System.identityHashCode(connectionsGroup)
+		stringBuilder.append(System.identityHashCode(connectionsGroup.getBaseConnection())
 				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 		stringBuilder
 				.append(System.identityHashCode(connectionsGroup.getPreviousStateConnection())
@@ -128,12 +128,12 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
 		List<Value> ret = new ArrayList<>();
 		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
+			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
 				Value value = stream.map(Statement::getObject).findAny().get();
 				ret.add(value);
 			}
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
+			try (Stream<Statement> stream = connection.getStatements(orList, RDF.REST, null).stream()) {
 				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
 			}
 
@@ -160,8 +160,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
 				NodeShape nodeShape) {
 
-			try (Stream<Statement> stream = Iterations
-					.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
+			try (Stream<Statement> stream = connection.getStatements(ShapeId, SHACL.PROPERTY, null).stream()) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
 					List<PathPropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
 							propertyShapeId,
@@ -297,7 +296,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		GraphQuery graphQuery = connection.prepareGraphQuery("describe ?a where {BIND(?resource as ?a)}");
 		graphQuery.setBinding("resource", resource);
 
-		try (Stream<Statement> stream = Iterations.stream(graphQuery.evaluate())) {
+		try (Stream<Statement> stream = graphQuery.evaluate().stream()) {
 
 			LinkedHashModel statements = stream.collect(Collectors.toCollection(LinkedHashModel::new));
 			statements.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);

@@ -117,7 +117,7 @@ public class MemStatement extends ContextStatement {
 
 	/**
 	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and context.
-	 * The transaction status will be set to {@link TxnStatus#NEW}.
+	 * The transaction status will be set to new.
 	 */
 	public void addToComponentLists() {
 		getSubject().addSubjectStatement(this);

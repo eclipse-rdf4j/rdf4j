@@ -23,7 +23,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * The wrapped Iteration.
-	 * 
+	 *
 	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
 	@Deprecated
@@ -35,7 +35,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.
-	 * 
+	 *
 	 * @param iter The wrapped Iteration for this <tt>IterationWrapper</tt>, must not be <tt>null</tt>.
 	 */
 	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
@@ -49,7 +49,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * Checks whether the wrapped Iteration contains more elements, closing this Iteration when this is not the case.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the wrapped Iteration contains more elements, <tt>false</tt> otherwise.
 	 */
 	@Override
@@ -69,7 +69,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * Returns the next element from the wrapped Iteration.
-	 * 
+	 *
 	 * @throws java.util.NoSuchElementException If all elements have been returned or it has been closed.
 	 */
 	@Override
@@ -90,7 +90,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * Removes the last element that has been returned from the wrapped Iteration.
-	 * 
+	 *
 	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <tt>remove</tt> operation.
 	 * @throws IllegalStateException         if the Iteration has been closed, or if {@link #next} has not yet been
 	 *                                       called, or {@link #remove} has already been called after the last call to

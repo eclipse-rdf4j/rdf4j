@@ -60,7 +60,7 @@ public class QueryInfo {
 	 * @param query
 	 * @param queryType
 	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
-	 *                          {@link FedXConfig#getEnforceMaxQueryTime())
+	 *                          {@link org.eclipse.rdf4j.federated.FedXConfig#getEnforceMaxQueryTime()}
 	 * @param includeInferred   whether to include inferred statements
 	 * @param federationContext the {@link FederationContext}
 	 */

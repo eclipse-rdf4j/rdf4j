@@ -45,7 +45,9 @@ import org.slf4j.LoggerFactory;
  * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
  * 
  * @author Dale Visser
+ * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
+@Deprecated
 public class RepositoryManagerFederator {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(RepositoryManagerFederator.class);

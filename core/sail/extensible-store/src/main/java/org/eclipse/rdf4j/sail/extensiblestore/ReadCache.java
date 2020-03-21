@@ -12,9 +12,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +33,7 @@ public class ReadCache implements DataStructureInterface {
 	// ReferenceMap defaults to hard reference for key and soft reference for value. This means that a value may be
 	// garbage collected, but unlike a weak ref it will only be garbage collected if we run out of memory. This is a
 	// memory sensitive cache.
-	ReferenceMap<PartialStatement, List<Statement>> cache = new ReferenceMap<>();
+	ReferenceMap<PartialStatement, List<ExtensibleStatement>> cache = new ReferenceMap<>();
 
 	// The cache ticket is incremented every time the cache is cleared. A getStatements operation retrieves the current
 	// cacheTicket when the iteration is opened. When the iteration is closed it checks the retrieved ticket against the
@@ -47,24 +47,25 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public void addStatement(long transactionId, Statement statement) {
+	public void addStatement(long transactionId, ExtensibleStatement statement) {
 		delegate.addStatement(transactionId, statement);
 		clearCache();
 	}
 
 	@Override
-	public void removeStatement(long transactionId, Statement statement) {
+	public void removeStatement(long transactionId, ExtensibleStatement statement) {
 		delegate.removeStatement(transactionId, statement);
 		clearCache();
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(long transactionId, Resource subject,
+	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(long transactionId,
+			Resource subject,
 			IRI predicate,
-			Value object, Resource... context) {
+			Value object, boolean inferred, Resource... context) {
 
-		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, context);
-		CloseableIteration<? extends Statement, SailException> cached = getCached(partialStatement);
+		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, inferred, context);
+		CloseableIteration<? extends ExtensibleStatement, SailException> cached = getCached(partialStatement);
 		if (cached != null) {
 			logger.trace("cache hit");
 			return cached;
@@ -72,12 +73,13 @@ public class ReadCache implements DataStructureInterface {
 
 		long localCacheTicket = cacheTicket;
 
-		return new CloseableIteration<Statement, SailException>() {
+		return new CloseableIteration<ExtensibleStatement, SailException>() {
 
-			CloseableIteration<? extends Statement, SailException> statements = delegate.getStatements(transactionId,
+			CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
+					transactionId,
 					subject,
-					predicate, object, context);
-			List<Statement> cache = new ArrayList<>();
+					predicate, object, inferred, context);
+			List<ExtensibleStatement> cache = new ArrayList<>();
 
 			@Override
 			public boolean hasNext() throws SailException {
@@ -85,9 +87,9 @@ public class ReadCache implements DataStructureInterface {
 			}
 
 			@Override
-			public Statement next() throws SailException {
+			public ExtensibleStatement next() throws SailException {
 
-				Statement next = statements.next();
+				ExtensibleStatement next = statements.next();
 
 				if (cache != null) {
 					cache.add(next);
@@ -119,17 +121,17 @@ public class ReadCache implements DataStructureInterface {
 
 	}
 
-	synchronized private CloseableIteration<? extends Statement, SailException> getCached(
+	synchronized private CloseableIteration<? extends ExtensibleStatement, SailException> getCached(
 			PartialStatement partialStatement) {
-		List<Statement> statements = cache.get(partialStatement);
+		List<ExtensibleStatement> statements = cache.get(partialStatement);
 
 		if (statements != null) {
 
-			return new LookAheadIteration<Statement, SailException>() {
-				Iterator<Statement> iterator = statements.iterator();
+			return new LookAheadIteration<ExtensibleStatement, SailException>() {
+				Iterator<ExtensibleStatement> iterator = statements.iterator();
 
 				@Override
-				protected Statement getNextElement() throws SailException {
+				protected ExtensibleStatement getNextElement() throws SailException {
 					if (iterator.hasNext()) {
 						return iterator.next();
 					}
@@ -153,8 +155,8 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	@Override
-	public void clear(long transactionId, Resource[] contexts) {
-		delegate.clear(transactionId, contexts);
+	public void clear(long transactionId, boolean inferred, Resource[] contexts) {
+		delegate.clear(transactionId, inferred, contexts);
 		clearCache();
 	}
 
@@ -166,8 +168,8 @@ public class ReadCache implements DataStructureInterface {
 
 	@Override
 	public boolean removeStatementsByQuery(long transactionId, Resource subj, IRI pred, Value obj,
-			Resource[] contexts) {
-		boolean removed = delegate.removeStatementsByQuery(transactionId, subj, pred, obj, contexts);
+			boolean inferred, Resource[] contexts) {
+		boolean removed = delegate.removeStatementsByQuery(transactionId, subj, pred, obj, inferred, contexts);
 		clearCache();
 		return removed;
 	}
@@ -182,10 +184,15 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	synchronized public void submitToCache(Long localCacheTicket, PartialStatement partialStatement,
-			List<Statement> statements) {
+			List<ExtensibleStatement> statements) {
 		if (localCacheTicket == cacheTicket && statements != null) {
 			cache.put(partialStatement, statements);
 		}
 
+	}
+
+	@Override
+	public long getEstimatedSize() {
+		return delegate.getEstimatedSize();
 	}
 }

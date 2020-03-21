@@ -197,16 +197,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			Map<Key, Entry> entries = new LinkedHashMap<>();
 
 			if (!iter.hasNext()) {
-				// no solutions, but if aggregates are present we still need to process them to produce a
-				// zero-result.
-				final Entry entry = new Entry(null);
-				if (!entry.getAggregates().isEmpty()) {
-					entry.addSolution(EmptyBindingSet.getInstance());
-					entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+				// no solutions, but if we are not explicitly grouping and aggregates are present,
+				// we still need to process them to produce a zero-result.
+				if (group.getGroupBindingNames().isEmpty()) {
+					final Entry entry = new Entry(null);
+					if (!entry.getAggregates().isEmpty()) {
+						entry.addSolution(EmptyBindingSet.getInstance());
+						entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+					}
 				}
 			}
-
-			// long count = 0;
 
 			while (iter.hasNext()) {
 				BindingSet sol;
@@ -334,10 +334,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 						sol.setBinding(name, value);
 					}
 				} catch (ValueExprEvaluationException ex) {
-					// There was a type error when calculating the value of the
-					// aggregate.
-					// We silently ignore the error, resulting in no result value
-					// being bound.
+					// There was a type error when calculating the value of the aggregate. We silently ignore the error,
+					// resulting in no result value being bound.
 				}
 			}
 		}
@@ -487,6 +485,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getValue() {
+			if (min == null) {
+				throw new ValueExprEvaluationException("MIN undefined");
+			}
 			return min;
 		}
 	}
@@ -514,9 +515,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		@Override
-		public Value getValue() {
+		public Value getValue() throws ValueExprEvaluationException {
+			if (max == null) {
+				throw new ValueExprEvaluationException("max undefined");
+			}
 			return max;
 		}
+
 	}
 
 	private class SumAggregate extends Aggregate {
@@ -645,6 +650,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getValue() {
+			if (sample == null) {
+				throw new ValueExprEvaluationException("SAMPLE undefined");
+			}
 			return sample;
 		}
 	}

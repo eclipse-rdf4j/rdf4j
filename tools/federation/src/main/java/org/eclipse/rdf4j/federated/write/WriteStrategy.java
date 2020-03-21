@@ -17,11 +17,13 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * Interface for the {@link WriteStrategy} that is used for writing data to the federation. The implementation can
  * decided upon how is data written to the underlying federation members (e.g. to a designated federation member)
  * 
+ * <p>
+ * <b>Note:</b> this is an experimental feature which is subject to change in a future version.
+ * </p>
+ * 
  * @author Andreas Schwarte
- * @since 4.0
  * @see RepositoryWriteStrategy
  * @see ReadOnlyWriteStrategy
- * @see FedX#getWriteStrategy()
  */
 public interface WriteStrategy {
 
