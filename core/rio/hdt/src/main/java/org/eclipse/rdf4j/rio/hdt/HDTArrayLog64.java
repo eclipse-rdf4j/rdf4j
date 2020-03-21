@@ -94,6 +94,7 @@ class HDTArrayLog64 extends HDTArray {
 
 	@Override
 	protected void setSize(int entries) {
+		super.setSize(entries);
 		buffer = new byte[(entries * nrbits + 7) / 8];
 	}
 
@@ -107,9 +108,9 @@ class HDTArrayLog64 extends HDTArray {
 		int tmplen = (bitPos + nrbits + 7) / 8;
 
 		long val = entry << bitPos;
-		// big-endian to little-endian
 
-		for (int j = 0; j < tmplen; j++) {
+		// big-endian to little-endian
+		for (int j = tmplen - 1; j >= 0; j--) {
 			int curval = buffer[bytePos + j] & 0xFF;
 			buffer[bytePos + j] = (byte) ((val >> (j * 8)) & 0xFF | curval);
 		}
