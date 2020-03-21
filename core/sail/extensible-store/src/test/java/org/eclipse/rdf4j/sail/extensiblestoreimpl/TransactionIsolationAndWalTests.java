@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.ExtensibleStoreImplForTests;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.NaiveHashSetDataStructure;
 import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;

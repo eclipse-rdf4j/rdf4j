@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.extensiblestoreimpl.implementation.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.sail.extensiblestoreimpl.ExtensibleStoreImplForTests;
 import org.junit.runners.Parameterized;
 
 public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
