@@ -8,10 +8,11 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchDataStructure;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -42,7 +43,7 @@ import java.util.stream.IntStream;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DigestBenchmark {
 
-	List<Statement> statements;
+	List<ExtensibleStatement> statements;
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
@@ -52,6 +53,7 @@ public class DigestBenchmark {
 				.range(0, 100000)
 				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL,
 						vf.createLiteral("fjuefhru8f49ru3ue 0ji fh84 h2uh esfh83 2r9u389 hrefuh2398r32r" + i)))
+				.map(s -> ExtensibleStatementHelper.getDefaultImpl().fromStatement(s, false))
 				.collect(Collectors.toList());
 
 	}
@@ -59,7 +61,7 @@ public class DigestBenchmark {
 	@Benchmark
 	public void clearAndAddLargeFile() throws IOException {
 
-		for (Statement statement : statements) {
+		for (ExtensibleStatement statement : statements) {
 
 			String s = ElasticsearchDataStructure.sha256(statement);
 			if (s.length() > 1000) {
@@ -73,7 +75,7 @@ public class DigestBenchmark {
 	@Benchmark
 	public void statementToString() throws IOException {
 
-		for (Statement statement : statements) {
+		for (ExtensibleStatement statement : statements) {
 
 			String s = statement.toString();
 			if (s.length() > 1000) {
