@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.proxy;
 
-import org.eclipse.rdf4j.http.client.RemoteShaclSailValidationException;
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -38,7 +38,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -134,10 +133,10 @@ public class WorkbenchServlet extends AbstractServlet {
 		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
 		} catch (RepositoryConfigException | RepositoryException e) {
-			if (e.getCause() instanceof RemoteShaclSailValidationException) {
-				Model model = ((RemoteShaclSailValidationException) e.getCause()).validationReportAsModel();
+			if (e.getCause() instanceof ValidationException) {
+				Model model = ((ValidationException) e.getCause()).validationReportAsModel();
 
-				resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+				resp.setStatus(HttpServletResponse.SC_CONFLICT);
 				resp.setContentType(TEXT_PLAIN);
 				PrintWriter writer = resp.getWriter();
 

@@ -38,6 +38,7 @@ import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -95,9 +96,11 @@ import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
@@ -154,7 +157,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	private final int maximumUrlLength;
 
-	final Logger logger = LoggerFactory.getLogger(SPARQLProtocolSession.class);
+	final static Logger logger = LoggerFactory.getLogger(SPARQLProtocolSession.class);
 
 	/*-----------*
 	 * Variables *
@@ -1044,9 +1047,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 						throw new MalformedQueryException(errInfo.getErrorMessage());
 					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
 						throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
-					} else if (exceptionIs(response, "ShaclSailValidationException")) {
-						throw new RepositoryException(new RemoteShaclSailValidationException(
-								new StringReader(errInfo.toString()), "", RDFFormat.NQUADS));
+					} else if (contentTypeIs(response, "application/shacl-validation-report")) {
+						RDFFormat format = getContentTypeSerialisation(response);
+						throw new RepositoryException(new RemoteShaclValidationException(
+								new StringReader(errInfo.toString()), "", format));
 
 					} else if (errInfo.toString().length() > 0) {
 						throw new RepositoryException(errInfo.toString());
@@ -1062,15 +1066,57 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 	}
 
-	private boolean exceptionIs(HttpResponse response, String exceptionName) {
-		Header[] headers = response.getHeaders("X-Eclipse-RDF4J-Exception");
+	static RDFFormat getContentTypeSerialisation(HttpResponse response) {
+		Header[] headers = response.getHeaders("Content-Type");
+
+		Set<RDFFormat> rdfFormats = RDFParserRegistry.getInstance().getKeys();
+		if (rdfFormats.isEmpty()) {
+			throw new RepositoryException("No tuple RDF parsers have been registered");
+		}
+
+		for (Header header : headers) {
+			for (HeaderElement element : header.getElements()) {
+				// SHACL Validation report Content-Type gets transformed from:
+				// application/shacl-validation-report+n-quads => application/n-quads
+				// application/shacl-validation-report+ld+json => application/ld+json
+				// text/shacl-validation-report+turtle => text/turtle
+
+				String[] split = element.getName().split("\\+");
+				StringBuilder serialisation = new StringBuilder(element.getName().split("/")[0] + "/");
+				for (int i = 1; i < split.length; i++) {
+					serialisation.append(split[i]);
+					if (i + 1 < split.length) {
+						serialisation.append("+");
+					}
+				}
+
+				logger.debug("SHACL validation report is serialised as: " + serialisation.toString());
+
+				Optional<RDFFormat> rdfFormat = RDFFormat.matchMIMEType(serialisation.toString(), rdfFormats);
+
+				if (rdfFormat.isPresent()) {
+					return rdfFormat.get();
+				}
+			}
+		}
+
+		throw new RepositoryException("Unsupported content-type for SHACL Validation Report: "
+				+ Arrays.toString(response.getHeaders("Content-Type")));
+
+	}
+
+	private static boolean contentTypeIs(HttpResponse response, String contentType) {
+		Header[] headers = response.getHeaders("Content-Type");
 		if (headers.length == 0) {
 			return false;
 		}
 
 		for (Header header : headers) {
-			if (exceptionName.equals(header.getValue())) {
-				return true;
+			for (HeaderElement element : header.getElements()) {
+				String name = element.getName().split("\\+")[0];
+				if (contentType.equals(name)) {
+					return true;
+				}
 			}
 		}
 
@@ -1098,7 +1144,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			for (HeaderElement headerEl : headerElements) {
 				String mimeType = headerEl.getName();
 				if (mimeType != null) {
-					logger.debug("reponse MIME type is {}", mimeType);
+					logger.debug("response MIME type is {}", mimeType);
 					return mimeType;
 				}
 			}

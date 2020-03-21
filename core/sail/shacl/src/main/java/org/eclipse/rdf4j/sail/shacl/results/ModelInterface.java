@@ -12,6 +12,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 
+/**
+ * Deprecated since 3.2.0.
+ */
+@Deprecated()
 public interface ModelInterface {
 
 	default Model asModel() {

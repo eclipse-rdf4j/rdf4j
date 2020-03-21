@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import org.eclipse.rdf4j.http.client.RemoteShaclSailValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -20,14 +18,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.StringReader;
-import java.io.StringWriter;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -95,11 +92,11 @@ public class ShaclValidationReportTest {
 	}
 
 	private void assertExceptionIsShaclReport(Throwable e) {
-		RemoteShaclSailValidationException remoteShaclSailValidationException = null;
-		if (e instanceof RemoteShaclSailValidationException) {
-			remoteShaclSailValidationException = (RemoteShaclSailValidationException) e;
-		} else if (e.getCause() instanceof RemoteShaclSailValidationException) {
-			remoteShaclSailValidationException = (RemoteShaclSailValidationException) e.getCause();
+		ValidationException remoteShaclSailValidationException = null;
+		if (e instanceof ValidationException) {
+			remoteShaclSailValidationException = (ValidationException) e;
+		} else if (e.getCause() instanceof ValidationException) {
+			remoteShaclSailValidationException = (ValidationException) e.getCause();
 		}
 
 		assert remoteShaclSailValidationException != null;
