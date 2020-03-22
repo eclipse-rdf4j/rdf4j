@@ -29,8 +29,9 @@ public class IsTripleFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory vf, Value... args) throws ValueExprEvaluationException {
-		if (args.length != 1)
+		if (args.length != 1) {
 			throw new ValueExprEvaluationException("expect exactly 1 argument");
+		}
 		return vf.createLiteral((args[0] instanceof Triple));
 	}
 }

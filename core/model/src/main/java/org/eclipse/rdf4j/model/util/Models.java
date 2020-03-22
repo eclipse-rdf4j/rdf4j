@@ -25,15 +25,18 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -515,6 +518,215 @@ public class Models {
 		}).collect(ModelCollector.toModel());
 	}
 
+	/**
+	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
+	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
+	 *
+	 * @param message The message to be used for the exception
+	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
+	 */
+	public static Supplier<ModelException> modelException(String message) {
+		return () -> new ModelException(message);
+	}
+
+	/**
+	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
+	 *
+	 * @param toSynchronize the model that should be synchronized
+	 * @return Synchronized Model
+	 */
+	public static Model synchronizedModel(Model toSynchronize) {
+		return new SynchronizedModel(toSynchronize);
+	}
+
+	/**
+	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf       the {@link ValueFactory} to use for creating statements.
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertRDFStarToReification(ValueFactory vf, Model model, Consumer<Statement> consumer) {
+		model.forEach(st -> Statements.convertRDFStarToReification(vf, st, consumer));
+	}
+
+	/**
+	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 *
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertRDFStarToReification(Model model, Consumer<Statement> consumer) {
+		convertRDFStarToReification(SimpleValueFactory.getInstance(), model, consumer);
+	}
+
+	/**
+	 * Converts the statements in supplied RDF* model to a new RDF model using reificiation.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf    the {@link ValueFactory} to use for creating statements.
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(ValueFactory vf, Model model) {
+		Model reificationModel = new LinkedHashModel();
+		convertRDFStarToReification(vf, model, reificationModel::add);
+		return reificationModel;
+	}
+
+	/**
+	 * Converts the statements in supplied RDF* model to a new RDF model using reificiation.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf           the {@link ValueFactory} to use for creating statements.
+	 * @param model        the {@link Model} to convert.
+	 * @param modelFactory the {@link ModelFactory} used to create the new output {@link Model}.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(ValueFactory vf, Model model, ModelFactory modelFactory) {
+		Model reificationModel = modelFactory.createEmptyModel();
+		convertRDFStarToReification(vf, model, reificationModel::add);
+		return reificationModel;
+	}
+
+	/**
+	 * Converts the statements in the supplied RDF* model to a new RDF model using reification.
+	 *
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(Model model) {
+		return convertRDFStarToReification(SimpleValueFactory.getInstance(), model);
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf       the {@link ValueFactory} to use for creating statements.
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertReificationToRDFStar(ValueFactory vf, Model model, Consumer<Statement> consumer) {
+		Map<Resource, Triple> convertedStatements = new HashMap<>();
+		model.filter(null, RDF.TYPE, RDF.STATEMENT).forEach((s) -> {
+			Value subject = object(model.filter(s.getSubject(), RDF.SUBJECT, null)).orElse(null);
+			if (!(subject instanceof IRI) && !(subject instanceof BNode)) {
+				return;
+			}
+			Value predicate = object(model.filter(s.getSubject(), RDF.PREDICATE, null)).orElse(null);
+			if (!(predicate instanceof IRI)) {
+				return;
+			}
+			Value object = object(model.filter(s.getSubject(), RDF.OBJECT, null)).orElse(null);
+			if (!(object instanceof Value)) {
+				return;
+			}
+			Triple t = vf.createTriple((Resource) subject, (IRI) predicate, object);
+			convertedStatements.put(s.getSubject(), t);
+		});
+
+		for (Map.Entry<Resource, Triple> e : convertedStatements.entrySet()) {
+			Triple t = e.getValue();
+			Resource subject = convertedStatements.get(t.getSubject());
+			Resource object = convertedStatements.get(t.getObject());
+			if (subject != null || object != null) {
+				// Triples within triples, replace them in the map
+				Triple nt = vf.createTriple(subject != null ? subject : t.getSubject(), t.getPredicate(),
+						object != null ? object : t.getObject());
+				e.setValue(nt);
+			}
+		}
+
+		model.forEach((s) -> {
+			Resource subject = s.getSubject();
+			IRI predicate = s.getPredicate();
+			Value object = s.getObject();
+			Triple subjectTriple = convertedStatements.get(subject);
+			Triple objectTriple = convertedStatements.get(object);
+
+			if (subjectTriple == null && objectTriple == null) {
+				// Statement not part of detected reification, add it as is
+				consumer.accept(s);
+			} else if (subjectTriple == null || ((!RDF.TYPE.equals(predicate) || !RDF.STATEMENT.equals(object))
+					&& !RDF.SUBJECT.equals(predicate) && !RDF.PREDICATE.equals(predicate)
+					&& !RDF.OBJECT.equals(predicate))) {
+				// Statement uses reified data and needs to be converted
+				Statement ns = vf.createStatement(subjectTriple != null ? subjectTriple : s.getSubject(),
+						s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());
+				consumer.accept(ns);
+			} // else: Statement part of reification and needs to be removed (skipped)
+		});
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 *
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertReificationToRDFStar(Model model, Consumer<Statement> consumer) {
+		convertReificationToRDFStar(SimpleValueFactory.getInstance(), model, consumer);
+	}
+
+	/**
+	 * Converts the statements in supplied RDF reification model to a new RDF* model.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf           the {@link ValueFactory} to use for creating statements.
+	 * @param model        the {@link Model} to convert.
+	 * @param modelFactory the {@link ModelFactory} to use for creating a new Model object for the output.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(ValueFactory vf, Model model, ModelFactory modelFactory) {
+		Model rdfStarModel = modelFactory.createEmptyModel();
+		convertReificationToRDFStar(vf, model, rdfStarModel::add);
+		return rdfStarModel;
+	}
+
+	/**
+	 * Converts the statements in supplied RDF reification model to a new RDF* model.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf    the {@link ValueFactory} to use for creating statements.
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(ValueFactory vf, Model model) {
+		return convertReificationToRDFStar(vf, model, new DynamicModelFactory());
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to a new RDF* model.
+	 *
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(Model model) {
+		return convertReificationToRDFStar(SimpleValueFactory.getInstance(), model);
+	}
+
 	private static boolean isSubsetInternal(Set<Statement> model1, Model model2) {
 		// try to create a full blank node mapping
 		return matchModels(model1, model2);
@@ -738,172 +950,4 @@ public class Models {
 
 	}
 
-	/**
-	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
-	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
-	 *
-	 * @param message The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
-	 */
-	public static Supplier<ModelException> modelException(String message) {
-		return () -> new ModelException(message);
-	}
-
-	/**
-	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
-	 *
-	 * @param toSynchronize the model that should be synchronized
-	 * @return Synchronized Model
-	 */
-	public static Model synchronizedModel(Model toSynchronize) {
-		return new SynchronizedModel(toSynchronize);
-	}
-
-	/**
-	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
-	 * consumer function.
-	 * <p>
-	 * The supplied value factory is used to create all new statements.
-	 *
-	 * @param vf       the {@link ValueFactory} to use for creating statements.
-	 * @param model    the {@link Model} to convert.
-	 * @param consumer the {@link Consumer} function for the produced statements.
-	 */
-	public static void convertRDFStarToReification(ValueFactory vf, Model model, Consumer<Statement> consumer) {
-		model.forEach(st -> Statements.convertRDFStarToReification(vf, st, consumer));
-	}
-
-	/**
-	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
-	 * consumer function.
-	 *
-	 * @param model    the {@link Model} to convert.
-	 * @param consumer the {@link Consumer} function for the produced statements.
-	 */
-	public static void convertRDFStarToReification(Model model, Consumer<Statement> consumer) {
-		convertRDFStarToReification(SimpleValueFactory.getInstance(), model, consumer);
-	}
-
-	/**
-	 * Converts the supplied RDF* model to an RDF reification model.
-	 * <p>
-	 * The supplied value factory is used to create all new statements.
-	 *
-	 * @param vf    the {@link ValueFactory} to use for creating statements.
-	 * @param model the {@link Model} to convert.
-	 * @return the converted {@link Model}.
-	 */
-	public static Model convertRDFStarToReification(ValueFactory vf, Model model) {
-		Model reificationModel = new LinkedHashModel();
-		convertRDFStarToReification(vf, model, reificationModel::add);
-		return reificationModel;
-	}
-
-	/**
-	 * Converts the supplied RDF* model to an RDF reification model.
-	 *
-	 * @param model the {@link Model} to convert.
-	 * @return the converted {@link Model}.
-	 */
-	public static Model convertRDFStarToReification(Model model) {
-		return convertRDFStarToReification(SimpleValueFactory.getInstance(), model);
-	}
-
-	/**
-	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
-	 * consumer function.
-	 * <p>
-	 * The supplied value factory is used to create all new statements.
-	 *
-	 * @param vf       the {@link ValueFactory} to use for creating statements.
-	 * @param model    the {@link Model} to convert.
-	 * @param consumer the {@link Consumer} function for the produced statements.
-	 */
-	public static void convertReificationToRDFStar(ValueFactory vf, Model model, Consumer<Statement> consumer) {
-		Map<Resource, Triple> convertedStatements = new HashMap<>();
-		model.filter(null, RDF.TYPE, RDF.STATEMENT).forEach((s) -> {
-			Value subject = object(model.filter(s.getSubject(), RDF.SUBJECT, null)).orElse(null);
-			if (!(subject instanceof IRI) && !(subject instanceof BNode)) {
-				return;
-			}
-			Value predicate = object(model.filter(s.getSubject(), RDF.PREDICATE, null)).orElse(null);
-			if (!(predicate instanceof IRI)) {
-				return;
-			}
-			Value object = object(model.filter(s.getSubject(), RDF.OBJECT, null)).orElse(null);
-			if (!(object instanceof Value)) {
-				return;
-			}
-			Triple t = vf.createTriple((Resource) subject, (IRI) predicate, object);
-			convertedStatements.put(s.getSubject(), t);
-		});
-
-		for (Map.Entry<Resource, Triple> e : convertedStatements.entrySet()) {
-			Triple t = e.getValue();
-			Resource subject = convertedStatements.get(t.getSubject());
-			Resource object = convertedStatements.get(t.getObject());
-			if (subject != null || object != null) {
-				// Triples within triples, replace them in the map
-				Triple nt = vf.createTriple(subject != null ? subject : t.getSubject(), t.getPredicate(),
-						object != null ? object : t.getObject());
-				e.setValue(nt);
-			}
-		}
-
-		model.forEach((s) -> {
-			Resource subject = s.getSubject();
-			IRI predicate = s.getPredicate();
-			Value object = s.getObject();
-			Triple subjectTriple = convertedStatements.get(subject);
-			Triple objectTriple = convertedStatements.get(object);
-
-			if (subjectTriple == null && objectTriple == null) {
-				// Statement not part of detected reification, add it as is
-				consumer.accept(s);
-			} else if (subjectTriple == null || ((!RDF.TYPE.equals(predicate) || !RDF.STATEMENT.equals(object))
-					&& !RDF.SUBJECT.equals(predicate) && !RDF.PREDICATE.equals(predicate)
-					&& !RDF.OBJECT.equals(predicate))) {
-				// Statement uses reified data and needs to be converted
-				Statement ns = vf.createStatement(subjectTriple != null ? subjectTriple : s.getSubject(),
-						s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());
-				consumer.accept(ns);
-			} // else: Statement part of reification and needs to be removed (skipped)
-		});
-	}
-
-	/**
-	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
-	 * consumer function.
-	 *
-	 * @param model    the {@link Model} to convert.
-	 * @param consumer the {@link Consumer} function for the produced statements.
-	 */
-	public static void convertReificationToRDFStar(Model model, Consumer<Statement> consumer) {
-		convertReificationToRDFStar(SimpleValueFactory.getInstance(), model, consumer);
-	}
-
-	/**
-	 * Converts the supplied RDF reification model to an RDF* model.
-	 * <p>
-	 * The supplied value factory is used to create all new statements.
-	 *
-	 * @param vf    the {@link ValueFactory} to use for creating statements.
-	 * @param model the {@link Model} to convert.
-	 * @return the converted {@link Model}.
-	 */
-	public static Model convertReificationToRDFStar(ValueFactory vf, Model model) {
-		Model rdfStarModel = new LinkedHashModel();
-		convertReificationToRDFStar(vf, model, rdfStarModel::add);
-		return rdfStarModel;
-	}
-
-	/**
-	 * Converts the supplied RDF reification model to an RDF* model.
-	 *
-	 * @param model the {@link Model} to convert.
-	 * @return the converted {@link Model}.
-	 */
-	public static Model convertReificationToRDFStar(Model model) {
-		return convertReificationToRDFStar(SimpleValueFactory.getInstance(), model);
-	}
 }

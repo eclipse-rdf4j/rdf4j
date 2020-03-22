@@ -28,10 +28,12 @@ public class TripleSubjectFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory vf, Value... args) throws ValueExprEvaluationException {
-		if (args.length != 1)
+		if (args.length != 1) {
 			throw new ValueExprEvaluationException("expect exactly 1 argument");
-		if (!(args[0] instanceof Triple))
+		}
+		if (!(args[0] instanceof Triple)) {
 			throw new ValueExprEvaluationException("arg1 must be a Triple");
+		}
 		return ((Triple) args[0]).getSubject();
 	}
 }

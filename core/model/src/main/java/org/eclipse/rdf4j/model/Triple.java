@@ -7,12 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * An RDF* triple. Triples have a subject, predicate and object. Unlike {@link Statement}, a triple never has an
  * associated context.
  *
  * @author Pavel Mihaylov
  */
+@Experimental
 public interface Triple extends Resource {
 
 	/**

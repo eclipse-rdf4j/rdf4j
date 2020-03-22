@@ -15,6 +15,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -38,6 +39,7 @@ public class Statements {
 	 * The current implementation creates a {@link org.eclipse.rdf4j.model.BNode} by encoding the string representation
 	 * of the {@link Triple} using base64 URL-safe encoding.
 	 */
+	@Experimental
 	public static Function<Triple, Resource> TRIPLE_BNODE_MAPPER = (t) -> SimpleValueFactory.getInstance()
 			.createBNode(Base64.getUrlEncoder().encodeToString(t.stringValue().getBytes(StandardCharsets.UTF_8)));
 
@@ -146,6 +148,7 @@ public class Statements {
 	 * @param st       the {@link Statement} to convert.
 	 * @param consumer the {@link Consumer} function for the produced statements.
 	 */
+	@Experimental
 	public static void convertRDFStarToReification(Statement st, Consumer<Statement> consumer) {
 		convertRDFStarToReification(SimpleValueFactory.getInstance(), st, consumer);
 	}
@@ -162,6 +165,7 @@ public class Statements {
 	 * @param st       the {@link Statement} to convert.
 	 * @param consumer the {@link Consumer} function for the produced statements.
 	 */
+	@Experimental
 	public static void convertRDFStarToReification(ValueFactory vf, Statement st, Consumer<Statement> consumer) {
 		convertRDFStarToReification(vf, TRIPLE_BNODE_MAPPER, st, consumer);
 	}
@@ -181,6 +185,7 @@ public class Statements {
 	 * @param st              the {@link Statement} to convert,
 	 * @param consumer        the {@link Consumer} function for the produced statements.
 	 */
+	@Experimental
 	public static void convertRDFStarToReification(ValueFactory vf, Function<Triple, Resource> reifiedIdMapper,
 			Statement st, Consumer<Statement> consumer) {
 		Resource subject = st.getSubject();

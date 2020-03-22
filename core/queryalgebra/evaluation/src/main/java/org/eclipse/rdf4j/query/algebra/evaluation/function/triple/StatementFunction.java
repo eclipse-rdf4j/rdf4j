@@ -29,14 +29,18 @@ public class StatementFunction implements Function {
 
 	@Override
 	public Value evaluate(ValueFactory vf, Value... args) throws ValueExprEvaluationException {
-		if (args.length != 3)
+		if (args.length != 3) {
 			throw new ValueExprEvaluationException("expect exactly 3 arguments");
-		if (!(args[0] instanceof Resource))
+		}
+		if (!(args[0] instanceof Resource)) {
 			throw new ValueExprEvaluationException("arg1 must be Resource");
-		if (!(args[1] instanceof IRI))
+		}
+		if (!(args[1] instanceof IRI)) {
 			throw new ValueExprEvaluationException("arg2 must be IRI");
-		if (!(args[2] instanceof Value))
+		}
+		if (!(args[2] instanceof Value)) {
 			throw new ValueExprEvaluationException("arg3 must be Value");
-		return vf.createTriple((Resource) args[0], (IRI) args[1], (Value) args[2]);
+		}
+		return vf.createTriple((Resource) args[0], (IRI) args[1], args[2]);
 	}
 }
