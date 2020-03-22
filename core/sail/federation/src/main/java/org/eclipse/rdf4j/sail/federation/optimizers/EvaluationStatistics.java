@@ -84,9 +84,7 @@ public class EvaluationStatistics {
 		}
 
 		protected double getCardinality(StatementPattern pattern) {
-			List<Var> vars = pattern.getVarList();
-			Set<Var> varSet = new HashSet<Var>(vars);
-			vars = new ArrayList<Var>(varSet);
+			Set<Var> vars = new HashSet<>(pattern.getVarList());
 			int constantVarCount = countConstantVars(vars);
 			double unboundVarFactor = (double) (vars.size() - constantVarCount) / vars.size();
 			return Math.pow(1000.0, unboundVarFactor);
