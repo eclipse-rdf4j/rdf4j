@@ -265,10 +265,10 @@ public abstract class AbstractModelTest {
 	}
 
 	@Test
-	public final void testSelect_SingleLiteral() {
+	public final void testGetStatements_SingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 
-		Iterator<Statement> selection = model.select(null, null, literal1);
+		Iterator<Statement> selection = model.getStatements(null, null, literal1);
 
 		assertThat(selection.hasNext()).isTrue();
 		assertThat(selection.next().getObject()).isEqualTo(literal1);
@@ -276,14 +276,14 @@ public abstract class AbstractModelTest {
 	}
 
 	@Test
-	public final void testSelect_IteratorModification() {
+	public final void testGetStatements_IteratorModification() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, uri2);
 		model.add(uri1, RDFS.LABEL, uri3);
 		model.add(uri1, RDFS.LABEL, literal1);
 		model.add(uri1, RDFS.LABEL, literal2);
 
-		Iterator<Statement> selection = model.select(uri1, null, null);
+		Iterator<Statement> selection = model.getStatements(uri1, null, null);
 		while (selection.hasNext()) {
 			Statement st = selection.next();
 			if (st.getObject().equals(uri2)) {
@@ -295,14 +295,14 @@ public abstract class AbstractModelTest {
 	}
 
 	@Test
-	public final void testSelect_ConcurrentModificationOfModel() {
+	public final void testGetStatements_ConcurrentModificationOfModel() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, uri2);
 		model.add(uri1, RDFS.LABEL, uri3);
 		model.add(uri1, RDFS.LABEL, literal1);
 		model.add(uri1, RDFS.LABEL, literal2);
 
-		Iterator<Statement> selection = model.select(uri1, null, null);
+		Iterator<Statement> selection = model.getStatements(uri1, null, null);
 		try {
 			while (selection.hasNext()) {
 				Statement st = selection.next();
@@ -317,15 +317,15 @@ public abstract class AbstractModelTest {
 	}
 
 	@Test
-	public final void testSelect_AddToEmptyModel() {
+	public final void testGetStatements_AddToEmptyModel() {
 		Model model = getNewEmptyModel();
-		Iterator<Statement> selection = model.select(null, null, null);
+		Iterator<Statement> selection = model.getStatements(null, null, null);
 		assertThat(selection.hasNext()).isFalse();
 
 		model.add(uri2, RDFS.LABEL, literal1);
 		assertThat(model.contains(uri2, RDFS.LABEL, literal1)).isTrue();
 		assertThat(selection.hasNext()).isFalse();
-		Iterator<Statement> newSelection = model.select(null, null, null);
+		Iterator<Statement> newSelection = model.getStatements(null, null, null);
 		assertThat(newSelection.hasNext()).isTrue();
 	}
 

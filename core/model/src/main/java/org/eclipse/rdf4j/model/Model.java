@@ -173,14 +173,14 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * <p>
 	 * Examples:
 	 * <ul>
-	 * <li>{@code model.select(s1, null, null)} matches all statements that have subject {@code s1}</li>
-	 * <li>{@code model.select(s1, p1, null)} matches all statements that have subject {@code s1} and predicate
+	 * <li>{@code model.getStatements(s1, null, null)} matches all statements that have subject {@code s1}</li>
+	 * <li>{@code model.getStatements(s1, p1, null)} matches all statements that have subject {@code s1} and predicate
 	 * {@code p1}</li>
-	 * <li>{@code model.select(null, null, null, c1)} matches all statements that have context {@code c1}</li>
-	 * <li>{@code model.select(null, null, null, (Resource)null)} matches all statements that have no associated
+	 * <li>{@code model.getStatements(null, null, null, c1)} matches all statements that have context {@code c1}</li>
+	 * <li>{@code model.getStatements(null, null, null, (Resource)null)} matches all statements that have no associated
 	 * context</li>
-	 * <li>{@code model.select(null, null, null, c1, c2, c3)} matches all statements that have context {@code c1},
-	 * {@code c2} or {@code c3}</li>
+	 * <li>{@code model.getStatements(null, null, null, c1, c2, c3)} matches all statements that have context
+	 * {@code c1}, {@code c2} or {@code c3}</li>
 	 * </ul>
 	 * 
 	 * @param subject   The subject of the statements to match, {@code null} to match statements with any subject.
@@ -196,7 +196,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * 
 	 * @see #filter(Resource, IRI, Value, Resource...)
 	 */
-	public default Iterator<Statement> select(Resource subject, IRI predicate, Value object, Resource... contexts) {
+	public default Iterator<Statement> getStatements(Resource subject, IRI predicate, Value object,
+			Resource... contexts) {
 		return filter(subject, predicate, object, contexts).iterator();
 	}
 
@@ -230,7 +231,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 matching one of these will match.
 	 * @return The statements that match the specified pattern.
 	 * 
-	 * @see #select(Resource, IRI, Value, Resource...)
+	 * @see #getStatements(Resource, IRI, Value, Resource...)
 	 */
 	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
 
