@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 import java.io.Serializable;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -167,12 +168,42 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 		return remove(subj, (IRI) pred, obj, contexts);
 	}
 
-	// Views
+	/**
+	 * Returns an {@link Iterator} over all {@link Statement}s in this Model that match the supplied criteria.
+	 * <p>
+	 * Examples:
+	 * <ul>
+	 * <li>{@code model.select(s1, null, null)} matches all statements that have subject {@code s1}</li>
+	 * <li>{@code model.select(s1, p1, null)} matches all statements that have subject {@code s1} and predicate
+	 * {@code p1}</li>
+	 * <li>{@code model.select(null, null, null, c1)} matches all statements that have context {@code c1}</li>
+	 * <li>{@code model.select(null, null, null, (Resource)null)} matches all statements that have no associated
+	 * context</li>
+	 * <li>{@code model.select(null, null, null, c1, c2, c3)} matches all statements that have context {@code c1},
+	 * {@code c2} or {@code c3}</li>
+	 * </ul>
+	 * 
+	 * @param subject   The subject of the statements to match, {@code null} to match statements with any subject.
+	 * @param predicate The predicate of the statements to match, {@code null} to match statements with any predicate.
+	 * @param object    The object of the statements to match, {@code null} to match statements with any object.
+	 * @param contexts  The contexts of the statements to match. If no contexts are specified, statements will match
+	 *                  disregarding their context. If one or more contexts are specified, statements with a context
+	 *                  matching any one of these will match. To match statements without an associated context, specify
+	 *                  the value {@code null} and explicitly cast it to type {@code Resource}.
+	 * @return an {@link Iterator} over the statements in this Model that match the specified pattern.
+	 * 
+	 * @since 3.2.0
+	 * 
+	 * @see #filter(Resource, IRI, Value, Resource...)
+	 */
+	public default Iterator<Statement> select(Resource subject, IRI predicate, Value object, Resource... contexts) {
+		return filter(subject, predicate, object, contexts).iterator();
+	}
 
 	/**
-	 * Returns a view of the statements with the specified subject, predicate, object and (optionally) context. The
-	 * {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards. The
-	 * {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
+	 * Returns a filtered view of the statements with the specified subject, predicate, object and (optionally) context.
+	 * The {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards.
+	 * The {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
 	 * statements will match disregarding their context. If one or more contexts are specified, statements with a
 	 * context matching one of these will match. Note: to match statements without an associated context, specify the
 	 * value {@code null} and explicitly cast it to type {@code Resource}.
@@ -198,6 +229,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 disregarding their context. If one or more contexts are specified, statements with a context
 	 *                 matching one of these will match.
 	 * @return The statements that match the specified pattern.
+	 * 
+	 * @see #select(Resource, IRI, Value, Resource...)
 	 */
 	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
 

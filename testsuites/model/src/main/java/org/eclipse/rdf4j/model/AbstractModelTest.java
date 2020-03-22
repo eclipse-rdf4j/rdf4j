@@ -7,11 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import java.util.ConcurrentModificationException;
+import java.util.Iterator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -258,6 +262,71 @@ public abstract class AbstractModelTest {
 	 */
 	@After
 	public void tearDown() throws Exception {
+	}
+
+	@Test
+	public final void testSelect_SingleLiteral() {
+		Model model = getNewModelObjectSingleLiteral();
+
+		Iterator<Statement> selection = model.select(null, null, literal1);
+
+		assertThat(selection.hasNext()).isTrue();
+		assertThat(selection.next().getObject()).isEqualTo(literal1);
+		assertThat(selection.hasNext()).isFalse();
+	}
+
+	@Test
+	public final void testSelect_IteratorModification() {
+		Model model = getNewEmptyModel();
+		model.add(uri1, RDFS.LABEL, uri2);
+		model.add(uri1, RDFS.LABEL, uri3);
+		model.add(uri1, RDFS.LABEL, literal1);
+		model.add(uri1, RDFS.LABEL, literal2);
+
+		Iterator<Statement> selection = model.select(uri1, null, null);
+		while (selection.hasNext()) {
+			Statement st = selection.next();
+			if (st.getObject().equals(uri2)) {
+				selection.remove();
+			}
+		}
+		assertThat(model.contains(uri1, RDFS.LABEL, uri2)).isFalse();
+		assertThat(model.contains(uri1, RDFS.LABEL, uri3)).isTrue();
+	}
+
+	@Test
+	public final void testSelect_ConcurrentModificationOfModel() {
+		Model model = getNewEmptyModel();
+		model.add(uri1, RDFS.LABEL, uri2);
+		model.add(uri1, RDFS.LABEL, uri3);
+		model.add(uri1, RDFS.LABEL, literal1);
+		model.add(uri1, RDFS.LABEL, literal2);
+
+		Iterator<Statement> selection = model.select(uri1, null, null);
+		try {
+			while (selection.hasNext()) {
+				Statement st = selection.next();
+				if (st.getObject().equals(uri2)) {
+					model.remove(uri1, RDFS.LABEL, uri3);
+				}
+			}
+			fail("should have resulted in ConcurrentModificationException");
+		} catch (ConcurrentModificationException e) {
+			// do nothing, expected
+		}
+	}
+
+	@Test
+	public final void testSelect_AddToEmptyModel() {
+		Model model = getNewEmptyModel();
+		Iterator<Statement> selection = model.select(null, null, null);
+		assertThat(selection.hasNext()).isFalse();
+
+		model.add(uri2, RDFS.LABEL, literal1);
+		assertThat(model.contains(uri2, RDFS.LABEL, literal1)).isTrue();
+		assertThat(selection.hasNext()).isFalse();
+		Iterator<Statement> newSelection = model.select(null, null, null);
+		assertThat(newSelection.hasNext()).isTrue();
 	}
 
 	/**
