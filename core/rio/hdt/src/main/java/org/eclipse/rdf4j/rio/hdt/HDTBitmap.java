@@ -9,9 +9,12 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.zip.CheckedInputStream;
+import java.util.zip.CheckedOutputStream;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
  *
@@ -24,9 +27,19 @@ class HDTBitmap extends HDTPart {
 	private byte[] buffer;
 
 	/**
+	 * Set number of bits
+	 * 
+	 * @param
+	 */
+	protected void size(int bits) {
+		this.bits = bits;
+		buffer = new byte[(bits + 7) / 8];
+	}
+
+	/**
 	 * Get bit
 	 * 
-	 * @param i
+	 * @param i position
 	 * @return 0 or 1
 	 */
 	protected int get(int i) {
@@ -35,6 +48,19 @@ class HDTBitmap extends HDTPart {
 
 		byte b = buffer[bytePos];
 		return ((b & 0xFF) >> bitPos) & 1;
+	}
+
+	/**
+	 * Set bit
+	 * 
+	 * @param i   position
+	 * @param val 0 or 1
+	 */
+	protected void set(int i, int val) {
+		int bytePos = i / 8;
+		int bitPos = i % 8;
+
+		buffer[bytePos] |= (val << bitPos) & 0xFF;
 	}
 
 	/**
@@ -78,6 +104,30 @@ class HDTBitmap extends HDTPart {
 			cis.read(buffer);
 
 			checkCRC(cis, is, 4);
+		}
+	}
+
+	@Override
+	protected void write(OutputStream os) throws IOException {
+		long bytes = 0L;
+
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC8())) {
+
+			cos.write(BITMAP1);
+			VByte.encode(cos, bits);
+
+			writeCRC(cos, os, 1);
+		}
+
+		// don't close CheckedOutputStream, as it will close the underlying outputstream
+		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
+				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
+
+			cos.write(buffer);
+
+			writeCRC(cos, os, 4);
 		}
 	}
 }

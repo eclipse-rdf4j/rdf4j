@@ -93,19 +93,10 @@ abstract class HDTArray extends HDTPart {
 	/**
 	 * Set number of entries in this array
 	 * 
-	 * @param positive integer value
+	 * @param entries positive integer value
 	 */
-	protected void setSize(int entries) {
+	protected void size(int entries) {
 		this.entries = entries;
-	}
-
-	/**
-	 * Set number of entries in this array
-	 * 
-	 * @return positive integer value
-	 */
-	protected void size(int size) {
-		this.entries = size;
 	}
 
 	/**

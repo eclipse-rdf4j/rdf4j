@@ -199,7 +199,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		}
 		blockStarts.setMaxValue(maxval);
 
-		blockStarts.setSize(writeBuffers.length + 1);
+		blockStarts.size(writeBuffers.length + 1);
 		blockStarts.set(0, 0);
 		for (int i = 1, idx = 0; i <= writeBuffers.length; i++) {
 			idx += writeBuffers[i - 1].length;

@@ -18,7 +18,7 @@ import org.junit.Test;
 
 /**
  *
- * @author Bart.Hanssens
+ * @author Bart Hanssens
  */
 public class HDTLogArray64Test {
 	private ByteArrayOutputStream bos;
@@ -45,12 +45,12 @@ public class HDTLogArray64Test {
 	@Test
 	public void testEncode133() {
 		arrayOut.setMaxValue(133);
-		arrayOut.setSize(2);
+		arrayOut.size(2);
 		arrayOut.set(0, 0);
 		arrayOut.set(1, 133);
 
 		byte[] expected = new byte[] {
-				(byte) 0x01, (byte) 0x08, (byte) 0x80, (byte) 0x4a, // header
+				(byte) 0x01, (byte) 0x08, (byte) 0x82, (byte) 0x44, // header
 				(byte) 0x00, (byte) 0x85, // entries
 				(byte) 0xb6, (byte) 0x58, (byte) 0x66, (byte) 0x46 }; // crc
 
@@ -66,7 +66,7 @@ public class HDTLogArray64Test {
 	@Test
 	public void testEncode1734() {
 		arrayOut.setMaxValue(1734);
-		arrayOut.setSize(3);
+		arrayOut.size(3);
 		arrayOut.set(0, 0);
 		arrayOut.set(1, 1364);
 		arrayOut.set(2, 1734);
@@ -108,7 +108,7 @@ public class HDTLogArray64Test {
 
 		ByteArrayInputStream bis2 = new ByteArrayInputStream(expected2);
 		try {
-			HDTArray array = HDTArrayFactory.parse(bis1);
+			HDTArray array = HDTArrayFactory.parse(bis2);
 		} catch (Exception ioe) {
 			fail(ioe.getMessage());
 		}

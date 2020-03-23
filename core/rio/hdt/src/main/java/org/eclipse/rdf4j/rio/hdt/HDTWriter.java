@@ -79,12 +79,12 @@ public class HDTWriter extends AbstractRDFWriter {
 
 	// TODO: rewrite this to cater for larger input
 	// create dictionaries and triples, with some size estimations
-	private static int SIZE = 1_048_576;
+	private static int SIZE = 1_048_576 * 4;
 	private Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
 	private Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
 	private Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
 	private Map<String, Integer> dictO = new HashMap<>(SIZE / 2);
-	private List<int[]> t = new ArrayList<>(SIZE);
+	private List<int[]> tripleRefs = new ArrayList<>(SIZE);
 
 	/**
 	 * Creates a new HDTWriter.
@@ -121,7 +121,7 @@ public class HDTWriter extends AbstractRDFWriter {
 		int p = putX(bp, dictP);
 		int o = putSO(bo, dictShared, dictO, dictS);
 
-		t.add(new int[] { s, p, o });
+		tripleRefs.add(new int[] { s, p, o });
 	}
 
 	@Override
@@ -150,15 +150,24 @@ public class HDTWriter extends AbstractRDFWriter {
 			int[] refO = writeDictSection(dictO, bos, "O");
 
 			// prepare renumbering of numeric representation of triples, but start counting from 1
-			int[] renumber = new int[1 + refSO.length + refS.length + refP.length + refO.length];
-			fillLookup(refSO, renumber, 1);
-			fillLookup(refS, renumber, 1 + refSO.length);
-			fillLookup(refP, renumber, 1); // P not part of S+O shared, so start from 0
-			fillLookup(refO, renumber, 1 + refSO.length);
+			int[] lookup = new int[1 + refSO.length + refS.length + refP.length + refO.length];
+			fillLookup(refSO, lookup, 1);
+			fillLookup(refS, lookup, 1 + refSO.length);
+			fillLookup(refP, lookup, 1); // P not part of S+O shared, so start from 0
+			fillLookup(refO, lookup, 1 + refSO.length);
+
+			System.err.println("refs");
+			for (int i = 0; i < tripleRefs.size(); i++) {
+				int[] j = tripleRefs.get(i);
+				System.err.println(j[0] + " " + j[1] + " " + j[2]);
+			}
+
+			List<int[]> newRefs = lookupRefs(tripleRefs, lookup);
 
 			System.err.println("lookup");
-			for (int i = 0; i < renumber.length; i++) {
-				System.err.print(renumber[i] + " ");
+			for (int i = 0; i < newRefs.size(); i++) {
+				int[] j = newRefs.get(i);
+				System.err.println(j[0] + " " + j[1] + " " + j[2]);
 			}
 
 			HDTTriples triples = new HDTTriples();
@@ -251,7 +260,7 @@ public class HDTWriter extends AbstractRDFWriter {
 		meta.setBase(file);
 		meta.setDistinctSubj(dictS.size());
 		meta.setProperties(dictP.size());
-		meta.setTriples(t.size());
+		meta.setTriples(tripleRefs.size());
 		meta.setDistinctObj(dictO.size());
 		meta.setDistinctShared(dictShared.size());
 		meta.setMapping(HDTArray.Type.LOG64.getValue());
@@ -328,8 +337,38 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @param start start value
 	 */
 	private static void fillLookup(int[] refs, int[] swap, int start) {
+		int pos = start;
 		for (int ref : refs) {
-			swap[ref] = start++;
+			swap[ref] = pos++;
 		}
+	}
+
+	/**
+	 * Lookup the numeric references to triple parts, and return an ordered list with the new references
+	 * 
+	 * @param refs   list of references
+	 * @param lookup lookup array
+	 * @return new references
+	 */
+	private static List<int[]> lookupRefs(List<int[]> refs, int[] lookup) {
+		List<int[]> newrefs = new ArrayList<>(refs.size());
+
+		refs.stream()
+				.map(ref -> new int[] { lookup[ref[0]], lookup[ref[1]], lookup[ref[2]] })
+				.sorted((int[] a, int[] b) -> {
+					int cmp = a[0] - b[0];
+					if (cmp != 0) {
+						return cmp;
+					}
+					cmp = a[1] - b[1];
+					if (cmp != 0) {
+						return cmp;
+					}
+					return a[2] - b[2];
+				})
+				.forEach(newrefs::add);
+		refs.clear();
+
+		return newrefs;
 	}
 }
