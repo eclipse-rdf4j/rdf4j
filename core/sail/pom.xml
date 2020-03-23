@@ -10,6 +10,12 @@
 	<packaging>pom</packaging>
 	<name>RDF4J: Sail</name>
 	<description>Sail API and implementations.</description>
+	
+	<properties>
+		<!--  various Sail implementations depend on Apache Lucene. declare single shared version here -->
+		<lucene.version>7.5.0</lucene.version>
+	</properties>
+	
 	<modules>
 		<module>api</module>
 		<module>base</module>
