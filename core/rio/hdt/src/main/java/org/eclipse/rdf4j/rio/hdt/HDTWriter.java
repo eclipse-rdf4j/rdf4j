@@ -68,6 +68,8 @@ import org.eclipse.rdf4j.rio.helpers.HDTWriterSettings;
  * 
  * @see <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT draft (2015)</a>
  * @see <a href="https://www.w3.org/Submission/2011/03/">W3C Member Submission (2011)</a>
+ * 
+ * @since 3.2
  */
 public class HDTWriter extends AbstractRDFWriter {
 	private final OutputStream out;
@@ -110,73 +112,6 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	@Override
-	public void endRDF() throws RDFHandlerException {
-		// not using try-with-resources, since the counter is needed in the catch clause (JDK8)
-		CountingOutputStream bos = new CountingOutputStream(out);
-		try {
-			HDTGlobal global = new HDTGlobal();
-			global.write(bos);
-
-			HDTHeader header = new HDTHeader();
-			header.setHeaderData(getMetadata());
-			header.write(bos);
-
-			HDTDictionary dict = new HDTDictionary();
-			dict.write(bos);
-
-			long dpos = bos.getByteCount();
-			HDTDictionarySection shared = HDTDictionarySectionFactory.write(bos, "S+O", dpos,
-					HDTDictionarySection.Type.FRONT);
-			dictShared = sortMap(dictShared);
-			getLookup((SortedMap) dictShared);
-			shared.setSize(dictShared.size());
-			shared.set(dictShared.keySet().iterator());
-			shared.write(bos);
-
-			dpos = bos.getByteCount();
-			HDTDictionarySection subjects = HDTDictionarySectionFactory.write(bos, "S", dpos,
-					HDTDictionarySection.Type.FRONT);
-			dictS = sortMap(dictS);
-			getLookup((SortedMap) dictS);
-			subjects.setSize(dictS.size());
-			subjects.set(dictS.keySet().iterator());
-			subjects.write(bos);
-
-			dpos = bos.getByteCount();
-			HDTDictionarySection predicates = HDTDictionarySectionFactory.write(bos, "P", dpos,
-					HDTDictionarySection.Type.FRONT);
-			dictP = sortMap(dictP);
-			getLookup((SortedMap) dictP);
-			predicates.setSize(dictP.size());
-			predicates.set(dictP.keySet().iterator());
-			predicates.write(bos);
-
-			dpos = bos.getByteCount();
-			HDTDictionarySection objects = HDTDictionarySectionFactory.write(bos, "O", dpos,
-					HDTDictionarySection.Type.FRONT);
-			dictO = sortMap(dictO);
-			getLookup((SortedMap) dictO);
-			objects.setSize(dictO.size());
-			objects.set(dictO.keySet().iterator());
-			objects.write(bos);
-
-			HDTTriples triples = new HDTTriples();
-			triples.write(bos);
-
-			HDTTriplesSection section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
-			section.write(bos);
-		} catch (IOException ioe) {
-			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
-		} finally {
-			try {
-				bos.close();
-			} catch (IOException ex) {
-				//
-			}
-		}
-	}
-
-	@Override
 	public void handleStatement(Statement st) throws RDFHandlerException {
 		String bs = st.getSubject().toString();
 		String bp = st.getPredicate().toString();
@@ -192,6 +127,55 @@ public class HDTWriter extends AbstractRDFWriter {
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
 		// ignore
+	}
+
+	@Override
+	public void endRDF() throws RDFHandlerException {
+		// not using try-with-resources, since the counter is needed in the catch clause (JDK8)
+		CountingOutputStream bos = new CountingOutputStream(out);
+		try {
+			HDTGlobal global = new HDTGlobal();
+			global.write(bos);
+
+			HDTHeader header = new HDTHeader();
+			header.setHeaderData(getMetadata());
+			header.write(bos);
+
+			HDTDictionary dict = new HDTDictionary();
+			dict.write(bos);
+
+			int[] refSO = writeDictSection(dictShared, bos, "S+O");
+			int[] refS = writeDictSection(dictS, bos, "S");
+			int[] refP = writeDictSection(dictP, bos, "P");
+			int[] refO = writeDictSection(dictO, bos, "O");
+
+			// prepare renumbering of numeric representation of triples, but start counting from 1
+			int[] renumber = new int[1 + refSO.length + refS.length + refP.length + refO.length];
+			fillLookup(refSO, renumber, 1);
+			fillLookup(refS, renumber, 1 + refSO.length);
+			fillLookup(refP, renumber, 1); // P not part of S+O shared, so start from 0
+			fillLookup(refO, renumber, 1 + refSO.length);
+
+			System.err.println("lookup");
+			for (int i = 0; i < renumber.length; i++) {
+				System.err.print(renumber[i] + " ");
+			}
+
+			HDTTriples triples = new HDTTriples();
+			triples.write(bos);
+
+			HDTTriplesSection section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
+			section.write(bos);
+
+		} catch (IOException ioe) {
+			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
+		} finally {
+			try {
+				bos.close();
+			} catch (IOException ex) {
+				//
+			}
+		}
 	}
 
 	/**
@@ -283,6 +267,37 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	/**
+	 * Write a dictionary section to output stream
+	 * 
+	 * @param dict dictionary
+	 * @param bos  output stream
+	 * @param name name of the section
+	 * @return
+	 * @throws IOException
+	 */
+	private static int[] writeDictSection(Map<String, Integer> dict, CountingOutputStream bos,
+			String name) throws IOException {
+		int size = dict.size();
+
+		// keep the values, i.e. the numeric reference to the part (S, P or O) of the triple
+		int values[] = new int[size];
+		int i = 0;
+		for (int value : dict.values()) {
+			values[i++] = value;
+		}
+
+		long dpos = bos.getByteCount();
+
+		HDTDictionarySection section = HDTDictionarySectionFactory.write(bos, name, dpos,
+				HDTDictionarySection.Type.FRONT);
+		section.setSize(dict.size());
+		section.set(sortMap(dict).keySet().iterator());
+		section.write(bos);
+
+		return values;
+	}
+
+	/**
 	 * Move key,values from a map to a sorted map (i.e. it removes entries from the unsorted while ordering to save
 	 * memory)
 	 * 
@@ -302,20 +317,19 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	/**
-	 * Create lookup table containing the new position at the index of the old position
+	 * Fill lookup array containing the new index value at the index of the old position.
 	 * 
-	 * @param map map
-	 * @return array of
+	 * This is needed because HDT renumbers the integer representation of the triples constructed earlier in the process
+	 * (e.g. 5,2,1). The entries in the shared S+O dictionary get the lowest numbers (counting from 1), and then the S
+	 * and O dictionaries get numbered relatively to the S+O
+	 * 
+	 * @param ref   reference to triples part
+	 * @param swap  array to be filled
+	 * @param start start value
 	 */
-	private static Map<Integer, Integer> getLookup(SortedMap<String, Integer> map) {
-		// positions in HDT are counted from 1, leave 0-th element empty to avoid minus/plus 1
-		Map<Integer, Integer> swap = new HashMap<>(map.size(), 1);
-
-		int newpos = 1;
-		for (int oldpos : map.values()) {
-			swap.put(oldpos, newpos++);
+	private static void fillLookup(int[] refs, int[] swap, int start) {
+		for (int ref : refs) {
+			swap[ref] = start++;
 		}
-
-		return swap;
 	}
 }

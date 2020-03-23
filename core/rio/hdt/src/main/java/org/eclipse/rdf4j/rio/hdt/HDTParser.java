@@ -67,6 +67,8 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
  * 
  * @see <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT draft (2015)</a>
  * @see <a href="https://www.w3.org/Submission/2011/03/">W3C Member Submission (2011)</a>
+ * 
+ * @since 3.2
  */
 public class HDTParser extends AbstractRDFParser {
 	/**
