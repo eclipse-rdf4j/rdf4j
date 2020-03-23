@@ -46,7 +46,9 @@
                     <groupId>org.asynchttpclient</groupId>
                 </exclusion>
             </exclusions>
-        </dependency>
+			<scope>provided</scope>
+		</dependency>
+
 
 
         <dependency>
