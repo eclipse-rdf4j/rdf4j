@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.ntriples;
 
 import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,13 @@ public class NTriplesHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeNTriples(knownLanguageStatements);
+	}
+
+	@Override
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
+				"src/test/resources/testcases/ntriples/ntriples-RDF-langString-no-language-test.nt");
+		return RDFLangStringWithNoLanguageStatements;
 	}
 
 	@Override

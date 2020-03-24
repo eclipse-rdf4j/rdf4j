@@ -157,11 +157,25 @@ public class RDFParserHelperTest {
 	 * cases where {@link RDF#LANGSTRING} is given and there is NO given language.
 	 * <p>
 	 * SES-2203 : This was inconsistent, so has been changed to verify failure.
+	 * <p>
+	 * GH-2004 : Changed to handle cases when VERIFY_DATATYPE_VALUES is set to false and {@link RDF#LANGSTRING} is given
+	 * and there is NO given language.
 	 */
 	@Test
-	public final void testCreateLiteralLabelNoLanguageWithRDFLangString() throws Exception {
+	public final void testCreateLiteralLabelNoLanguageWithRDFLangStringWithVerify() throws Exception {
+		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		thrown.expect(RDFParseException.class);
 		RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig, errListener, valueFactory);
+	}
+
+	@Test
+	public final void testCreateLiteralLabelNoLanguageWithRDFLangStringWithNoVerify() throws Exception {
+		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
+		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig, errListener,
+				valueFactory);
+		assertFalse(literal.getLanguage().isPresent());
+		assertEquals(XMLSchema.STRING, literal.getDatatype());
 	}
 
 	@Test
