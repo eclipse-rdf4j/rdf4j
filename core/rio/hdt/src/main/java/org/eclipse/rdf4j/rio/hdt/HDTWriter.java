@@ -156,24 +156,12 @@ public class HDTWriter extends AbstractRDFWriter {
 			fillLookup(refP, lookup, 1); // P not part of S+O shared, so start from 0
 			fillLookup(refO, lookup, 1 + refSO.length);
 
-			System.err.println("refs");
-			for (int i = 0; i < tripleRefs.size(); i++) {
-				int[] j = tripleRefs.get(i);
-				System.err.println(j[0] + " " + j[1] + " " + j[2]);
-			}
-
 			List<int[]> newRefs = lookupRefs(tripleRefs, lookup);
-
-			System.err.println("lookup");
-			for (int i = 0; i < newRefs.size(); i++) {
-				int[] j = newRefs.get(i);
-				System.err.println(j[0] + " " + j[1] + " " + j[2]);
-			}
 
 			HDTTriples triples = new HDTTriples();
 			triples.write(bos);
 
-			HDTTriplesSection section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
+			HDTTriplesSection section = HDTTriplesSectionFactory.create(new String(HDTTriples.FORMAT_BITMAP));
 			section.write(bos);
 
 		} catch (IOException ioe) {
@@ -288,10 +276,11 @@ public class HDTWriter extends AbstractRDFWriter {
 			String name) throws IOException {
 		int size = dict.size();
 
+		SortedMap<String, Integer> sorted = sortMap(dict);
 		// keep the values, i.e. the numeric reference to the part (S, P or O) of the triple
 		int values[] = new int[size];
 		int i = 0;
-		for (int value : dict.values()) {
+		for (int value : sorted.values()) {
 			values[i++] = value;
 		}
 
@@ -299,8 +288,8 @@ public class HDTWriter extends AbstractRDFWriter {
 
 		HDTDictionarySection section = HDTDictionarySectionFactory.write(bos, name, dpos,
 				HDTDictionarySection.Type.FRONT);
-		section.setSize(dict.size());
-		section.set(sortMap(dict).keySet().iterator());
+		section.setSize(size);
+		section.set(sorted.keySet().iterator());
 		section.write(bos);
 
 		return values;

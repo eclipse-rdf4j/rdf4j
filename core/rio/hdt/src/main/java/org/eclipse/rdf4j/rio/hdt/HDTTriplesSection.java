@@ -17,15 +17,29 @@ import java.util.Iterator;
  * 
  * @author Bart Hanssens
  */
-abstract class HDTTriplesSection extends HDTPart implements Iterator<int[]> {
+abstract class HDTTriplesSection extends HDTPart {
 	/**
-	 * Parse triples section and return the triple parts in the correct S,P,O order.
+	 * Parse triples section
 	 * 
 	 * @param is    input stream
 	 * @param order
 	 * @throws IOException
 	 */
 	protected abstract void parse(InputStream is, HDTTriples.Order order) throws IOException;
+
+	/**
+	 * Get triple iterator, returning the triple parts in the correct S,P,O order.
+	 * 
+	 * @return
+	 */
+	protected abstract Iterator<int[]> getIterator();
+
+	/**
+	 * Set triple iterator, providing the triple parts in the correct S,P,O order.
+	 * 
+	 * @param iter
+	 */
+	protected abstract void setIterator(Iterator<int[]> iter);
 
 	/**
 	 * Write triples section in a specific order.

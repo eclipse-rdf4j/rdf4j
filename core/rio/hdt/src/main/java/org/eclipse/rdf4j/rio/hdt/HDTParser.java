@@ -14,6 +14,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -99,12 +100,13 @@ public class HDTParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined in the RDFParser interface.
+	 * Implementation of the <tt>create(InputStream, String)
 	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
+	 * 
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
+	 * @throws RDFParseException        If the parser has found an unrecoverable create error.
 	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
 	 * @throws IllegalArgumentException If the supplied input stream or base URI is <tt>null</tt>.
 	 */
@@ -116,7 +118,7 @@ public class HDTParser extends AbstractRDFParser {
 		}
 
 		if (in instanceof FileInputStream) {
-			// "TODO: use more optimized way to parse the file, eg. filechannel / membuffer"
+			// "TODO: use more optimized way to create the file, eg. filechannel / membuffer"
 		}
 
 		HDTDictionarySection shared = null;
@@ -169,7 +171,7 @@ public class HDTParser extends AbstractRDFParser {
 			triples.parse(bis);
 
 			reportLocation(bis.getByteCount(), -1);
-			section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));
+			section = HDTTriplesSectionFactory.create(new String(HDTTriples.FORMAT_BITMAP));
 			section.parse(bis, triples.getOrder());
 		} catch (IOException ioe) {
 			reportFatalError(ioe.getMessage(), bis.getCount(), -1);
@@ -184,8 +186,9 @@ public class HDTParser extends AbstractRDFParser {
 		int cnt = 0;
 		int size = shared.size();
 
-		while (section.hasNext()) {
-			int[] t = section.next();
+		Iterator<int[]> iter = section.getIterator();
+		while (iter.hasNext()) {
+			int[] t = iter.next();
 			byte[] s = getSO(t[0], size, shared, subjects);
 			byte[] p = predicates.get(t[1]);
 			byte[] o = getSO(t[2], size, shared, objects);

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.rio.hdt;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Iterator;
 
 /**
  * HDT Triples section.
@@ -51,29 +52,45 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	private int posY = 0;
 	private int posZ = 0;
 
+	private int[] prev;
+
 	@Override
-	public boolean hasNext() {
-		// we only need to check if we've reach the end of the "lowest" level
-		return posZ < sizeZ;
+	protected Iterator<int[]> getIterator() {
+		return new Iterator() {
+			@Override
+			public boolean hasNext() {
+				// we only need to check if we've reach the end of the "lowest" level
+				return posZ < sizeZ;
+			}
+
+			@Override
+			public int[] next() {
+				int z = arrZ.get(posZ);
+				int y = arrY.get(posY);
+				int x = posX;
+
+				if (bitmapZ.get(posZ) == 1 && posZ < sizeZ) {
+					// move to next Y position (predicate) when there is no Z (predicate) left
+					if (bitmapY.get(posY) == 1 && posY < sizeY) {
+						// move to next X position (subject) when there is no Y (predicate) left
+						posX++;
+					}
+					posY++;
+				}
+				posZ++;
+				return new int[] { x, y, z };
+			}
+		};
 	}
 
 	@Override
-	public int[] next() {
-		int z = arrZ.get(posZ);
-		int y = arrY.get(posY);
-		int x = posX;
-
-		if (bitmapZ.get(posZ) == 1 && posZ < sizeZ) {
-			// move to next Y position (predicate) when there is no Z (predicate) left
-			if (bitmapY.get(posY) == 1 && posY < sizeY) {
-				// move to next X position (subject) when there is no Y (predicate) left
-				posX++;
-			}
-			posY++;
+	protected void setIterator(Iterator<int[]> iter) {
+		if (iter.hasNext()) {
+			prev = iter.next();
 		}
-		posZ++;
-
-		return new int[] { x, y, z };
+		while (iter.hasNext()) {
+			int[] triple = iter.next();
+		}
 	}
 
 	@Override
@@ -106,10 +123,17 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	@Override
 	protected void write(OutputStream os, HDTTriples.Order order) throws IOException {
 		bitmapY = new HDTBitmap();
+		bitmapY.size(sizeY);
+		bitmapY.write(os);
+
 		bitmapZ = new HDTBitmap();
+		bitmapZ.size(sizeZ);
+		bitmapZ.write(os);
 
 		arrY = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		arrY.write(os);
 
 		arrZ = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		arrZ.write(os);
 	}
 }
