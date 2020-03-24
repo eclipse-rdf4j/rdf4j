@@ -55,8 +55,8 @@ abstract class HDTArray extends HDTPart {
 		}
 	}
 
-	protected int nrbits;
-	protected int entries;
+	private int nrbits;
+	private int entries;
 
 	/**
 	 * Get the type of the array
@@ -72,6 +72,15 @@ abstract class HDTArray extends HDTPart {
 	 */
 	protected int getNrBits() {
 		return nrbits;
+	}
+
+	/**
+	 * Set number of bits used to encode an entry
+	 * 
+	 * @param positive integer value
+	 */
+	protected void setNrBits(int nrbits) {
+		this.nrbits = nrbits;
 	}
 
 	/**

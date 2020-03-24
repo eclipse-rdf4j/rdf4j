@@ -162,6 +162,8 @@ public class HDTWriter extends AbstractRDFWriter {
 			triples.write(bos);
 
 			HDTTriplesSection section = HDTTriplesSectionFactory.create(new String(HDTTriples.FORMAT_BITMAP));
+			section.size(newRefs.size());
+			section.setIterator(newRefs.iterator());
 			section.write(bos);
 
 		} catch (IOException ioe) {
@@ -333,7 +335,7 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	/**
-	 * Lookup the numeric references to triple parts, and return an ordered list with the new references
+	 * Lookup the numeric references to triple parts, and return an ordered list with the new references.
 	 * 
 	 * @param refs   list of references
 	 * @param lookup lookup array
@@ -356,6 +358,7 @@ public class HDTWriter extends AbstractRDFWriter {
 					return a[2] - b[2];
 				})
 				.forEach(newrefs::add);
+		// clear references to reduce memory
 		refs.clear();
 
 		return newrefs;

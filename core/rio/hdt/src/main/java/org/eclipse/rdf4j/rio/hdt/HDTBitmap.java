@@ -17,7 +17,12 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 /**
- *
+ * Bitmap
+ * 
+ * Just a series of 0 and 1 bits.
+ * 
+ * This is used in combination with a {@link org.eclipse.rdf4j.rio.hdt.HDTArray HDTArray} to encode triple parts.
+ * 
  * @author Bart Hanssens
  */
 class HDTBitmap extends HDTPart {

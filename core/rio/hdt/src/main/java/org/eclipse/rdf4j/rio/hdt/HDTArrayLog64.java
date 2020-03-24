@@ -43,7 +43,7 @@ class HDTArrayLog64 extends HDTArray {
 		int i = 0;
 		while (++i < 32 && (maxval >> i) > 0)
 			;
-		nrbits = i;
+		setNrBits(i);
 	}
 
 	@Override
@@ -53,6 +53,8 @@ class HDTArrayLog64 extends HDTArray {
 
 	@Override
 	protected int get(int i) {
+		int nrbits = getNrBits();
+
 		// start byte of the value, and start bit in that start byte
 		int bytePos = (i * nrbits) / 8;
 		int bitPos = (i * nrbits) % 8;
@@ -80,7 +82,7 @@ class HDTArrayLog64 extends HDTArray {
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
 				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 			// read bytes, minimum 1
-			long bytes = (nrbits * entries + 7) / 8;
+			long bytes = (getNrBits() * size() + 7) / 8;
 			if (bytes > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException("Maximum number of bytes in array exceeded: " + bytes);
 			}
@@ -95,11 +97,13 @@ class HDTArrayLog64 extends HDTArray {
 	@Override
 	protected void size(int entries) {
 		super.size(entries);
-		buffer = new byte[(entries * nrbits + 7) / 8];
+		buffer = new byte[(entries * getNrBits() + 7) / 8];
 	}
 
 	@Override
 	protected void set(int i, int entry) {
+		int nrbits = getNrBits();
+
 		// start byte of the value, and start bit in that start byte
 		int bytePos = (i * nrbits) / 8;
 		int bitPos = (i * nrbits) % 8;

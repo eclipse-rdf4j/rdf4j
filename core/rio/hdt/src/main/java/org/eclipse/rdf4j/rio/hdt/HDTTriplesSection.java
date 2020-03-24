@@ -18,6 +18,8 @@ import java.util.Iterator;
  * @author Bart Hanssens
  */
 abstract class HDTTriplesSection extends HDTPart {
+	private int triples;
+
 	/**
 	 * Parse triples section
 	 * 
@@ -40,6 +42,24 @@ abstract class HDTTriplesSection extends HDTPart {
 	 * @param iter
 	 */
 	protected abstract void setIterator(Iterator<int[]> iter);
+
+	/**
+	 * Get number of triples in this section
+	 * 
+	 * @return positive integer value
+	 */
+	protected int size() {
+		return this.triples;
+	}
+
+	/**
+	 * Set number of triples in this section
+	 * 
+	 * @param entries positive integer value
+	 */
+	protected void size(int triples) {
+		this.triples = triples;
+	}
 
 	/**
 	 * Write triples section in a specific order.
