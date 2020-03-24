@@ -98,6 +98,11 @@ public abstract class AbstractParserHandlingTest {
 	 */
 	private static final String KNOWN_LANGUAGE_TAG = "en-AU";
 
+	/**
+	 * Test URI used for testing support for handling RDF langString with no Language tag.
+	 */
+	private static final IRI EMPTY_DATATYPE_URI = null;
+
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private RDFParser testParser;
@@ -147,6 +152,18 @@ public abstract class AbstractParserHandlingTest {
 	 * @return An InputStream based on the given parameters.
 	 */
 	protected InputStream getKnownLanguageStream(Model model) throws Exception {
+		return serialize(model);
+	}
+
+	/**
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
+	 * RDFParser returned by {@link #getParser()}.
+	 * 
+	 * @param RDFLangStringWithNoLanguageStatements A {@link Model} containing statements which all contain statements
+	 *                                              that have RDF langString with no language tag.
+	 * @return An InputStream based on the given parameters.
+	 */
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		return serialize(model);
 	}
 
@@ -860,6 +877,19 @@ public abstract class AbstractParserHandlingTest {
 		InputStream input = getKnownLanguageStream(expectedModel);
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+
+		testParser.parse(input, BASE_URI);
+
+		assertErrorListener(0, 0, 0);
+		assertModel(expectedModel);
+	}
+
+	@Test
+	public final void testNoLanguageWithRDFLangStringNoFailCase1() throws Exception {
+		Model expectedModel = getTestModel(KNOWN_LANGUAGE_VALUE, EMPTY_DATATYPE_URI);
+		InputStream input = getRDFLangStringWithNoLanguageStream(expectedModel);
+
+		testParser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 
 		testParser.parse(input, BASE_URI);
 
