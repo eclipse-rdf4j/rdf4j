@@ -1,0 +1,7 @@
+[ {
+  "@id" : "_:node1e44g1jstx2",
+  "http://purl.org/dc/elements/1.1/description" : [ {
+    "@value" : "G'day mate",
+    "@datatype" : "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+  } ]
+} ]

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.rdfjson;
 
 import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +46,13 @@ public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeRDFJSON(knownLanguageStatements);
+	}
+
+	@Override
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
+				"src/test/resources/testcases/rdfjson/rdfjson-RDF-langString-no-language-test.rj");
+		return RDFLangStringWithNoLanguageStatements;
 	}
 
 	@Override

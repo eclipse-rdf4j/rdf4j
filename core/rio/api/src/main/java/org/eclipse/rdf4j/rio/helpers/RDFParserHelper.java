@@ -185,6 +185,13 @@ public class RDFParserHelper {
 
 		if (result == null) {
 			try {
+				// Removes datatype for langString datatype with no language tag when VERIFY_DATATYPE_VALUES is False.
+				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))
+						&& (!workingLang.isPresent() || workingLang.get().isEmpty())
+						&& !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {
+					workingLang = Optional.ofNullable(null);
+					workingDatatype = null;
+				}
 				// Backup for unnormalised language literal creation
 				if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
 					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern());

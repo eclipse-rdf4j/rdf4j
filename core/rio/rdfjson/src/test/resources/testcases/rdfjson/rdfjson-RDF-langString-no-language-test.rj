@@ -1,0 +1,11 @@
+{
+  "_:node1e44bq9g6x1" : {
+    "http://purl.org/dc/elements/1.1/description" : [
+      {
+        "value" : "G'day mate",
+        "type" : "literal",
+        "datatype" : "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+      }
+    ]
+  }
+}

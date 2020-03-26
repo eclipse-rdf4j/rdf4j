@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.rio.binary;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
+import java.io.FileInputStream;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -43,6 +45,19 @@ public class BinaryHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
 		return writeBinary(knownLanguageStatements);
+	}
+
+	@Override
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		String fileName = "src/test/resources/testcases/binary/binary-RDF-langString-no-language-test.rdf";
+		InputStream file = new FileInputStream(fileName);
+		long fileSize = new File(fileName).length();
+		byte[] byteArray = new byte[(int) fileSize];
+
+		file.read(byteArray);
+
+		InputStream RDFLangStringWithNoLanguageStatements = new ByteArrayInputStream(byteArray);
+		return RDFLangStringWithNoLanguageStatements;
 	}
 
 	@Override
