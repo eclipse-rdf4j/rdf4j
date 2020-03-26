@@ -146,6 +146,8 @@ abstract class HDTArray extends HDTPart {
 
 	@Override
 	protected void write(OutputStream os) throws IOException {
+		os.write(getType());
+
 		CRC8 crc8 = new CRC8();
 		crc8.update(getType());
 

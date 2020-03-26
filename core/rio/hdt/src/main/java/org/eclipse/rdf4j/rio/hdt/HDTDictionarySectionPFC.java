@@ -191,7 +191,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			writeCRC(cos, os, 1);
 		}
 
-		blockStarts = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
+		blockStarts = HDTArrayFactory.create(HDTArray.Type.LOG64);
 		// keep track of starting positions of the blocks
 		int maxval = 0;
 		for (int i = 0; i < writeBuffers.length; i++) {

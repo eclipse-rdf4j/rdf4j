@@ -34,19 +34,18 @@ class HDTArrayFactory {
 	}
 
 	/**
-	 * Write array to output stream
+	 * Create new array
 	 * 
 	 * @param os    output stream
 	 * @param dtype array type
 	 * @return array
 	 * @throws IOException
 	 */
-	protected static HDTArray write(OutputStream os, HDTArray.Type dtype) throws IOException {
+	protected static HDTArray create(HDTArray.Type dtype) throws IOException {
 		if (dtype != HDTArray.Type.LOG64) {
 			throw new UnsupportedOperationException("Array section: encoding " + dtype.getValue() +
 					", but only Log64 encoding is supported");
 		}
-		os.write(HDTArray.Type.LOG64.getValue());
 		return new HDTArrayLog64();
 	}
 }

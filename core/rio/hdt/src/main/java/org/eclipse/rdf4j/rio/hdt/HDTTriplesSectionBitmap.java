@@ -37,6 +37,8 @@ import java.util.Iterator;
  * +----------+----------+---------+---------+
  * </pre>
  * 
+ * @see http://www.rdfhdt.org/hdt-internals/#triples
+ * 
  * @author Bart Hanssens
  */
 class HDTTriplesSectionBitmap extends HDTTriplesSection {
@@ -48,15 +50,15 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 	private int sizeY = 0;
 	private int sizeZ = 0;
 
-	private int posX = 1;
-	private int posY = 0;
-	private int posZ = 0;
-
-	private int[] prev;
+	private Iterator<int[]> iter;
 
 	@Override
 	protected Iterator<int[]> getIterator() {
 		return new Iterator() {
+			private int posX = 1;
+			private int posY = 0;
+			private int posZ = 0;
+
 			@Override
 			public boolean hasNext() {
 				// we only need to check if we've reach the end of the "lowest" level
@@ -85,12 +87,7 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 	@Override
 	protected void setIterator(Iterator<int[]> iter) {
-		if (iter.hasNext()) {
-			prev = iter.next();
-		}
-		while (iter.hasNext()) {
-			int[] triple = iter.next();
-		}
+		this.iter = iter;
 	}
 
 	@Override
@@ -122,18 +119,38 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 	@Override
 	protected void write(OutputStream os, HDTTriples.Order order) throws IOException {
+		// Z will simply be the number of triples, 
+		// also use Z as upper value for Y and resize later
+		sizeY = size();
+		sizeZ = size();
+
 		bitmapY = new HDTBitmap();
 		bitmapY.size(sizeY);
-		bitmapY.write(os);
 
 		bitmapZ = new HDTBitmap();
 		bitmapZ.size(sizeZ);
+
+		// Log64 cannot be resized easily, so create a temp array
+		arrY = HDTArrayFactory.create(HDTArray.Type.LOG64);
+		int[] arrYtmp = new int[sizeY];
+		
+		arrZ = HDTArrayFactory.create(HDTArray.Type.LOG64);
+		arrZ.size(size());
+
+		int[] triple = iter.next();
+		arrYtmp[0] = triple[1]; // predicate
+		arrZ.set(0, triple[2]); // object
+	
+		// iterate over triple references to calculate the size of Y (predicate bitmap / array)
+		for(int i = 1; i < sizeZ; i++) {
+			triple = iter.next();
+			arrZ.set(i, triple[2]);
+		}
+
+		bitmapY.write(os);
 		bitmapZ.write(os);
 
-		arrY = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
 		arrY.write(os);
-
-		arrZ = HDTArrayFactory.write(os, HDTArray.Type.LOG64);
 		arrZ.write(os);
 	}
 }

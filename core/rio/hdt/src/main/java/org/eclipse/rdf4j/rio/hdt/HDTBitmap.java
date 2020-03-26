@@ -29,16 +29,21 @@ class HDTBitmap extends HDTPart {
 	protected final static int BITMAP1 = 1;
 
 	private int bits;
-	private byte[] buffer;
+	private byte[] buffer = null;
 
 	/**
-	 * Set number of bits
+	 * Set number of bits.
 	 * 
-	 * @param
+	 * When first called, it will initialize an internal buffer. 
+	 * The size can still be decreased (but not increased) afterwards, though this will not free up memory.
+	 * 
+	 * @param number of bits
 	 */
 	protected void size(int bits) {
 		this.bits = bits;
-		buffer = new byte[(bits + 7) / 8];
+		if (buffer == null) {
+			buffer = new byte[(bits + 7) / 8];
+		}
 	}
 
 	/**
@@ -130,7 +135,8 @@ class HDTBitmap extends HDTPart {
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
 
-			cos.write(buffer);
+			// size of the buffer might have been decreased 
+			cos.write(buffer, 0, (bits + 7) / 8);
 
 			writeCRC(cos, os, 4);
 		}

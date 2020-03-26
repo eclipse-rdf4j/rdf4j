@@ -163,6 +163,9 @@ public class HDTWriter extends AbstractRDFWriter {
 
 			HDTTriplesSection section = HDTTriplesSectionFactory.create(new String(HDTTriples.FORMAT_BITMAP));
 			section.size(newRefs.size());
+			section.setNrS(refSO.length + refS.length);
+			section.setNrP(refP.length);
+			section.setNrO(refSO.length);
 			section.setIterator(newRefs.iterator());
 			section.write(bos);
 

@@ -27,7 +27,7 @@ public class HDTLogArray64Test {
 	@Before
 	public void setUp() throws Exception {
 		bos = new ByteArrayOutputStream();
-		arrayOut = HDTArrayFactory.write(bos, HDTArray.Type.LOG64);
+		arrayOut = HDTArrayFactory.create(HDTArray.Type.LOG64);
 	}
 
 	@Test

@@ -19,6 +19,81 @@ import java.util.Iterator;
  */
 abstract class HDTTriplesSection extends HDTPart {
 	private int triples;
+	private int nrS;
+	private int nrP;
+	private int nrO;
+
+	/**
+	 * Get number of different subjects
+	 * 
+	 * @return number
+	 */
+	protected int getNrS() {
+		return nrS;
+	}
+
+	/**
+	 * Set number of different subjects
+	 * 
+	 * @param nrS number
+	 */
+	protected void setNrS(int nrS) {
+		this.nrS = nrS;
+	}
+
+	/**
+	 * Get number of different predicates
+	 * 
+	 * @return number
+	 */
+	protected int getNrP() {
+		return nrP;
+	}
+
+	/**
+	 * Set number of different predicates
+	 * 
+	 * @param nrP number
+	 */
+	protected void setNrP(int nrP) {
+		this.nrP = nrP;
+	}
+
+	/**
+	 * Get number of different objects
+	 * 
+	 * @return number
+	 */
+	protected int getNrO() {
+		return nrO;
+	}
+
+	/**
+	 * Set number of different objects
+	 * 
+	 * @param nrO number
+	 */
+	protected void setNrO(int nrO) {
+		this.nrO = nrO;
+	}
+
+	/**
+	 * Get number of triples in this section
+	 * 
+	 * @return positive integer value
+	 */
+	protected int size() {
+		return this.triples;
+	}
+
+	/**
+	 * Set number of triples in this section
+	 * 
+	 * @param entries positive integer value
+	 */
+	protected void size(int triples) {
+		this.triples = triples;
+	}
 
 	/**
 	 * Parse triples section
@@ -42,24 +117,6 @@ abstract class HDTTriplesSection extends HDTPart {
 	 * @param iter
 	 */
 	protected abstract void setIterator(Iterator<int[]> iter);
-
-	/**
-	 * Get number of triples in this section
-	 * 
-	 * @return positive integer value
-	 */
-	protected int size() {
-		return this.triples;
-	}
-
-	/**
-	 * Set number of triples in this section
-	 * 
-	 * @param entries positive integer value
-	 */
-	protected void size(int triples) {
-		this.triples = triples;
-	}
 
 	/**
 	 * Write triples section in a specific order.
