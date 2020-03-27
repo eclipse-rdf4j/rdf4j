@@ -88,12 +88,11 @@
 			<artifactId>rdf4j-sail-extensible-store</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-        <dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
-            <artifactId>rdf4j-sail-inferencer</artifactId>
+			<artifactId>rdf4j-sail-inferencer</artifactId>
 			<version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 </project>
