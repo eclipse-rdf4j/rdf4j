@@ -149,7 +149,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	// override this method to change which evaluation statistics to use
 	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
-		return EvaluationStatisticsEnum.dynamic;
+		return EvaluationStatisticsEnum.constant;
 	}
 
 	public ExtensibleStatementHelper getExtensibleStatementHelper() {
