@@ -34,8 +34,8 @@ class HDTBitmap extends HDTPart {
 	/**
 	 * Set number of bits.
 	 * 
-	 * When first called, it will initialize an internal buffer. 
-	 * The size can still be decreased (but not increased) afterwards, though this will not free up memory.
+	 * When first called, it will initialize an internal buffer. The size can still be decreased (but not increased)
+	 * afterwards, though this will not free up memory.
 	 * 
 	 * @param number of bits
 	 */
@@ -135,7 +135,7 @@ class HDTBitmap extends HDTPart {
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
 
-			// size of the buffer might have been decreased 
+			// size of the buffer might have been decreased
 			cos.write(buffer, 0, (bits + 7) / 8);
 
 			writeCRC(cos, os, 4);

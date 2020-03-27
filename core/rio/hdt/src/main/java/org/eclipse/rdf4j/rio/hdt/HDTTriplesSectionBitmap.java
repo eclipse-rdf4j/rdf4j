@@ -119,7 +119,7 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 	@Override
 	protected void write(OutputStream os, HDTTriples.Order order) throws IOException {
-		// Z will simply be the number of triples, 
+		// Z will simply be the number of triples,
 		// also use Z as upper value for Y and resize later
 		sizeY = size();
 		sizeZ = size();
@@ -130,27 +130,109 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 		bitmapZ = new HDTBitmap();
 		bitmapZ.size(sizeZ);
 
-		// Log64 cannot be resized easily, so create a temp array
 		arrY = HDTArrayFactory.create(HDTArray.Type.LOG64);
-		int[] arrYtmp = new int[sizeY];
-		
 		arrZ = HDTArrayFactory.create(HDTArray.Type.LOG64);
-		arrZ.size(size());
 
-		int[] triple = iter.next();
-		arrYtmp[0] = triple[1]; // predicate
-		arrZ.set(0, triple[2]); // object
-	
-		// iterate over triple references to calculate the size of Y (predicate bitmap / array)
-		for(int i = 1; i < sizeZ; i++) {
-			triple = iter.next();
-			arrZ.set(i, triple[2]);
+		fillYZ();
+
+		for (int i = 0; i < arrY.size(); i++) {
+			System.err.print(arrY.get(i) + " ");
 		}
+		System.err.println();
+
+		for (int i = 0; i < bitmapY.size(); i++) {
+			System.err.print(bitmapY.get(i) + " ");
+		}
+		System.err.println();
+
+		for (int i = 0; i < arrZ.size(); i++) {
+			System.err.print(arrZ.get(i) + " ");
+		}
+		System.err.println();
+
+		for (int i = 0; i < bitmapZ.size(); i++) {
+			System.err.print(bitmapZ.get(i) + " ");
+		}
+		System.err.println();
 
 		bitmapY.write(os);
 		bitmapZ.write(os);
 
 		arrY.write(os);
 		arrZ.write(os);
+	}
+
+	/**
+	 * Fill Y and Z bitmaps and arrays
+	 */
+	private void fillYZ() {
+		// Log64 cannot be resized easily, and require max value to be known, so create a temp array
+		int[] arrYtmp = new int[sizeY];
+		int[] arrZtmp = new int[sizeZ];
+
+		int posY = 1;
+		int posZ = 1;
+
+		int[] triple = iter.next();
+		int prevX = triple[0]; // subject
+		int prevY = triple[1]; // predicate
+		int prevZ = triple[2]; // object
+
+		arrYtmp[0] = triple[1];
+		arrZtmp[0] = triple[2];
+
+		int maxY = triple[1];
+		int maxZ = triple[2];
+
+		// iterate over triple references
+		for (posZ = 1; posZ < sizeZ; posZ++) {
+			triple = iter.next();
+			if (triple[1] > maxY) {
+				maxY = triple[1];
+			}
+			if (triple[2] > maxZ) {
+				maxZ = triple[2];
+			}
+
+			if (triple[0] != prevX) {
+				// previous P/O were the last P/O for that subject
+				bitmapY.set(posY - 1, 1);
+				bitmapZ.set(posZ - 1, 1);
+				prevX = triple[0];
+				arrYtmp[posY++] = triple[1];
+			} else {
+				if (triple[1] != prevY) {
+					bitmapY.set(posY - 1, 1);
+					bitmapZ.set(posZ - 1, 1);
+					prevY = triple[1];
+					arrYtmp[posY++] = triple[1];
+				} else {
+					bitmapY.set(posY - 1, 0);
+					bitmapZ.set(posZ - 1, 0);
+				}
+			}
+			arrZtmp[posZ] = triple[2];
+		}
+
+		arrYtmp[posY] = triple[1];
+		// last bit is always 1 (= last predicate/object)
+		bitmapY.set(posY - 1, 1);
+		bitmapZ.set(posZ - 1, 1);
+
+		// now resize and fill the Y array
+		arrY.setMaxValue(maxY);
+		arrY.size(posY);
+		bitmapY.size(posY);
+		for (int i = 0; i < posY; i++) {
+			arrY.set(i, arrYtmp[i]);
+		}
+
+		// now resize and fill the Z array
+		arrZ.setMaxValue(maxZ);
+		arrZ.size(posZ);
+		bitmapZ.size(posZ);
+		for (int i = 0; i < posZ; i++) {
+			arrZ.set(i, arrZtmp[i]);
+		}
 	}
 }
