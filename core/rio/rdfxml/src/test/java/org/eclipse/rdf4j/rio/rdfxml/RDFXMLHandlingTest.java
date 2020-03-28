@@ -7,11 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-
-import java.io.OutputStream;
 
 /**
  * Test for error handling by RDFXML Parser.
@@ -19,6 +22,13 @@ import java.io.OutputStream;
  * @author Peter Ansell
  */
 public class RDFXMLHandlingTest extends AbstractParserHandlingTest {
+	@Override
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
+				"src/test/resources/testcases/rdfxml/rdfxml-RDF-langString-no-language-test.rdf");
+		return RDFLangStringWithNoLanguageStatements;
+	}
+
 	@Override
 	protected RDFParser getParser() {
 		return new RDFXMLParser();

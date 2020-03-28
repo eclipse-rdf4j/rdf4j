@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+
+<rdf:Description rdf:nodeID="node1e44bk4fux1">
+	<description rdf:datatype="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString" xmlns="http://purl.org/dc/elements/1.1/">G'day mate</description>
+</rdf:Description>
+
+</rdf:RDF>

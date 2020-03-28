@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -10,6 +9,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -51,10 +51,8 @@ public class W3cComplianceTest {
 
 	@Ignore
 	@Test
-	public void test() {
-
+	public void test() throws IOException {
 		runTest(testCasePath);
-
 	}
 
 	private static Set<URL> getTestFiles() {
@@ -121,23 +119,33 @@ public class W3cComplianceTest {
 
 	}
 
-	private void runTest(URL resourceName) {
+	private void runTest(URL resourceName) throws IOException {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
-		SailRepository sailRepository = Utils.getInitializedShaclRepository(resourceName);
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository sailRepository = new SailRepository(shaclSail);
 
-		boolean failedShacl = false;
+		Utils.loadShapeData(sailRepository, resourceName);
+
+		boolean actualConforms = false;
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			shaclSail.disableValidation();
 			connection.begin();
 			connection.add(resourceName, "http://example.org/", RDFFormat.TURTLE);
+			connection.commit();
+			shaclSail.enableValidation();
+
+			connection.begin();
+			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+			actualConforms = revalidate.conforms();
 			connection.commit();
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (RepositoryException e) {
-			failedShacl = e.toString().contains("Failed SHACL validation");
+			actualConforms = !e.toString().contains("Failed SHACL validation");
 		}
 
-		assertEquals(expected.conforms, !failedShacl);
+		assertEquals(expected.conforms, actualConforms);
 	}
 
 	class W3C_shaclTestValidate {
