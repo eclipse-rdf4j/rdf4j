@@ -170,5 +170,9 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	public void meet(ZeroLengthPath node) throws X;
 
+	public void meet(TripleRef node) throws X;
+
+	public void meet(ValueExprTripleRef node) throws X;
+
 	public void meetOther(QueryModelNode node) throws X;
 }

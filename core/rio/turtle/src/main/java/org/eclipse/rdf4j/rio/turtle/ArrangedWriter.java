@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -43,7 +44,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * @author James Leigh
  * @since 2.3
  */
-class ArrangedWriter extends AbstractRDFWriter {
+public class ArrangedWriter extends AbstractRDFWriter {
 
 	private final static int DEFAULT_QUEUE_SIZE = 100;
 
@@ -74,8 +75,9 @@ class ArrangedWriter extends AbstractRDFWriter {
 			return 1;
 		}
 		int cmp = p1.stringValue().compareTo(p2.stringValue());
-		if (cmp != 0)
+		if (cmp != 0) {
 			return cmp;
+		}
 		Value o1 = s1.getObject();
 		Value o2 = s2.getObject();
 		if (o1.equals(o2)) {
@@ -89,6 +91,11 @@ class ArrangedWriter extends AbstractRDFWriter {
 		if (!(o1 instanceof IRI) && o2 instanceof IRI) {
 			return -1;
 		} else if (o1 instanceof IRI && !(o2 instanceof IRI)) {
+			return 1;
+		}
+		if (!(o1 instanceof Triple) && o2 instanceof Triple) {
+			return -1;
+		} else if (o1 instanceof Triple && !(o2 instanceof Triple)) {
 			return 1;
 		}
 		int str_cmp = o1.stringValue().compareTo(o2.stringValue());
@@ -146,6 +153,7 @@ class ArrangedWriter extends AbstractRDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		if (getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES)) {
 			targetQueueSize = -1;
 			repeatBlankNodes = true;
@@ -179,7 +187,7 @@ class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	@Override
-	public synchronized void handleStatement(Statement st) throws RDFHandlerException {
+	protected synchronized void consumeStatement(Statement st) throws RDFHandlerException {
 		if (targetQueueSize == 0) {
 			delegate.handleStatement(st);
 		} else {
@@ -391,20 +399,26 @@ class ArrangedWriter extends AbstractRDFWriter {
 
 		@Override
 		public boolean equals(Object obj) {
-			if (this == obj)
+			if (this == obj) {
 				return true;
-			if (obj == null)
+			}
+			if (obj == null) {
 				return false;
-			if (getClass() != obj.getClass())
+			}
+			if (getClass() != obj.getClass()) {
 				return false;
+			}
 			SubjectInContext other = (SubjectInContext) obj;
-			if (!subject.equals(other.subject))
+			if (!subject.equals(other.subject)) {
 				return false;
+			}
 			if (context == null) {
-				if (other.context != null)
+				if (other.context != null) {
 					return false;
-			} else if (!context.equals(other.context))
+				}
+			} else if (!context.equals(other.context)) {
 				return false;
+			}
 			return true;
 		}
 	}

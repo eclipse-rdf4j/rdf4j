@@ -83,8 +83,8 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
-		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(st1);
 		rdfWriter.endRDF();
 

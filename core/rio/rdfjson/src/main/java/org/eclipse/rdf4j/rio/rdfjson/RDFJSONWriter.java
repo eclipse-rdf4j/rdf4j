@@ -66,6 +66,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (this.writer != null) {
 				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
@@ -103,21 +104,24 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(final String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		// Comments are ignored.
 	}
 
 	@Override
 	public void handleNamespace(final String prefix, final String uri) throws RDFHandlerException {
+		checkWritingStarted();
 		// Namespace prefixes are not used in RDF/JSON.
 	}
 
 	@Override
-	public void handleStatement(final Statement statement) throws RDFHandlerException {
-		this.graph.add(statement);
+	public void consumeStatement(final Statement statement) throws RDFHandlerException {
+		graph.add(statement);
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		this.graph = new TreeModel();
 	}
 

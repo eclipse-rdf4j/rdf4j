@@ -109,6 +109,10 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTVar node, Object data) throws VisitorException;
 
+	public Object visit(ASTTripleRef node, Object data) throws VisitorException;
+
+	public Object visit(ASTConstTripleRef node, Object data) throws VisitorException;
+
 	public Object visit(ASTOr node, Object data) throws VisitorException;
 
 	public Object visit(ASTAnd node, Object data) throws VisitorException;
@@ -295,4 +299,4 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTModify node, Object data) throws VisitorException;
 }
-/* JavaCC - OriginalChecksum=ce20a677da5935e1dd2cd58bf6c23cec (do not edit this line) */
+/* JavaCC - OriginalChecksum=865433011adbeec824a2b1ac0499fdd1 (do not edit this line) */

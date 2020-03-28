@@ -50,10 +50,9 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private XMLWriter xmlWriter;
 
-	private boolean writingStarted = false;
-
 	private boolean inActiveContext = false;
 
+	private boolean convertRDFStar;
 	private Resource currentContext = null;
 
 	/*--------------*
@@ -96,9 +95,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RDFHandlerException("Document writing has already started");
-		}
+		super.startRDF();
 
 		try {
 
@@ -110,17 +107,12 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			xmlWriter.startTag(ROOT_TAG);
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = true;
 		}
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			if (inActiveContext) {
 				xmlWriter.endTag(CONTEXT_TAG);
@@ -131,22 +123,17 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			xmlWriter.endDocument();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) {
+		checkWritingStarted();
 		// ignore
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet been started");
-		}
-
+	protected void consumeStatement(Statement st) {
 		try {
 			Resource context = st.getContext();
 
@@ -182,6 +169,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			xmlWriter.comment(comment);
 		} catch (IOException e) {

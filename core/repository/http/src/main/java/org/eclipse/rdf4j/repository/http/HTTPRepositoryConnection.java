@@ -421,7 +421,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			// N-Triples format, just with a different
 			// default MIME-type.
 			return new RDFFormat(NTRIPLES.getName(), Arrays.asList("text/plain"), NTRIPLES.getCharset(),
-					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts());
+					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
+					NTRIPLES.supportsRDFStar());
 		}
 
 		return format;

@@ -48,4 +48,6 @@ class BinaryRDFConstants {
 	static final int DATATYPE_LITERAL_VALUE = 5;
 
 	static final int VALUE_REF = 6;
+
+	static final int TRIPLE_VALUE = 7;
 }

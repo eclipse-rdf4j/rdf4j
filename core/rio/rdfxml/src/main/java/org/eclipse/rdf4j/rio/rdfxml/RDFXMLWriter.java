@@ -43,7 +43,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected ParsedIRI baseIRI;
 	protected Writer writer;
 	protected String defaultNamespace;
-	protected boolean writingStarted = false;
 	protected boolean headerWritten = false;
 	protected Resource lastWrittenSubject = null;
 	protected char quote = '"';
@@ -97,14 +96,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		return RDFFormat.RDFXML;
 	}
 
-	@Override
-	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RDFHandlerException("Document writing has already started");
-		}
-		writingStarted = true;
-	}
-
 	protected void writeHeader() throws IOException {
 		try {
 			// This export format needs the RDF namespace to be defined, add a
@@ -156,10 +147,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();
@@ -176,14 +164,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
-			headerWritten = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) {
+		checkWritingStarted();
 		setNamespace(prefix, name);
 	}
 
@@ -223,11 +209,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet been started");
-		}
-
+	protected void consumeStatement(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -333,6 +315,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();
