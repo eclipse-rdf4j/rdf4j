@@ -42,30 +42,36 @@ public class ExtensibleSailStore implements SailStore {
 	public ExtensibleSailStore(DataStructureInterface dataStructure,
 			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
 			ExtensibleStatementHelper extensibleStatementHelper) {
+
 		this.evaluationStatisticsEnum = evaluationStatisticsEnum;
-		evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
+		this.evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
+
 		if (evaluationStatistics instanceof DynamicStatistics) {
 			dataStructure = new EvaluationStatisticsWrapper(dataStructure, (DynamicStatistics) evaluationStatistics);
-
 			startEvaluationStatisticsMaintainerThread();
-
 		}
+
 		this.dataStructure = dataStructure;
 		sailSource = new ExtensibleSailSource(dataStructure, namespaceStore, false, extensibleStatementHelper);
 		sailSourceInferred = new ExtensibleSailSource(dataStructure, namespaceStore, true, extensibleStatementHelper);
 
 	}
 
-	private void startEvaluationStatisticsMaintainerThread() {
+	synchronized private void startEvaluationStatisticsMaintainerThread() {
+		if (!closed) {
+			return;
+		}
 		evaluationStatisticsMaintainerThread = new Thread(new EvaluationStatisticsThread());
 		evaluationStatisticsMaintainerThread.setDaemon(true);
 		evaluationStatisticsMaintainerThread.start();
 	}
 
 	@Override
-	public void close() throws SailException {
+	synchronized public void close() throws SailException {
 		closed = true;
-		evaluationStatisticsMaintainerThread.interrupt();
+		if (evaluationStatisticsMaintainerThread != null) {
+			evaluationStatisticsMaintainerThread.interrupt();
+		}
 		sailSource.close();
 		sailSourceInferred.close();
 	}
@@ -95,7 +101,7 @@ public class ExtensibleSailStore implements SailStore {
 		sailSourceInferred.init();
 	}
 
-	synchronized private void startRecalculateStatistics() {
+	private void startRecalculateStatistics() {
 
 		logger.info("Recalculating stats: started");
 		DynamicStatistics instance = (DynamicStatistics) evaluationStatisticsEnum.getInstance(this);
@@ -112,6 +118,7 @@ public class ExtensibleSailStore implements SailStore {
 
 	private void addToStats(DynamicStatistics instance,
 			CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
+
 		long estimatedSize = dataStructure.getEstimatedSize();
 
 		long counter = 0;
@@ -142,8 +149,9 @@ public class ExtensibleSailStore implements SailStore {
 					return;
 				}
 
-				if (closed)
+				if (closed) {
 					return;
+				}
 
 				long estimatedSize = dataStructure.getEstimatedSize();
 
@@ -151,15 +159,21 @@ public class ExtensibleSailStore implements SailStore {
 					double staleness = ((DynamicStatistics) evaluationStatistics).staleness(estimatedSize);
 
 					if (staleness > 0.2) {
+						long formattedStaleness = Math.round(staleness * 100);
 						logger.info("Evaluation statistics is stale ({}%) and needs to be recalculated",
-								Math.round(staleness * 100));
+								formattedStaleness);
 						startRecalculateStatistics();
 					}
 
 				}
 
+			} catch (Exception e) {
+				if (!(closed || Thread.interrupted())) {
+					throw new RuntimeException(e);
+				}
+
 			} finally {
-				if (!Thread.interrupted() && !closed) {
+				if (!Thread.interrupted()) {
 					startEvaluationStatisticsMaintainerThread();
 				}
 			}
