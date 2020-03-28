@@ -27,6 +27,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private boolean isGraphPatternGroup;
 
+	private double cardinality = -1;
+
 	/*---------*
 	 * Methods *
 	 *---------*/
@@ -43,7 +45,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#isGraphPatternGroup()
 	 */
 	@Override
@@ -53,7 +55,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#setGraphPatternGroup(boolean)
 	 */
 	@Override
@@ -132,4 +134,34 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	protected boolean nullEquals(Object o1, Object o2) {
 		return o1 == o2 || o1 != null && o1.equals(o2);
 	}
+
+	@Override
+	public double getCardinality() {
+		return cardinality;
+	}
+
+	@Override
+	public void setCardinality(double cardinality) {
+		this.cardinality = cardinality;
+	}
+
+	/**
+	 *
+	 * @return Human readable cardinality. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+	 */
+	String getCardinalityString() {
+		String cardinalityString;
+		if (getCardinality() > 1_000_000) {
+			cardinalityString = Math.round(getCardinality() / 100_000) / 10.0 + "M";
+		} else if (getCardinality() > 1_000) {
+			cardinalityString = Math.round(getCardinality() / 100) / 10.0 + "K";
+		} else if (getCardinality() > 0) {
+			cardinalityString = Math.round(getCardinality()) + "";
+		} else {
+			cardinalityString = "UNKNOWN";
+		}
+
+		return cardinalityString;
+	}
+
 }

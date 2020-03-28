@@ -28,9 +28,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * A statement pattern with no free variables when provided with some particular BindingSet in evaluate. For evaluation
  * a boolean ASK query is performed.
- * 
+ *
  * Wraps a StatementTupleExpr
- * 
+ *
  * @author Andreas Schwarte
  */
 public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTupleExpr {
@@ -40,6 +40,8 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	protected final StatementTupleExpr stmt;
 	protected final String id;
 	protected final QueryInfo queryInfo;
+
+	private double cardinality = -1;
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
@@ -128,6 +130,16 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	@Override
 	public CheckStatementPattern clone() {
 		throw new RuntimeException("Operation not supported on this node!");
+	}
+
+	@Override
+	public double getCardinality() {
+		return cardinality;
+	}
+
+	@Override
+	public void setCardinality(double cardinality) {
+		this.cardinality = cardinality;
 	}
 
 	@Override

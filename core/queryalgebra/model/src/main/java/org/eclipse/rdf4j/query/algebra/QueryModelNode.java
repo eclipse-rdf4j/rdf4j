@@ -26,21 +26,21 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	/**
 	 * Gets the node's parent.
-	 * 
+	 *
 	 * @return The parent node, if any.
 	 */
 	public QueryModelNode getParentNode();
 
 	/**
 	 * Sets the node's parent.
-	 * 
+	 *
 	 * @param parent The parent node for this node.
 	 */
 	public void setParentNode(QueryModelNode parent);
 
 	/**
 	 * Replaces one of the child nodes with a new node.
-	 * 
+	 *
 	 * @param current     The current child node.
 	 * @param replacement The new child node.
 	 * @throws IllegalArgumentException If <tt>current</tt> is not one of node's children.
@@ -50,7 +50,7 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	/**
 	 * Substitutes this node with a new node in the query model tree.
-	 * 
+	 *
 	 * @param replacement The new node.
 	 * @throws IllegalStateException If this node does not have a parent node.
 	 * @throws ClassCastException    If <tt>replacement</tt> is of an incompatible type.
@@ -73,7 +73,7 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	/**
 	 * Returns the signature of this query model node. Signatures normally include the node's name and any parameters,
 	 * but not parent or child nodes. This method is used by {@link #toString()}.
-	 * 
+	 *
 	 * @return The node's signature, e.g. <tt>SLICE (offset=10, limit=10)</tt>.
 	 */
 	public String getSignature();
@@ -81,8 +81,19 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	/**
 	 * Returns a (deep) clone of this query model node. This method recursively clones the entire node tree, starting
 	 * from this nodes.
-	 * 
+	 *
 	 * @return A deep clone of this query model node.
 	 */
 	public QueryModelNode clone();
+
+	/**
+	 * Returns the number of outputs that this QueryNode predicts will be outputted. For a StatementPattern this would
+	 * be the estimated cardinality provided by the EvaluationStatistics. For a Join the would be the resulting number
+	 * of joined tuples.
+	 * 
+	 * @return cardinality
+	 */
+	public double getCardinality();
+
+	public void setCardinality(double cardinality);
 }
