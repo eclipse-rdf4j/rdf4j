@@ -35,7 +35,7 @@ The short version:
 1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this by logging into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on "Eclipse Contributor Agreement"; and Complete the form. Be sure to use the same email address when you register for the account that you intend to use on Git commit records. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 2. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix - or if you're picking up an existing issue, comment on that issue that you intend to provide a solution for it.
 3. Fork the GitHub repository.
-4. Create a new branch (starting from master) for your changes. 
+4. Create a new branch (starting from master) for your changes. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number.
 5. Make your changes on this branch. Apply the [rdf4j code formatting guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
 6. **sign off** every commit (using the `-s` flag).
 7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
