@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * A query optimizer that re-orders nested Joins.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -48,7 +48,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 * 
+	 *
 	 * @param tupleExpr
 	 */
 	@Override
@@ -231,17 +231,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * maximized.
 		 * <p>
 		 * Example: reordering
-		 * 
+		 *
 		 * <pre>
 		 *   [f] [a b c] [e f] [a d] [b e]
 		 * </pre>
-		 * 
+		 *
 		 * should result in:
-		 * 
+		 *
 		 * <pre>
 		 *   [a b c] [a d] [b e] [e f] [f]
 		 * </pre>
-		 * 
+		 *
 		 * @param subselects the original ordering of expressions
 		 * @return the optimized ordering of expressions
 		 */
@@ -420,13 +420,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					cardinality /= 1 + foreignVarFreq;
 				}
 			}
-
-			// Prefer patterns that bind more variables
-			// List<Var> distinctUnboundVars = getUnboundVars(new
-			// HashSet<Var>(vars));
-			// if (distinctUnboundVars.size() >= 2) {
-			// cardinality /= distinctUnboundVars.size();
-			// }
 
 			return cardinality;
 		}
