@@ -27,7 +27,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private boolean isGraphPatternGroup;
 
-	private double cardinality = -1;
+	private double estimatedRows = -1;
 
 	/*---------*
 	 * Methods *
@@ -136,32 +136,32 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	}
 
 	@Override
-	public double getCardinality() {
-		return cardinality;
+	public double getEstimatedRows() {
+		return estimatedRows;
 	}
 
 	@Override
-	public void setCardinality(double cardinality) {
-		this.cardinality = cardinality;
+	public void setEstimatedRows(double estimatedRows) {
+		this.estimatedRows = estimatedRows;
 	}
 
 	/**
 	 *
-	 * @return Human readable cardinality. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
-	String getCardinalityString() {
-		String cardinalityString;
-		if (getCardinality() > 1_000_000) {
-			cardinalityString = Math.round(getCardinality() / 100_000) / 10.0 + "M";
-		} else if (getCardinality() > 1_000) {
-			cardinalityString = Math.round(getCardinality() / 100) / 10.0 + "K";
-		} else if (getCardinality() > 0) {
-			cardinalityString = Math.round(getCardinality()) + "";
+	static String toHumanReadbleNumber(double number) {
+		String humanReadbleString;
+		if (number > 1_000_000) {
+			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
+		} else if (number > 1_000) {
+			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
+		} else if (number > 0) {
+			humanReadbleString = Math.round(number) + "";
 		} else {
-			cardinalityString = "UNKNOWN";
+			humanReadbleString = "UNKNOWN";
 		}
 
-		return cardinalityString;
+		return humanReadbleString;
 	}
 
 }

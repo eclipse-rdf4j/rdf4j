@@ -18,35 +18,35 @@ public class AbstractQueryModelNodeTest {
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			String cardinalityString = statementPattern.getCardinalityString();
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
 			assertEquals("UNKNOWN", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setCardinality(1234);
-			String cardinalityString = statementPattern.getCardinalityString();
+			statementPattern.setEstimatedRows(1234);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
 			assertEquals("1.2K", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setCardinality(1910000);
-			String cardinalityString = statementPattern.getCardinalityString();
+			statementPattern.setEstimatedRows(1910000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
 			assertEquals("1.9M", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setCardinality(1990000);
-			String cardinalityString = statementPattern.getCardinalityString();
+			statementPattern.setEstimatedRows(1990000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
 			assertEquals("2.0M", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setCardinality(912000);
-			String cardinalityString = statementPattern.getCardinalityString();
+			statementPattern.setEstimatedRows(912000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
 			assertEquals("912.0K", cardinalityString);
 		}
 

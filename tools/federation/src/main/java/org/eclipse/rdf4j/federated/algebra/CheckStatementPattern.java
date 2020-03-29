@@ -41,7 +41,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	protected final String id;
 	protected final QueryInfo queryInfo;
 
-	private double cardinality = -1;
+	private double estimatedRows = -1;
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
@@ -133,13 +133,13 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public double getCardinality() {
-		return cardinality;
+	public double getEstimatedRows() {
+		return estimatedRows;
 	}
 
 	@Override
-	public void setCardinality(double cardinality) {
-		this.cardinality = cardinality;
+	public void setEstimatedRows(double estimatedRows) {
+		this.estimatedRows = estimatedRows;
 	}
 
 	@Override

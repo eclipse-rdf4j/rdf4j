@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 import java.io.Serializable;
 
 /**
@@ -87,13 +89,19 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	public QueryModelNode clone();
 
 	/**
-	 * Returns the number of outputs that this QueryNode predicts will be outputted. For a StatementPattern this would
-	 * be the estimated cardinality provided by the EvaluationStatistics. For a Join the would be the resulting number
-	 * of joined tuples.
-	 * 
-	 * @return cardinality
+	 * Returns the number of tuples that this QueryNode predicts will be outputted. For a StatementPattern this would be
+	 * the estimated cardinality provided by the EvaluationStatistics. For a Join the would be the resulting number of
+	 * joined tuples.
+	 *
+	 * @return rows
 	 */
-	public double getCardinality();
+	@Experimental
+	default double getEstimatedRows() {
+		return -1;
+	}
 
-	public void setCardinality(double cardinality);
+	@Experimental
+	default void setEstimatedRows(double rows) {
+		// no-op for backwards compatibility
+	}
 }

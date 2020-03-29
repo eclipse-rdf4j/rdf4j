@@ -255,7 +255,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 			sb.append(" FROM NAMED CONTEXT");
 		}
 
-		sb.append(" ( cost=").append(getCardinalityString()).append(" )");
+		sb.append(" ( rows=").append(toHumanReadbleNumber(getEstimatedRows())).append(" )");
 
 		return sb.toString();
 	}
@@ -291,7 +291,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPredicateVar(getPredicateVar().clone());
 		clone.setObjectVar(getObjectVar().clone());
-		clone.setCardinality(getCardinality());
+		clone.setEstimatedRows(getEstimatedRows());
 
 		if (getContextVar() != null) {
 			clone.setContextVar(getContextVar().clone());
