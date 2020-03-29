@@ -277,7 +277,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			iter.remove();
 
 			// remove the common part, and only store the offset and the suffix and trailing NULL
-			int common = Arrays.mismatch(prev, str);
+			int common = mismatch(prev, str);
 			byte[] c = VByte.encode(common);
 			tmp[i] = new byte[c.length + str.length - common + 1];
 			System.arraycopy(c, 0, tmp[i], 0, c.length);
@@ -302,5 +302,26 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			idx += tmp[j].length;
 		}
 		return ret;
+	}
+	
+	/**
+	 * Compare 2 byte arrays and return the position of the first different byte.
+	 * 
+	 * Could be replaced with Arrays.mismatch in JDK9+
+	 * 
+	 * @param a first byte array
+	 * @param b second byte array
+	 * @return position of first different byte, or -1 if no difference
+	 */
+	private static int mismatch(byte[] a, byte[] b) {
+		for (int i = 0; i < a.length && i < b.length; i++) {
+			if (a[i] != b[i]) {
+				return i;
+			}
+		}
+		if (a.length == b.length) {
+			return -1;
+		}
+		return (a.length < b.length) ? a.length : b.length;
 	}
 }
