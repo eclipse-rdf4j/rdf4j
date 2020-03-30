@@ -190,13 +190,19 @@ public class HDTMetadata {
 		addTriple(sb, DICTIONARY, DCTERMS.FORMAT, HDT.DICTIONARY_FOUR);
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_NUMSHARED, String.valueOf(distinctShared));
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_MAPPING, String.valueOf(mapping));
-		addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, String.valueOf(sizeStrings > 0 ? sizeStrings : ""));
+		if (sizeStrings > 0) {
+			addTriple(sb, DICTIONARY, HDT.DICTIONARY_SIZE_STRINGS, String.valueOf(sizeStrings));
+		}
 		addTriple(sb, DICTIONARY, HDT.DICTIONARY_BLOCK_SIZE, String.valueOf(blockSize));
 		addTriple(sb, TRIPLES, DCTERMS.FORMAT, HDT.TRIPLES_BITMAP);
 		addTriple(sb, TRIPLES, HDT.TRIPLES_NUMTRIPLES, String.valueOf(triples));
 		addTriple(sb, TRIPLES, HDT.TRIPLES_ORDER, "SPO");
-		addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, String.valueOf(initialSize > 0 ? initialSize : ""));
-		addTriple(sb, STATISTICS, HDT.HDT_SIZE, String.valueOf(hdtSize));
+		if (initialSize > 0) {
+			addTriple(sb, STATISTICS, HDT.ORIGINAL_SIZE, String.valueOf(initialSize));
+		}
+		if (hdtSize > 0) {
+			addTriple(sb, STATISTICS, HDT.HDT_SIZE, String.valueOf(hdtSize));
+		}
 		addTriple(sb, PUBL_INFO, DCTERMS.ISSUED, "");
 
 		return sb.toString().getBytes(StandardCharsets.US_ASCII);

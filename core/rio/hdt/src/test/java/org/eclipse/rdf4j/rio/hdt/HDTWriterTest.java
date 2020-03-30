@@ -37,8 +37,7 @@ public class HDTWriterTest {
 
 	@Before
 	public void setUp() throws Exception {
-		// File f = folder.newFile();
-		File f = new File("c:/data/test.hdt");
+		File f = folder.newFile();
 		OutputStream os = Files.newOutputStream(f.toPath(),
 				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 		writer = Rio.createWriter(RDFFormat.HDT, os);
@@ -49,11 +48,10 @@ public class HDTWriterTest {
 		// load original N-Triples file
 		try (InputStream is = HDTWriterTest.class.getResourceAsStream("/test-orig.nt")) {
 			RDFParser nt = Rio.createParser(RDFFormat.NTRIPLES);
-			writer.getWriterConfig().set(HDTWriterSettings.ORIGINAL_FILE, "C:/Datagov/data/fodbosa/enhanced.nt");
+			writer.getWriterConfig().set(HDTWriterSettings.ORIGINAL_FILE, "C:/test-orig.nt");
 			nt.setRDFHandler(writer);
 			nt.parse(is, "");
 		} catch (Exception e) {
-			e.printStackTrace();
 			fail(e.getMessage());
 		}
 
