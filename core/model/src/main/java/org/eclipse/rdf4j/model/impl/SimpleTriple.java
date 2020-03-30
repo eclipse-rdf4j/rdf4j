@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
-
-import java.util.Objects;
 
 /**
  * A simple default implementation of the {@link Triple} interface.
@@ -94,12 +94,12 @@ public class SimpleTriple implements Triple {
 		if (this == o) {
 			return true;
 		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
+		if (o instanceof Triple) {
+			Triple that = (Triple) o;
+			return Objects.equals(subject, that.getSubject()) && Objects.equals(predicate, that.getPredicate())
+					&& Objects.equals(object, that.getObject());
 		}
-		SimpleTriple that = (SimpleTriple) o;
-		return Objects.equals(subject, that.subject) && Objects.equals(predicate, that.predicate)
-				&& Objects.equals(object, that.object);
+		return false;
 	}
 
 	@Override
