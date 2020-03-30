@@ -135,26 +135,6 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 		fillYZ();
 
-		for (int i = 0; i < arrY.size(); i++) {
-			System.err.print(arrY.get(i) + " ");
-		}
-		System.err.println();
-
-		for (int i = 0; i < bitmapY.size(); i++) {
-			System.err.print(bitmapY.get(i) + " ");
-		}
-		System.err.println();
-
-		for (int i = 0; i < arrZ.size(); i++) {
-			System.err.print(arrZ.get(i) + " ");
-		}
-		System.err.println();
-
-		for (int i = 0; i < bitmapZ.size(); i++) {
-			System.err.print(bitmapZ.get(i) + " ");
-		}
-		System.err.println();
-
 		bitmapY.write(os);
 		bitmapZ.write(os);
 
@@ -187,6 +167,7 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 		// iterate over triple references
 		for (posZ = 1; posZ < sizeZ; posZ++) {
 			triple = iter.next();
+
 			if (triple[1] > maxY) {
 				maxY = triple[1];
 			}
@@ -201,20 +182,19 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 				prevX = triple[0];
 				arrYtmp[posY++] = triple[1];
 			} else {
+				bitmapY.set(posY - 1, 0);
 				if (triple[1] != prevY) {
-					bitmapY.set(posY - 1, 1);
 					bitmapZ.set(posZ - 1, 1);
-					prevY = triple[1];
 					arrYtmp[posY++] = triple[1];
+					prevY = triple[1];
 				} else {
-					bitmapY.set(posY - 1, 0);
 					bitmapZ.set(posZ - 1, 0);
 				}
 			}
 			arrZtmp[posZ] = triple[2];
 		}
 
-		arrYtmp[posY] = triple[1];
+		// arrYtmp[posY] = triple[1];
 		// last bit is always 1 (= last predicate/object)
 		bitmapY.set(posY - 1, 1);
 		bitmapZ.set(posZ - 1, 1);

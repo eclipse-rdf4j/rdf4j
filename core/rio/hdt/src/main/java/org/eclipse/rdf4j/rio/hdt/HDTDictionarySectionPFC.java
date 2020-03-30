@@ -303,7 +303,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		}
 		return ret;
 	}
-	
+
 	/**
 	 * Compare 2 byte arrays and return the position of the first different byte.
 	 * 
