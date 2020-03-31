@@ -217,7 +217,7 @@ public class HDTParser extends AbstractRDFParser {
 	 * Get part of triple from shared HDT Dictionary or (if not found) from specific HDT Dictionary
 	 * 
 	 * @param pos    position
-	 * @param size   size of shared Dictionary
+	 * @param size   setSize of shared Dictionary
 	 * @param shared shared Dictionary
 	 * @param other  specific Dictionary
 	 * @return subject or object

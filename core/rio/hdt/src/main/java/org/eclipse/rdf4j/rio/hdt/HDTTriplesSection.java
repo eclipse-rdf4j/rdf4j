@@ -91,7 +91,7 @@ abstract class HDTTriplesSection extends HDTPart {
 	 * 
 	 * @param entries positive integer value
 	 */
-	protected void size(int triples) {
+	protected void setSize(int triples) {
 		this.triples = triples;
 	}
 

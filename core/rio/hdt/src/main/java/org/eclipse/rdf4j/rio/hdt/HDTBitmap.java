@@ -39,11 +39,20 @@ class HDTBitmap extends HDTPart {
 	 * 
 	 * @param number of bits
 	 */
-	protected void size(int bits) {
+	protected void setSize(int bits) {
 		this.bits = bits;
 		if (buffer == null) {
 			buffer = new byte[(bits + 7) / 8];
 		}
+	}
+
+	/**
+	 * Get number of entries in this bitmap
+	 * 
+	 * @return positive integer value
+	 */
+	protected int size() {
+		return bits;
 	}
 
 	/**
@@ -71,15 +80,6 @@ class HDTBitmap extends HDTPart {
 		int bitPos = i % 8;
 
 		buffer[bytePos] |= (val << bitPos) & 0xFF;
-	}
-
-	/**
-	 * Get number of entries in this bitmap
-	 * 
-	 * @return positive integer value
-	 */
-	protected int size() {
-		return bits;
 	}
 
 	@Override
@@ -135,7 +135,7 @@ class HDTBitmap extends HDTPart {
 		try (UncloseableOutputStream uos = new UncloseableOutputStream(os);
 				CheckedOutputStream cos = new CheckedOutputStream(uos, new CRC32())) {
 
-			// size of the buffer might have been decreased
+			// setSize of the buffer might have been decreased
 			cos.write(buffer, 0, (bits + 7) / 8);
 
 			writeCRC(cos, os, 4);

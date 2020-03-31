@@ -78,7 +78,7 @@ public class HDTWriter extends AbstractRDFWriter {
 	private long cnt;
 
 	// TODO: rewrite this to cater for larger input
-	// create dictionaries and triples, with some size estimations
+	// create dictionaries and triples, with some setSize estimations
 	private static int SIZE = 1_048_576 * 4;
 	private Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
 	private Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
@@ -162,7 +162,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			triples.write(bos);
 
 			HDTTriplesSection section = HDTTriplesSectionFactory.create(new String(HDTTriples.FORMAT_BITMAP));
-			section.size(newRefs.size());
+			section.setSize(newRefs.size());
 			section.setNrS(refSO.length + refS.length);
 			section.setNrP(refP.length);
 			section.setNrO(refSO.length);

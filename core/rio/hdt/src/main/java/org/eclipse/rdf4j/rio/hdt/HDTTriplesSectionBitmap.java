@@ -125,10 +125,10 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 		sizeZ = size();
 
 		bitmapY = new HDTBitmap();
-		bitmapY.size(sizeY);
+		bitmapY.setSize(sizeY);
 
 		bitmapZ = new HDTBitmap();
-		bitmapZ.size(sizeZ);
+		bitmapZ.setSize(sizeZ);
 
 		arrY = HDTArrayFactory.create(HDTArray.Type.LOG64);
 		arrZ = HDTArrayFactory.create(HDTArray.Type.LOG64);
@@ -201,16 +201,16 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 
 		// now resize and fill the Y array
 		arrY.setMaxValue(maxY);
-		arrY.size(posY);
-		bitmapY.size(posY);
+		arrY.setSize(posY);
+		bitmapY.setSize(posY);
 		for (int i = 0; i < posY; i++) {
 			arrY.set(i, arrYtmp[i]);
 		}
 
 		// now resize and fill the Z array
 		arrZ.setMaxValue(maxZ);
-		arrZ.size(posZ);
-		bitmapZ.size(posZ);
+		arrZ.setSize(posZ);
+		bitmapZ.setSize(posZ);
 		for (int i = 0; i < posZ; i++) {
 			arrZ.set(i, arrZtmp[i]);
 		}

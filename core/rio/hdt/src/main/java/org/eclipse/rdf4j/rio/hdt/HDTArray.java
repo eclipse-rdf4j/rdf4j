@@ -104,7 +104,7 @@ abstract class HDTArray extends HDTPart {
 	 * 
 	 * @param entries positive integer value
 	 */
-	protected void size(int entries) {
+	protected void setSize(int entries) {
 		this.entries = entries;
 	}
 

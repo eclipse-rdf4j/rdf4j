@@ -45,7 +45,7 @@ public class HDTLogArray64Test {
 	@Test
 	public void testEncode133() {
 		arrayOut.setMaxValue(133);
-		arrayOut.size(2);
+		arrayOut.setSize(2);
 		arrayOut.set(0, 0);
 		arrayOut.set(1, 133);
 
@@ -66,7 +66,7 @@ public class HDTLogArray64Test {
 	@Test
 	public void testEncode1734() {
 		arrayOut.setMaxValue(1734);
-		arrayOut.size(3);
+		arrayOut.setSize(3);
 		arrayOut.set(0, 0);
 		arrayOut.set(1, 1364);
 		arrayOut.set(2, 1734);

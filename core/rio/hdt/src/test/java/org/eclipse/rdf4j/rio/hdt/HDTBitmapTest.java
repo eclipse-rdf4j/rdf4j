@@ -35,7 +35,7 @@ public class HDTBitmapTest {
 				(byte) 0xff, (byte) 0x0f, // entries
 				(byte) 0x75, (byte) 0x6f, (byte) 0x91, (byte) 0x0c }; // crc
 
-		bitmapOut.size(12);
+		bitmapOut.setSize(12);
 		for (int i = 0; i < 12; i++) {
 			bitmapOut.set(i, 1);
 		}

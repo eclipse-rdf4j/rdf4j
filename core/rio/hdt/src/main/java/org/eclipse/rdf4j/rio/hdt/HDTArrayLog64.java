@@ -95,8 +95,8 @@ class HDTArrayLog64 extends HDTArray {
 	}
 
 	@Override
-	protected void size(int entries) {
-		super.size(entries);
+	protected void setSize(int entries) {
+		super.setSize(entries);
 		buffer = new byte[(entries * getNrBits() + 7) / 8];
 	}
 
