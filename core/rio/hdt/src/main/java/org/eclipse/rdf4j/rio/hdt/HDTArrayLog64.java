@@ -39,11 +39,9 @@ class HDTArrayLog64 extends HDTArray {
 
 	@Override
 	protected void setMaxValue(int maxval) {
-		// ceil(log2(maxval))
-		int i = 0;
-		while (++i < 32 && (maxval >> i) > 0)
-			;
-		setNrBits(i);
+		// number of bits needed is ceil(log2(maxval))
+		int bits = 32 - Integer.numberOfLeadingZeros(maxval);
+		setNrBits(bits);
 	}
 
 	@Override
