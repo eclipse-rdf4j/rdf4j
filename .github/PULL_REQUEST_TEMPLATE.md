@@ -14,5 +14,5 @@ PR Author Checklist:
  - [ ] every commit message starts with the issue number (GH-xxxx) followed by a meaningful description of the change
  - [ ] every commit has been [signed off](https://stackoverflow.com/questions/1962094/what-is-the-sign-off-feature-in-git-for)
 
-Note: we merge all feature pull requests using [Squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits). See [RDF4J git merge strategy](https://rdf4j.org/documentation/developer/merge-strategy/) for more details.
+Note: we merge all feature pull requests using [squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits). See [RDF4J git merge strategy](https://rdf4j.org/documentation/developer/merge-strategy/) for more details.
 
