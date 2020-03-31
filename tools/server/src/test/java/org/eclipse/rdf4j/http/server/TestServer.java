@@ -22,8 +22,11 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.ForwardChainingRDFSInferencerConfig;
+import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 
 /**
  * @author Herko ter Horst
@@ -34,13 +37,14 @@ public class TestServer {
 
 	private static final int PORT = 18080;
 
-	private static final String TEST_REPO_ID = "Test";
+	public static final String TEST_REPO_ID = "Test";
 
-	private static final String TEST_INFERENCE_REPO_ID = "Test-RDFS";
+	public static final String TEST_INFERENCE_REPO_ID = "Test-RDFS";
+	public static final String TEST_SHACL_REPO_ID = "Test-SHACL";
 
 	private static final String RDF4J_CONTEXT = "/rdf4j";
 
-	private static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
+	public static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
 
 	public static String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
 
@@ -96,11 +100,20 @@ public class TestServer {
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
 
 		// create an inferencing memory store
-		ForwardChainingRDFSInferencerConfig inferMemStoreConfig = new ForwardChainingRDFSInferencerConfig(
+		SchemaCachingRDFSInferencerConfig inferMemStoreConfig = new SchemaCachingRDFSInferencerConfig(
 				new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(inferMemStoreConfig);
 		repConfig = new RepositoryConfig(TEST_INFERENCE_REPO_ID, sailRepConfig);
 
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+
+		// create memory store with shacl support
+		ShaclSailConfig shaclConfig = new ShaclSailConfig(new MemoryStoreConfig());
+		sailRepConfig = new SailRepositoryConfig(shaclConfig);
+		repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
+
+		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+
 	}
+
 }
