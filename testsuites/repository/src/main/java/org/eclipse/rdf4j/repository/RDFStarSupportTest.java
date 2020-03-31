@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -106,6 +107,38 @@ public abstract class RDFStarSupportTest {
 		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
 
 		assertThat(testCon.hasStatement(rdfStarTriple, RDF.TYPE, RDF.ALT, false)).isTrue();
+	}
+
+	@Test
+	public void testRDFStarRegularSPARQL() throws Exception {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String query = "SELECT * WHERE { ?s ?p ?o }";
+
+		try (TupleQueryResult result = testCon.prepareTupleQuery(query).evaluate()) {
+			assertThat(result).isNotEmpty();
+
+			assertThat(result.next().getValue("s")).isEqualTo(rdfStarTriple);
+		}
+	}
+
+	@Test
+	public void testSPARQLStar() throws Exception {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String query = "SELECT * WHERE { <<?s ?p ?o>> a rdf:Alt. }";
+
+		try (TupleQueryResult result = testCon.prepareTupleQuery(query).evaluate()) {
+			assertThat(result).isNotEmpty();
+			BindingSet bs = result.next();
+			assertThat(bs.getValue("s")).isEqualTo(bob);
+			assertThat(bs.getValue("p")).isEqualTo(FOAF.NAME);
+			assertThat(bs.getValue("o")).isEqualTo(nameBob);
+		}
 	}
 
 	@Test
