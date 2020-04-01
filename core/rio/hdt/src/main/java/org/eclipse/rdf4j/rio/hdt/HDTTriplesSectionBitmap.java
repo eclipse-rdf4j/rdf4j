@@ -156,7 +156,6 @@ class HDTTriplesSectionBitmap extends HDTTriplesSection {
 		int[] triple = iter.next();
 		int prevX = triple[0]; // subject
 		int prevY = triple[1]; // predicate
-		int prevZ = triple[2]; // object
 
 		arrYtmp[0] = triple[1];
 		arrZtmp[0] = triple[2];

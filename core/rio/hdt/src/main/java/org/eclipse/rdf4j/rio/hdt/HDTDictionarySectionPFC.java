@@ -254,7 +254,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	}
 
 	/**
-	 * Encode a single block, removing the input strings to conserve memory
+	 * Encode a single block
 	 * 
 	 * @param iter
 	 * @return encoded block
@@ -264,7 +264,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		int i = 0;
 
 		byte[] base = iter.next().getBytes(StandardCharsets.UTF_8);
-		iter.remove();
+
 		// copy base string into first entry, with a trailing NULL
 		tmp[i] = new byte[base.length + 1];
 		System.arraycopy(base, 0, tmp[i], 0, base.length);
@@ -274,7 +274,6 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 		// encode a block, with a maximum of strings per block (minus the first base string)
 		for (i = 1; iter.hasNext() && i < stringsBlock; i++) {
 			byte[] str = iter.next().getBytes(StandardCharsets.UTF_8);
-			iter.remove();
 
 			// remove the common part, and only store the offset and the suffix and trailing NULL
 			int common = mismatch(prev, str);

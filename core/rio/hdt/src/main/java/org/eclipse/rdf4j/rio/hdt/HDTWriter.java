@@ -21,9 +21,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.BlockingQueue;
 
 import org.apache.commons.io.output.CountingOutputStream;
 
@@ -35,6 +37,11 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.HDTWriterSettings;
+import org.mapdb.BTreeKeySerializer;
+import org.mapdb.BTreeMap;
+import org.mapdb.DB;
+import org.mapdb.DBMaker;
+import org.mapdb.Serializer;
 
 /**
  * <strong>Experimental<strong> RDF writer for HDT v1.0 files. Currently only suitable for input that can fit into
@@ -77,14 +84,12 @@ public class HDTWriter extends AbstractRDFWriter {
 	// various counters
 	private long cnt;
 
-	// TODO: rewrite this to cater for larger input
-	// create dictionaries and triples, with some setSize estimations
-	private static int SIZE = 1_048_576 * 4;
-	private Map<String, Integer> dictShared = new HashMap<>(SIZE / 4);
-	private Map<String, Integer> dictS = new HashMap<>(SIZE / 8);
-	private Map<String, Integer> dictP = new HashMap<>(SIZE / 1024);
-	private Map<String, Integer> dictO = new HashMap<>(SIZE / 2);
-	private List<int[]> tripleRefs = new ArrayList<>(SIZE);
+	private final DB db;
+	private final Map<String, Integer> dictShared;
+	private final Map<String, Integer> dictS;
+	private final Map<String, Integer> dictP;
+	private final Map<String, Integer> dictO;
+	private final Queue<int[]> tripleRefs;
 
 	/**
 	 * Creates a new HDTWriter.
@@ -93,6 +98,13 @@ public class HDTWriter extends AbstractRDFWriter {
 	 */
 	public HDTWriter(OutputStream out) {
 		this.out = out;
+
+		db = DBMaker.newTempFileDB().mmapFileEnableIfSupported().make();
+		dictShared = db.createHashMap("SO").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
+		dictS = db.createHashMap("S").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
+		dictP = db.createHashMap("P").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
+		dictO = db.createHashMap("O").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
+		tripleRefs = db.createQueue("refs", Serializer.INT_ARRAY, false);
 	}
 
 	@Override
@@ -149,14 +161,8 @@ public class HDTWriter extends AbstractRDFWriter {
 			int[] refP = writeDictSection(dictP, bos, "P");
 			int[] refO = writeDictSection(dictO, bos, "O");
 
-			// prepare renumbering of numeric representation of triples, but start counting from 1
-			int[] lookup = new int[1 + refSO.length + refS.length + refP.length + refO.length];
-			fillLookup(refSO, lookup, 1);
-			fillLookup(refS, lookup, 1 + refSO.length);
-			fillLookup(refP, lookup, 1); // P not part of S+O shared, so start from 0
-			fillLookup(refO, lookup, 1 + refSO.length);
-
-			List<int[]> newRefs = lookupRefs(tripleRefs, lookup);
+			Queue<int[]> newRefs = renumberTriples(refSO, refS, refP, refO, tripleRefs);
+			tripleRefs.clear();
 
 			HDTTriples triples = new HDTTriples();
 			triples.write(bos);
@@ -172,12 +178,84 @@ public class HDTWriter extends AbstractRDFWriter {
 		} catch (IOException ioe) {
 			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
 		} finally {
+			db.close();
 			try {
 				bos.close();
 			} catch (IOException ex) {
 				//
 			}
 		}
+	}
+
+	/**
+	 * Get metadata for the HDT Header part
+	 * 
+	 * @return byte array
+	 */
+	private byte[] getMetadata() {
+		String file = getWriterConfig().get(HDTWriterSettings.ORIGINAL_FILE);
+
+		Path path = Paths.get(file);
+		long len = -1;
+		try {
+			len = Files.size(path);
+		} catch (IOException ioe) {
+			//
+		}
+
+		HDTMetadata meta = new HDTMetadata();
+		meta.setBase(file);
+		meta.setDistinctSubj(dictS.size());
+		meta.setProperties(dictP.size());
+		meta.setTriples(tripleRefs.size());
+		meta.setDistinctObj(dictO.size());
+		meta.setDistinctShared(dictShared.size());
+		meta.setMapping(HDTArray.Type.LOG64.getValue());
+		meta.setBlockSize(16);
+
+		if (len > 0) {
+			meta.setInitialSize(len);
+		}
+		// meta.setHDTSize(-1);
+		// meta.setSizeStrings(-1);
+
+		return meta.get();
+	}
+
+	/**
+	 * Write a dictionary section to output stream
+	 * 
+	 * @param dict dictionary
+	 * @param bos  output stream
+	 * @param name name of the section
+	 * @return
+	 * @throws IOException
+	 */
+	private int[] writeDictSection(Map<String, Integer> dict, CountingOutputStream bos,
+			String name) throws IOException {
+		int size = dict.size();
+
+		SortedMap<String, Integer> sorted = sortMap(dict, name);
+		dict.clear();
+
+		// keep the values, i.e. the numeric reference to the part (S, P or O) of the triple
+		int values[] = new int[size];
+		int i = 0;
+		for (int value : sorted.values()) {
+			values[i++] = value;
+		}
+
+		long dpos = bos.getByteCount();
+
+		HDTDictionarySection section = HDTDictionarySectionFactory.write(bos, name, dpos,
+				HDTDictionarySection.Type.FRONT);
+		section.setSize(size);
+		section.set(sorted.keySet().iterator());
+		section.write(bos);
+
+		sorted.clear();
+
+		return values;
 	}
 
 	/**
@@ -234,89 +312,45 @@ public class HDTWriter extends AbstractRDFWriter {
 	}
 
 	/**
-	 * Get metadata for the HDT Header part
-	 * 
-	 * @return byte array
-	 */
-	private byte[] getMetadata() {
-		String file = getWriterConfig().get(HDTWriterSettings.ORIGINAL_FILE);
-
-		Path path = Paths.get(file);
-		long len = -1;
-		try {
-			len = Files.size(path);
-		} catch (IOException ioe) {
-			//
-		}
-
-		HDTMetadata meta = new HDTMetadata();
-		meta.setBase(file);
-		meta.setDistinctSubj(dictS.size());
-		meta.setProperties(dictP.size());
-		meta.setTriples(tripleRefs.size());
-		meta.setDistinctObj(dictO.size());
-		meta.setDistinctShared(dictShared.size());
-		meta.setMapping(HDTArray.Type.LOG64.getValue());
-		meta.setBlockSize(16);
-
-		if (len > 0) {
-			meta.setInitialSize(len);
-		}
-		// meta.setHDTSize(-1);
-		// meta.setSizeStrings(-1);
-
-		return meta.get();
-	}
-
-	/**
-	 * Write a dictionary section to output stream
-	 * 
-	 * @param dict dictionary
-	 * @param bos  output stream
-	 * @param name name of the section
-	 * @return
-	 * @throws IOException
-	 */
-	private static int[] writeDictSection(Map<String, Integer> dict, CountingOutputStream bos,
-			String name) throws IOException {
-		int size = dict.size();
-
-		SortedMap<String, Integer> sorted = sortMap(dict);
-		// keep the values, i.e. the numeric reference to the part (S, P or O) of the triple
-		int values[] = new int[size];
-		int i = 0;
-		for (int value : sorted.values()) {
-			values[i++] = value;
-		}
-
-		long dpos = bos.getByteCount();
-
-		HDTDictionarySection section = HDTDictionarySectionFactory.write(bos, name, dpos,
-				HDTDictionarySection.Type.FRONT);
-		section.setSize(size);
-		section.set(sorted.keySet().iterator());
-		section.write(bos);
-
-		return values;
-	}
-
-	/**
-	 * Move key,values from a map to a sorted map (i.e. it removes entries from the unsorted while ordering to save
-	 * memory)
+	 * Move key,values from a map to a sorted map.
 	 * 
 	 * @param map
 	 * @return sorted map
 	 */
-	private static SortedMap<String, Integer> sortMap(Map<String, Integer> unsorted) {
-		TreeMap<String, Integer> sorted = new TreeMap<>();
+	private SortedMap<String, Integer> sortMap(Map<String, Integer> unsorted, String name) {
+		BTreeMap<String, Integer> sorted = db.createTreeMap("sort" + name)
+				.keySerializer(BTreeKeySerializer.STRING)
+				.valueSerializer(Serializer.INTEGER)
+				.make();
 
 		Iterator<Entry<String, Integer>> iter = unsorted.entrySet().iterator();
 		while (iter.hasNext()) {
 			Entry<String, Integer> e = iter.next();
 			sorted.put(e.getKey(), e.getValue());
-			iter.remove();
 		}
 		return sorted;
+	}
+
+	/**
+	 * Renumber the numeric representation of triples
+	 * 
+	 * @param refSO   shared
+	 * @param refS    subjects
+	 * @param refP    predicates
+	 * @param refO    objects
+	 * @param oldRefs old references
+	 * @return renumbered numeric representation
+	 */
+	private Queue<int[]> renumberTriples(int[] refSO, int[] refS, int[] refP, int[] refO, Queue<int[]> oldRefs) {
+		// start counting from 1
+		int[] lookup = new int[1 + refSO.length + refS.length + refP.length + refO.length];
+
+		fillLookup(refSO, lookup, 1);
+		fillLookup(refS, lookup, 1 + refSO.length);
+		fillLookup(refP, lookup, 1); // P not part of S+O shared, so start from 0
+		fillLookup(refO, lookup, 1 + refSO.length);
+
+		return lookupRefs(oldRefs, lookup);
 	}
 
 	/**
@@ -344,9 +378,8 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @param lookup lookup array
 	 * @return new references
 	 */
-	private static List<int[]> lookupRefs(List<int[]> refs, int[] lookup) {
-		List<int[]> newrefs = new ArrayList<>(refs.size());
-
+	private Queue<int[]> lookupRefs(Queue<int[]> refs, int[] lookup) {
+		BlockingQueue<int[]> newrefs = db.createQueue("newrefs", Serializer.INT_ARRAY, false);
 		refs.stream()
 				.map(ref -> new int[] { lookup[ref[0]], lookup[ref[1]], lookup[ref[2]] })
 				.sorted((int[] a, int[] b) -> {
@@ -361,8 +394,6 @@ public class HDTWriter extends AbstractRDFWriter {
 					return a[2] - b[2];
 				})
 				.forEach(newrefs::add);
-		// clear references to reduce memory
-		refs.clear();
 
 		return newrefs;
 	}
