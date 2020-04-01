@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.util.iterators.SingletonIterator;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -41,7 +42,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Set<Statement> statements = new LinkedHashSet<>();
+	private LinkedHashMap<Statement, Statement> statements = new LinkedHashMap<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -109,8 +110,9 @@ public class DynamicModel implements Model {
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
+				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
 				added = added
-						| statements.add(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+						| statements.put(statement, statement) == null;
 			}
 			return added;
 		} else {
@@ -134,7 +136,8 @@ public class DynamicModel implements Model {
 			boolean removed = false;
 			for (Resource context : contexts) {
 				removed = removed
-						| statements.remove(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+						| statements.remove(
+								SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
 			}
 			return removed;
 		} else {
@@ -191,7 +194,7 @@ public class DynamicModel implements Model {
 	@Override
 	public boolean contains(Object o) {
 		if (model == null) {
-			return statements.contains(o);
+			return statements.containsKey(o);
 		}
 		return model.contains(o);
 	}
@@ -199,7 +202,7 @@ public class DynamicModel implements Model {
 	@Override
 	public Iterator<Statement> iterator() {
 		if (model == null) {
-			return statements.iterator();
+			return statements.values().iterator();
 		}
 
 		return model.iterator();
@@ -208,7 +211,7 @@ public class DynamicModel implements Model {
 	@Override
 	public Object[] toArray() {
 		if (model == null) {
-			return statements.toArray();
+			return statements.values().toArray();
 		}
 		return model.toArray();
 	}
@@ -216,7 +219,7 @@ public class DynamicModel implements Model {
 	@Override
 	public <T> T[] toArray(T[] a) {
 		if (model == null) {
-			return statements.toArray(a);
+			return statements.values().toArray(a);
 		}
 		return model.toArray(a);
 	}
@@ -225,7 +228,7 @@ public class DynamicModel implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
-			return statements.add(statement);
+			return statements.put(statement, statement) == null;
 		}
 		return model.add(statement);
 	}
@@ -234,7 +237,7 @@ public class DynamicModel implements Model {
 	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
-			return statements.remove(o);
+			return statements.remove(o) != null;
 		}
 		return model.remove(o);
 	}
@@ -243,7 +246,7 @@ public class DynamicModel implements Model {
 	public boolean containsAll(Collection<?> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
-			return statements.containsAll(c);
+			return statements.keySet().containsAll(c);
 		}
 		return model.containsAll(c);
 	}
@@ -252,8 +255,13 @@ public class DynamicModel implements Model {
 	public boolean addAll(Collection<? extends Statement> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
-			c.forEach(Objects::requireNonNull);
-			return statements.addAll(c);
+			return c.stream()
+					.map(s -> {
+						Objects.requireNonNull(s);
+						return statements.put(s, s) == null;
+					})
+					.reduce((a, b) -> a || b)
+					.orElse(false);
 		}
 		return model.addAll(c);
 	}
@@ -261,7 +269,7 @@ public class DynamicModel implements Model {
 	@Override
 	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
-			return statements.retainAll(c);
+			return statements.keySet().retainAll(c);
 		}
 		return model.retainAll(c);
 	}
@@ -269,7 +277,12 @@ public class DynamicModel implements Model {
 	@Override
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
-			return statements.removeAll(c);
+			return c
+					.stream()
+					.map(statements::remove)
+					.map(Objects::nonNull)
+					.reduce((a, b) -> a || b)
+					.orElse(false);
 		}
 		return model.removeAll(c);
 	}
@@ -289,14 +302,14 @@ public class DynamicModel implements Model {
 				&& contexts.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, contexts[0]);
-			boolean contains = statements.contains(statement);
-			if (!contains) {
+			Statement foundStatement = statements.get(statement);
+			if (foundStatement == null) {
 				return new EmptyIterator<>();
 			}
-			if (statements.size() == 1) {
-				return statements.iterator();
-			}
-			return new SingletonIterator<>(statement);
+			return new SingletonIterator<>(foundStatement);
+		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
+				&& contexts.length == 0) {
+			return iterator();
 		} else {
 			upgrade();
 			return model.getStatements(subject, predicate, object, contexts);
@@ -308,7 +321,7 @@ public class DynamicModel implements Model {
 			synchronized (this) {
 				if (model == null) {
 					Model tempModel = modelFactory.createEmptyModel();
-					tempModel.addAll(statements);
+					tempModel.addAll(statements.values());
 					statements = null;
 					model = tempModel;
 				}
