@@ -267,7 +267,7 @@ class SailDatasetImpl implements SailDataset {
 		}
 		Model deprecated = changes.getDeprecated();
 		if (deprecated != null && iter != null) {
-			iter = difference(iter, deprecated.filter(subj, pred, obj, contexts));
+			iter = difference(iter, deprecated);
 		}
 		Model approved = changes.getApproved();
 		if (approved != null && iter != null) {
