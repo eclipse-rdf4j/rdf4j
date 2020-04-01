@@ -16,6 +16,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.util.iterators.EmptyIterator;
+import org.eclipse.rdf4j.util.iterators.SingletonIterator;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -278,6 +280,26 @@ public class DynamicModel implements Model {
 			statements.clear();
 		} else {
 			model.clear();
+		}
+	}
+
+	@Override
+	public Iterator<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
+		if (model == null && subject != null && predicate != null && object != null && contexts != null
+				&& contexts.length == 1) {
+			Statement statement = SimpleValueFactory.getInstance()
+					.createStatement(subject, predicate, object, contexts[0]);
+			boolean contains = statements.contains(statement);
+			if (!contains) {
+				return new EmptyIterator<>();
+			}
+			if (statements.size() == 1) {
+				return statements.iterator();
+			}
+			return new SingletonIterator<>(statement);
+		} else {
+			upgrade();
+			return model.getStatements(subject, predicate, object, contexts);
 		}
 	}
 
