@@ -21,6 +21,18 @@ RDF4J 3.1.2 is our latest stable release. It requires Java 8. For details on wha
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
 
+# RDF4J 3.2.0 Milestone 1
+
+RDF4J 3.2.0-M1 is the first milestone build for the upcoming 3.2.0 release. It requires Java 8.
+
+- [RDF4J 3.2.0-M1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-M1-sdk.zip)<br/>
+  Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
+
+- [RDF4J 3.2.0-M1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-M1-onejar.jar)<br/>
+  Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
+
+- [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
+
 # Apache Maven 
 
 You can include RDF4J as a Maven dependency in your Java project by including the following BOM (Bill-of-Materials):
