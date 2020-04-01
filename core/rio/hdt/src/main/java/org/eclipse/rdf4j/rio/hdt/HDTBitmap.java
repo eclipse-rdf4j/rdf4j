@@ -19,9 +19,19 @@ import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 /**
  * Bitmap
  * 
- * Just a series of 0 and 1 bits.
- * 
  * This is used in combination with a {@link org.eclipse.rdf4j.rio.hdt.HDTArray HDTArray} to encode triple parts.
+ *
+ * This part starts with a byte indicating the type of the bitmap, followed by the VByte-encoded number of entries.
+ *
+ * Then the 8-bit CRC, followed by the bitmap (a series of 0 and 1's) and the 32-bit CRC.
+ * 
+ * Structure:
+ * 
+ * <pre>
+ * +------+---------+------+---------+-------+
+ * | type | entries | CRC8 | bits ...| CRC32 |
+ * +------+---------+------+---------+-------+
+ * </pre>
  * 
  * @author Bart Hanssens
  */
