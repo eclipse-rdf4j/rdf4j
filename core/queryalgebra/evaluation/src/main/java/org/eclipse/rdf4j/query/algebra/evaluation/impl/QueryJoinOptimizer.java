@@ -110,7 +110,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					for (TupleExpr tupleExpr : joinArgs) {
 						double cardinality = statistics.getCardinality(tupleExpr);
-						tupleExpr.setEstimatedRows(cardinality);
+						tupleExpr.setResultSizeEstimate(cardinality);
 						cardinalityMap.put(tupleExpr, cardinality);
 						if (tupleExpr instanceof ZeroLengthPath) {
 							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());

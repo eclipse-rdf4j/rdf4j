@@ -18,35 +18,35 @@ public class AbstractQueryModelNodeTest {
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("UNKNOWN", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setEstimatedRows(1234);
-			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
+			statementPattern.setResultSizeEstimate(1234);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("1.2K", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setEstimatedRows(1910000);
-			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
+			statementPattern.setResultSizeEstimate(1910000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("1.9M", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setEstimatedRows(1990000);
-			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
+			statementPattern.setResultSizeEstimate(1990000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("2.0M", cardinalityString);
 		}
 
 		{
 			StatementPattern statementPattern = new StatementPattern();
-			statementPattern.setEstimatedRows(912000);
-			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getEstimatedRows());
+			statementPattern.setResultSizeEstimate(912000);
+			String cardinalityString = statementPattern.toHumanReadbleNumber(statementPattern.getResultSizeEstimate());
 			assertEquals("912.0K", cardinalityString);
 		}
 

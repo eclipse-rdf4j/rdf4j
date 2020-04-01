@@ -96,12 +96,12 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	 * @return rows
 	 */
 	@Experimental
-	default double getEstimatedRows() {
+	default double getResultSizeEstimate() {
 		return -1;
 	}
 
 	@Experimental
-	default void setEstimatedRows(double rows) {
+	default void setResultSizeEstimate(double rows) {
 		// no-op for backwards compatibility
 	}
 }

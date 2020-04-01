@@ -27,7 +27,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private boolean isGraphPatternGroup;
 
-	private double estimatedRows = -1;
+	private double resultSizeEstimate = -1;
 
 	/*---------*
 	 * Methods *
@@ -136,13 +136,13 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	}
 
 	@Override
-	public double getEstimatedRows() {
-		return estimatedRows;
+	public double getResultSizeEstimate() {
+		return resultSizeEstimate;
 	}
 
 	@Override
-	public void setEstimatedRows(double estimatedRows) {
-		this.estimatedRows = estimatedRows;
+	public void setResultSizeEstimate(double resultSizeEstimate) {
+		this.resultSizeEstimate = resultSizeEstimate;
 	}
 
 	/**
