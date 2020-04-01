@@ -1,10 +1,10 @@
 ---
-title: "Programming with rdf4j"
+title: "Programming with RDF4J"
 layout: "doc"
 hide_page_title: "true"
 ---
 
-# Programming with rdf4j
+# Programming with RDF4J
 
 - <a href="setup/">Setup</a>
 - <a href="model/">The RDF Model API</a>
@@ -15,3 +15,4 @@ hide_page_title: "true"
 - <a href="shacl/">Validation with SHACL</a>
 - <a href="geosparql/">GeoSPARQL</a>
 - <a href="federation/">Federation with FedX</a>
+- <a href="rdfstar/">RDF* and SPARQL* support in RDF4J</a>
