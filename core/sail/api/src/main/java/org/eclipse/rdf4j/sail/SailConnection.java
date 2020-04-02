@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -55,13 +56,14 @@ public interface SailConnection extends AutoCloseable {
 	 * parser.
 	 * 
 	 * @param ql      the query language.
+	 * @param type    indicates if the supplied query is a graph, tuple, or boolean query
 	 * @param query   the unparsed query string
 	 * @param baseURI the provided base URI. May be null or empty.
 	 * @return an optional TupleExpr that represents a sail-specific version of the query, which {@link #evaluate} can
 	 *         process. Returns {@link Optional#empty()} if the Sail does not provide its own query processing.
 	 * @since 3.2.0
 	 */
-	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, String query, String baseURI) {
+	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.Type type, String query, String baseURI) {
 		return Optional.empty();
 	}
 

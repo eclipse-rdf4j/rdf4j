@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -87,8 +88,8 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, String query, String baseURI) {
-		return wrappedCon.prepareQuery(ql, query, baseURI);
+	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.Type type, String query, String baseURI) {
+		return wrappedCon.prepareQuery(ql, type, query, baseURI);
 	}
 
 	@Override

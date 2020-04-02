@@ -17,6 +17,17 @@ package org.eclipse.rdf4j.query;
 public interface Query extends Operation {
 
 	/**
+	 * The different types of queries that RDF4J recognizes: boolean queries, graph queries, and tuple queries.
+	 * 
+	 * @since 3.2.0
+	 */
+	public enum Type {
+		BOOLEAN,
+		GRAPH,
+		TUPLE
+	}
+
+	/**
 	 * Specifies the maximum time that a query is allowed to run. The query will be interrupted when it exceeds the time
 	 * limit. Any consecutive requests to fetch query results will result in {@link QueryInterruptedException}s.
 	 * 

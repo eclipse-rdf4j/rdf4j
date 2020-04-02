@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -195,14 +196,26 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
-
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI);
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
+			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.TUPLE, queryString, baseURI);
+			if (sailTupleExpr.isPresent()) {
+				parsedQuery = new ParsedTupleQuery(queryString, sailTupleExpr.get());
+			}
 			return new SailTupleQuery((ParsedTupleQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedGraphQuery) {
+			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.GRAPH, queryString, baseURI);
+			if (sailTupleExpr.isPresent()) {
+				parsedQuery = new ParsedGraphQuery(queryString, sailTupleExpr.get());
+			}
 			return new SailGraphQuery((ParsedGraphQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedBooleanQuery) {
+			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.BOOLEAN, queryString,
+					baseURI);
+			if (sailTupleExpr.isPresent()) {
+				parsedQuery = new ParsedBooleanQuery(queryString, sailTupleExpr.get());
+			}
 			return new SailBooleanQuery((ParsedBooleanQuery) parsedQuery, this);
 		} else {
 			throw new RuntimeException("Unexpected query type: " + parsedQuery.getClass());
@@ -212,7 +225,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.TUPLE, queryString, baseURI);
 		ParsedTupleQuery parsedQuery = sailTupleExpr.isPresent()
 				? new ParsedTupleQuery(queryString, sailTupleExpr.get())
 				: QueryParserUtil.parseTupleQuery(ql, queryString, baseURI);
@@ -222,7 +235,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.GRAPH, queryString, baseURI);
 		ParsedGraphQuery parsedQuery = sailTupleExpr.isPresent()
 				? new ParsedGraphQuery(queryString, sailTupleExpr.get())
 				: QueryParserUtil.parseGraphQuery(ql, queryString, baseURI);
@@ -232,7 +245,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.BOOLEAN, queryString, baseURI);
 		ParsedBooleanQuery parsedQuery = sailTupleExpr.isPresent()
 				? new ParsedBooleanQuery(queryString, sailTupleExpr.get())
 				: QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI);
