@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.io.File;
-import java.io.IOException;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.HashSet;
@@ -49,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrateg
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 
@@ -76,8 +75,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private final Object lock = new Object();
 
-	private final File tempFile;
-
 	private final DB db;
 
 	/**
@@ -103,14 +100,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 
 		if (this.iterationCacheSyncThreshold > 0) {
-			try {
-				this.tempFile = File.createTempFile("group-eval", null);
-			} catch (IOException e) {
-				throw new QueryEvaluationException("could not initialize temp db", e);
-			}
-			this.db = DBMaker.newFileDB(tempFile).deleteFilesAfterClose().closeOnJvmShutdown().make();
+			this.db = DBMaker.tempFileDB().fileMmapEnableIfSupported().fileDeleteAfterClose().closeOnJvmShutdown().make();
 		} else {
-			this.tempFile = null;
 			this.db = null;
 		}
 	}
@@ -158,7 +149,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private <T> Set<T> createSet(String setName) {
 		if (db != null) {
-			return db.getHashSet(setName);
+			return (Set <T>) db.hashSet(setName).create();
 		} else {
 			return new HashSet<>();
 		}
