@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -17,6 +19,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -81,6 +84,11 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	@Override
 	public void close() throws SailException {
 		wrappedCon.close();
+	}
+
+	@Override
+	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, String query, String baseURI) {
+		return wrappedCon.prepareQuery(ql, query, baseURI);
 	}
 
 	@Override

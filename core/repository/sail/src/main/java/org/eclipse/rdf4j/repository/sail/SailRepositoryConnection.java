@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import java.util.Optional;
+
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
@@ -22,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -33,11 +36,11 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResolver;
-import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -192,6 +195,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
+
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI);
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
@@ -208,21 +212,30 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		ParsedTupleQuery parsedQuery = sailTupleExpr.isPresent()
+				? new ParsedTupleQuery(queryString, sailTupleExpr.get())
+				: QueryParserUtil.parseTupleQuery(ql, queryString, baseURI);
 		return new SailTupleQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		ParsedGraphQuery parsedQuery = QueryParserUtil.parseGraphQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		ParsedGraphQuery parsedQuery = sailTupleExpr.isPresent()
+				? new ParsedGraphQuery(queryString, sailTupleExpr.get())
+				: QueryParserUtil.parseGraphQuery(ql, queryString, baseURI);
 		return new SailGraphQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		ParsedBooleanQuery parsedQuery = QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI);
+		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, queryString, baseURI);
+		ParsedBooleanQuery parsedQuery = sailTupleExpr.isPresent()
+				? new ParsedBooleanQuery(queryString, sailTupleExpr.get())
+				: QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI);
 		return new SailBooleanQuery(parsedQuery, this);
 	}
 
