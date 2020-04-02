@@ -1,7 +1,6 @@
 ---
 title: "Release management"
 layout: "doc"
-hide_page_title: "true"
 ---
 
 This document outlines how to create a new release of RDF4J.
@@ -10,38 +9,38 @@ This document outlines how to create a new release of RDF4J.
 
 In the project root, the script `release.sh` is a shell-script that (almost) fully automates the handling of releases. It creates branches, sets correct version numbers, builds and uploads artifacts, etc. It gives you several prompts along the way to guide you through the process. 
 
-The release script should always be run from the _master_ branch.
+The release script should always be run from the `master` branch.
 
 If for whatever reason, you wish to manually create a release instead, the following sections detail the manual process.
 
 # Patch releases
 
-Patch releases are created by branching the _master_ branch into a release branch, and
+Patch releases are created by branching the `master` branch into a release branch, and
 when complete, tagging this release branch with the version number before
 release deployment. Once release deployment is complete, the release branch
 is deleted.
 
-IMPORTANT: the _master_ branch is always in a release ready state (build
+IMPORTANT: the `master` branch is always in a release ready state (build
 passes, no new features, docs are up to date), so a patch release from the
-_master_ branch can be done in an ad-hoc fashion, without the need for a formal
+`master` branch can be done in an ad-hoc fashion, without the need for a formal
 review.
 
 Plans to do a patch release are announced by the project lead on the
 [rdf4j-dev@eclipse.org mailinglist](https://dev.eclipse.org/mailman/listinfo/rdf4j-dev),
 usually about a week in advance, with an open invitation for contributors to
 propose additional fixes to include, which are done as Pull Requests to the
-_master_ branch.
+`master` branch.
 
 ## Creating a patch release branch
 
-Any fixes to be included in a patch release must be merged into the _master_
-branch first.  A patch release branch should differ from the _master_ branch,
+Any fixes to be included in a patch release must be merged into the `master`
+branch first.  A patch release branch should differ from the `master` branch,
 at the time of release, only by the version number - a patch release branch has
-a patch number version, while the _master_ branch has a SNAPSHOT version.  To
+a patch number version, while the `master` branch has a SNAPSHOT version.  To
 create a patch release branch, follow these steps:
 
-1. Check out the _master_ branch.
-   E.g. if we're preparing a release 2.2.1, the _master_ branch will have the version 2.2.1-SNAPSHOT:
+1. Check out the `master` branch.
+   E.g. if we're preparing a release 2.2.1, the `master` branch will have the version 2.2.1-SNAPSHOT:
 
     `git checkout master`
 
@@ -63,20 +62,20 @@ create a patch release branch, follow these steps:
 
     `git commit -s -a -m "release 2.2.1"`
 
-4. Tag the version and push the tag upstream:
+4. Tag the version and push tag and branch upstream:
 
     `git tag 2.2.1`<br>
+    `git push -u origin releases/2.2.1`
     `git push origin 2.2.1`
 
-NOTE: The release branch itself is usually not pushed upstream - you only use it locally to prepare the commit that sets the pom version numbers for the release. Also, the branch is not merged back into the master branch (because we want to keep the SNAPSHOT version number on the master branch). Once you pushed the tag, you can delete your local branch.
+5. Prepare the release branch for the next iteration:
 
-5. Finally, prepare the master branch for the next iteration:
-
-   `git checkout master`
    `mvn versions:set` and enter `2.2.2-SNAPSHOT` as the new snapshot number
    `mvn versions:commit`
    `git commit -s -a -m "next development iteration"`
    `git push`
+
+6. Finally, create a pull request to merge the release branch back into master. Like branch sync PRs, this PR will be merged by means of a merge-commit, rather than the default 'squash and merge', so as not to lose the version-tagged commit.
 
 # Hotfix releases
 
@@ -84,7 +83,7 @@ Hotfix release are patch releases that target a prior minor version (not the
 latest stable release). These are needed when a critical bug was found in a
 production deployment using an earlier version.
 
-A hotfix release use a preceding release as its basis. This means we need to create a release branch not by simply branching from the current _master_ branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
+A hotfix release use a preceding release as its basis. This means we need to create a release branch not by simply branching from the current `master` branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
 
 1. Check out the tag of the previous release. E.g. if we're preparing a release 2.1.6, the preceding release is 2.1.5, so we do:
 
@@ -110,23 +109,17 @@ A hotfix release use a preceding release as its basis. This means we need to cre
 
     `git push origin releases/2.1.6`
 
-Bug fixes are typically added to a hotfix release branch by [cherry-picking](https://git-scm.com/docs/git-cherry-pick) the relevant commits from the _master_ branch.
+Bug fixes are typically added to a hotfix release branch by [cherry-picking](https://git-scm.com/docs/git-cherry-pick) the relevant commits from the `master` branch.
 
 This works as follows:
 
 1. Check out the patch release branch.
 
-2. In the git commit history, identify the commit for the fix you wish to add to the release. You can usually easily find this by looking at the original Pull Request for the (normally the PR can be found by looking through the issue coments on GitHub). You're looking for a message in the PR about the merge, usually at the end, that looks like this:
-
-    `jeenbroekstra merged commit 5d13554 into eclipse:master`<br>
-    <br>
-    The commit number (5d13554) is what you're after.
+2. In the git commit history, identify the commit for the fix you wish to add to the release. You can usually easily find this by looking at git commit message, which should start with the issue nmber.
 
 3. Add this fix to the release branch by executing the following command:
 
-    `git cherry-pick -m 1 5d13554`<br>
-    <br>
-    The `-m 1` flag is necessary because this is a merge-commit, which has two parents: we need inform git which parent commit it needs to use as the base (we select 1, which is the _master_ branch, to ensure that _only_ changes introduced by this fix are included).
+    `git cherry-pick <commit-SHA>`<br>
 
 Once all fixes are applied to the release branch, and the build is stable (NB verify by executing `mvn clean verify`), we can tag and finalize the release:
 
@@ -148,7 +141,7 @@ Once all fixes are applied to the release branch, and the build is stable (NB ve
     `git tag 2.1.6`
     `git push origin 2.1.6`
 
-Once the release is complete, the hotfix branch needs to be deleted. Although this can of course be done from the command line, it is cumbersome, and we recommend using a decent Git client (like SourceTree) that can do this for you.
+Once the release is complete, the hotfix branch can to be deleted. Although this can of course be done from the command line, it is cumbersome, and we recommend using a decent Git client (like SourceTree) that can do this for you.
 
 Note that, although the branch is deleted, the release tag is still in place, for future use of further hotfix releases.
 
@@ -216,18 +209,18 @@ For more detailed information about the release review process, see the [Eclipse
 
 ## Branching minor releases
 
-Prior to a minor release, the _develop_ branch is merged into the _master_ branch
-(along with the _develop_ branch's version) to facilitate release review.
-This will increment the _master_ version to the latest major/minor SNAPSHOT version.
+Prior to a minor release, the `develop` branch is merged into the `master` branch
+(along with the `develop` branch's version) to facilitate release review.
+This will increment the `master` version to the latest major/minor SNAPSHOT version.
 After the review is complete the steps to create a minor release are the same as the patch release steps.
 
 IMPORTANT: It is important that only features and fixes that have already been scheduled
-for release (via PR milestone labels) be merged into the _develop_ branch, so
+for release (via PR milestone labels) be merged into the `develop` branch, so
 that there is no confusion as to what will be included in the next minor release.
 
-Once a minor release is published the _develop_ minor version should be incremented to the next SNAPSHOT
+Once a minor release is published the `develop` minor version should be incremented to the next SNAPSHOT
 version and any approved features that are scheduled for this next minor
-version should be merged into _develop_ branch.
+version should be merged into `develop` branch.
 
 # Optional: publishing docker images
 
