@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -27,6 +20,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A query optimizer that re-orders nested Joins.
@@ -109,7 +109,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 					for (TupleExpr tupleExpr : joinArgs) {
-						cardinalityMap.put(tupleExpr, statistics.getCardinality(tupleExpr));
+						double cardinality = statistics.getCardinality(tupleExpr);
+						tupleExpr.setResultSizeEstimate(cardinality);
+						cardinalityMap.put(tupleExpr, cardinality);
 						if (tupleExpr instanceof ZeroLengthPath) {
 							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());
 						} else {
