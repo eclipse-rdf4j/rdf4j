@@ -100,7 +100,11 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 
 		if (this.iterationCacheSyncThreshold > 0) {
-			this.db = DBMaker.tempFileDB().fileMmapEnableIfSupported().fileDeleteAfterClose().closeOnJvmShutdown().make();
+			this.db = DBMaker.tempFileDB()
+					.fileMmapEnableIfSupported()
+					.fileDeleteAfterClose()
+					.closeOnJvmShutdown()
+					.make();
 		} else {
 			this.db = null;
 		}
@@ -149,7 +153,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private <T> Set<T> createSet(String setName) {
 		if (db != null) {
-			return (Set <T>) db.hashSet(setName).create();
+			return (Set<T>) db.hashSet(setName).create();
 		} else {
 			return new HashSet<>();
 		}
