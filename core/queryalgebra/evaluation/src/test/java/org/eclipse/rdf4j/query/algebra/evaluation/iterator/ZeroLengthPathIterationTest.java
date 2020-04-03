@@ -51,7 +51,7 @@ public class ZeroLengthPathIterationTest {
 			@Override
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
 					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
-				return new CloseableIteratorIteration<>(m.filter(subj, pred, obj, contexts).iterator());
+				return new CloseableIteratorIteration<>(m.getStatements(subj, pred, obj, contexts).iterator());
 			}
 
 			@Override
@@ -64,7 +64,7 @@ public class ZeroLengthPathIterationTest {
 
 	/**
 	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings.
-	 * 
+	 *
 	 * @see https://github.com/eclipse/rdf4j/issues/689
 	 */
 	@Test

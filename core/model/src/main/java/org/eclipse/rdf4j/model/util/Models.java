@@ -64,8 +64,8 @@ public class Models {
 	 * @param m the model from which to retrieve an object value.
 	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<Value> object(Model m) {
-		return m.stream().map(st -> st.getObject()).findAny();
+	public static Optional<Value> object(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject()).findAny();
 	}
 
 	/**
@@ -75,8 +75,12 @@ public class Models {
 	 * @param m the model from which to retrieve an object Literal value.
 	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<Literal> objectLiteral(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(l -> (Literal) l).findAny();
+	public static Optional<Literal> objectLiteral(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.findAny();
 	}
 
 	/**
@@ -87,8 +91,8 @@ public class Models {
 	 *         such value exists.
 	 * @see Model#objects()
 	 */
-	public static Set<Literal> objectLiterals(Model m) {
-		return m.stream()
+	public static Set<Literal> objectLiterals(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Literal)
 				.map(l -> (Literal) l)
@@ -103,8 +107,12 @@ public class Models {
 	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<Resource> objectResource(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(r -> (Resource) r).findAny();
+	public static Optional<Resource> objectResource(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.findAny();
 	}
 
 	/**
@@ -115,8 +123,8 @@ public class Models {
 	 *         such value exists.
 	 * @see Model#objects()
 	 */
-	public static Set<Resource> objectResources(Model m) {
-		return m.stream()
+	public static Set<Resource> objectResources(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Resource)
 				.map(r -> (Resource) r)
@@ -131,8 +139,12 @@ public class Models {
 	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<IRI> objectIRI(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI) r).findAny();
+	public static Optional<IRI> objectIRI(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.findAny();
 	}
 
 	/**
@@ -143,8 +155,8 @@ public class Models {
 	 *         exists.
 	 * @see Model#objects()
 	 */
-	public static Set<IRI> objectIRIs(Model m) {
-		return m.stream()
+	public static Set<IRI> objectIRIs(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof IRI)
 				.map(r -> (IRI) r)
@@ -159,8 +171,8 @@ public class Models {
 	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<String> objectString(Model m) {
-		return m.stream().map(st -> st.getObject().stringValue()).findAny();
+	public static Optional<String> objectString(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject().stringValue()).findAny();
 	}
 
 	/**
@@ -171,8 +183,10 @@ public class Models {
 	 *         exists.
 	 * @see Model#objects()
 	 */
-	public static Set<String> objectStrings(Model m) {
-		return m.stream().map(st -> st.getObject().stringValue()).collect(Collectors.toSet());
+	public static Set<String> objectStrings(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject().stringValue())
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -183,8 +197,8 @@ public class Models {
 	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<Resource> subject(Model m) {
-		return m.stream().map(st -> st.getSubject()).findAny();
+	public static Optional<Resource> subject(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getSubject()).findAny();
 	}
 
 	/**
@@ -195,8 +209,12 @@ public class Models {
 	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<IRI> subjectIRI(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI) s).findAny();
+	public static Optional<IRI> subjectIRI(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof IRI)
+				.map(s -> (IRI) s)
+				.findAny();
 	}
 
 	/**
@@ -217,8 +235,12 @@ public class Models {
 	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<BNode> subjectBNode(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(s -> (BNode) s).findAny();
+	public static Optional<BNode> subjectBNode(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof BNode)
+				.map(s -> (BNode) s)
+				.findAny();
 	}
 
 	/**
@@ -239,8 +261,8 @@ public class Models {
 	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
 	 *         no such value exists.
 	 */
-	public static Optional<IRI> predicate(Model m) {
-		return m.stream().map(st -> st.getPredicate()).findAny();
+	public static Optional<IRI> predicate(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getPredicate()).findAny();
 	}
 
 	/**
@@ -283,7 +305,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return object(m.filter(subject, property, null, contexts));
+		return object(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -319,7 +341,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectResource(m.filter(subject, property, null, contexts));
+		return objectResource(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -336,7 +358,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectResources(m.filter(subject, property, null, contexts));
+		return objectResources(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -354,7 +376,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectIRI(m.filter(subject, property, null, contexts));
+		return objectIRI(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -371,7 +393,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectIRIs(m.filter(subject, property, null, contexts));
+		return objectIRIs(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -389,7 +411,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectLiteral(m.filter(subject, property, null, contexts));
+		return objectLiteral(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -406,7 +428,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectLiterals(m.filter(subject, property, null, contexts));
+		return objectLiterals(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -424,7 +446,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectString(m.filter(subject, property, null, contexts));
+		return objectString(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -441,7 +463,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectStrings(m.filter(subject, property, null, contexts));
+		return objectStrings(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**

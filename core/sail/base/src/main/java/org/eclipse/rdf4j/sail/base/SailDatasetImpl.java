@@ -273,10 +273,10 @@ class SailDatasetImpl implements SailDataset {
 		if (approved != null && iter != null) {
 
 			return new DistinctModelReducingUnionIteration(iter, approved,
-					(m) -> m.getStatements(subj, pred, obj, contexts));
+					(m) -> m.getStatements(subj, pred, obj, contexts).iterator());
 
 		} else if (approved != null) {
-			Iterator<Statement> i = approved.getStatements(subj, pred, obj, contexts);
+			Iterator<Statement> i = approved.getStatements(subj, pred, obj, contexts).iterator();
 			return new CloseableIteratorIteration<>(i);
 		} else if (iter != null) {
 			return iter;

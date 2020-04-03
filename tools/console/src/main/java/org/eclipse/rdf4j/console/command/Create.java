@@ -193,7 +193,7 @@ public class Create extends ConsoleCommand {
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
 					final Resource repositoryNode = Models
-							.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+							.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
 							.orElseThrow(() -> new RepositoryConfigException("missing repository node"));
 
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);

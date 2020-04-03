@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 /**
  * An {@link RDFHandlerWrapper} that buffers statements internally and passes them to underlying handlers grouped by
  * context, then subject, then predicate.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
@@ -41,7 +41,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 	/**
 	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the default buffer size.
-	 * 
+	 *
 	 * @param handlers one or more wrapped RDFHandlers
 	 */
 	public BufferedGroupingRDFHandler(RDFHandler... handlers) {
@@ -50,7 +50,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 	/**
 	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the supplied buffer size.
-	 * 
+	 *
 	 * @param bufferSize size of the buffer expressed in number of RDF statements
 	 * @param handlers   one or more wrapped RDFHandlers
 	 */
@@ -85,7 +85,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 				Set<IRI> processedPredicates = new HashSet<>();
 
 				// give rdf:type preference over other predicates.
-				for (Statement typeStatement : contextData.filter(subject, RDF.TYPE, null)) {
+				for (Statement typeStatement : contextData.getStatements(subject, RDF.TYPE, null)) {
 					super.handleStatement(typeStatement);
 				}
 
@@ -93,10 +93,10 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 				// retrieve other statement from this context with the same
 				// subject, and output them grouped by predicate
-				for (Statement subjectStatement : contextData.filter(subject, null, null)) {
+				for (Statement subjectStatement : contextData.getStatements(subject, null, null)) {
 					IRI predicate = subjectStatement.getPredicate();
 					if (!processedPredicates.contains(predicate)) {
-						for (Statement toWrite : contextData.filter(subject, predicate, null)) {
+						for (Statement toWrite : contextData.getStatements(subject, predicate, null)) {
 							super.handleStatement(toWrite);
 						}
 						processedPredicates.add(predicate);
