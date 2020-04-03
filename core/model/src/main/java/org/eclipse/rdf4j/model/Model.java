@@ -169,7 +169,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	}
 
 	/**
-	 * Returns an {@link Iterator} over all {@link Statement}s in this Model that match the supplied criteria.
+	 * Returns an {@link Iterable} over all {@link Statement}s in this Model that match the supplied criteria.
 	 * <p>
 	 * Examples:
 	 * <ul>
@@ -190,7 +190,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                  disregarding their context. If one or more contexts are specified, statements with a context
 	 *                  matching any one of these will match. To match statements without an associated context, specify
 	 *                  the value {@code null} and explicitly cast it to type {@code Resource}.
-	 * @return an {@link Iterator} over the statements in this Model that match the specified pattern.
+	 * @return an {@link Iterable} over the statements in this Model that match the specified pattern.
 	 *
 	 * @since 3.2.0
 	 *
