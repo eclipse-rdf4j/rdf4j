@@ -80,8 +80,30 @@ public interface TripleSource {
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
+	 * @Deprecated will be removed in 4.0. Replaced with
+	 *             {@link #getStatements(String, BindingSet, QueryType, QueryInfo)}
+	 */
+	@Deprecated
+	public default CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
+			QueryType queryType, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		return getStatements(preparedQuery, EmptyBindingSet.getInstance(), queryType, queryInfo);
+	}
+
+	/**
+	 * Evaluate a given SPARQL query of the provided query type at the given source.
+	 * 
+	 * @param preparedQuery
+	 * @param queryBindings optional query bindings, use {@link EmptyBindingSet} if there are none
+	 * @param queryType
+	 * @param queryInfo
+	 * @return the statements
+	 * @throws RepositoryException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
+			BindingSet queryBindings,
 			QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 

@@ -11,10 +11,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -22,6 +26,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import com.google.common.collect.Sets;
 
 public class BasicTests extends SPARQLBaseTest {
 
@@ -206,5 +212,39 @@ public class BasicTests extends SPARQLBaseTest {
 		Assertions.assertEquals(1,
 				Repositories.tupleQuery(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
 						it -> QueryResults.asList(it)).size());
+	}
+
+	@Test
+	public void testSingleSource_SetBinding() throws Exception {
+
+		/* test a single source select query where we set a binding */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
+			tq.setBinding("name", l("Alan"));
+			TupleQueryResult tqr = tq.evaluate();
+			List<BindingSet> res = Iterations.asList(tqr);
+			assertContainsAll(res, "person", Sets.newHashSet(iri("http://example.org/", "a")));
+
+			// CONSTRUCT query
+			GraphQuery gq = conn.prepareGraphQuery(
+					"CONSTRUCT { ?person <http://xmlns.com/foaf/0.1/name> ?name } WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
+			gq.setBinding("name", l("Alan"));
+			GraphQueryResult gqr = gq.evaluate();
+			List<Statement> stmts = Iterations.asList(gqr);
+			Assertions.assertEquals(1, stmts.size());
+			Assertions.assertEquals(iri("http://example.org/", "a"), stmts.get(0).getSubject());
+
+			// BOOLEAN query
+			BooleanQuery bq = conn.prepareBooleanQuery("ASK { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
+			bq.setBinding("name", l("non-existing-name"));
+			Assertions.assertEquals(false, bq.evaluate());
+
+		}
+
 	}
 }
