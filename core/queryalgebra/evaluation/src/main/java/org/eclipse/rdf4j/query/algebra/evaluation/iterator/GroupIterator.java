@@ -101,7 +101,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		if (this.iterationCacheSyncThreshold > 0) {
 			this.db = DBMaker.tempFileDB()
-					.fileMmapEnableIfSupported()
 					.fileDeleteAfterClose()
 					.closeOnJvmShutdown()
 					.make();
