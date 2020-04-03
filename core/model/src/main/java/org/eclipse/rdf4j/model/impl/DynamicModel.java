@@ -297,19 +297,20 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public Iterator<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
+	public Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (model == null && subject != null && predicate != null && object != null && contexts != null
 				&& contexts.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
 			if (foundStatement == null) {
-				return new EmptyIterator<>();
+				return () -> new EmptyIterator<>();
+
 			}
-			return new SingletonIterator<>(foundStatement);
+			return () -> new SingletonIterator<>(foundStatement);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
 				&& contexts.length == 0) {
-			return iterator();
+			return this;
 		} else {
 			upgrade();
 			return model.getStatements(subject, predicate, object, contexts);
