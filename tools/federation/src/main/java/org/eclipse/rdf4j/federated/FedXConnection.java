@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
-import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
+import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,7 +66,7 @@ import org.slf4j.LoggerFactory;
  * @see FederationEvalStrategy
  * @see WriteStrategy
  */
-public class FedXConnection extends AbstractSailConnection {
+public class FedXConnection extends NotifyingSailConnectionBase {
 
 	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);
 	protected final FedX federation;
@@ -95,8 +95,9 @@ public class FedXConnection extends AbstractSailConnection {
 		QueryInfo queryInfo = null;
 		if (true) {
 			String queryString = getOriginalQueryString(bindings);
-			if (queryString == null)
+			if (queryString == null) {
 				log.warn("Query string is null. Please check your FedX setup.");
+			}
 			queryInfo = new QueryInfo(queryString, getOriginalQueryType(bindings),
 					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext);
 
@@ -114,9 +115,10 @@ public class FedXConnection extends AbstractSailConnection {
 				log.debug("Details: ", e);
 				throw new SailException(e);
 			}
-			if (log.isDebugEnabled())
+			if (log.isDebugEnabled()) {
 				log.debug(("Optimization duration: " + ((System.currentTimeMillis() - start))) + " (Query: "
 						+ queryInfo.getQueryID() + ")");
+			}
 		}
 
 		// log the optimized query plan, if Config#isLogQueryPlan(), otherwise void operation
@@ -273,6 +275,13 @@ public class FedXConnection extends AbstractSailConnection {
 			Resource... contexts) throws SailException {
 		try {
 			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);
+			if (contexts.length == 0) {
+				notifyStatementAdded(federation.getValueFactory().createStatement(subj, pred, obj));
+			} else {
+				for (Resource context : contexts) {
+					notifyStatementAdded(federation.getValueFactory().createStatement(subj, pred, obj, context));
+				}
+			}
 		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
@@ -288,6 +297,13 @@ public class FedXConnection extends AbstractSailConnection {
 			Resource... contexts) throws SailException {
 		try {
 			getWriteStrategyInternal().removeStatement(subj, pred, obj, contexts);
+			if (contexts.length == 0) {
+				notifyStatementRemoved(federation.getValueFactory().createStatement(subj, pred, obj));
+			} else {
+				for (Resource context : contexts) {
+					notifyStatementRemoved(federation.getValueFactory().createStatement(subj, pred, obj, context));
+				}
+			}
 		} catch (RepositoryException e) {
 			throw new SailException(e);
 		}
@@ -309,8 +325,9 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		if (contexts != null && contexts.length > 0)
+		if (contexts != null && contexts.length > 0) {
 			throw new UnsupportedOperationException("Context handling for size() not supported");
+		}
 		long size = 0;
 		List<String> errorEndpoints = new ArrayList<>();
 		for (Endpoint e : federation.getMembers()) {
@@ -320,9 +337,10 @@ public class FedXConnection extends AbstractSailConnection {
 				errorEndpoints.add(e.getId());
 			}
 		}
-		if (errorEndpoints.size() > 0)
+		if (errorEndpoints.size() > 0) {
 			throw new SailException("Could not determine size for members " + errorEndpoints.toString() +
 					"(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
+		}
 		return size;
 	}
 
@@ -357,20 +375,24 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	private static String getOriginalQueryString(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY);
-		if (q != null)
+		if (q != null) {
 			return q.stringValue();
+		}
 		return null;
 	}
 
 	private static QueryType getOriginalQueryType(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY_TYPE);
-		if (q != null)
+		if (q != null) {
 			return QueryType.valueOf(q.stringValue());
+		}
 		return null;
 	}
 
@@ -382,11 +404,13 @@ public class FedXConnection extends AbstractSailConnection {
 	 * @return
 	 */
 	private static int getOriginalMaxExecutionTime(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return 0;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_MAX_EXECUTION_TIME);
-		if (q != null)
+		if (q != null) {
 			return Integer.parseInt(q.stringValue());
+		}
 		return 0;
 	}
 

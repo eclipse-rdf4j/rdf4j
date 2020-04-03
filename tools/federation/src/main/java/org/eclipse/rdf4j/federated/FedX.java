@@ -25,9 +25,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
-import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  * 
  */
-public class FedX extends AbstractSail implements RepositoryResolverClient {
+public class FedX extends AbstractNotifyingSail implements RepositoryResolverClient {
 
 	private static final Logger log = LoggerFactory.getLogger(FedX.class);
 
@@ -109,7 +109,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	@Override
-	protected SailConnection getConnectionInternal() throws SailException {
+	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new FedXConnection(this, federationContext);
 	}
 
@@ -178,8 +178,9 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 			}
 		}
 
-		if (errors.size() > 0)
+		if (errors.size() > 0) {
 			throw new SailException("Federation could not be shut down. See logs for details.");
+		}
 	}
 
 	/**
