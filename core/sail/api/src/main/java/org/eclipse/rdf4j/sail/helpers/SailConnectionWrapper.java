@@ -88,7 +88,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.Type type, String query, String baseURI) {
+	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
 		return wrappedCon.prepareQuery(ql, type, query, baseURI);
 	}
 

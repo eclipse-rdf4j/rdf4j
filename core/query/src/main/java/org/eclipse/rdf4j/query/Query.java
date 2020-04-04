@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
+import org.eclipse.rdf4j.model.Statement;
+
 /**
  * A query on a repository that can be formulated in one of the supported query languages (for example SeRQL or SPARQL).
  * It allows one to predefine bindings in the query to be able to reuse the same query with different bindings.
@@ -21,9 +23,21 @@ public interface Query extends Operation {
 	 * 
 	 * @since 3.2.0
 	 */
-	public enum Type {
+	public enum QueryType {
+		/**
+		 * Boolean queries (such as the SPARQL ASK query form) return either {@code true} or {@code false} as the
+		 * result.
+		 */
 		BOOLEAN,
+		/**
+		 * Graph queries (such as the SPARQL CONSTRUCT and DESCRIBE query form) return a sequence of RDF
+		 * {@link Statement statements} as the result.
+		 */
 		GRAPH,
+		/**
+		 * Tuple queries (such as the SPARQL SELECT query form) return a sequence of {@link BindingSet sets of variable
+		 * bindings} as the result.
+		 */
 		TUPLE
 	}
 

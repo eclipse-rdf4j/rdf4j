@@ -63,7 +63,8 @@ public interface SailConnection extends AutoCloseable {
 	 *         process. Returns {@link Optional#empty()} if the Sail does not provide its own query processing.
 	 * @since 3.2.0
 	 */
-	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.Type type, String query, String baseURI) {
+	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+			String baseURI) {
 		return Optional.empty();
 	}
 
