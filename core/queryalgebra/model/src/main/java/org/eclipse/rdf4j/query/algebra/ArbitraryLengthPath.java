@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
@@ -221,6 +222,8 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		if (scope == Scope.NAMED_CONTEXTS) {
 			sb.append(" FROM NAMED CONTEXT");
 		}
+
+		appendCostAnnotation(sb);
 
 		return sb.toString();
 	}

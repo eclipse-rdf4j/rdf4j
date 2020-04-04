@@ -374,30 +374,28 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			TupleExpr result = null;
+			double lowestCost = Double.POSITIVE_INFINITY;
 
-			if (expressions.size() > 1) {
-				double lowestCardinality = Double.POSITIVE_INFINITY;
-				for (TupleExpr tupleExpr : expressions) {
-					// Calculate a score for this tuple expression
-					double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap,
-							boundVars);
+			for (TupleExpr tupleExpr : expressions) {
+				// Calculate a score for this tuple expression
+				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap,
+						boundVars);
 
-					if (cardinality < lowestCardinality || result == null) {
-						// More specific path expression found
-						lowestCardinality = cardinality;
-						result = tupleExpr;
-					}
+				if (cost < lowestCost || result == null) {
+					// More specific path expression found
+					lowestCost = cost;
+					result = tupleExpr;
 				}
-			} else {
-				result = expressions.get(0);
 			}
+
+			result.setCostEstimate(lowestCost);
 
 			return result;
 		}
 
-		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
-			double cardinality = cardinalityMap.get(tupleExpr);
+			double cost = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);
 
@@ -407,23 +405,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			int nonConstantVarCount = vars.size() - constantVars.size();
 			if (nonConstantVarCount > 0) {
 				double exp = (double) unboundVars.size() / nonConstantVarCount;
-				cardinality = Math.pow(cardinality, exp);
+				cost = Math.pow(cost, exp);
 			}
 
 			if (unboundVars.isEmpty()) {
 				// Prefer patterns with more bound vars
 				if (nonConstantVarCount > 0) {
-					cardinality /= nonConstantVarCount;
+					cost /= nonConstantVarCount;
 				}
 			} else {
 				// Prefer patterns that bind variables from other tuple expressions
 				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
 				if (foreignVarFreq > 0) {
-					cardinality /= 1 + foreignVarFreq;
+					cost /= 1 + foreignVarFreq;
 				}
 			}
 
-			return cardinality;
+			return cost;
 		}
 
 		protected List<Var> getConstantVars(Iterable<Var> vars) {

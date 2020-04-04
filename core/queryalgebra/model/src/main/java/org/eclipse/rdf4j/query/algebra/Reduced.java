@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.stream.Stream;
+
 public class Reduced extends UnaryTupleOperator {
 
 	/*--------------*
@@ -42,5 +44,14 @@ public class Reduced extends UnaryTupleOperator {
 	@Override
 	public Reduced clone() {
 		return (Reduced) super.clone();
+	}
+
+	@Override
+	public String getSignature() {
+		StringBuilder sb = new StringBuilder(super.getSignature());
+
+		appendCostAnnotation(sb);
+
+		return sb.toString();
 	}
 }

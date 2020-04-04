@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.List;
 import java.util.ListIterator;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 
@@ -28,6 +29,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	private boolean isGraphPatternGroup;
 
 	private double resultSizeEstimate = -1;
+	private long resultSizeActual = -1;
+	private double costEstimate = -1;
 
 	/*---------*
 	 * Methods *
@@ -145,17 +148,39 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		this.resultSizeEstimate = resultSizeEstimate;
 	}
 
+	@Override
+	public long getResultSizeActual() {
+		return resultSizeActual;
+	}
+
+	@Override
+	public void setResultSizeActual(long resultSizeActual) {
+		this.resultSizeActual = resultSizeActual;
+	}
+
+	@Override
+	public double getCostEstimate() {
+		return costEstimate;
+	}
+
+	@Override
+	public void setCostEstimate(double costEstimate) {
+		this.costEstimate = costEstimate;
+	}
+
 	/**
 	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
 	static String toHumanReadbleNumber(double number) {
 		String humanReadbleString;
-		if (number > 1_000_000) {
+		if (number == Double.POSITIVE_INFINITY) {
+			humanReadbleString = "∞";
+		} else if (number > 1_000_000) {
 			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
 		} else if (number > 1_000) {
 			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
-		} else if (number > 0) {
+		} else if (number >= 0) {
 			humanReadbleString = Math.round(number) + "";
 		} else {
 			humanReadbleString = "UNKNOWN";
@@ -164,4 +189,17 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		return humanReadbleString;
 	}
 
+	protected void appendCostAnnotation(StringBuilder sb) {
+		String costs = Stream.of(
+				"costEstimate=" + toHumanReadbleNumber(getCostEstimate()),
+				"resultSizeEstimate=" + toHumanReadbleNumber(getResultSizeEstimate()),
+				"resultSizeActual=" + toHumanReadbleNumber(getResultSizeActual()))
+				.filter(s -> !s.endsWith("UNKNOWN"))
+				.reduce((a, b) -> a + ", " + b)
+				.orElse("");
+
+		if (!costs.isEmpty()) {
+			sb.append(" (").append(costs).append(")");
+		}
+	}
 }
