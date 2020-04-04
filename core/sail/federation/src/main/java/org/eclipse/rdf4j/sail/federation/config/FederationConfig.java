@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
  * Lists the members of a federation and which properties describe a resource subject in a unique member.
- * 
+ *
  * @author James Leigh
  * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
@@ -138,11 +138,11 @@ public class FederationConfig extends AbstractSailImplConfig {
 			addLocalPropertySpace(space.stringValue());
 		}
 		try {
-			Optional<Literal> bool = Models.objectLiteral(model.filter(implNode, DISTINCT, null));
+			Optional<Literal> bool = Models.objectLiteral(model.getStatements(implNode, DISTINCT, null));
 			if (bool.isPresent() && bool.get().booleanValue()) {
 				distinct = true;
 			}
-			bool = Models.objectLiteral(model.filter(implNode, READ_ONLY, null));
+			bool = Models.objectLiteral(model.getStatements(implNode, READ_ONLY, null));
 			if (bool.isPresent() && bool.get().booleanValue()) {
 				readOnly = true;
 			}

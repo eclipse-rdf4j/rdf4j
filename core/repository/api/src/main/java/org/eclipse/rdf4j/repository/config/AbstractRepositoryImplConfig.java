@@ -32,7 +32,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	/**
 	 * Create a new RepositoryConfigImpl.
-	 * 
+	 *
 	 * @param type
 	 */
 	public AbstractRepositoryImplConfig(String type) {
@@ -69,13 +69,13 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
-		Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null))
+		Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
 				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
 	/**
 	 * Utility method to create a new {@link RepositoryImplConfig} by reading data from the supplied {@link Model}.
-	 * 
+	 *
 	 * @param model    the {@link Model} to read configuration data from.
 	 * @param resource the subject {@link Resource} identifying the configuration data in the Model.
 	 * @return a new {@link RepositoryImplConfig} initialized with the configuration from the input Model, or
@@ -88,7 +88,8 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 			// Literal typeLit = GraphUtil.getOptionalObjectLiteral(graph,
 			// implNode, REPOSITORYTYPE);
 
-			final Literal typeLit = Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null)).orElse(null);
+			final Literal typeLit = Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
+					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()
 						.get(typeLit.getLabel())

@@ -64,7 +64,7 @@ public class CreateServlet extends TransformationServlet {
 
 	/**
 	 * GET requests to this servlet come from the Workbench side bar or from create.xsl form submissions.
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws QueryResultHandlerException
 	 */
@@ -113,7 +113,7 @@ public class CreateServlet extends TransformationServlet {
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
-		Resource res = Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+		Resource res = Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
 				.orElseThrow(() -> new RepositoryException("could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();

@@ -18,11 +18,14 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Warmup;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,6 +35,9 @@ import java.util.concurrent.TimeUnit;
  * @author Håvard Mikkelsen Ottestad
  */
 
+@Measurement(iterations = 10)
+@Warmup(iterations = 20)
+@Fork(1)
 @State(Scope.Thread)
 public class ReasoningBenchmark {
 
@@ -45,7 +51,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noReasoning() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
@@ -62,7 +67,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noReasoningMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
@@ -80,7 +84,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
@@ -97,7 +100,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingRDFSInferencerMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
@@ -115,7 +117,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
@@ -151,7 +152,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
@@ -171,7 +171,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
@@ -187,7 +186,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-		sail.initialize();
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			addAllDataMultipleTransactions(connection);

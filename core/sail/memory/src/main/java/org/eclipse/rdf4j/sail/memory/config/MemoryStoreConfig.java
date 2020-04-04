@@ -81,7 +81,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Models.objectLiteral(graph.filter(implNode, PERSIST, null)).ifPresent(persistValue -> {
+			Models.objectLiteral(graph.getStatements(implNode, PERSIST, null)).ifPresent(persistValue -> {
 				try {
 					setPersist((persistValue).booleanValue());
 				} catch (IllegalArgumentException e) {
@@ -90,7 +90,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 				}
 			});
 
-			Models.objectLiteral(graph.filter(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
+			Models.objectLiteral(graph.getStatements(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
 				try {
 					setSyncDelay((syncDelayValue).longValue());
 				} catch (NumberFormatException e) {
