@@ -226,9 +226,10 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.TUPLE, queryString, baseURI);
-		ParsedTupleQuery parsedQuery = sailTupleExpr.isPresent()
-				? new ParsedTupleQuery(queryString, sailTupleExpr.get())
-				: QueryParserUtil.parseTupleQuery(ql, queryString, baseURI);
+		
+		ParsedTupleQuery parsedQuery = sailTupleExpr
+				.map(expr -> new ParsedTupleQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI));
 		return new SailTupleQuery(parsedQuery, this);
 	}
 
@@ -236,9 +237,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.GRAPH, queryString, baseURI);
-		ParsedGraphQuery parsedQuery = sailTupleExpr.isPresent()
-				? new ParsedGraphQuery(queryString, sailTupleExpr.get())
-				: QueryParserUtil.parseGraphQuery(ql, queryString, baseURI);
+		ParsedGraphQuery parsedQuery = sailTupleExpr
+				.map(expr -> new ParsedGraphQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI));
 		return new SailGraphQuery(parsedQuery, this);
 	}
 
@@ -246,9 +247,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.Type.BOOLEAN, queryString, baseURI);
-		ParsedBooleanQuery parsedQuery = sailTupleExpr.isPresent()
-				? new ParsedBooleanQuery(queryString, sailTupleExpr.get())
-				: QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI);
+		ParsedBooleanQuery parsedQuery = sailTupleExpr
+				.map(expr -> new ParsedBooleanQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI));
 		return new SailBooleanQuery(parsedQuery, this);
 	}
 
