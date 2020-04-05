@@ -409,7 +409,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		try {
 			Endpoint source = query.getSource();
 			return source.getTripleSource()
-					.getStatements(query.getQueryString(), query.getQueryInfo().getQueryType(), query.getQueryInfo());
+					.getStatements(query.getQueryString(), bindings, query.getQueryInfo().getQueryType(),
+							query.getQueryInfo());
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -689,7 +690,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				Endpoint ownedEndpoint = federationContext.getEndpointManager()
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
+				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), (FilterValueExpr) null,
+						queryInfo);
 			}
 
 			else {
