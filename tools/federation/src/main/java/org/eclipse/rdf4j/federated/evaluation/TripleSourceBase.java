@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -59,7 +60,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, QueryType queryType, QueryInfo queryInfo)
+			String preparedQuery, BindingSet queryBindings, QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
@@ -68,6 +69,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			case SELECT:
 				monitorRemoteRequest();
 				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery);
+				applyBindings(tQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(tQuery);
 				configureInference(tQuery, queryInfo);
 				resultHolder.set(tQuery.evaluate());
@@ -75,6 +77,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			case CONSTRUCT:
 				monitorRemoteRequest();
 				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery);
+				applyBindings(gQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(gQuery);
 				configureInference(gQuery, queryInfo);
 				resultHolder.set(new GraphToBindingSetConversionIteration(gQuery.evaluate()));
@@ -84,6 +87,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				boolean hasResults = false;
 				try (RepositoryConnection _conn = conn) {
 					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery);
+					applyBindings(bQuery, queryBindings);
 					applyMaxExecutionTimeUpperBound(bQuery);
 					configureInference(bQuery, queryInfo);
 					hasResults = bQuery.evaluate();
@@ -94,6 +98,15 @@ public abstract class TripleSourceBase implements TripleSource {
 				throw new UnsupportedOperationException("Operation not supported for query type " + queryType);
 			}
 		});
+	}
+
+	private void applyBindings(Operation operation, BindingSet queryBindings) {
+		if (queryBindings == null) {
+			return;
+		}
+		for (Binding b : queryBindings) {
+			operation.setBinding(b.getName(), b.getValue());
+		}
 	}
 
 	@Override
