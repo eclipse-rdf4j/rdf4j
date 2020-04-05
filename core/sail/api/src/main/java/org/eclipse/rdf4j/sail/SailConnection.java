@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -17,7 +19,9 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 
@@ -45,6 +49,24 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	@Override
 	public void close() throws SailException;
+
+	/**
+	 * Allows the SailConnection to bypass the standard query parser and provide its own internal {@link TupleExpr}
+	 * implementation. By default this method returns an empty result, signaling that it will rely on the RDF4J query
+	 * parser.
+	 * 
+	 * @param ql      the query language.
+	 * @param type    indicates if the supplied query is a graph, tuple, or boolean query
+	 * @param query   the unparsed query string
+	 * @param baseURI the provided base URI. May be null or empty.
+	 * @return an optional TupleExpr that represents a sail-specific version of the query, which {@link #evaluate} can
+	 *         process. Returns {@link Optional#empty()} if the Sail does not provide its own query processing.
+	 * @since 3.2.0
+	 */
+	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+			String baseURI) {
+		return Optional.empty();
+	}
 
 	/**
 	 * Evaluates the supplied TupleExpr on the data contained in this Sail object, using the (optional) dataset and
@@ -270,6 +292,7 @@ public interface SailConnection extends AutoCloseable {
 	/**
 	 * @deprecated since 4.0. Use {@link #removeStatements(Resource, IRI, Value, Resource...)} instead.
 	 */
+	@Deprecated
 	default void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts) throws SailException {
 		removeStatements(subj, (IRI) pred, obj, contexts);
 	}
