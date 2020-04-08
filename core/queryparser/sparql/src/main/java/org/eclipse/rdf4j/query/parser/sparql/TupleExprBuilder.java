@@ -1050,8 +1050,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.jjtGetChild(1).jjtAccept(this, null);
 		TupleExpr serviceExpr = graphPattern.buildTupleExpr();
 
-		if (serviceExpr instanceof SingletonSet)
+		if (serviceExpr instanceof SingletonSet) {
 			return null; // do not add an empty service block
+		}
 
 		String serviceExpressionString = node.getPatternString();
 
@@ -1293,7 +1294,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						objectList.remove(objVar);
 						objectList.add(objVarReplacement[1]);
 					} else {
-
 						List<ValueExpr> collect = objectList.stream().map(o -> {
 							if (o instanceof Var) {
 								return o;
@@ -1316,7 +1316,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 
 				// convert the NegatedPropertySet to a proper TupleExpr
-				TupleExpr te = createTupleExprForNegatedPropertySet(nps, i);
+				TupleExpr te = createTupleExprForNegatedPropertySet(nps, i, invertSequence);
 				if (objVarReplacement != null) {
 					SameTerm condition = new SameTerm(objVarReplacement[0], objVarReplacement[1]);
 					pathSequencePattern.addConstraint(condition);
@@ -1391,10 +1391,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						if (invertSequence) {
 							endVar = subjVar;
-							if (startVar.equals(subjVar)) {
-								// inverted path sequence of length 1.
-								startVar = objVar;
-							}
+							startVar = objVar;
 						}
 
 						if (pathElement.isInverse()) {
@@ -1466,7 +1463,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return null;
 	}
 
-	private TupleExpr createTupleExprForNegatedPropertySet(NegatedPropertySet nps, int index) {
+	private TupleExpr createTupleExprForNegatedPropertySet(NegatedPropertySet nps, int index, boolean invertSequence) {
 		Var subjVar = nps.getSubjectVar();
 
 		Var predVar = createAnonVar();
@@ -1500,13 +1497,20 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// build a regular statement pattern (or a join of several patterns if the object list has more than one item)
 		if (filterCondition != null) {
 			for (ValueExpr obj : nps.getObjectList()) {
-				final Var objVar = mapValueExprToVar(obj);
+				Var patternSubjVar = subjVar;
+				Var patternObjVar = mapValueExprToVar(obj);
+				if (invertSequence) {
+					patternSubjVar = patternObjVar;
+					patternObjVar = subjVar;
+				}
 				if (patternMatch == null) {
-					patternMatch = new StatementPattern(nps.getScope(), subjVar, predVar, (Var) objVar,
+					patternMatch = new StatementPattern(nps.getScope(), patternSubjVar, predVar,
+							patternObjVar,
 							nps.getContextVar());
 				} else {
 					patternMatch = new Join(
-							new StatementPattern(nps.getScope(), subjVar, predVar, (Var) objVar, nps.getContextVar()),
+							new StatementPattern(nps.getScope(), patternSubjVar, predVar, patternObjVar,
+									nps.getContextVar()),
 							patternMatch);
 				}
 			}
