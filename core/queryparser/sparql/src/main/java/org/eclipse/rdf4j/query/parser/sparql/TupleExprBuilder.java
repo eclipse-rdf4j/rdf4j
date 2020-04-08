@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -99,7 +100,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.*;
 
 /**
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -134,7 +135,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Maps the given valueExpr to a Var. If the supplied ValueExpr is a Var, the object itself will be returned. If it
 	 * is a ValueConstant, this method will check if an existing variable mapping exists and return that mapped
 	 * variable, otherwise it will create and store a new mapping.
-	 * 
+	 *
 	 * @param valueExpr
 	 * @return a Var for the given valueExpr.
 	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
@@ -154,7 +155,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	/**
 	 * Retrieve the associated Value (if any) for the given valueExpr.
-	 * 
+	 *
 	 * @param valueExpr
 	 * @return the value of the given ValueExpr, or null if no value exists.
 	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
@@ -174,7 +175,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	/**
 	 * Creates an anonymous Var with a unique, randomly generated, variable name.
-	 * 
+	 *
 	 * @return an anonymous Var with a unique, randomly generated, variable name
 	 */
 	private Var createAnonVar() {
@@ -1292,7 +1293,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						objectList.remove(objVar);
 						objectList.add(objVarReplacement[1]);
 					} else {
-						nps.setObjectList(objectList);
+
+						List<ValueExpr> collect = objectList.stream().map(o -> {
+							if (o instanceof Var) {
+								return o;
+							}
+
+							return mapValueExprToVar(o);
+						}).collect(Collectors.toList());
+
+						nps.setObjectList(collect);
 					}
 				} else {
 					// not last element in path.

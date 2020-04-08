@@ -18,7 +18,9 @@ import static org.junit.Assert.fail;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Modify;
@@ -29,7 +31,9 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -141,7 +145,7 @@ public class SPARQLParserTest {
 
 	/**
 	 * Verify that an INSERT with a subselect using a wildcard correctly adds vars to projection
-	 * 
+	 *
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/686">#686</a>
 	 */
 	@Test
@@ -281,6 +285,36 @@ public class SPARQLParserTest {
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
 		String[] lines = insertData.getDataBlock().split("\n");
 		assertEquals("\uD83D\uDE1F", lines[lines.length - 1].replaceAll(".*\"(.*)\".*", "$1"));
+	}
+
+	@Test
+	public void testWildCardPathFixedEnd() {
+
+		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ((:|!:)|(^:|!^:))* :Jane.} ";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+
+		// parsing should not throw exception
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+	}
+
+	@Test
+	public void testWildCardPathOpenEnd() {
+
+		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ^(:|!:) ?jane.} ";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+		Slice slice = (Slice) tupleExpr;
+		Union union = (Union) slice.getArg();
+
+		Var leftSubjectVar = ((StatementPattern) union.getLeftArg()).getSubjectVar();
+		Var rightSubjectVar = ((StatementPattern) ((Filter) union.getRightArg()).getArg()).getSubjectVar();
+
+		assertEquals(leftSubjectVar, rightSubjectVar);
+
 	}
 
 }
