@@ -1391,7 +1391,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						if (invertSequence) {
 							endVar = subjVar;
-							startVar = objVar;
+							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
+							if (!(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
+								startVar = objVar;
+							}
 						}
 
 						if (pathElement.isInverse()) {
