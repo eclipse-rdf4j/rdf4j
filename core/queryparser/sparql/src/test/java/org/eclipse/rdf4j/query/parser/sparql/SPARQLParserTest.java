@@ -300,9 +300,27 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testWildCardPathOpenEnd() {
+	public void testWildCardPathPushNegation() {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ^(:|!:) ?jane.} ";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+		Slice slice = (Slice) tupleExpr;
+		Union union = (Union) slice.getArg();
+
+		Var leftSubjectVar = ((StatementPattern) union.getLeftArg()).getSubjectVar();
+		Var rightSubjectVar = ((StatementPattern) ((Filter) union.getRightArg()).getArg()).getSubjectVar();
+
+		assertEquals(leftSubjectVar, rightSubjectVar);
+
+	}
+
+	@Test
+	public void testWildCardPathPushNegation2() {
+
+		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ^(:|!:) :Jane.} ";
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
