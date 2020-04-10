@@ -19,4 +19,9 @@ public class SimplePath extends Path {
 	public Resource getId() {
 		return predicate;
 	}
+
+	@Override
+	public String toString() {
+		return "SimplePath{ <" + predicate + "> }";
+	}
 }

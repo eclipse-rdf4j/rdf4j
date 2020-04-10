@@ -28,7 +28,10 @@ abstract public class Shape implements Identifiable {
 	List<Literal> message;
 	Severity severity;
 
-	public Shape(ShaclProperties properties, SailRepositoryConnection connection) {
+	public Shape() {
+	}
+
+	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
@@ -57,19 +60,19 @@ abstract public class Shape implements Identifiable {
 
 		public static List<Shape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
 
+			Cache cache = new Cache();
+
 			Set<Resource> resources = getTargetableShapes(connection);
 
 			List<Shape> collect = resources.stream()
 					.map(r -> new ShaclProperties(r, connection))
 					.map(p -> {
 						if (p.getType() == SHACL.NODE_SHAPE) {
-							return new NodeShape(p, connection);
+							return NodeShape.getInstance(p, connection, cache);
 						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-							return new PropertyShape(p, connection);
+							return PropertyShape.getInstance(p, connection, cache);
 						}
-
 						return null;
-
 					})
 					.collect(Collectors.toList());
 
@@ -92,12 +95,13 @@ abstract public class Shape implements Identifiable {
 								.stream()) {
 
 							collect = Stream
-									.concat(TARGET_NODE,
-											Stream.concat(TARGET_CLASS,
-													Stream.concat(TARGET_SUBJECTS_OF, TARGET_OBJECTS_OF)))
+									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
+									.reduce(Stream::concat)
+									.get()
 									.map(Statement::getSubject)
 									.collect(Collectors.toSet());
 						}
+
 					}
 				}
 			}

@@ -11,17 +11,36 @@ class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
 	List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
-	public NodeShape(ShaclProperties properties, SailRepositoryConnection connection) {
+	public NodeShape() {
+	}
 
-		super(properties, connection);
+	public static NodeShape getInstance(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+
+		Shape shape = cache.get(properties.getId());
+		if (shape == null) {
+			shape = new NodeShape();
+			cache.put(properties.getId(), shape);
+			shape.populate(properties, connection, cache);
+		}
+
+		return (NodeShape) shape;
+	}
+
+	@Override
+	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+		super.populate(properties, connection, cache);
 
 		properties.getProperty()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> new PropertyShape(p, connection))
+				.map(p -> PropertyShape.getInstance(p, connection, cache))
 				.forEach(constraintComponent::add);
 
-		System.out.println();
+		properties.getNode()
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> NodeShape.getInstance(p, connection, cache))
+				.forEach(constraintComponent::add);
 
 	}
 }
