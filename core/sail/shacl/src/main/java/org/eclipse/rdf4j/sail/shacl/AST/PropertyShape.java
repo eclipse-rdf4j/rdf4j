@@ -202,11 +202,10 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxLength));
 			}
-			if (!shaclProperties.pattern.isEmpty()) {
-				shaclProperties.pattern.forEach(pattern -> {
-					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, pattern, shaclProperties.flags));
-				});
+			if (shaclProperties.pattern != null) {
+				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.pattern,
+						shaclProperties.flags));
 			}
 			if (shaclProperties.languageIn != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,

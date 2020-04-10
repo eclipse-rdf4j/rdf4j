@@ -148,7 +148,7 @@ public class W3cComplianceTest {
 		assertEquals(expected.conforms, actualConforms);
 	}
 
-	class W3C_shaclTestValidate {
+	static class W3C_shaclTestValidate {
 
 		W3C_shaclTestValidate(URL filename) {
 			this.filename = filename.getPath();

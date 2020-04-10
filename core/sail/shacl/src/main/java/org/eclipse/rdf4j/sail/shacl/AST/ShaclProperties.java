@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,8 +47,8 @@ public class ShaclProperties {
 	Literal minInclusive;
 	Literal maxInclusive;
 
-	List<String> pattern = new ArrayList<>(0);
-	String flags = "";
+	String pattern;
+	String flags;
 
 	Set<Resource> targetClass = new HashSet<>(0);
 	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
@@ -144,7 +145,10 @@ public class ShaclProperties {
 					maxInclusive = (Literal) object;
 					break;
 				case "http://www.w3.org/ns/shacl#pattern":
-					pattern.add(object.stringValue());
+					if (pattern != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					pattern = object.stringValue();
 					break;
 				case "http://www.w3.org/ns/shacl#class":
 					clazz.add((Resource) object);
@@ -168,7 +172,10 @@ public class ShaclProperties {
 					uniqueLang = ((Literal) object).booleanValue();
 					break;
 				case "http://www.w3.org/ns/shacl#flags":
-					flags += object.stringValue();
+					if (flags != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					flags = object.stringValue();
 					break;
 				case "http://www.w3.org/ns/shacl#path":
 					if (path != null) {
@@ -265,7 +272,7 @@ public class ShaclProperties {
 		return maxInclusive;
 	}
 
-	public List<String> getPattern() {
+	public String getPattern() {
 		return pattern;
 	}
 
