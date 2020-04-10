@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +59,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 //@formatter:off
+
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
  * <p>
@@ -138,7 +141,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *  			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
  *  			try {
  *  				connection.commit();
- *  			} catch (RepositoryException exception) {
+ *            } catch (RepositoryException exception) {
  *  				Throwable cause = exception.getCause();
  *  				if (cause instanceof ShaclSailValidationException) {
  *  					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
@@ -146,11 +149,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *  					// use validationReport or validationReportModel to understand validation violations
  *
  *  					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *  				}
+ *                }
  *  				throw exception;
- *  			}
- *  		}
- *  	}
+ *            }
+ *        }
+ *    }
  * }
  * </pre>
  *
@@ -321,11 +324,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 			logger.info("Shapes will be persisted in: " + path);
 
-			shapesRepo = new SailRepository(
-					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(new File(path))));
+			shapesRepo = new SailRepository(new MemoryStore(new File(path)));
 		} else {
-			shapesRepo = new SailRepository(
-					SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+			shapesRepo = new SailRepository(new MemoryStore());
 		}
 
 		shapesRepo.init();
@@ -342,7 +343,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
 
-		SailRepository shapesRepoCache = new SailRepository(new MemoryStore());
+		SailRepository shapesRepoCache = new SailRepository(
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+
 		shapesRepoCache.init();
 		List<NodeShape> shapes;
 
@@ -356,6 +359,35 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepoCacheConnection.commit();
 
 			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
+		}
+
+		shapesRepoCache.shutDown();
+		return shapes;
+	}
+
+	@Experimental
+	@Deprecated
+	public List<Shape> refreshShapesPhase0() throws SailException {
+
+		SailRepository shapesRepoCache = new SailRepository(
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+
+		shapesRepoCache.init();
+		List<Shape> shapes;
+
+		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+			shapesRepoConnection.begin(IsolationLevels.NONE);
+
+			try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
+				shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+				try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
+						false)) {
+					shapesRepoCacheConnection.add(statements);
+				}
+				shapesRepoCacheConnection.commit();
+				shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
+			}
+			shapesRepoConnection.commit();
 		}
 
 		shapesRepoCache.shutDown();

@@ -6,6 +6,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -24,10 +25,15 @@ public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
-	List<Resource> clazz = new ArrayList<>(0);
-	List<Resource> or = new ArrayList<>(0);
-	List<Resource> and = new ArrayList<>(0);
-	List<Resource> not = new ArrayList<>(0);
+	IRI type;
+
+	List<Resource> clazz = new ArrayList<>();
+	List<Resource> or = new ArrayList<>();
+	List<Resource> and = new ArrayList<>();
+	List<Resource> not = new ArrayList<>();
+	List<Resource> node = new ArrayList<>();
+	List<Resource> property = new ArrayList<>();
+
 	Long minCount;
 	Long maxCount;
 
@@ -50,25 +56,36 @@ public class ShaclProperties {
 	String pattern;
 	String flags;
 
-	Set<Resource> targetClass = new HashSet<>(0);
+	Set<Resource> targetClass = new HashSet<>();
 	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
-	Set<IRI> targetSubjectsOf = new HashSet<>(0);
-	Set<IRI> targetObjectsOf = new HashSet<>(0);
+	Set<IRI> targetSubjectsOf = new HashSet<>();
+	Set<IRI> targetObjectsOf = new HashSet<>();
 
 	boolean deactivated = false;
 
 	boolean uniqueLang = false;
 
+	Resource id;
+
+	List<Literal> message = new ArrayList<>();
+
 	public ShaclProperties() {
 	}
 
-	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
-
-		try (Stream<Statement> stream = connection.getStatements(propertyShapeId, null, null).stream()) {
+	public ShaclProperties(Resource id, SailRepositoryConnection connection) {
+		this.id = id;
+		try (Stream<Statement> stream = connection.getStatements(id, null, null, true).stream()) {
 			stream.forEach(statement -> {
 				String predicate = statement.getPredicate().toString();
 				Value object = statement.getObject();
 				switch (predicate) {
+				case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
+					if (object.stringValue().equals("http://www.w3.org/ns/shacl#NodeShape")) {
+						this.type = SHACL.NODE_SHAPE;
+					} else if (object.stringValue().equals("http://www.w3.org/ns/shacl#PropertyShape")) {
+						this.type = SHACL.PROPERTY_SHAPE;
+					}
+					break;
 				case "http://www.w3.org/ns/shacl#or":
 					or.add((Resource) object);
 					break;
@@ -77,6 +94,15 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#not":
 					not.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#property":
+					property.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#node":
+					node.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#message":
+					message.add((Literal) object);
 					break;
 				case "http://www.w3.org/ns/shacl#languageIn":
 					if (languageIn != null) {
@@ -189,8 +215,6 @@ public class ShaclProperties {
 					}
 					in = (Resource) object;
 					break;
-				case "http://www.w3.org/ns/shacl#property":
-					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
 						logger.warn("Unsupported SHACL feature detected {} in statement {}",
@@ -302,5 +326,25 @@ public class ShaclProperties {
 
 	public boolean isUniqueLang() {
 		return uniqueLang;
+	}
+
+	public Resource getId() {
+		return id;
+	}
+
+	public IRI getType() {
+		return type;
+	}
+
+	public List<Literal> getMessage() {
+		return message;
+	}
+
+	public List<Resource> getProperty() {
+		return property;
+	}
+
+	public List<Resource> getNode() {
+		return node;
 	}
 }

@@ -49,7 +49,6 @@ public class W3cComplianceTest {
 		return urls;
 	}
 
-	@Ignore
 	@Test
 	public void test() throws IOException {
 		runTest(testCasePath);
