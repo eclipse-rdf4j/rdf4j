@@ -2147,6 +2147,26 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
+	public void testPropertyPathNegationInversion() throws Exception {
+		String data = "@prefix : <http://example.org/>.\n"
+				+ ":Mary :parentOf :Jim.\n"
+				+ ":Jim :knows :Jane.\n"
+				+ ":Jane :worksFor :IBM.";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		String query1 = "prefix : <http://example.org/> ASK WHERE { :IBM ^(:|!:) :Jane } ";
+
+		assertTrue(conn.prepareBooleanQuery(query1).evaluate());
+
+		String query2 = "prefix : <http://example.org/> ASK WHERE { :IBM ^(:|!:) ?a } ";
+		assertTrue(conn.prepareBooleanQuery(query2).evaluate());
+
+		String query3 = "prefix : <http://example.org/> ASK WHERE { :IBM (^(:|!:))* :Mary } ";
+		assertTrue(conn.prepareBooleanQuery(query3).evaluate());
+
+	}
+
+	@Test
 	public void testSES2361UndefMin() throws Exception {
 		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
