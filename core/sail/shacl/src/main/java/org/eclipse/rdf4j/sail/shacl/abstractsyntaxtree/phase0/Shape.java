@@ -1,8 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
@@ -12,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClas
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
+import sun.security.provider.SHA;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +25,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-abstract public class Shape implements Identifiable {
+abstract public class Shape implements Identifiable, Exportable {
 	Resource id;
 
 	List<Target> target = new ArrayList<>();
@@ -27,6 +33,8 @@ abstract public class Shape implements Identifiable {
 	boolean deactivated;
 	List<Literal> message;
 	Severity severity;
+
+	private boolean exportedToModel = false;
 
 	public Shape() {
 	}
@@ -107,5 +115,21 @@ abstract public class Shape implements Identifiable {
 			}
 			return collect;
 		}
+	}
+
+	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+		ModelBuilder modelBuilder = new ModelBuilder();
+		modelBuilder.subject(getId())
+				.add(RDF.TYPE, SHACL.SHAPE);
+
+		if (deactivated) {
+			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
+		}
+
+		target.forEach(t -> {
+			t.toModel(getId(), model, exported);
+		});
+
+		model.addAll(modelBuilder.build());
 	}
 }

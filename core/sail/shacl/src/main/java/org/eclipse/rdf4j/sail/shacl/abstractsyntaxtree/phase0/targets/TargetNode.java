@@ -1,7 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
+import java.util.Collection;
+import java.util.Set;
 import java.util.TreeSet;
 
 public class TargetNode extends Target {
@@ -13,4 +19,15 @@ public class TargetNode extends Target {
 
 	}
 
+	@Override
+	public IRI getPredicate() {
+		return SHACL.TARGET_NODE;
+	}
+
+	@Override
+	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+		targetNode.forEach(t -> {
+			model.add(subject, getPredicate(), t);
+		});
+	}
 }
