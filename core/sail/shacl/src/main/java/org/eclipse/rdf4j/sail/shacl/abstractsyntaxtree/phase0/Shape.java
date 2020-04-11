@@ -1,11 +1,10 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -17,7 +16,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClas
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
-import sun.security.provider.SHA;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,8 +31,6 @@ abstract public class Shape implements Identifiable, Exportable {
 	boolean deactivated;
 	List<Literal> message;
 	Severity severity;
-
-	private boolean exportedToModel = false;
 
 	public Shape() {
 	}
@@ -132,4 +128,5 @@ abstract public class Shape implements Identifiable, Exportable {
 
 		model.addAll(modelBuilder.build());
 	}
+
 }

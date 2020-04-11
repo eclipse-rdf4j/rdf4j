@@ -7,12 +7,13 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-class NodeShape extends Shape implements ConstraintComponent, Identifiable {
+public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
 	List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
@@ -45,6 +46,11 @@ class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> NodeShape.getInstance(p, connection, cache))
+				.forEach(constraintComponent::add);
+
+		properties.getOr()
+				.stream()
+				.map(or -> new OrConstraintComponent(this, or, connection, cache))
 				.forEach(constraintComponent::add);
 
 	}

@@ -9,14 +9,18 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.SimplePath;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
+public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
+	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
 	List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
@@ -67,6 +71,12 @@ class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 		if (properties.getMinCount() != null) {
 			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
 		}
+
+		properties.getOr()
+				.stream()
+				.map(or -> new OrConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
+
 	}
 
 	@Override
@@ -81,8 +91,9 @@ class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 
 		path.toModel(getId(), model, exported);
 
-		if (exported.contains(getId()))
+		if (exported.contains(getId())) {
 			return;
+		}
 		exported.add(getId());
 
 		constraintComponent.forEach(c -> c.toModel(getId(), model, exported));

@@ -6,7 +6,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-import java.util.Collection;
 import java.util.Set;
 import java.util.TreeSet;
 

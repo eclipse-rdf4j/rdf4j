@@ -226,6 +226,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				Model model = Rio.parse(in, "", RDFFormat.TURTLE);
 				model.forEach(s -> connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),
 						shaclVocabularyGraph));
+				connection.commit();
 			}
 			return schemaCachingRDFSInferencer;
 		}
