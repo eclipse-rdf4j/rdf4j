@@ -4,7 +4,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -17,7 +16,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class NotConstraintComponent implements ConstraintComponent {
@@ -41,9 +39,6 @@ public class NotConstraintComponent implements ConstraintComponent {
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.NOT, id);
 
-		if (exported.contains(id))
-			return;
-		exported.add(id);
 		not.toModel(null, model, exported);
 
 	}

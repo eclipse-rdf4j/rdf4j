@@ -43,6 +43,14 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> runTestCase(testCasePath, path, expectedResult, isolationLevel, true));
 	}
 
+	@Test
+	public void testParsing() {
+		runWithAutomaticLogging(() -> runParsingTest(testCasePath, path, expectedResult));
+	}
+
+	private void runParsingTest(String testCasePath, String path, ExpectedResult expectedResult) {
+	}
+
 	private void runWithAutomaticLogging(Runnable r) {
 		try {
 			r.run();

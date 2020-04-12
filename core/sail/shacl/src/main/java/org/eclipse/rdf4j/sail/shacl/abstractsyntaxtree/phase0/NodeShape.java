@@ -7,7 +7,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +34,16 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 		super.populate(properties, connection, cache);
+
+		if (properties.getMinCount() != null)
+			throw new IllegalStateException("NodeShapes do not support sh:MinCount in " + getId());
+		if (properties.getMaxCount() != null)
+			throw new IllegalStateException("NodeShapes do not support sh:MaxCount in " + getId());
+		if (properties.isUniqueLang())
+			throw new IllegalStateException("NodeShapes do not support sh:uniqueLang in " + getId());
+		/*
+		 * Also not supported here is: - sh:lessThan - sh:lessThanOrEquals - sh:qualifiedValueShape
+		 */
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);
 
