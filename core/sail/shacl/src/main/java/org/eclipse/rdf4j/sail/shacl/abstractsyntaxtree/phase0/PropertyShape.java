@@ -8,6 +8,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
@@ -72,11 +73,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
 		}
 
+		if (properties.getMaxCount() != null) {
+			constraintComponent.add(new MaxCountConstraintComponent(properties.getMaxCount()));
+		}
+
 		properties.getOr()
 				.stream()
 				.map(or -> new OrConstraintComponent(this, or, connection, cache))
 				.forEach(constraintComponent::add);
-
 	}
 
 	@Override
