@@ -11,6 +11,11 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.NotConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
@@ -115,8 +120,6 @@ abstract public class Shape implements Identifiable, Exportable {
 
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		ModelBuilder modelBuilder = new ModelBuilder();
-		modelBuilder.subject(getId())
-				.add(RDF.TYPE, SHACL.SHAPE);
 
 		if (deactivated) {
 			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
@@ -129,4 +132,41 @@ abstract public class Shape implements Identifiable, Exportable {
 		model.addAll(modelBuilder.build());
 	}
 
+	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, SailRepositoryConnection connection,
+			Cache cache) {
+
+		List<ConstraintComponent> constraintComponent = new ArrayList<>();
+
+		properties.getProperty()
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> PropertyShape.getInstance(p, connection, cache))
+				.forEach(constraintComponent::add);
+
+		properties.getNode()
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> NodeShape.getInstance(p, connection, cache))
+				.forEach(constraintComponent::add);
+
+		if (properties.getMinCount() != null) {
+			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
+		}
+
+		if (properties.getMaxCount() != null) {
+			constraintComponent.add(new MaxCountConstraintComponent(properties.getMaxCount()));
+		}
+
+		properties.getOr()
+				.stream()
+				.map(or -> new OrConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
+
+		properties.getNot()
+				.stream()
+				.map(or -> new NotConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
+
+		return constraintComponent;
+	}
 }

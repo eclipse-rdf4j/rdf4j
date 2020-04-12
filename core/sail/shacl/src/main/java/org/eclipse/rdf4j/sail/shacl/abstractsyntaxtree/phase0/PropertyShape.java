@@ -23,7 +23,7 @@ import java.util.Set;
 public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
-	List<ConstraintComponent> constraintComponent = new ArrayList<>();
+	List<ConstraintComponent> constraintComponent;
 
 	String name;
 	String description;
@@ -57,30 +57,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 					"Path is not supported for " + properties.getPath() + " in " + properties.getId());
 		}
 
-		properties.getProperty()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
-
-		properties.getNode()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
-
-		if (properties.getMinCount() != null) {
-			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
-		}
-
-		if (properties.getMaxCount() != null) {
-			constraintComponent.add(new MaxCountConstraintComponent(properties.getMaxCount()));
-		}
-
-		properties.getOr()
-				.stream()
-				.map(or -> new OrConstraintComponent(this, or, connection, cache))
-				.forEach(constraintComponent::add);
+		constraintComponent = getConstraintComponents(properties, connection, cache);
 	}
 
 	@Override

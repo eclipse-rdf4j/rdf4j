@@ -36,22 +36,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 		super.populate(properties, connection, cache);
 
-		properties.getProperty()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
-
-		properties.getNode()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
-
-		properties.getOr()
-				.stream()
-				.map(or -> new OrConstraintComponent(this, or, connection, cache))
-				.forEach(constraintComponent::add);
+		constraintComponent = getConstraintComponents(properties, connection, cache);
 
 	}
 

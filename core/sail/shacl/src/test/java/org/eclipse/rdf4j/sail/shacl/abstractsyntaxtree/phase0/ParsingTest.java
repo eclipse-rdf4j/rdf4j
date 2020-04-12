@@ -22,7 +22,7 @@ public class ParsingTest {
 
 	@Test
 	public void initialTest() throws IOException, NoSuchFieldException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/or/minCount/shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/maxCount/not/shacl.ttl");
 
 		List<Shape> shapes = shaclSail.refreshShapesPhase0();
 
