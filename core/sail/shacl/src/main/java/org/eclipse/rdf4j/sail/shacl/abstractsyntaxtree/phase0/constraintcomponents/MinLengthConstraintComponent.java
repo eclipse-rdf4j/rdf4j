@@ -6,20 +6,19 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
-import javax.xml.bind.annotation.XmlSchema;
 import java.util.Set;
 
-public class MaxCountConstraintComponent implements ConstraintComponent {
+public class MinLengthConstraintComponent implements ConstraintComponent {
 
-	long maxCount;
+	long minLength;
 
-	public MaxCountConstraintComponent(long maxCount) {
-		this.maxCount = maxCount;
+	public MinLengthConstraintComponent(long minLength) {
+		this.minLength = minLength;
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.MAX_COUNT,
-				SimpleValueFactory.getInstance().createLiteral(maxCount + "", XMLSchema.INTEGER));
+		model.add(subject, SHACL.MIN_LENGTH,
+				SimpleValueFactory.getInstance().createLiteral(minLength + "", XMLSchema.INTEGER));
 	}
 }

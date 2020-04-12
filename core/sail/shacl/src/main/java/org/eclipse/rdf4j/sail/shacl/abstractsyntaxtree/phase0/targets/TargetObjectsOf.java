@@ -19,7 +19,7 @@ public class TargetObjectsOf extends Target {
 
 	@Override
 	public IRI getPredicate() {
-		return SHACL.TARGET_SUBJECTS_OF;
+		return SHACL.TARGET_OBJECTS_OF;
 	}
 
 	@Override

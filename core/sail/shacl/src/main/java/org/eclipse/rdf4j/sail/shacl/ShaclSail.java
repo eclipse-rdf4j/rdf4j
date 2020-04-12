@@ -385,6 +385,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 						false)) {
 					shapesRepoCacheConnection.add(statements);
 				}
+				runInferencingSparqlQueries(shapesRepoCacheConnection);
+
 				shapesRepoCacheConnection.commit();
 				shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
 			}
@@ -475,7 +477,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			prevSize = currentSize;
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
-			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
+			// shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 

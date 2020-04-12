@@ -20,13 +20,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class OrConstraintComponent implements ConstraintComponent {
-	List<Shape> or;
+public class AndConstraintComponent implements ConstraintComponent {
+	List<Shape> and;
 	Resource id;
 
-	public OrConstraintComponent(Shape parent, Resource id, SailRepositoryConnection connection, Cache cache) {
+	public AndConstraintComponent(Shape parent, Resource id, SailRepositoryConnection connection, Cache cache) {
 		this.id = id;
-		or = toList(connection, id)
+		and = toList(connection, id)
 				.stream()
 				.map(v -> new ShaclProperties((Resource) v, connection))
 				.map(p -> {
@@ -43,13 +43,13 @@ public class OrConstraintComponent implements ConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.OR, id);
-		RDFCollections.asRDF(or.stream().map(Shape::getId).collect(Collectors.toList()), id, model);
+		model.add(subject, SHACL.AND, id);
+		RDFCollections.asRDF(and.stream().map(Shape::getId).collect(Collectors.toList()), id, model);
 
 		if (exported.contains(id))
 			return;
 		exported.add(id);
-		or.forEach(o -> o.toModel(null, model, exported));
+		and.forEach(o -> o.toModel(null, model, exported));
 
 	}
 

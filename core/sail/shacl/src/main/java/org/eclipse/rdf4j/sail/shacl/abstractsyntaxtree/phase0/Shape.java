@@ -9,12 +9,25 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.AndConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClassConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.DatatypeConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.InConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.LanguageInConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxExclusiveConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxInclusiveConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxLengthConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinExclusiveConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinInclusiveConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MinLengthConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.NodeKindConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.NotConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.PatternConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
@@ -22,6 +35,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObje
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -84,8 +98,6 @@ abstract public class Shape implements Identifiable, Exportable {
 					})
 					.collect(Collectors.toList());
 
-			System.out.println();
-
 			return collect;
 		}
 
@@ -117,8 +129,14 @@ abstract public class Shape implements Identifiable, Exportable {
 		}
 	}
 
+	public void toModel(Model model) {
+		toModel(null, model, new HashSet<>());
+	}
+
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		ModelBuilder modelBuilder = new ModelBuilder();
+
+		modelBuilder.subject(getId());
 
 		if (deactivated) {
 			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
@@ -160,14 +178,68 @@ abstract public class Shape implements Identifiable, Exportable {
 			constraintComponent.add(new DatatypeConstraintComponent(properties.getDatatype()));
 		}
 
+		if (properties.getMinLength() != null) {
+			constraintComponent.add(new MinLengthConstraintComponent(properties.getMinLength()));
+		}
+
+		if (properties.getMaxLength() != null) {
+			constraintComponent.add(new MaxLengthConstraintComponent(properties.getMaxLength()));
+		}
+
+		if (properties.getMinInclusive() != null) {
+			constraintComponent.add(new MinInclusiveConstraintComponent(properties.getMinInclusive()));
+		}
+
+		if (properties.getMaxInclusive() != null) {
+			constraintComponent.add(new MaxInclusiveConstraintComponent(properties.getMaxInclusive()));
+		}
+
+		if (properties.getMinExclusive() != null) {
+			constraintComponent.add(new MinExclusiveConstraintComponent(properties.getMinExclusive()));
+		}
+
+		if (properties.getMaxExclusive() != null) {
+			constraintComponent.add(new MaxExclusiveConstraintComponent(properties.getMaxExclusive()));
+		}
+
+		if (properties.isUniqueLang()) {
+			constraintComponent.add(new UniqueLangConstraintComponent());
+		}
+
+		if (properties.getPattern() != null) {
+			constraintComponent.add(new PatternConstraintComponent(properties.getPattern(), properties.getFlags()));
+		}
+
+		if (properties.getLanguageIn() != null) {
+			constraintComponent.add(new LanguageInConstraintComponent(connection, properties.getLanguageIn()));
+		}
+
+		if (properties.getIn() != null) {
+			constraintComponent.add(new InConstraintComponent(connection, properties.getIn()));
+		}
+
+		if (properties.getNodeKind() != null) {
+			constraintComponent.add(new NodeKindConstraintComponent(properties.getNodeKind()));
+		}
+
 		properties.getOr()
 				.stream()
 				.map(or -> new OrConstraintComponent(this, or, connection, cache))
 				.forEach(constraintComponent::add);
 
+		properties.getAnd()
+				.stream()
+				.map(and -> new AndConstraintComponent(this, and, connection, cache))
+				.forEach(constraintComponent::add);
+
 		properties.getNot()
 				.stream()
 				.map(or -> new NotConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
+
+		properties.getClazz()
+				.stream()
+				.map(clazz -> new ClassConstraintComponent(clazz))
 				.forEach(constraintComponent::add);
 
 		return constraintComponent;

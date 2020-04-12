@@ -15,10 +15,15 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -27,7 +32,11 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
+import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.model.SailModel;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.AfterClass;
 import org.junit.runner.RunWith;
@@ -38,6 +47,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -53,6 +63,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -197,8 +208,9 @@ abstract public class AbstractShaclTest {
 		Arrays.sort(list);
 
 		for (String caseName : list) {
-			if (caseName.startsWith("."))
+			if (caseName.startsWith(".")) {
 				continue;
+			}
 			String path = testCase + "/" + baseCase + "/" + caseName;
 			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(path);
 			if (resourceAsStream != null) {
@@ -524,6 +536,86 @@ abstract public class AbstractShaclTest {
 			assertFalse(report.conforms());
 		}
 
+	}
+
+	static void runParsingTest(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+		if (!dataPath.endsWith("/")) {
+			dataPath = dataPath + "/";
+		}
+
+		if (!shaclPath.endsWith("/")) {
+			shaclPath = shaclPath + "/";
+		}
+
+		SailRepository shaclRepository = getShaclSail();
+		try {
+			try {
+				Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+				Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+
+			List<Shape> shapes = ((ShaclSail) shaclRepository.getSail()).refreshShapesPhase0();
+
+			DynamicModel actual = new DynamicModelFactory().createEmptyModel();
+			shapes.forEach(shape -> shape.toModel(actual));
+
+			try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
+					.getResourceAsStream(shaclPath + "shacl.ttl")) {
+				Model parse = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
+
+				// handle implicit targets in SHACL
+				parse.filter(null, RDF.TYPE, RDFS.CLASS).subjects().forEach(s -> {
+					if (parse.contains(s, RDF.TYPE, SHACL.PROPERTY_SHAPE)
+							|| parse.contains(s, RDF.TYPE, SHACL.NODE_SHAPE)) {
+						parse.add(s, SHACL.TARGET_CLASS, s);
+					}
+				});
+				parse.remove(null, RDF.TYPE, RDFS.CLASS);
+
+				// we add inferred NodeShape and PropertyShape, easier to remove when comparing
+				parse.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
+				parse.remove(null, RDF.TYPE, SHACL.SHAPE);
+				parse.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
+				actual.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
+				actual.remove(null, RDF.TYPE, SHACL.SHAPE);
+				actual.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
+
+				// sometimes rdf:List is added and sometimes it isn't, so better to just remove
+				parse.remove(null, RDF.TYPE, RDF.LIST);
+				actual.remove(null, RDF.TYPE, RDF.LIST);
+
+				if (!Models.isomorphic(parse, actual)) {
+					assertEquals(toTurleString(parse), toTurleString(actual));
+				}
+
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		} finally {
+			shaclRepository.shutDown();
+		}
+
+	}
+
+	private static String toTurleString(Model parse) {
+		parse = new TreeModel(new ArrayList<>(parse));
+
+		parse.setNamespace(SHACL.NS);
+		parse.setNamespace(RDF.NS);
+		parse.setNamespace(RDFS.NS);
+
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true);
+		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+
+		StringWriter stringWriter = new StringWriter();
+
+		Rio.write(parse, stringWriter, RDFFormat.TURTLE, writerConfig);
+
+		return stringWriter.toString();
 	}
 
 	private static void printResults(ValidationReport report) {
