@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -20,6 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -38,16 +45,12 @@ import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
+import org.eclipse.rdf4j.sail.memory.model.MemTriple;
+import org.eclipse.rdf4j.sail.memory.model.MemTripleIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
@@ -230,6 +233,37 @@ class MemorySailStore implements SailStore {
 		}
 
 		return new MemStatementIterator<>(smallestList, memSubj, memPred, memObj, explicit, snapshot, memContexts);
+	}
+
+	/**
+	 * Creates a TripleIterator that contains the triples matching the specified pattern of subject, predicate, object,
+	 * context.
+	 */
+	private CloseableIteration<MemTriple, SailException> createTripleIterator(Resource subj, IRI pred, Value obj,
+			int snapshot) {
+		// Perform look-ups for value-equivalents of the specified values
+
+		MemResource memSubj = valueFactory.getMemResource(subj);
+
+		if (subj != null && memSubj == null) {
+			// non-existent subject
+			return new EmptyIteration<>();
+		}
+
+		MemIRI memPred = valueFactory.getMemURI(pred);
+		if (pred != null && memPred == null) {
+			// non-existent predicate
+			return new EmptyIteration<>();
+		}
+
+		MemValue memObj = valueFactory.getMemValue(obj);
+		if (obj != null && memObj == null) {
+			// non-existent object
+			return new EmptyIteration<>();
+		}
+
+		// TODO there is no separate index for Trples, so for now we iterate over all statements to find matches.
+		return new MemTripleIterator<>(statements, memSubj, memPred, memObj, snapshot);
 	}
 
 	/**
@@ -727,6 +761,37 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
+		@Override
+		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+				throws SailException {
+			CloseableIteration<? extends Triple, SailException> stIter1 = null;
+			CloseableIteration<? extends Triple, SailException> stIter2 = null;
+			boolean allGood = false;
+			Lock stLock = openStatementsReadLock();
+			try {
+				stIter1 = createTripleIterator(subj, pred, obj, getCurrentSnapshot());
+				stIter2 = new LockingIteration<Triple, SailException>(stLock, stIter1);
+				allGood = true;
+				return stIter2;
+			} finally {
+				if (!allGood) {
+					try {
+						stLock.release();
+					} finally {
+						try {
+							if (stIter2 != null) {
+								stIter2.close();
+							}
+						} finally {
+							if (stIter1 != null) {
+								stIter1.close();
+							}
+						}
+					}
+				}
+			}
+		}
+
 		private int getCurrentSnapshot() {
 			if (snapshot >= 0) {
 				return snapshot;
@@ -750,5 +815,6 @@ class MemorySailStore implements SailStore {
 				return iter.hasNext();
 			}
 		}
+
 	}
 }

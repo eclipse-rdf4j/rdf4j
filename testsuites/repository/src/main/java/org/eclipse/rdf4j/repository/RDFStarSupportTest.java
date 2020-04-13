@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -125,6 +127,20 @@ public abstract class RDFStarSupportTest {
 			// fall through, expected behavior
 		}
 
+	}
+
+	@Test
+	public void testSparqlStar() {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String query = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\nSELECT * WHERE { <<?s foaf:name ?o>> ?b ?c. }";
+
+		TupleQuery q = testCon.prepareTupleQuery(query);
+		for (BindingSet bs : q.evaluate()) {
+			System.out.println(bs);
+		}
 	}
 
 	protected abstract Repository createRepository();
