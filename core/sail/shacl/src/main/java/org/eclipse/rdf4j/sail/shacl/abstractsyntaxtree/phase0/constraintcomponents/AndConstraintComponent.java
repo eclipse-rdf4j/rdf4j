@@ -35,7 +35,7 @@ public class AndConstraintComponent implements ConstraintComponent {
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, connection, cache);
 					}
-					return null;
+					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})
 				.collect(Collectors.toList());
 
@@ -46,8 +46,9 @@ public class AndConstraintComponent implements ConstraintComponent {
 		model.add(subject, SHACL.AND, id);
 		RDFCollections.asRDF(and.stream().map(Shape::getId).collect(Collectors.toList()), id, model);
 
-		if (exported.contains(id))
+		if (exported.contains(id)) {
 			return;
+		}
 		exported.add(id);
 		and.forEach(o -> o.toModel(null, model, exported));
 

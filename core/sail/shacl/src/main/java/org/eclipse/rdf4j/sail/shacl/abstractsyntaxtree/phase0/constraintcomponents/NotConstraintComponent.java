@@ -31,6 +31,8 @@ public class NotConstraintComponent implements ConstraintComponent {
 			not = NodeShape.getInstance(p, connection, cache);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 			not = PropertyShape.getInstance(p, connection, cache);
+		} else {
+			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}
 
 	}

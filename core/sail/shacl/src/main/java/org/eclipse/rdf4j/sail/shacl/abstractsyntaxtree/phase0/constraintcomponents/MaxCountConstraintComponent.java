@@ -6,7 +6,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
-import javax.xml.bind.annotation.XmlSchema;
 import java.util.Set;
 
 public class MaxCountConstraintComponent implements ConstraintComponent {

@@ -20,8 +20,9 @@ public class PatternConstraintComponent implements ConstraintComponent {
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.PATTERN, SimpleValueFactory.getInstance().createLiteral(pattern));
-		if (flags != null)
+		if (flags != null) {
 			model.add(subject, SHACL.FLAGS, SimpleValueFactory.getInstance().createLiteral(flags));
+		}
 
 	}
 }

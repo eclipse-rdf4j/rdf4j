@@ -86,7 +86,7 @@ abstract public class Shape implements Identifiable, Exportable {
 
 			Set<Resource> resources = getTargetableShapes(connection);
 
-			List<Shape> collect = resources.stream()
+			return resources.stream()
 					.map(r -> new ShaclProperties(r, connection))
 					.map(p -> {
 						if (p.getType() == SHACL.NODE_SHAPE) {
@@ -94,11 +94,9 @@ abstract public class Shape implements Identifiable, Exportable {
 						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 							return PropertyShape.getInstance(p, connection, cache);
 						}
-						return null;
+						throw new IllegalStateException("Unknown shape type for " + p.getId());
 					})
 					.collect(Collectors.toList());
-
-			return collect;
 		}
 
 		private static Set<Resource> getTargetableShapes(SailRepositoryConnection connection) {

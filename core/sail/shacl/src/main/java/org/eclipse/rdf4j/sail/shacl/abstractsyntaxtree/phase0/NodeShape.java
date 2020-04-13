@@ -35,12 +35,15 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 		super.populate(properties, connection, cache);
 
-		if (properties.getMinCount() != null)
+		if (properties.getMinCount() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:MinCount in " + getId());
-		if (properties.getMaxCount() != null)
+		}
+		if (properties.getMaxCount() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:MaxCount in " + getId());
-		if (properties.isUniqueLang())
+		}
+		if (properties.isUniqueLang()) {
 			throw new IllegalStateException("NodeShapes do not support sh:uniqueLang in " + getId());
+		}
 		/*
 		 * Also not supported here is: - sh:lessThan - sh:lessThanOrEquals - sh:qualifiedValueShape
 		 */
@@ -58,8 +61,9 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			model.add(subject, SHACL.NODE, getId());
 		}
 
-		if (exported.contains(getId()))
+		if (exported.contains(getId())) {
 			return;
+		}
 		exported.add(getId());
 
 		constraintComponent.forEach(c -> c.toModel(getId(), model, exported));
