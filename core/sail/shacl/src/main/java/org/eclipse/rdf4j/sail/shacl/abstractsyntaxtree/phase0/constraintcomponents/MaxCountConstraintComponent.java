@@ -12,13 +12,13 @@ public class MaxCountConstraintComponent implements ConstraintComponent {
 
 	long maxCount;
 
-	public MaxCountConstraintComponent(long maxCount) {
+	public MaxCountConstraintComponent(ConstraintComponent parent, long maxCount) {
 		this.maxCount = maxCount;
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MAX_COUNT,
-				SimpleValueFactory.getInstance().createLiteral(maxCount + "", XMLSchema.INTEGER));
+			SimpleValueFactory.getInstance().createLiteral(maxCount + "", XMLSchema.INTEGER));
 	}
 }

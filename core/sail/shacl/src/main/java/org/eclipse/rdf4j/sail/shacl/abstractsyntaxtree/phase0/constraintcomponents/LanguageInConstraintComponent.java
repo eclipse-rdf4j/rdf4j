@@ -22,7 +22,7 @@ public class LanguageInConstraintComponent implements ConstraintComponent {
 	private final Set<String> languageIn;
 	private final Resource id;
 
-	public LanguageInConstraintComponent(SailRepositoryConnection connection, Resource languageIn) {
+	public LanguageInConstraintComponent(ConstraintComponent parent, SailRepositoryConnection connection, Resource languageIn) {
 		this.id = languageIn;
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
 	}
@@ -31,8 +31,8 @@ public class LanguageInConstraintComponent implements ConstraintComponent {
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.LANGUAGE_IN, id);
 		RDFCollections.asRDF(new TreeSet<>(languageIn).stream()
-				.map(l -> SimpleValueFactory.getInstance().createLiteral(l))
-				.collect(Collectors.toList()), id, model);
+			.map(l -> SimpleValueFactory.getInstance().createLiteral(l))
+			.collect(Collectors.toList()), id, model);
 	}
 
 	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {

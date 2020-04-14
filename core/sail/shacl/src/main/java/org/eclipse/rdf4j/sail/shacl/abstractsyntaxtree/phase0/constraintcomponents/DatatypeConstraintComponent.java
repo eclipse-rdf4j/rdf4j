@@ -10,7 +10,7 @@ public class DatatypeConstraintComponent implements ConstraintComponent {
 
 	Resource datatype;
 
-	public DatatypeConstraintComponent(Resource datatype) {
+	public DatatypeConstraintComponent(ConstraintComponent parent, Resource datatype) {
 		this.datatype = datatype;
 	}
 

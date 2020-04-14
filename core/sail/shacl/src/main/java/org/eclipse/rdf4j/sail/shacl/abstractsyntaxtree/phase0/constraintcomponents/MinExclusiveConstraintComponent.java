@@ -11,7 +11,7 @@ public class MinExclusiveConstraintComponent implements ConstraintComponent {
 
 	Literal minExclusive;
 
-	public MinExclusiveConstraintComponent(Literal minExclusive) {
+	public MinExclusiveConstraintComponent(ConstraintComponent parent, Literal minExclusive) {
 		this.minExclusive = minExclusive;
 	}
 

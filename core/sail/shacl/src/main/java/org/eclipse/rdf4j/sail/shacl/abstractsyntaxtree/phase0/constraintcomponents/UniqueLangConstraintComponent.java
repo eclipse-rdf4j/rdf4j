@@ -9,7 +9,7 @@ import java.util.Set;
 
 public class UniqueLangConstraintComponent implements ConstraintComponent {
 
-	public UniqueLangConstraintComponent() {
+	public UniqueLangConstraintComponent(ConstraintComponent parent) {
 	}
 
 	@Override

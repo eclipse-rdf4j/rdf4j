@@ -12,13 +12,13 @@ public class MinLengthConstraintComponent implements ConstraintComponent {
 
 	long minLength;
 
-	public MinLengthConstraintComponent(long minLength) {
+	public MinLengthConstraintComponent(ConstraintComponent parent, long minLength) {
 		this.minLength = minLength;
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MIN_LENGTH,
-				SimpleValueFactory.getInstance().createLiteral(minLength + "", XMLSchema.INTEGER));
+			SimpleValueFactory.getInstance().createLiteral(minLength + "", XMLSchema.INTEGER));
 	}
 }

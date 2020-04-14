@@ -11,7 +11,7 @@ public class MaxExclusiveConstraintComponent implements ConstraintComponent {
 
 	Literal maxExclusive;
 
-	public MaxExclusiveConstraintComponent(Literal maxExclusive) {
+	public MaxExclusiveConstraintComponent(ConstraintComponent parent, Literal maxExclusive) {
 		this.maxExclusive = maxExclusive;
 	}
 

@@ -41,8 +41,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-abstract public class Shape implements Identifiable, Exportable {
+abstract public class Shape implements ConstraintComponent, Identifiable, Exportable {
 	Resource id;
+	ConstraintComponent parent;
 
 	List<Target> target = new ArrayList<>();
 
@@ -53,10 +54,11 @@ abstract public class Shape implements Identifiable, Exportable {
 	public Shape() {
 	}
 
-	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
+		this.parent = parent;
 
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
@@ -87,37 +89,37 @@ abstract public class Shape implements Identifiable, Exportable {
 			Set<Resource> resources = getTargetableShapes(connection);
 
 			return resources.stream()
-					.map(r -> new ShaclProperties(r, connection))
-					.map(p -> {
-						if (p.getType() == SHACL.NODE_SHAPE) {
-							return NodeShape.getInstance(p, connection, cache);
-						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-							return PropertyShape.getInstance(p, connection, cache);
-						}
-						throw new IllegalStateException("Unknown shape type for " + p.getId());
-					})
-					.collect(Collectors.toList());
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> {
+					if (p.getType() == SHACL.NODE_SHAPE) {
+						return NodeShape.getInstance(null, p, connection, cache);
+					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+						return PropertyShape.getInstance(null, p, connection, cache);
+					}
+					throw new IllegalStateException("Unknown shape type for " + p.getId());
+				})
+				.collect(Collectors.toList());
 		}
 
 		private static Set<Resource> getTargetableShapes(SailRepositoryConnection connection) {
 			Set<Resource> collect;
 			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
-					.stream()) {
+				.stream()) {
 				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
-						.stream()) {
+					.stream()) {
 					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
-							.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
-							.stream()) {
+						.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
+						.stream()) {
 						try (Stream<Statement> TARGET_OBJECTS_OF = connection
-								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
-								.stream()) {
+							.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
+							.stream()) {
 
 							collect = Stream
-									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
-									.reduce(Stream::concat)
-									.get()
-									.map(Statement::getSubject)
-									.collect(Collectors.toSet());
+								.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
+								.reduce(Stream::concat)
+								.get()
+								.map(Statement::getSubject)
+								.collect(Collectors.toSet());
 						}
 
 					}
@@ -148,98 +150,99 @@ abstract public class Shape implements Identifiable, Exportable {
 	}
 
 	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, SailRepositoryConnection connection,
-			Cache cache) {
+													  Cache cache) {
 
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
 		properties.getProperty()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(r -> new ShaclProperties(r, connection))
+			.map(p -> PropertyShape.getInstance(this, p, connection, cache))
+			.forEach(constraintComponent::add);
 
 		properties.getNode()
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(r -> new ShaclProperties(r, connection))
+			.map(p -> NodeShape.getInstance(this, p, connection, cache))
+			.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
-			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
+			constraintComponent.add(new MinCountConstraintComponent(this, properties.getMinCount()));
 		}
 
 		if (properties.getMaxCount() != null) {
-			constraintComponent.add(new MaxCountConstraintComponent(properties.getMaxCount()));
+			constraintComponent.add(new MaxCountConstraintComponent(this, properties.getMaxCount()));
 		}
 
 		if (properties.getDatatype() != null) {
-			constraintComponent.add(new DatatypeConstraintComponent(properties.getDatatype()));
+			constraintComponent.add(new DatatypeConstraintComponent(this, properties.getDatatype()));
 		}
 
 		if (properties.getMinLength() != null) {
-			constraintComponent.add(new MinLengthConstraintComponent(properties.getMinLength()));
+			constraintComponent.add(new MinLengthConstraintComponent(this, properties.getMinLength()));
 		}
 
 		if (properties.getMaxLength() != null) {
-			constraintComponent.add(new MaxLengthConstraintComponent(properties.getMaxLength()));
+			constraintComponent.add(new MaxLengthConstraintComponent(this, properties.getMaxLength()));
 		}
 
 		if (properties.getMinInclusive() != null) {
-			constraintComponent.add(new MinInclusiveConstraintComponent(properties.getMinInclusive()));
+			constraintComponent.add(new MinInclusiveConstraintComponent(this, properties.getMinInclusive()));
 		}
 
 		if (properties.getMaxInclusive() != null) {
-			constraintComponent.add(new MaxInclusiveConstraintComponent(properties.getMaxInclusive()));
+			constraintComponent.add(new MaxInclusiveConstraintComponent(this, properties.getMaxInclusive()));
 		}
 
 		if (properties.getMinExclusive() != null) {
-			constraintComponent.add(new MinExclusiveConstraintComponent(properties.getMinExclusive()));
+			constraintComponent.add(new MinExclusiveConstraintComponent(this, properties.getMinExclusive()));
 		}
 
 		if (properties.getMaxExclusive() != null) {
-			constraintComponent.add(new MaxExclusiveConstraintComponent(properties.getMaxExclusive()));
+			constraintComponent.add(new MaxExclusiveConstraintComponent(this, properties.getMaxExclusive()));
 		}
 
 		if (properties.isUniqueLang()) {
-			constraintComponent.add(new UniqueLangConstraintComponent());
+			constraintComponent.add(new UniqueLangConstraintComponent(this));
 		}
 
 		if (properties.getPattern() != null) {
-			constraintComponent.add(new PatternConstraintComponent(properties.getPattern(), properties.getFlags()));
+			constraintComponent.add(new PatternConstraintComponent(this, properties.getPattern(), properties.getFlags()));
 		}
 
 		if (properties.getLanguageIn() != null) {
-			constraintComponent.add(new LanguageInConstraintComponent(connection, properties.getLanguageIn()));
+			constraintComponent.add(new LanguageInConstraintComponent(this, connection, properties.getLanguageIn()));
 		}
 
 		if (properties.getIn() != null) {
-			constraintComponent.add(new InConstraintComponent(connection, properties.getIn()));
+			constraintComponent.add(new InConstraintComponent(this, connection, properties.getIn()));
 		}
 
 		if (properties.getNodeKind() != null) {
-			constraintComponent.add(new NodeKindConstraintComponent(properties.getNodeKind()));
+			constraintComponent.add(new NodeKindConstraintComponent(this, properties.getNodeKind()));
 		}
 
 		properties.getOr()
-				.stream()
-				.map(or -> new OrConstraintComponent(this, or, connection, cache))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(or -> new OrConstraintComponent(this, or, connection, cache))
+			.forEach(constraintComponent::add);
 
 		properties.getAnd()
-				.stream()
-				.map(and -> new AndConstraintComponent(this, and, connection, cache))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(and -> new AndConstraintComponent(this, and, connection, cache))
+			.forEach(constraintComponent::add);
 
 		properties.getNot()
-				.stream()
-				.map(or -> new NotConstraintComponent(this, or, connection, cache))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(or -> new NotConstraintComponent(this, or, connection, cache))
+			.forEach(constraintComponent::add);
 
 		properties.getClazz()
-				.stream()
-				.map(clazz -> new ClassConstraintComponent(clazz))
-				.forEach(constraintComponent::add);
+			.stream()
+			.map(clazz -> new ClassConstraintComponent(this, clazz))
+			.forEach(constraintComponent::add);
 
 		return constraintComponent;
 	}
 }
+

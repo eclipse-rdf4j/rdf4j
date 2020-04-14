@@ -11,7 +11,7 @@ public class MinInclusiveConstraintComponent implements ConstraintComponent {
 
 	Literal minInclusive;
 
-	public MinInclusiveConstraintComponent(Literal minInclusive) {
+	public MinInclusiveConstraintComponent(ConstraintComponent parent, Literal minInclusive) {
 		this.minInclusive = minInclusive;
 	}
 

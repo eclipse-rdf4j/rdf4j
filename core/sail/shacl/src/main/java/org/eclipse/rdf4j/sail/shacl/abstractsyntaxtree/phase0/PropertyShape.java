@@ -28,21 +28,21 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	Path path;
 
-	public static PropertyShape getInstance(ShaclProperties properties, SailRepositoryConnection connection,
-			Cache cache) {
+	public static PropertyShape getInstance(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+											Cache cache) {
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new PropertyShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(properties, connection, cache);
+			shape.populate(parent, properties, connection, cache);
 		}
 
 		return (PropertyShape) shape;
 	}
 
 	@Override
-	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
-		super.populate(properties, connection, cache);
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+		super.populate(parent, properties, connection, cache);
 
 		if (properties.getPath() instanceof IRI) {
 			this.path = new SimplePath((IRI) properties.getPath());
@@ -50,7 +50,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		} else {
 			throw new UnsupportedOperationException(
-					"Path is not supported for " + properties.getPath() + " in " + properties.getId());
+				"Path is not supported for " + properties.getPath() + " in " + properties.getId());
 		}
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);

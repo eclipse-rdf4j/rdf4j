@@ -19,21 +19,21 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public NodeShape() {
 	}
 
-	public static NodeShape getInstance(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public static NodeShape getInstance(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new NodeShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(properties, connection, cache);
+			shape.populate(parent, properties, connection, cache);
 		}
 
 		return (NodeShape) shape;
 	}
 
 	@Override
-	public void populate(ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
-		super.populate(properties, connection, cache);
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+		super.populate(parent, properties, connection, cache);
 
 		if (properties.getMinCount() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:MinCount in " + getId());

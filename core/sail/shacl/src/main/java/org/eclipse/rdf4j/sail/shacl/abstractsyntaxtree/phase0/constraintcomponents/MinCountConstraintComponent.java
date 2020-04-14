@@ -12,13 +12,13 @@ public class MinCountConstraintComponent implements ConstraintComponent {
 
 	long minCount;
 
-	public MinCountConstraintComponent(long minCount) {
+	public MinCountConstraintComponent(ConstraintComponent parent, long minCount) {
 		this.minCount = minCount;
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MIN_COUNT,
-				SimpleValueFactory.getInstance().createLiteral(minCount + "", XMLSchema.INTEGER));
+			SimpleValueFactory.getInstance().createLiteral(minCount + "", XMLSchema.INTEGER));
 	}
 }

@@ -10,7 +10,7 @@ public class NodeKindConstraintComponent implements ConstraintComponent {
 
 	Resource nodeKind;
 
-	public NodeKindConstraintComponent(Resource nodeKind) {
+	public NodeKindConstraintComponent(ConstraintComponent parent, Resource nodeKind) {
 		this.nodeKind = nodeKind;
 	}
 

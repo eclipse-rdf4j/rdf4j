@@ -12,13 +12,13 @@ public class MaxLengthConstraintComponent implements ConstraintComponent {
 
 	long maxLength;
 
-	public MaxLengthConstraintComponent(long maxLength) {
+	public MaxLengthConstraintComponent(ConstraintComponent parent, long maxLength) {
 		this.maxLength = maxLength;
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MAX_LENGTH,
-				SimpleValueFactory.getInstance().createLiteral(maxLength + "", XMLSchema.INTEGER));
+			SimpleValueFactory.getInstance().createLiteral(maxLength + "", XMLSchema.INTEGER));
 	}
 }
