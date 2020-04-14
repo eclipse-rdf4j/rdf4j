@@ -333,5 +333,4 @@ class SailDatasetImpl implements SailDataset {
 		};
 	}
 
-
 }

@@ -80,6 +80,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 		}
 
 	}
+
 	@Override
 	public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
 			Value obj) throws QueryEvaluationException {

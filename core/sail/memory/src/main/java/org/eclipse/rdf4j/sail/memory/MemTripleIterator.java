@@ -1,20 +1,27 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.memory.model;
+package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.sail.memory.model.MemIRI;
+import org.eclipse.rdf4j.sail.memory.model.MemResource;
+import org.eclipse.rdf4j.sail.memory.model.MemStatement;
+import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
+import org.eclipse.rdf4j.sail.memory.model.MemTriple;
+import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
- * A StatementIterator that can iterate over a list of Statement objects. This iterator compares Resource and Literal
- * objects using the '==' operator, which is possible thanks to the extensive sharing of these objects in the
- * MemoryStore.
+ * An Iteration that can iterate over a list of {@link Triple} objects.
+ * 
+ * @author Jeen Broekstra
  */
-public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
+class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
 
 	/*-----------*
 	 * Variables *
@@ -55,9 +62,9 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	 *--------------*/
 
 	/**
-	 * Creates a new MemStatementIterator that will iterate over the statements contained in the supplied
-	 * MemStatementList searching for statements that match the specified pattern of subject, predicate, object and
-	 * context(s).
+	 * Creates a new MemTripleIterator that will iterate over the triples contained in the supplied MemStatementList
+	 * searching for triples that occur as either subject or object in those statements, and which match the specified
+	 * pattern of subject, predicate, object.
 	 * 
 	 * @param statementList the statements over which to iterate.
 	 * @param subject       subject of pattern.
@@ -80,10 +87,8 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	 *---------*/
 
 	/**
-	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for statements that match the
-	 * constraints that have been set for this iterator. If a matching statement has been found it will be stored in
-	 * <tt>_nextStatement</tt> and <tt>_nextStatementIdx</tt> points to the index of this statement in
-	 * <tt>_statementList</tt>. Otherwise, <tt>_nextStatement</tt> will set to <tt>null</tt>.
+	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for triples that match the
+	 * constraints that have been set for this iterator.
 	 */
 	@Override
 	protected MemTriple getNextElement() {
@@ -97,8 +102,7 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 					if (matchesPattern(triple)) {
 						return triple;
 					}
-				}
-				else if (st.getObject() instanceof MemTriple) {
+				} else if (st.getObject() instanceof MemTriple) {
 					MemTriple triple = (MemTriple) st.getObject();
 					if (matchesPattern(triple)) {
 						return triple;
