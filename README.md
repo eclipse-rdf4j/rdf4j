@@ -15,13 +15,22 @@ For installation and usage instructions of the RDF4J Java libaries, see [Program
 
 ### Building from source
 
-To build the RDF4J project, including onejar and SDK files, from source, run:
+RDF4J is a multi-module [maven](https://maven.apache.org/index.html) project. It can be compiled, tested, and installed with the [usual maven lifecycle phases](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html) from the command line, for example:
 
-     `mvn -Passembly package`
+- `mvn verify` - compiles and runs all tests
+- `mvn package` - compiles, tests, and packages all modules
+- `mvn install` - compiles, tests, packages, and installs all artifacts in the local maven repository
+- `mvn -Pquick install` - compiles, packages and installs everything (skipping test execution)
 
-(optionally add the `-Pquick` flag to skip executing tests)
+These commands can be run from the project root to execute on the entire project or (if you're only interested in working with a particular module) from any module's subdirectory. 
 
-SDK and onejar will be available in `assembly/target`. Individual module jars and wars will be in `target/` in their respective modules. 
+To build the full RDF4J project, including onejar and SDK files and full aggregated javadoc, from source, run:
+
+     mvn -Passembly package
+
+The SDK and onejar will be available in `assembly/target`. Individual module jars and wars will be in `target/` in their respective modules. 
+
+Modern IDEs like Eclipse, IntelliJ IDEA, or Netbeans can of course also be used to build, test, and run (parts of) the project. 
 
 ## Keen to contribute?
 
