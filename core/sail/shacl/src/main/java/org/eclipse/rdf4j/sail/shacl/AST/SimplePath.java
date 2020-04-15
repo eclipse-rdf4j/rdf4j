@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 
 import java.util.Objects;
 
@@ -31,7 +32,11 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
+
+		if (stats.isEmpty()) {
+			return false;
+		}
 
 		return addedStatements.hasStatement(null, path, null, false)
 				|| removedStatements.hasStatement(null, path, null, false);
