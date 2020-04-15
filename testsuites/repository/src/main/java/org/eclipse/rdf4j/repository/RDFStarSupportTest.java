@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -125,6 +126,7 @@ public abstract class RDFStarSupportTest {
 			fail("RDF* triple value should not be allowed by store as context identifier");
 		} catch (UnsupportedOperationException e) {
 			// fall through, expected behavior
+			testCon.rollback();
 		}
 
 	}
@@ -135,12 +137,17 @@ public abstract class RDFStarSupportTest {
 
 		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
 
-		String query = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\nSELECT * WHERE { <<?s foaf:name ?o>> ?b ?c. }";
+		String query = "PREFIX foaf: <" + FOAF.NAMESPACE + ">\nSELECT DISTINCT * WHERE { <<?s foaf:name ?o>> ?b ?c. }";
 
-		TupleQuery q = testCon.prepareTupleQuery(query);
-		for (BindingSet bs : q.evaluate()) {
-			System.out.println(bs);
-		}
+		List<BindingSet> result = QueryResults.asList(testCon.prepareTupleQuery(query).evaluate());
+		assertThat(result).hasSize(1);
+
+		BindingSet bs = result.get(0);
+		assertThat(bs.getValue("s")).isEqualTo(bob);
+		assertThat(bs.getValue("o")).isEqualTo(nameBob);
+		assertThat(bs.getValue("b")).isEqualTo(RDF.TYPE);
+		assertThat(bs.getValue("c")).isEqualTo(RDF.ALT);
+
 	}
 
 	protected abstract Repository createRepository();
