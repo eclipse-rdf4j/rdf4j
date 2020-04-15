@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+import org.mapdb.Serializer;
 
 /**
  * @author David Huynh
@@ -102,6 +103,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		if (this.iterationCacheSyncThreshold > 0) {
 			this.db = DBMaker.tempFileDB()
 					.fileDeleteAfterClose()
+					.fileChannelEnable()
 					.closeOnJvmShutdown()
 					.make();
 		} else {
@@ -152,7 +154,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private <T> Set<T> createSet(String setName) {
 		if (db != null) {
-			return (Set<T>) db.hashSet(setName).create();
+			return (Set<T>) db.hashSet(setName).serializer(Serializer.JAVA).create();
 		} else {
 			return new HashSet<>();
 		}
