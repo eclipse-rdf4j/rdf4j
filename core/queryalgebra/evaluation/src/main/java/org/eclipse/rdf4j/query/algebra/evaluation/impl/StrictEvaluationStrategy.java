@@ -1870,8 +1870,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = ((RDFStarTripleSource) tripleSource)
 					.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
 
-			// FIXME this filter is put in as an additional safeguard - it should strictly speaking not be necessary if
-			// the triple source is correctly implemented.
 			FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
 					sourceIter) {
 				@Override
@@ -1885,9 +1883,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					if (objValue != null && !objValue.equals(triple.getObject())) {
 						return false;
 					}
+					if (extValue != null && !extValue.equals(triple)) {
+						return false;
+					}
 					return true;
 				}
-
 			};
 
 			return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
