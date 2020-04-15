@@ -580,9 +580,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			List<NodeShape> nodeShapesAfterRefresh = this.nodeShapes;
 
+			stats.setEmpty(isEmpty());
+
 			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !shapesModifiedInCurrentTransaction) {
-				boolean currentBaseSailEmpty = isEmpty();
-				if (!(stats.isBaseSailEmpty() && !currentBaseSailEmpty)) {
+				if (!(stats.isBaseSailEmpty() && !stats.isEmpty())) {
 					logger.debug("Nothing has changed, nothing to validate.");
 					return;
 				}

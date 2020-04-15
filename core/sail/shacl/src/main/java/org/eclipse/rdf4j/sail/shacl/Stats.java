@@ -21,6 +21,7 @@ public class Stats {
 	private boolean baseSailEmpty;
 	private boolean hasAdded;
 	private boolean hasRemoved;
+	private boolean empty;
 
 	public void added(Statement statement) {
 		hasAdded = true;
@@ -28,22 +29,45 @@ public class Stats {
 
 	public void removed(Statement statement) {
 		hasRemoved = true;
-
 	}
 
+	/**
+	 *
+	 * @return true if statements were effectively added in this transaction
+	 */
 	public boolean hasAdded() {
 		return hasAdded;
 	}
 
+	/**
+	 *
+	 * @return true if statements were effectively removed in this transaction
+	 */
 	public boolean hasRemoved() {
 		return hasRemoved;
 	}
 
+	/**
+	 *
+	 * @return true if the sail was empty before this transaction started
+	 */
 	public boolean isBaseSailEmpty() {
 		return baseSailEmpty;
 	}
 
 	void setBaseSailEmpty(boolean baseSailEmpty) {
 		this.baseSailEmpty = baseSailEmpty;
+	}
+
+	/**
+	 *
+	 * @return true if the entire sail is empty
+	 */
+	public boolean isEmpty() {
+		return empty;
+	}
+
+	void setEmpty(boolean empty) {
+		this.empty = empty;
 	}
 }

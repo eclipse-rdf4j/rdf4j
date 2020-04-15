@@ -78,8 +78,9 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -99,8 +100,9 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		if (newLength == 1)
+		if (newLength == 1) {
 			return IteratorData.tripleBased;
+		}
 		return parent.getIteratorDataType();
 	}
 
