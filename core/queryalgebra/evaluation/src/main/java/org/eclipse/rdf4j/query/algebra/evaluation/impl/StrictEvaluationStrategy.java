@@ -341,9 +341,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		Var serviceRef = service.getServiceRef();
 
 		String serviceUri;
-		if (serviceRef.hasValue())
+		if (serviceRef.hasValue()) {
 			serviceUri = serviceRef.getValue().stringValue();
-		else {
+		} else {
 			if (bindings != null && bindings.getValue(serviceRef.getName()) != null) {
 				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();
 			} else {
@@ -380,10 +380,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				boolean exists = fs.ask(service, bindings, baseUri);
 
 				// check if triples are available (with inserted bindings)
-				if (exists)
+				if (exists) {
 					return new SingletonIteration<>(bindings);
-				else
+				} else {
 					return new EmptyIteration<>();
+				}
 
 			}
 
@@ -1810,14 +1811,17 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public Value evaluate(ValueExprTripleRef node, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 		Value subj = evaluate(node.getSubjectVar(), bindings);
-		if (subj == null || !(subj instanceof Resource))
+		if (subj == null || !(subj instanceof Resource)) {
 			throw new ValueExprEvaluationException("no subject value");
+		}
 		Value pred = evaluate(node.getPredicateVar(), bindings);
-		if (pred == null || !(pred instanceof IRI))
+		if (pred == null || !(pred instanceof IRI)) {
 			throw new ValueExprEvaluationException("no predicate value");
+		}
 		Value obj = evaluate(node.getObjectVar(), bindings);
-		if (obj == null)
+		if (obj == null) {
 			throw new ValueExprEvaluationException("no object value");
+		}
 		return tripleSource.getValueFactory().createTriple((Resource) subj, (IRI) pred, obj);
 
 	}
@@ -1859,47 +1863,51 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		// whether the TripleSouce support access to RDF star
-		final boolean bSourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
+		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
 
 		// in case the
-		if (bSourceSupportsRdfStar) {
-			final CloseableIteration<? extends Resource, QueryEvaluationException> iter = ((RDFStarTripleSource) tripleSource)
+		if (sourceSupportsRdfStar) {
+			CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = ((RDFStarTripleSource) tripleSource)
 					.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
-			return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
-				@Override
-				protected BindingSet getNextElement()
-						throws QueryEvaluationException {
-					while (iter.hasNext()) {
-						Triple match = (Triple) iter.next();
-						if (subjValue != null && !subjValue.equals(match.getSubject())) {
-							continue;
-						}
-						if (predValue != null && !predValue.equals(match.getPredicate())) {
-							continue;
-						}
-						if (objValue != null && !objValue.equals(match.getObject())) {
-							continue;
-						}
 
-						QueryBindingSet result = new QueryBindingSet(bindings);
-						if (subjValue == null) {
-							result.addBinding(subjVar.getName(), match.getSubject());
-						}
-						if (predValue == null) {
-							result.addBinding(predVar.getName(), match.getPredicate());
-						}
-						if (objValue == null) {
-							result.addBinding(objVar.getName(), match.getObject());
-						}
-						// add the extVar binding if we do not have a value bound.
-						if (extValue == null) {
-							result.addBinding(extVar.getName(), match);
-						} else if (!extValue.equals(match)) {
-							continue;
-						}
-						return result;
+			// FIXME this filter is put in as an additional safeguard - it should strictly speaking not be necessary if
+			// the triple source is correctly implemented.
+			FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
+					sourceIter) {
+				@Override
+				protected boolean accept(Triple triple) throws QueryEvaluationException {
+					if (subjValue != null && !subjValue.equals(triple.getSubject())) {
+						return false;
 					}
-					return null;
+					if (predValue != null && !predValue.equals(triple.getPredicate())) {
+						return false;
+					}
+					if (objValue != null && !objValue.equals(triple.getObject())) {
+						return false;
+					}
+					return true;
+				}
+
+			};
+
+			return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
+				@Override
+				protected BindingSet convert(Triple triple) throws QueryEvaluationException {
+					QueryBindingSet result = new QueryBindingSet(bindings);
+					if (subjValue == null) {
+						result.addBinding(subjVar.getName(), triple.getSubject());
+					}
+					if (predValue == null) {
+						result.addBinding(predVar.getName(), triple.getPredicate());
+					}
+					if (objValue == null) {
+						result.addBinding(objVar.getName(), triple.getObject());
+					}
+					// add the extVar binding if we do not have a value bound.
+					if (extValue == null) {
+						result.addBinding(extVar.getName(), triple);
+					}
+					return result;
 				}
 			};
 		} else {
@@ -1964,8 +1972,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 							Statement valueStatement = valueiter.next();
 							if (theNode.equals(valueStatement.getSubject())) {
 								if (value == null || value.equals(valueStatement.getObject())) {
-									if (value == null)
+									if (value == null) {
 										result.addBinding(var.getName(), valueStatement.getObject());
+									}
 									return true;
 								}
 							}
