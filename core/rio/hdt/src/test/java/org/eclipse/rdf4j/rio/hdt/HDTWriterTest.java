@@ -37,8 +37,8 @@ public class HDTWriterTest {
 
 	@Before
 	public void setUp() throws Exception {
-		// File f = folder.newFile();
-		File f = new File("c:/data/test.hdt");
+		File f = folder.newFile();
+		// File f = new File("c:/data/test.hdt");
 		OutputStream os = Files.newOutputStream(f.toPath(),
 				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 		writer = Rio.createWriter(RDFFormat.HDT, os);
