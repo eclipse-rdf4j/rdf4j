@@ -43,7 +43,6 @@ public class RepositoryInformation {
 		return props.getProperty("location");
 	}
 
-
 	public EndpointType getType() {
 		return type;
 	}

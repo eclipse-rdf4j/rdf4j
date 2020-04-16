@@ -36,7 +36,7 @@ public class FedXRepositoryConfigTest {
 
 		Model members = config.getMembers();
 		assertThat(members.filter(null, FEDX.STORE, null).size()).isEqualTo(2);
-		
+
 		assertThat(members.filter(null, FEDX.REPOSITORY_NAME, null).objects().stream().map(Value::stringValue))
 				.containsExactly("endpoint1", "endpoint2");
 	}
