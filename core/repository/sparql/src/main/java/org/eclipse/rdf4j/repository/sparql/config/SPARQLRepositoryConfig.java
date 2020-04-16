@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**
  * Configuration for a SPARQL endpoint.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
@@ -96,9 +96,9 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectIRI(m.filter(implNode, QUERY_ENDPOINT, null))
+			Models.objectIRI(m.getStatements(implNode, QUERY_ENDPOINT, null))
 					.ifPresent(iri -> setQueryEndpointUrl(iri.stringValue()));
-			Models.objectIRI(m.filter(implNode, UPDATE_ENDPOINT, null))
+			Models.objectIRI(m.getStatements(implNode, UPDATE_ENDPOINT, null))
 					.ifPresent(iri -> setUpdateEndpointUrl(iri.stringValue()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

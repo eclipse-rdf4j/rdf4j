@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 import java.util.Collection;
 
@@ -25,26 +25,27 @@ import java.util.Collection;
 @Experimental
 public interface DataStructureInterface {
 
-	void addStatement(Statement statement);
+	void addStatement(ExtensibleStatement statement);
 
-	void removeStatement(Statement statement);
+	void removeStatement(ExtensibleStatement statement);
 
-	default void addStatement(Collection<Statement> statements) {
-		for (Statement statement : statements) {
+	default void addStatement(Collection<ExtensibleStatement> statements) {
+		for (ExtensibleStatement statement : statements) {
 			addStatement(statement);
 		}
 	}
 
-	default void removeStatement(Collection<Statement> statements) {
-		for (Statement statement : statements) {
+	default void removeStatement(Collection<ExtensibleStatement> statements) {
+		for (ExtensibleStatement statement : statements) {
 			removeStatement(statement);
 		}
 	}
 
-	CloseableIteration<? extends Statement, SailException> getStatements(
+	CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(
 			Resource subject,
 			IRI predicate,
 			Value object,
+			boolean inferred,
 			Resource... context);
 
 	// flush this DataStructure to make added and removed data visible to read operations
@@ -52,9 +53,10 @@ public interface DataStructureInterface {
 
 	void init();
 
-	default void clear(Resource[] contexts) {
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null,
-				contexts)) {
+	default void clear(boolean inferred, Resource[] contexts) {
+		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(null, null,
+				null,
+				inferred, contexts)) {
 			while (statements.hasNext()) {
 				removeStatement(statements.next());
 			}
@@ -64,11 +66,12 @@ public interface DataStructureInterface {
 	// flush through to any underlying storage, called by the likes of commit()
 	void flushForCommit();
 
-	default boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	default boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource[] contexts) {
 
 		boolean deleted = false;
-		try (CloseableIteration<? extends Statement, SailException> statements = getStatements(subj, pred, obj,
-				contexts)) {
+		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(subj, pred,
+				obj,
+				inferred, contexts)) {
 			while (statements.hasNext()) {
 				removeStatement(statements.next());
 				deleted = true;
@@ -77,5 +80,11 @@ public interface DataStructureInterface {
 
 		return deleted;
 
+	}
+
+	default long getEstimatedSize() {
+		long inferred = getStatements(null, null, null, true).stream().count();
+		long explicit = getStatements(null, null, null, false).stream().count();
+		return inferred + explicit;
 	}
 }

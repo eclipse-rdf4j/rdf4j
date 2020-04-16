@@ -92,6 +92,8 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		return "LanguageInPropertyShape{" +
 				"languageIn=" + Arrays.toString(languageIn.toArray()) +
 				", path=" + getPath() +
+				", id=" + id +
+
 				'}';
 	}
 }

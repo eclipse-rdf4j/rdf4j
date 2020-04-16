@@ -39,7 +39,8 @@ public class Tuple implements Comparable<Tuple> {
 	}
 
 	public Tuple(Value... list) {
-		line = Arrays.asList(list);
+		// Arrays.asList(...) is immutable, wrap in ArrayList to make it mutable
+		line = new ArrayList<>(Arrays.asList(list));
 	}
 
 	public Tuple(List<Value> list, Tuple historyTuple) {

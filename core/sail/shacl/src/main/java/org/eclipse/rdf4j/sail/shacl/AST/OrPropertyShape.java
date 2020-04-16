@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
@@ -213,14 +214,14 @@ public class OrPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || or.stream()
+		return super.requiresEvaluation(addedStatements, removedStatements, stats) || or.stream()
 				.flatMap(Collection::stream)
-				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements, stats))
 				.reduce((a, b) -> a || b)
 				.orElse(false);
 	}
@@ -254,6 +255,7 @@ public class OrPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "OrPropertyShape{" +
 				"or=" + toString(or) +
+				", id=" + id +
 				'}';
 	}
 

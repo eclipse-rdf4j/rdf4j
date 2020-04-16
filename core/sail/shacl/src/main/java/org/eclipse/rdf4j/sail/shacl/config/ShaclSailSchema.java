@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 /**
  * Defines constants for the ShaclSail schema which is used by {@link ShaclSailFactory}s to initialize
  * {@link ShaclSail}s.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ShaclSailSchema {

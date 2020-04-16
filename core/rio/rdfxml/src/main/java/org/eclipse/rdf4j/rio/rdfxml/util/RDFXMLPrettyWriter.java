@@ -119,6 +119,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 */
 	private final Stack<IRI> predicateStack = new Stack<>();
 
+	private boolean writingEnded;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -165,6 +167,14 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 *---------*/
 
 	@Override
+	public void endRDF() throws RDFHandlerException {
+		if (!writingEnded) {
+			super.endRDF();
+			writingEnded = true;
+		}
+	}
+
+	@Override
 	protected void writeHeader() throws IOException {
 		// This export format needs the RDF Schema namespace to be defined:
 		setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
@@ -174,7 +184,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	@Override
 	public void flush() throws IOException {
-		if (writingStarted) {
+		if (isWritingStarted()) {
 			if (!headerWritten) {
 				writeHeader();
 			}
@@ -196,7 +206,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	@Override
 	public void close() throws IOException {
 		try {
-			if (writingStarted) {
+			if (isWritingStarted() && !writingEnded) {
 				endRDF();
 			}
 		} catch (RDFHandlerException e) {
@@ -309,11 +319,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet been started");
-		}
-
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();

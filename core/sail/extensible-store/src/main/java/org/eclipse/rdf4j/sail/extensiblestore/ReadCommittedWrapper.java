@@ -17,10 +17,14 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -31,43 +35,47 @@ class ReadCommittedWrapper implements DataStructureInterface {
 
 	private final DataStructureInterface dataStructure;
 
-	private Set<Statement> internalAdded = new HashSet<>(1000);
-	private Set<Statement> internalRemoved = new HashSet<>(100);
+	private Map<ExtensibleStatement, ExtensibleStatement> internalAdded = new HashMap<>();
+	private Map<ExtensibleStatement, ExtensibleStatement> internalRemoved = new HashMap<>();
 
 	ReadCommittedWrapper(DataStructureInterface dataStructure) {
 		this.dataStructure = dataStructure;
 	}
 
 	@Override
-	public void addStatement(Statement statement) {
-		internalAdded.add(statement);
+	public void addStatement(ExtensibleStatement statement) {
+		internalAdded.put(statement, statement);
 		internalRemoved.remove(statement);
 
 	}
 
 	@Override
-	public void removeStatement(Statement statement) {
-		internalRemoved.add(statement);
+	public void removeStatement(ExtensibleStatement statement) {
+		internalRemoved.put(statement, statement);
 
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subject,
-			IRI predicate, Value object, Resource... context) {
+	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
+			IRI predicate, Value object, boolean inferred, Resource... context) {
 
 		// must match single statement
 		if (subject != null && predicate != null && object != null && context != null && context.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, context[0]);
 
-			if (internalAdded.contains(statement)) {
-				return new SingletonIteration<>(statement);
+			statement = ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
+
+			ExtensibleStatement extensibleStatement = internalAdded.get(statement);
+
+			if (extensibleStatement != null) {
+				return new SingletonIteration<>(extensibleStatement);
 			} else {
-				if (internalRemoved.contains(statement)) {
+				if (internalRemoved.containsKey(statement)) {
 					return new EmptyIteration<>();
 				} else {
 					synchronized (dataStructure) {
-						return dataStructure.getStatements(subject, predicate, object, context);
+						return dataStructure.getStatements(subject, predicate, object, inferred, context);
 					}
 				}
 			}
@@ -75,12 +83,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		} else {
 			synchronized (dataStructure) {
 
-				return new LookAheadIteration<Statement, SailException>() {
+				return new LookAheadIteration<ExtensibleStatement, SailException>() {
 
-					Set<Statement> internalAddedLocal = new HashSet<>(internalAdded);
-					Set<Statement> internalRemovedLocal = new HashSet<>(internalRemoved);
+					Set<ExtensibleStatement> internalAddedLocal = new HashSet<>(internalAdded.values());
+					Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());
 
-					Iterator<Statement> left = internalAddedLocal.stream()
+					Iterator<ExtensibleStatement> left = internalAddedLocal.stream()
 							.filter(statement -> {
 
 								if (subject != null && !statement.getSubject().equals(subject)) {
@@ -97,12 +105,17 @@ class ReadCommittedWrapper implements DataStructureInterface {
 									return false;
 								}
 
+								if (!inferred && inferred != statement.isInferred()) {
+									return false;
+								}
+
 								return true;
 							})
 							.iterator();
 
-					CloseableIteration<? extends Statement, SailException> right = dataStructure.getStatements(
-							subject, predicate, object, context);
+					CloseableIteration<? extends ExtensibleStatement, SailException> right = dataStructure
+							.getStatements(
+									subject, predicate, object, inferred, context);
 
 					@Override
 					protected void handleClose() throws SailException {
@@ -111,12 +124,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 					}
 
 					@Override
-					protected Statement getNextElement() throws SailException {
+					protected ExtensibleStatement getNextElement() throws SailException {
 
-						Statement next = null;
+						ExtensibleStatement next = null;
 
 						do {
-							Statement tempNext = null;
+							ExtensibleStatement tempNext = null;
 							if (left.hasNext()) {
 								tempNext = left.next();
 							} else if (right.hasNext()) {
@@ -161,19 +174,24 @@ class ReadCommittedWrapper implements DataStructureInterface {
 	@Override
 	public void flushForCommit() {
 
-		List<Statement> internalAddedEffective = internalAdded
+		if (internalAdded.isEmpty() && internalRemoved.isEmpty()) {
+			return;
+		}
+
+		List<ExtensibleStatement> internalAddedEffective = internalAdded
+				.keySet()
 				.stream()
-				.filter(statement -> !internalRemoved.contains(statement))
+				.filter(statement -> !internalRemoved.containsKey(statement))
 				.collect(Collectors.toList());
 
 		synchronized (dataStructure) {
 			internalAddedEffective.forEach(dataStructure::addStatement);
-			internalRemoved.forEach(dataStructure::removeStatement);
+			internalRemoved.values().forEach(dataStructure::removeStatement);
 			dataStructure.flushForReading();
 		}
 
-		internalAdded = new HashSet<>(internalAdded.size());
-		internalRemoved = new HashSet<>(internalRemoved.size());
+		internalAdded = new HashMap<>();
+		internalRemoved = new HashMap<>();
 
 	}
 

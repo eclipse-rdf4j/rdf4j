@@ -1118,14 +1118,14 @@ public abstract class ComplexSPARQLQueryTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	@Test
-	public void testMaxAggregateEmptyResult() throws Exception {
+	public void testMaxAggregateWithGroupEmptyResult() throws Exception {
 		String query = "select ?s (max(?o) as ?omax) {\n" +
 				"   ?s ?p ?o .\n" +
 				" }\n" +
 				" group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			assertThat(result.next()).isEmpty();
+			assertThat(result.hasNext()).isFalse();
 		}
 	}
 
@@ -1133,11 +1133,10 @@ public abstract class ComplexSPARQLQueryTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	@Test
-	public void testMinAggregateEmptyResult() throws Exception {
-		String query = "select ?s (min(?o) as ?omin) {\n" +
+	public void testMaxAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (max(?o) as ?omax) {\n" +
 				"   ?s ?p ?o .\n" +
-				" }\n" +
-				" group by ?s\n";
+				" }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -1148,11 +1147,54 @@ public abstract class ComplexSPARQLQueryTest {
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	@Test
-	public void testSampleAggregateEmptyResult() throws Exception {
+	public void testMinAggregateWithGroupEmptyResult() throws Exception {
+		String query = "select ?s (min(?o) as ?omin) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testMinAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (min(?o) as ?omin) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.next()).isEmpty();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testSampleAggregateWithGroupEmptyResult() throws Exception {
 		String query = "select ?s (sample(?o) as ?osample) {\n" +
 				"   ?s ?p ?o .\n" +
 				" }\n" +
 				" group by ?s\n";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	/**
+	 * See https://github.com/eclipse/rdf4j/issues/1978
+	 */
+	@Test
+	public void testSampleAggregateWithoutGroupEmptySolution() throws Exception {
+		String query = "select (sample(?o) as ?osample) {\n" +
+				"   ?s ?p ?o .\n" +
+				" }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -2102,6 +2144,26 @@ public abstract class ComplexSPARQLQueryTest {
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
+	}
+
+	@Test
+	public void testPropertyPathNegationInversion() throws Exception {
+		String data = "@prefix : <http://example.org/>.\n"
+				+ ":Mary :parentOf :Jim.\n"
+				+ ":Jim :knows :Jane.\n"
+				+ ":Jane :worksFor :IBM.";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		String query1 = "prefix : <http://example.org/> ASK WHERE { :IBM ^(:|!:) :Jane } ";
+
+		assertTrue(conn.prepareBooleanQuery(query1).evaluate());
+
+		String query2 = "prefix : <http://example.org/> ASK WHERE { :IBM ^(:|!:) ?a } ";
+		assertTrue(conn.prepareBooleanQuery(query2).evaluate());
+
+		String query3 = "prefix : <http://example.org/> ASK WHERE { :IBM (^(:|!:))* :Mary } ";
+		assertTrue(conn.prepareBooleanQuery(query3).evaluate());
+
 	}
 
 	@Test

@@ -144,6 +144,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Prepares a SPARQL query for evaluation on this repository (optional operation). In case the query contains
 	 * relative URIs that need to be resolved against an external base URI, one should use
 	 * {@link #prepareQuery(QueryLanguage, String, String)} instead.
+	 * <p>
+	 * If you already know the type of query, using the more specific {@link #prepareTupleQuery},
+	 * {@link #prepareGraphQuery} or {@link #prepareBooleanQuery} is likely to be more efficient.
 	 * 
 	 * @param query The query string, in SPARQL syntax.
 	 * @return A query ready to be evaluated on this repository.
@@ -159,6 +162,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Prepares a query for evaluation on this repository (optional operation). In case the query contains relative URIs
 	 * that need to be resolved against an external base URI, one should use
 	 * {@link #prepareQuery(QueryLanguage, String, String)} instead.
+	 * <p>
+	 * If you already know the type of query, using the more specific {@link #prepareTupleQuery},
+	 * {@link #prepareGraphQuery} or {@link #prepareBooleanQuery} is likely to be more efficient.
 	 * 
 	 * @param ql    The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query The query string.
@@ -172,6 +178,9 @@ public interface RepositoryConnection extends AutoCloseable {
 
 	/**
 	 * Prepares a query for evaluation on this repository (optional operation).
+	 * <p>
+	 * If you already know the type of query, using the more specific {@link #prepareTupleQuery},
+	 * {@link #prepareGraphQuery} or {@link #prepareBooleanQuery} is likely to be more efficient.
 	 * 
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.

@@ -7,27 +7,31 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-import junit.framework.Test;
+import java.net.URL;
 
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
+import junit.framework.Test;
+
 public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
+		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.1-w3c/manifest-all.ttl");
+
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
 						false);
 			}
 
+			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
@@ -38,12 +42,16 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
 						"STRLANG   TypeErrors",
 						// known issue: SES-937
-						"sq03 - Subquery within graph pattern, graph variable is not bound" };
+						"sq03 - Subquery within graph pattern, graph variable is not bound",
+						// test case is incorrect wrt SPARQL 1.1 spec, see https://github.com/eclipse/rdf4j/issues/1978
+//						"agg empty group",
+//						"Aggregate over empty group resulting in a row with unbound variables" 
+				};
 
 				return new W3CApprovedSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);
 			}
-		}, true, true, false, "service");
+		}, manifestUrl.toString(), true, "service");
 	}
 
 	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
@@ -56,6 +64,7 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new MemoryStore()));
 	}

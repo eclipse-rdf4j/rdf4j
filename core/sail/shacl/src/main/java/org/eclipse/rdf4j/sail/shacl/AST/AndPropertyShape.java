@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
@@ -120,14 +121,14 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || and.stream()
+		return super.requiresEvaluation(addedStatements, removedStatements, stats) || and.stream()
 				.flatMap(Collection::stream)
-				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements, stats))
 				.reduce((a, b) -> a || b)
 				.orElse(false);
 	}
@@ -161,6 +162,7 @@ public class AndPropertyShape extends PathPropertyShape {
 	public String toString() {
 		return "AndPropertyShape{" +
 				"and=" + toString(and) +
+				", id=" + id +
 				'}';
 	}
 

@@ -89,7 +89,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private final SPARQLProtocolSession client;
 
-	private StringBuffer sparqlTransaction;
+	private StringBuilder sparqlTransaction;
 
 	private Object transactionLock = new Object();
 
@@ -381,8 +381,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String base)
 			throws RepositoryException, MalformedQueryException {
-		if (SPARQL.equals(ql))
+		if (SPARQL.equals(ql)) {
 			return new SPARQLTupleQuery(client, base, query);
+		}
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
 	}
 
@@ -391,11 +392,14 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		synchronized (transactionLock) {
 			if (isActive()) {
 				synchronized (transactionLock) {
-					SPARQLUpdate transaction = new SPARQLUpdate(client, null, sparqlTransaction.toString());
-					try {
-						transaction.execute();
-					} catch (UpdateExecutionException e) {
-						throw new RepositoryException("error executing transaction", e);
+					// treat commit as a no-op if transaction string is empty
+					if (sparqlTransaction.length() > 0) {
+						SPARQLUpdate transaction = new SPARQLUpdate(client, null, sparqlTransaction.toString());
+						try {
+							transaction.execute();
+						} catch (UpdateExecutionException e) {
+							throw new RepositoryException("error executing transaction", e);
+						}
 					}
 
 					sparqlTransaction = null;
@@ -424,7 +428,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		synchronized (transactionLock) {
 			if (!isActive()) {
 				synchronized (transactionLock) {
-					sparqlTransaction = new StringBuffer();
+					sparqlTransaction = new StringBuilder();
 				}
 			} else {
 				throw new RepositoryException("active transaction already exists");

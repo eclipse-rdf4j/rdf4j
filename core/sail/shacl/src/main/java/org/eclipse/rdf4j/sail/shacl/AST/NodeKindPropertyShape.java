@@ -46,7 +46,8 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		Literal(SHACL.LITERAL),
 		BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
 		BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL),
-		IRIOrLiteral(SHACL.IRI_OR_LITERAL),;
+		IRIOrLiteral(SHACL.IRI_OR_LITERAL),
+		;
 
 		IRI iri;
 
@@ -116,6 +117,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		return "NodeKindPropertyShape{" +
 				"nodeKind=" + nodeKind +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

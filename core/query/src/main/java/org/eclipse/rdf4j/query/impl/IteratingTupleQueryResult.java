@@ -38,7 +38,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 * Creates a query result object with the supplied binding names. <em>The supplied list of binding names is assumed
 	 * to be constant</em>; care should be taken that the contents of this list doesn't change after supplying it to
 	 * this solution.
-	 * 
+	 *
 	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames, Iterable<? extends BindingSet> bindingSets) {
@@ -53,7 +53,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 * Creates a query result object with the supplied binding names. <em>The supplied list of binding names is assumed
 	 * to be constant</em>; care should be taken that the contents of this list doesn't change after supplying it to
 	 * this solution.
-	 * 
+	 *
 	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames,
@@ -72,5 +72,4 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	public List<String> getBindingNames() throws QueryEvaluationException {
 		return bindingNames;
 	}
-
 }

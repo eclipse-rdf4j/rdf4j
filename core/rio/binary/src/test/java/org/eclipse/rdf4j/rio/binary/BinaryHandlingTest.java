@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.rio.binary;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 
@@ -26,23 +26,16 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class BinaryHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
-		return writeBinary(unknownDatatypeStatements);
-	}
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		String fileName = "src/test/resources/testcases/binary/binary-RDF-langString-no-language-test.rdf";
+		InputStream file = new FileInputStream(fileName);
+		long fileSize = new File(fileName).length();
+		byte[] byteArray = new byte[(int) fileSize];
 
-	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
-		return writeBinary(knownDatatypeStatements);
-	}
+		file.read(byteArray);
 
-	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
-		return writeBinary(unknownLanguageStatements);
-	}
-
-	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
-		return writeBinary(knownLanguageStatements);
+		InputStream RDFLangStringWithNoLanguageStatements = new ByteArrayInputStream(byteArray);
+		return RDFLangStringWithNoLanguageStatements;
 	}
 
 	@Override
@@ -50,24 +43,8 @@ public class BinaryHandlingTest extends AbstractParserHandlingTest {
 		return new BinaryRDFParser();
 	}
 
-	/**
-	 * Helper method to write the given model to N-Triples and return an InputStream containing the results.
-	 * 
-	 * @param statements
-	 * @return An {@link InputStream} containing the results.
-	 * @throws RDFHandlerException
-	 */
-	private InputStream writeBinary(Model statements) throws RDFHandlerException {
-		ByteArrayOutputStream output = new ByteArrayOutputStream(8096);
-
-		RDFWriter binaryWriter = new BinaryRDFWriter(output);
-		binaryWriter.startRDF();
-		for (Statement nextStatement : statements) {
-			binaryWriter.handleStatement(nextStatement);
-		}
-		binaryWriter.endRDF();
-
-		return new ByteArrayInputStream(output.toByteArray());
+	@Override
+	protected RDFWriter createWriter(OutputStream output) {
+		return new BinaryRDFWriter(output);
 	}
-
 }

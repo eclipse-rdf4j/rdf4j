@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -74,7 +75,9 @@ public class GroupByCount implements PlanNode {
 
 				}
 
-				List<Value> line = Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count));
+				// Arrays.asList(...) is immutable, wrap in ArrayList to make it mutable
+				List<Value> line = new ArrayList<>(
+						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
 
 				next.line = line;
 
@@ -117,8 +120,9 @@ public class GroupByCount implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");

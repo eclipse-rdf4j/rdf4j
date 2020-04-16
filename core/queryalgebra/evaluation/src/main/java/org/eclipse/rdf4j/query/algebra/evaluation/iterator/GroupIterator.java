@@ -197,12 +197,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			Map<Key, Entry> entries = new LinkedHashMap<>();
 
 			if (!iter.hasNext()) {
-				// no solutions, but if aggregates are present we still need to process them to produce a
-				// zero-result.
-				final Entry entry = new Entry(null);
-				if (!entry.getAggregates().isEmpty()) {
-					entry.addSolution(EmptyBindingSet.getInstance());
-					entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+				// no solutions, but if we are not explicitly grouping and aggregates are present,
+				// we still need to process them to produce a zero-result.
+				if (group.getGroupBindingNames().isEmpty()) {
+					final Entry entry = new Entry(null);
+					if (!entry.getAggregates().isEmpty()) {
+						entry.addSolution(EmptyBindingSet.getInstance());
+						entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+					}
 				}
 			}
 

@@ -21,9 +21,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -59,13 +56,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 
 /**
  * A SPARQL query test suite, created by reading in a W3C working-group style manifest.
@@ -555,140 +555,127 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 		// Read manifest and create declared test cases
 		Repository manifestRep = new SailRepository(new MemoryStore());
-		manifestRep.initialize();
-		RepositoryConnection con = manifestRep.getConnection();
+		try (RepositoryConnection con = manifestRep.getConnection()) {
 
-		SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
+			SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
 
-		suite.setName(getManifestName(manifestRep, con, manifestFileURL));
+			suite.setName(getManifestName(manifestRep, con, manifestFileURL));
 
-		// Extract test case information from the manifest file. Note that we only
-		// select those test cases that are mentioned in the list.
-		StringBuilder query = new StringBuilder(512);
-		query.append(" SELECT DISTINCT testURI, testName, resultFile, action, queryFile, defaultGraph, ordered ");
-		query.append(" FROM {} rdf:first {testURI} ");
-		if (approvedOnly) {
-			query.append("                          dawgt:approval {dawgt:Approved}; ");
-		}
-		query.append("                             mf:name {testName}; ");
-		query.append("                             mf:result {resultFile}; ");
-		query.append("                             [ mf:checkOrder {ordered} ]; ");
-		query.append("                             [ mf:requires {Requirement} ];");
-		query.append("                             mf:action {action} qt:query {queryFile}; ");
-		query.append("                                               [qt:data {defaultGraph}]; ");
-		query.append("                                               [sd:entailmentRegime {Regime} ]");
+			// Extract test case information from the manifest file. Note that we only
+			// select those test cases that are mentioned in the list.
+			StringBuilder query = new StringBuilder(512);
+			query.append(" PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> \n");
+			query.append(" PREFIX dawgt: <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> \n");
+			query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+			query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
+			query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
+			query.append(
+					" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+			query.append(" WHERE { [] rdf:first ?testURI . \n");
+			if (approvedOnly) {
+				query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
+			}
+			query.append(" ?testURI mf:name ?testName; \n");
+			query.append("          mf:result ?resultFile . \n");
+			query.append(" OPTIONAL { ?testURI mf:checkOrder ?ordered } \n");
+			query.append(" OPTIONAL { ?testURI  mf:requires ?requirement } \n");
+			query.append(" ?testURI mf:action ?action. \n");
+			query.append(" ?action qt:query ?queryFile . \n");
+			query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
+			query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
+			// skip tests involving CSV result files, these are not query tests
+			query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
+			// skip tests involving entailment regimes
+			query.append(" FILTER(!BOUND(?regime)) \n");
+			// skip test involving basic federation, these are tested separately.
+			query.append(" FILTER (!BOUND(?requirement) || (?requirement != mf:BasicFederation)) \n");
+			query.append(" }\n");
 
-		// skip tests involving CSV result files, these are not query tests
-		query.append(" WHERE NOT resultFile LIKE \"*.csv\" ");
-		// skip tests involving JSON, sesame currently does not have a SPARQL/JSON
-		// parser.
-		query.append(" AND NOT resultFile LIKE \"*.srj\" ");
-		// skip tests involving entailment regimes
-		query.append(" AND NOT BOUND(Regime) ");
-		// skip test involving basic federation, these are tested separately.
-		query.append(" AND (NOT BOUND(Requirement) OR (Requirement != mf:BasicFederation)) ");
-		query.append(" USING NAMESPACE ");
-		query.append("  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, ");
-		query.append("  dawgt = <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#>, ");
-		query.append("  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, ");
-		query.append("  sd = <http://www.w3.org/ns/sparql-service-description#>, ");
-		query.append("  ent = <http://www.w3.org/ns/entailment/> ");
-		TupleQuery testCaseQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+			TupleQuery testCaseQuery = con.prepareTupleQuery(query.toString());
 
-		query.setLength(0);
-		query.append(" SELECT graph ");
-		query.append(" FROM {action} qt:graphData {graph} ");
-		query.append(" USING NAMESPACE ");
-		query.append(" qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>");
-		TupleQuery namedGraphsQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+			query.setLength(0);
+			query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+			query.append(" SELECT ?graph \n");
+			query.append(" WHERE { ?action qt:graphData ?graph } \n");
+			TupleQuery namedGraphsQuery = con.prepareTupleQuery(query.toString());
 
-		query.setLength(0);
-		query.append("SELECT 1 ");
-		query.append(" FROM {testURI} mf:resultCardinality {mf:LaxCardinality}");
-		query.append(" USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>");
-		TupleQuery laxCardinalityQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+			query.setLength(0);
+			query.append(" PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> \n");
+			query.append("ASK \n");
+			query.append(" WHERE { ?testURI  mf:resultCardinality mf:LaxCardinality .} \n");
+			BooleanQuery laxCardinalityQuery = con.prepareBooleanQuery(query.toString());
 
-		LOGGER.debug("evaluating query..");
-		TupleQueryResult testCases = testCaseQuery.evaluate();
-		while (testCases.hasNext()) {
-			BindingSet bindingSet = testCases.next();
+			LOGGER.debug("evaluating query..");
+			try (TupleQueryResult testCases = testCaseQuery.evaluate()) {
+				for (BindingSet testCase : testCases) {
+					IRI testURI = (IRI) testCase.getValue("testURI");
+					String testName = testCase.getValue("testName").stringValue();
+					String resultFile = testCase.getValue("resultFile").stringValue();
+					String queryFile = testCase.getValue("queryFile").stringValue();
+					IRI defaultGraphURI = (IRI) testCase.getValue("defaultGraph");
+					Value action = testCase.getValue("action");
+					Value ordered = testCase.getValue("ordered");
 
-			IRI testURI = (IRI) bindingSet.getValue("testURI");
-			String testName = bindingSet.getValue("testName").stringValue();
-			String resultFile = bindingSet.getValue("resultFile").stringValue();
-			String queryFile = bindingSet.getValue("queryFile").stringValue();
-			IRI defaultGraphURI = (IRI) bindingSet.getValue("defaultGraph");
-			Value action = bindingSet.getValue("action");
-			Value ordered = bindingSet.getValue("ordered");
+					LOGGER.debug("found test case : {}", testName);
 
-			LOGGER.debug("found test case : {}", testName);
+					SimpleDataset dataset = null;
 
-			// Query named graphs
-			namedGraphsQuery.setBinding("action", action);
-			TupleQueryResult namedGraphs = namedGraphsQuery.evaluate();
+					// Query named graphs
+					namedGraphsQuery.setBinding("action", action);
+					try (TupleQueryResult namedGraphs = namedGraphsQuery.evaluate()) {
+						if (defaultGraphURI != null || namedGraphs.hasNext()) {
+							dataset = new SimpleDataset();
+							if (defaultGraphURI != null) {
+								dataset.addDefaultGraph(defaultGraphURI);
+							}
+							while (namedGraphs.hasNext()) {
+								BindingSet graphBindings = namedGraphs.next();
+								IRI namedGraphURI = (IRI) graphBindings.getValue("graph");
+								LOGGER.debug(" adding named graph : {}", namedGraphURI);
+								dataset.addNamedGraph(namedGraphURI);
+							}
+						}
+					}
 
-			SimpleDataset dataset = null;
+					// Check for lax-cardinality conditions
+					boolean laxCardinality = false;
+					laxCardinalityQuery.setBinding("testURI", testURI);
+					laxCardinality = laxCardinalityQuery.evaluate();
 
-			if (defaultGraphURI != null || namedGraphs.hasNext()) {
-				dataset = new SimpleDataset();
+					// if this is enabled, RDF4J passes all tests, showing that the only
+					// difference is the semantics of arbitrary-length
+					// paths
+					/*
+					 * if (!laxCardinality) { // property-path tests always with lax cardinality because Sesame filters
+					 * out duplicates by design if (testURI.stringValue().contains("property-path")) { laxCardinality =
+					 * true; } }
+					 */
 
-				if (defaultGraphURI != null) {
-					dataset.addDefaultGraph(defaultGraphURI);
+					// Two SPARQL distinctness tests fail in RDF-1.1 if the only difference
+					// is in the number of results
+					if (!laxCardinality) {
+						if (testURI.stringValue().contains("distinct/manifest#distinct-2")
+								|| testURI.stringValue().contains("distinct/manifest#distinct-9")) {
+							laxCardinality = true;
+						}
+					}
+
+					LOGGER.debug("testURI={} name={} queryFile={}", testURI.stringValue(), testName, queryFile);
+
+					// check if we should test for query result ordering
+					boolean checkOrder = false;
+					if (ordered != null) {
+						checkOrder = Boolean.parseBoolean(ordered.stringValue());
+					}
+
+					SPARQLQueryTest test = factory.createSPARQLQueryTest(testURI.stringValue(), testName, queryFile,
+							resultFile, dataset, laxCardinality, checkOrder);
+					if (test != null) {
+						suite.addTest(test);
+					}
 				}
-
-				while (namedGraphs.hasNext()) {
-					BindingSet graphBindings = namedGraphs.next();
-					IRI namedGraphURI = (IRI) graphBindings.getValue("graph");
-					LOGGER.debug(" adding named graph : {}", namedGraphURI);
-					dataset.addNamedGraph(namedGraphURI);
-				}
-			}
-
-			// Check for lax-cardinality conditions
-			boolean laxCardinality = false;
-			laxCardinalityQuery.setBinding("testURI", testURI);
-			TupleQueryResult laxCardinalityResult = laxCardinalityQuery.evaluate();
-			try {
-				laxCardinality = laxCardinalityResult.hasNext();
-			} finally {
-				laxCardinalityResult.close();
-			}
-
-			// if this is enabled, Sesame passes all tests, showing that the only
-			// difference is the semantics of arbitrary-length
-			// paths
-			/*
-			 * if (!laxCardinality) { // property-path tests always with lax cardinality because Sesame filters out
-			 * duplicates by design if (testURI.stringValue().contains("property-path")) { laxCardinality = true; } }
-			 */
-
-			// Two SPARQL distinctness tests fail in RDF-1.1 if the only difference
-			// is in the number of results
-			if (!laxCardinality) {
-				if (testURI.stringValue().contains("distinct/manifest#distinct-2")
-						|| testURI.stringValue().contains("distinct/manifest#distinct-9")) {
-					laxCardinality = true;
-				}
-			}
-
-			LOGGER.debug("testURI={} name={} queryFile={}", testURI.stringValue(), testName, queryFile);
-
-			// check if we should test for query result ordering
-			boolean checkOrder = false;
-			if (ordered != null) {
-				checkOrder = Boolean.parseBoolean(ordered.stringValue());
-			}
-
-			SPARQLQueryTest test = factory.createSPARQLQueryTest(testURI.stringValue(), testName, queryFile, resultFile,
-					dataset, laxCardinality, checkOrder);
-			if (test != null) {
-				suite.addTest(test);
 			}
 		}
-
-		testCases.close();
-		con.close();
-
 		manifestRep.shutDown();
 		LOGGER.info("Created test suite with " + suite.countTestCases() + " test cases.");
 		return suite;

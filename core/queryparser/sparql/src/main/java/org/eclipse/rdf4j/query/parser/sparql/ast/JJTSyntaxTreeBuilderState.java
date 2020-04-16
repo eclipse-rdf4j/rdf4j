@@ -17,8 +17,8 @@ public class JJTSyntaxTreeBuilderState {
 	private boolean node_created;
 
 	public JJTSyntaxTreeBuilderState() {
-		nodes = new java.util.ArrayList<>();
-		marks = new java.util.ArrayList<>();
+		nodes = new java.util.ArrayList<Node>();
+		marks = new java.util.ArrayList<Integer>();
 		sp = 0;
 		mk = 0;
 	}
@@ -128,4 +128,4 @@ public class JJTSyntaxTreeBuilderState {
 		}
 	}
 }
-/* JavaCC - OriginalChecksum=12f3991b214b2e6c8c7298f11228dbc7 (do not edit this line) */
+/* JavaCC - OriginalChecksum=1e5a09b86097bc3480ddaf59d3a653ea (do not edit this line) */

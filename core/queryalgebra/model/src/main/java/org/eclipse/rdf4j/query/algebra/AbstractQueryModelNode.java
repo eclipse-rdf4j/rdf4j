@@ -27,6 +27,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private boolean isGraphPatternGroup;
 
+	private double resultSizeEstimate = -1;
+
 	/*---------*
 	 * Methods *
 	 *---------*/
@@ -43,7 +45,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#isGraphPatternGroup()
 	 */
 	@Override
@@ -53,7 +55,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#setGraphPatternGroup(boolean)
 	 */
 	@Override
@@ -132,4 +134,34 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	protected boolean nullEquals(Object o1, Object o2) {
 		return o1 == o2 || o1 != null && o1.equals(o2);
 	}
+
+	@Override
+	public double getResultSizeEstimate() {
+		return resultSizeEstimate;
+	}
+
+	@Override
+	public void setResultSizeEstimate(double resultSizeEstimate) {
+		this.resultSizeEstimate = resultSizeEstimate;
+	}
+
+	/**
+	 *
+	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+	 */
+	static String toHumanReadbleNumber(double number) {
+		String humanReadbleString;
+		if (number > 1_000_000) {
+			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
+		} else if (number > 1_000) {
+			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
+		} else if (number > 0) {
+			humanReadbleString = Math.round(number) + "";
+		} else {
+			humanReadbleString = "UNKNOWN";
+		}
+
+		return humanReadbleString;
+	}
+
 }

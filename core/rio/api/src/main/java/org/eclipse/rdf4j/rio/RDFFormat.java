@@ -56,6 +56,16 @@ public class RDFFormat extends FileFormat {
 	public static final boolean NO_CONTEXTS = false;
 
 	/**
+	 * Indicates that RDF* triples can be serialized natively for this format.
+	 */
+	public static final boolean SUPPORTS_RDF_STAR = true;
+
+	/**
+	 * Indicates that RDF* triples will NOT be serialized natively for this format.
+	 */
+	public static final boolean NO_RDF_STAR = false;
+
+	/**
 	 * The <a href="http://www.w3.org/TR/rdf-syntax-grammar/">RDF/XML</a> file format.
 	 * <p>
 	 * Several file extensions are accepted for RDF/XML documents, including <code>.rdf</code>, <code>.rdfs</code> (for
@@ -70,7 +80,7 @@ public class RDFFormat extends FileFormat {
 			Arrays.asList("application/rdf+xml", "application/xml", "text/xml"), StandardCharsets.UTF_8,
 			Arrays.asList("rdf", "rdfs", "owl", "xml"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_XML"), SUPPORTS_NAMESPACES,
-			NO_CONTEXTS);
+			NO_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/n-triples/">N-Triples</a> file format.
@@ -84,7 +94,7 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat NTRIPLES = new RDFFormat("N-Triples",
 			Arrays.asList("application/n-triples", "text/plain"), StandardCharsets.UTF_8, Arrays.asList("nt"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N-Triples"), NO_NAMESPACES,
-			NO_CONTEXTS);
+			NO_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/turtle/">Turtle</a> file format.
@@ -98,7 +108,21 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat TURTLE = new RDFFormat("Turtle", Arrays.asList("text/turtle", "application/x-turtle"),
 			StandardCharsets.UTF_8, Arrays.asList("ttl"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/Turtle"), SUPPORTS_NAMESPACES,
-			NO_CONTEXTS);
+			NO_CONTEXTS, NO_RDF_STAR);
+
+	/**
+	 * The Turtle* (TurtleStar) file format, a Turtle-based RDF serialization format that supports RDF* triples.
+	 * <p>
+	 * The file extension <code>.ttls</code> is recommended for Turtle* documents. The media type is
+	 * <code>application/x-turtlestar</code> and the encoding is UTF-8.
+	 * </p>
+	 *
+	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
+	 *      RDF</a>
+	 */
+	public static final RDFFormat TURTLESTAR = new RDFFormat("Turtle*",
+			Arrays.asList("text/x-turtlestar", "application/x-turtlestar"), StandardCharsets.UTF_8,
+			Arrays.asList("ttls"), SUPPORTS_NAMESPACES, NO_CONTEXTS, SUPPORTS_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TeamSubmission/n3/">N3/Notation3</a> file format.
@@ -112,7 +136,7 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat N3 = new RDFFormat("N3", Arrays.asList("text/n3", "text/rdf+n3"),
 			StandardCharsets.UTF_8, Arrays.asList("n3"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N3"), SUPPORTS_NAMESPACES,
-			NO_CONTEXTS);
+			NO_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://swdev.nokia.com/trix/">TriX</a> file format, an XML-based RDF serialization format that
@@ -125,7 +149,8 @@ public class RDFFormat extends FileFormat {
 	 * @see <a href="http://swdev.nokia.com/trix/">TriX: RDF Triples in XML</a>
 	 */
 	public static final RDFFormat TRIX = new RDFFormat("TriX", Arrays.asList("application/trix"),
-			StandardCharsets.UTF_8, Arrays.asList("xml", "trix"), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS);
+			StandardCharsets.UTF_8, Arrays.asList("xml", "trix"), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS,
+			NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/trig/">TriG</a> file format, a Turtle-based RDF serialization format that
@@ -140,7 +165,21 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat TRIG = new RDFFormat("TriG", Arrays.asList("application/trig", "application/x-trig"),
 			StandardCharsets.UTF_8, Arrays.asList("trig"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/TriG"), SUPPORTS_NAMESPACES,
-			SUPPORTS_CONTEXTS);
+			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+
+	/**
+	 * The TriG* (TriGStar) file format, a TriG-based RDF serialization format that supports RDF* triples. This builds
+	 * upon the idea for the Turtle* format but adds support for named graphs.
+	 * <p>
+	 * The file extension <code>.trigs</code> is recommended for TriG* documents. The media type is
+	 * <code>application/x-trigstar</code> and the encoding is UTF-8.
+	 * </p>
+	 *
+	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
+	 *      RDF</a>
+	 */
+	public static final RDFFormat TRIGSTAR = new RDFFormat("TriG*", "application/x-trigstar",
+			StandardCharsets.UTF_8, "trigs", SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS, SUPPORTS_RDF_STAR);
 
 	/**
 	 * A binary RDF format.
@@ -152,7 +191,7 @@ public class RDFFormat extends FileFormat {
 	 * @see <a href="http://rivuli-development.com/2011/11/binary-rdf-in-sesame/">Binary RDF in Sesame</a>
 	 */
 	public static final RDFFormat BINARY = new RDFFormat("BinaryRDF", Arrays.asList("application/x-binary-rdf"), null,
-			Arrays.asList("brf"), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS);
+			Arrays.asList("brf"), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS, SUPPORTS_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/n-quads/">N-Quads</a> file format, an RDF serialization format that supports
@@ -167,7 +206,7 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat NQUADS = new RDFFormat("N-Quads",
 			Arrays.asList("application/n-quads", "text/x-nquads", "text/nquads"), StandardCharsets.UTF_8,
 			Arrays.asList("nq"), SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N-Quads"),
-			NO_NAMESPACES, SUPPORTS_CONTEXTS);
+			NO_NAMESPACES, SUPPORTS_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/json-ld/">JSON-LD</a> file format, an RDF serialization format that supports
@@ -182,7 +221,7 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat JSONLD = new RDFFormat("JSON-LD", Arrays.asList("application/ld+json"),
 			StandardCharsets.UTF_8, Arrays.asList("jsonld"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/JSON-LD"), SUPPORTS_NAMESPACES,
-			SUPPORTS_CONTEXTS);
+			SUPPORTS_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/rdf-json/" >RDF/JSON</a> file format, an RDF serialization format that supports
@@ -197,7 +236,7 @@ public class RDFFormat extends FileFormat {
 	public static final RDFFormat RDFJSON = new RDFFormat("RDF/JSON", Arrays.asList("application/rdf+json"),
 			StandardCharsets.UTF_8, Arrays.asList("rj"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_JSON"), NO_NAMESPACES,
-			SUPPORTS_CONTEXTS);
+			SUPPORTS_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.w3.org/TR/rdfa-syntax/">RDFa</a> file format, an RDF serialization format.
@@ -212,7 +251,7 @@ public class RDFFormat extends FileFormat {
 			Arrays.asList("application/xhtml+xml", "application/html", "text/html"), StandardCharsets.UTF_8,
 			Arrays.asList("xhtml", "html"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDFa"), SUPPORTS_NAMESPACES,
-			NO_CONTEXTS);
+			NO_CONTEXTS, NO_RDF_STAR);
 
 	/**
 	 * The <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT</a> file format, an RDF serialization format.
@@ -224,7 +263,7 @@ public class RDFFormat extends FileFormat {
 	 */
 	public static final RDFFormat HDT = new RDFFormat("HDT",
 			Arrays.asList("application/vnd.hdt"), null, Arrays.asList("hdt"), null,
-			SUPPORTS_NAMESPACES, NO_CONTEXTS);
+			SUPPORTS_NAMESPACES, NO_CONTEXTS, NO_RDF_STAR);
 
 	/*----------------*
 	 * Static methods *
@@ -303,6 +342,11 @@ public class RDFFormat extends FileFormat {
 	private final boolean supportsContexts;
 
 	/**
+	 * Flag indicating whether the RDFFormat can encode RDF* triples natively.
+	 */
+	private final boolean supportsRDFStar;
+
+	/**
 	 * A standard URI published by the W3C or another standards body to uniquely denote this format.
 	 * 
 	 * @see <a href="http://www.w3.org/ns/formats/">Unique URIs for File Formats</a>
@@ -327,11 +371,13 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
-			boolean supportsContexts) {
+			boolean supportsContexts, boolean supportsRDFStar) {
 		this(name, Arrays.asList(mimeType), charset, Arrays.asList(fileExtension), supportsNamespaces,
-				supportsContexts);
+				supportsContexts, supportsRDFStar);
 	}
 
 	/**
@@ -348,10 +394,13 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions,
-			boolean supportsNamespaces, boolean supportsContexts) {
-		this(name, Arrays.asList(mimeType), charset, fileExtensions, supportsNamespaces, supportsContexts);
+			boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
+		this(name, Arrays.asList(mimeType), charset, fileExtensions, supportsNamespaces, supportsContexts,
+				supportsRDFStar);
 	}
 
 	/**
@@ -369,10 +418,13 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
-			boolean supportsNamespaces, boolean supportsContexts) {
-		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts);
+			boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
+		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts,
+				supportsRDFStar);
 	}
 
 	/**
@@ -392,14 +444,17 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
-			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts) {
+			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
 		super(name, mimeTypes, charset, fileExtensions);
 
 		this.standardURI = standardURI;
 		this.supportsNamespaces = supportsNamespaces;
 		this.supportsContexts = supportsContexts;
+		this.supportsRDFStar = supportsRDFStar;
 	}
 
 	/*---------*
@@ -418,6 +473,13 @@ public class RDFFormat extends FileFormat {
 	 */
 	public boolean supportsContexts() {
 		return supportsContexts;
+	}
+
+	/**
+	 * Return <tt>true</tt> if the RDFFormat supports the encoding of RDF* triples natively.
+	 */
+	public boolean supportsRDFStar() {
+		return supportsRDFStar;
 	}
 
 	/**

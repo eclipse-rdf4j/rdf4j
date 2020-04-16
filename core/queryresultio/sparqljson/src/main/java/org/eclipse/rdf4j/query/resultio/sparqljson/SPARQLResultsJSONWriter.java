@@ -31,7 +31,7 @@ public class SPARQLResultsJSONWriter extends AbstractSPARQLJSONWriter implements
 	 *---------*/
 
 	@Override
-	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.JSON;
 	}
 

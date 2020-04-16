@@ -7,16 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfjson;
 
-import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.InputStream;
-import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 
@@ -28,23 +25,10 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 
 	@Override
-	protected InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements) throws Exception {
-		return writeRDFJSON(unknownDatatypeStatements);
-	}
-
-	@Override
-	protected InputStream getKnownDatatypeStream(Model knownDatatypeStatements) throws Exception {
-		return writeRDFJSON(knownDatatypeStatements);
-	}
-
-	@Override
-	protected InputStream getUnknownLanguageStream(Model unknownLanguageStatements) throws Exception {
-		return writeRDFJSON(unknownLanguageStatements);
-	}
-
-	@Override
-	protected InputStream getKnownLanguageStream(Model knownLanguageStatements) throws Exception {
-		return writeRDFJSON(knownLanguageStatements);
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
+		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
+				"src/test/resources/testcases/rdfjson/rdfjson-RDF-langString-no-language-test.rj");
+		return RDFLangStringWithNoLanguageStatements;
 	}
 
 	@Override
@@ -52,24 +36,8 @@ public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 		return new RDFJSONParser();
 	}
 
-	/**
-	 * Helper method to write the given model to RDFJSON and return an InputStream containing the results.
-	 * 
-	 * @param statements
-	 * @return An {@link InputStream} containing the results.
-	 * @throws RDFHandlerException
-	 */
-	private InputStream writeRDFJSON(Model statements) throws RDFHandlerException {
-		StringWriter writer = new StringWriter();
-
-		RDFWriter rdfjsonWriter = new RDFJSONWriter(writer, RDFFormat.RDFJSON);
-		rdfjsonWriter.startRDF();
-		for (Statement nextStatement : statements) {
-			rdfjsonWriter.handleStatement(nextStatement);
-		}
-		rdfjsonWriter.endRDF();
-
-		return new ByteArrayInputStream(writer.toString().getBytes(StandardCharsets.UTF_8));
+	@Override
+	protected RDFWriter createWriter(OutputStream output) {
+		return new RDFJSONWriter(output, RDFFormat.RDFJSON);
 	}
-
 }

@@ -22,9 +22,13 @@ import junit.framework.TestCase;
 
 /**
  * A SHACL constraint test suite, created by reading in a W3C working-group style manifest.
- * 
+ *
+ * @deprecated This test suite is not maintained. Use {@see org.eclipse.rdf4j.sail.shacl.W3cComplianceTest} instead. We
+ *             may un-deprecate this suite in the future.
+ *
  * @author James Leigh
  */
+@Deprecated
 public abstract class AbstractSHACLTest extends TestCase {
 
 	/*-----------*
@@ -89,7 +93,7 @@ public abstract class AbstractSHACLTest extends TestCase {
 
 	/**
 	 * Creates a new un-initialized Sail stack
-	 * 
+	 *
 	 * @return a new un-initialized Sail stack
 	 */
 	protected abstract Sail newSail();

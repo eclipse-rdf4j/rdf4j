@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
+import java.net.URL;
+
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
@@ -20,14 +22,19 @@ import junit.framework.Test;
 public class FederationSPARQL11QueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
+
+		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.1-w3c/manifest-all.ttl");
+
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return new FederationSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality);
 			}
 
+			@Override
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
@@ -44,7 +51,7 @@ public class FederationSPARQL11QueryTest extends SPARQLQueryTest {
 						laxCardinality, checkOrder, ignoredTests);
 			}
 			// skip 'service' tests for now since they require presence of remote sparql endpoints.
-		}, true, true, false, "service");
+		}, manifestUrl.toString(), true, "service");
 	}
 
 	public FederationSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,

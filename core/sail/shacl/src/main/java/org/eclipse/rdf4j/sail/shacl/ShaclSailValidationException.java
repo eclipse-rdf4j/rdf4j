@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
@@ -19,7 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import java.util.ArrayDeque;
 import java.util.List;
 
-public class ShaclSailValidationException extends SailException {
+public class ShaclSailValidationException extends SailException implements ValidationException {
 
 	private List<Tuple> invalidTuples;
 
@@ -31,7 +32,7 @@ public class ShaclSailValidationException extends SailException {
 	/**
 	 * @return A Model containing the validation report as specified by the SHACL Recommendation
 	 */
-	@SuppressWarnings("WeakerAccess")
+	@Override
 	public Model validationReportAsModel() {
 
 		ValidationReport validationReport = getValidationReport();
@@ -43,10 +44,13 @@ public class ShaclSailValidationException extends SailException {
 	}
 
 	/**
+	 * @deprecated The returned ValidationReport is planned to be moved to a different package and this method is
+	 *             planned to return that class.
+	 *
 	 * @return A ValidationReport Java object that describes what failed and can optionally be converted to a Model as
 	 *         specified by the SHACL Recommendation
 	 */
-	@SuppressWarnings("WeakerAccess")
+	@Deprecated
 	public ValidationReport getValidationReport() {
 		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
 

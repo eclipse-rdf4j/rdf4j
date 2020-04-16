@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 
 /**
  * A query optimizer that re-orders nested Joins.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -47,7 +47,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 * 
+	 *
 	 * @throws StoreException
 	 */
 	@Override
@@ -177,16 +177,16 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
-			double lowestCardinality = Double.MAX_VALUE;
+			double lowestCost = Double.MAX_VALUE;
 			TupleExpr result = null;
 
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
-				double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
+				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
 
-				if (cardinality < lowestCardinality) {
+				if (cost < lowestCost) {
 					// More specific path expression found
-					lowestCardinality = cardinality;
+					lowestCost = cost;
 					result = tupleExpr;
 				}
 			}
@@ -194,9 +194,9 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 			return result;
 		}
 
-		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
-			double cardinality = cardinalityMap.get(tupleExpr);
+			double cost = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);
 
@@ -206,19 +206,19 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 			int nonConstantCount = vars.size() - constantVars.size();
 			if (nonConstantCount > 0) {
 				double exp = (double) unboundVars.size() / nonConstantCount;
-				cardinality = Math.pow(cardinality, exp);
+				cost = Math.pow(cost, exp);
 			}
 
 			if (unboundVars.isEmpty()) {
 				// Prefer patterns with more bound vars
 				if (nonConstantCount > 0) {
-					cardinality /= nonConstantCount;
+					cost /= nonConstantCount;
 				}
 			} else {
 				// Prefer patterns that bind variables from other tuple expressions
 				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
 				if (foreignVarFreq > 0) {
-					cardinality /= foreignVarFreq;
+					cost /= foreignVarFreq;
 				}
 			}
 
@@ -229,7 +229,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 			// cardinality /= distinctUnboundVars.size();
 			// }
 
-			return cardinality;
+			return cost;
 		}
 
 		protected List<Var> getConstantVars(Iterable<Var> vars) {

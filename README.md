@@ -15,13 +15,22 @@ For installation and usage instructions of the RDF4J Java libaries, see [Program
 
 ### Building from source
 
-To build the RDF4J project, including onejar and SDK files, from source, run:
+RDF4J is a multi-module [maven](https://maven.apache.org/index.html) project. It can be compiled, tested, and installed with the [usual maven lifecycle phases](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html) from the command line, for example:
 
-     `mvn -Passembly package`
+- `mvn verify` - compiles and runs all tests
+- `mvn package` - compiles, tests, and packages all modules
+- `mvn install` - compiles, tests, packages, and installs all artifacts in the local maven repository
+- `mvn -Pquick install` - compiles, packages and installs everything (skipping test execution)
 
-(optionally add the `-Pquick` flag to skip executing tests)
+These commands can be run from the project root to execute on the entire project or (if you're only interested in working with a particular module) from any module's subdirectory. 
 
-SDK and onejar will be available in `assembly/target`. Individual module jars and wars will be in `target/` in their respective modules. 
+To build the full RDF4J project, including onejar and SDK files and full aggregated javadoc, from source, run:
+
+     mvn -Passembly package
+
+The SDK and onejar will be available in `assembly/target`. Individual module jars and wars will be in `target/` in their respective modules. 
+
+Modern IDEs like Eclipse, IntelliJ IDEA, or Netbeans can of course also be used to build, test, and run (parts of) the project. 
 
 ## Keen to contribute?
 
@@ -35,7 +44,7 @@ The short version:
 1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this by logging into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on "Eclipse Contributor Agreement"; and Complete the form. Be sure to use the same email address when you register for the account that you intend to use on Git commit records. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 2. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix - or if you're picking up an existing issue, comment on that issue that you intend to provide a solution for it.
 3. Fork the GitHub repository.
-4. Create a new branch (starting from master) for your changes. 
+4. Create a new branch (starting from master) for your changes. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number.
 5. Make your changes on this branch. Apply the [rdf4j code formatting guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
 6. **sign off** every commit (using the `-s` flag).
 7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).

@@ -22,6 +22,7 @@ import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.QUERY_EVALUATION_ERROR;
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.REPEAT_RECORD_MARKER;
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TABLE_END_RECORD_MARKER;
+import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TRIPLE_RECORD_MARKER;
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.URI_RECORD_MARKER;
 
 import java.io.DataInputStream;
@@ -41,6 +42,8 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -178,6 +181,9 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 				case DATATYPE_LITERAL_RECORD_MARKER:
 					value = readLiteral(recordTypeMarker);
 					break;
+				case TRIPLE_RECORD_MARKER:
+					value = readTriple();
+					break;
 				default:
 					throw new IOException("Unkown record type: " + recordTypeMarker);
 				}
@@ -311,5 +317,45 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		CharBuffer charBuf = charsetDecoder.decode(byteBuf);
 
 		return charBuf.toString();
+	}
+
+	private Triple readTriple() throws IOException {
+		Value subject = readDirectValue();
+		if (!(subject instanceof Resource)) {
+			throw new IOException("Unexpected value type: " + subject);
+		}
+
+		Value predicate = readDirectValue();
+		if (!(predicate instanceof IRI)) {
+			throw new IOException("Unexpected value type: " + predicate);
+		}
+
+		Value object = readDirectValue();
+
+		return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+	}
+
+	private Value readDirectValue() throws IOException {
+		int recordTypeMarker = this.in.readByte();
+
+		switch (recordTypeMarker) {
+		case NAMESPACE_RECORD_MARKER:
+			processNamespace();
+			return readDirectValue();
+		case QNAME_RECORD_MARKER:
+			return readQName();
+		case URI_RECORD_MARKER:
+			return readURI();
+		case BNODE_RECORD_MARKER:
+			return readBnode();
+		case PLAIN_LITERAL_RECORD_MARKER:
+		case LANG_LITERAL_RECORD_MARKER:
+		case DATATYPE_LITERAL_RECORD_MARKER:
+			return readLiteral(recordTypeMarker);
+		case TRIPLE_RECORD_MARKER:
+			return readTriple();
+		default:
+			throw new IOException("Unexpected record type: " + recordTypeMarker);
+		}
 	}
 }

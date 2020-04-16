@@ -19,6 +19,8 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.sort.FieldSortBuilder;
+import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,6 +117,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 
 		SearchResponse searchResponse = clientProvider.getClient()
 				.prepareSearch(index)
+				.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
 				.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
 				.setSize(10000)
 				.get();

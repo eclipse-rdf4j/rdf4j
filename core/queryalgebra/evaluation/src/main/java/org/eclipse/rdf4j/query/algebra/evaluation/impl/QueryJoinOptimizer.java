@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -28,9 +21,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * A query optimizer that re-orders nested Joins.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -48,7 +48,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 * 
+	 *
 	 * @param tupleExpr
 	 */
 	@Override
@@ -109,7 +109,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 					for (TupleExpr tupleExpr : joinArgs) {
-						cardinalityMap.put(tupleExpr, statistics.getCardinality(tupleExpr));
+						double cardinality = statistics.getCardinality(tupleExpr);
+						tupleExpr.setResultSizeEstimate(cardinality);
+						cardinalityMap.put(tupleExpr, cardinality);
 						if (tupleExpr instanceof ZeroLengthPath) {
 							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());
 						} else {
@@ -231,17 +233,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * maximized.
 		 * <p>
 		 * Example: reordering
-		 * 
+		 *
 		 * <pre>
 		 *   [f] [a b c] [e f] [a d] [b e]
 		 * </pre>
-		 * 
+		 *
 		 * should result in:
-		 * 
+		 *
 		 * <pre>
 		 *   [a b c] [a d] [b e] [e f] [f]
 		 * </pre>
-		 * 
+		 *
 		 * @param subselects the original ordering of expressions
 		 * @return the optimized ordering of expressions
 		 */
@@ -420,13 +422,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					cardinality /= 1 + foreignVarFreq;
 				}
 			}
-
-			// Prefer patterns that bind more variables
-			// List<Var> distinctUnboundVars = getUnboundVars(new
-			// HashSet<Var>(vars));
-			// if (distinctUnboundVars.size() >= 2) {
-			// cardinality /= distinctUnboundVars.size();
-			// }
 
 			return cardinality;
 		}

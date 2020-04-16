@@ -16,16 +16,18 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValuesBackedNode;
 
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * sh:targetNode
@@ -34,9 +36,9 @@ import java.util.Set;
  */
 public class TargetNode extends NodeShape {
 
-	private final Set<Value> targetNodeSet;
+	private final TreeSet<Value> targetNodeSet;
 
-	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<Value> targetNode) {
+	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, TreeSet<Value> targetNode) {
 		super(id, connection, deactivated);
 		this.targetNodeSet = targetNode;
 		assert !this.targetNodeSet.isEmpty();
@@ -56,9 +58,8 @@ public class TargetNode extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode parent = connectionsGroup.getCachedNodeFor(
-				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
-		return new Unique(new TrimTuple(parent, 0, 1));
+
+		return new ValuesBackedNode(targetNodeSet);
 
 	}
 
@@ -71,7 +72,7 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		return true;
 	}
 
@@ -79,32 +80,33 @@ public class TargetNode extends NodeShape {
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
-		return targetNodeSet.stream()
-				.map(value -> {
-					if (value instanceof Resource) {
-						return "<" + value + ">";
+		StringBuilder sb = new StringBuilder();
+		sb.append("VALUES ( ").append(subjectVariable).append(" ) {\n");
+
+		targetNodeSet.stream()
+				.map(targetNode -> {
+					if (targetNode instanceof Resource) {
+						return "<" + targetNode + ">";
 					}
-					if (value instanceof Literal) {
-						IRI datatype = ((Literal) value).getDatatype();
+					if (targetNode instanceof Literal) {
+						IRI datatype = ((Literal) targetNode).getDatatype();
 						if (datatype == null) {
-							return "\"" + value.stringValue() + "\"";
+							return "\"" + targetNode.stringValue() + "\"";
 						}
-						if (((Literal) value).getLanguage().isPresent()) {
-							return "\"" + value.stringValue() + "\"@" + ((Literal) value).getLanguage().get();
+						if (((Literal) targetNode).getLanguage().isPresent()) {
+							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
 						}
-						return "\"" + value.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
 					}
 
-					throw new IllegalStateException(value.getClass().getSimpleName());
+					throw new IllegalStateException(targetNode.getClass().getSimpleName());
 
 				})
-				.map(r -> "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + subjectVariable + " ?b1 "
-						+ objectVariable + " .}}}"
-						+ "\n UNION \n"
-						+ "{{ select * where {BIND(" + r + " as " + subjectVariable + "). " + objectVariable + " ?b1 "
-						+ subjectVariable + " .}}}")
-				.reduce((a, b) -> a + " UNION " + b)
-				.get();
+				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
+
+		sb.append("}\n");
+
+		return sb.toString();
 
 	}
 
@@ -137,6 +139,7 @@ public class TargetNode extends NodeShape {
 	public String toString() {
 		return "TargetNode{" +
 				"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
+				", id=" + id +
 				'}';
 	}
 }

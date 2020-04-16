@@ -89,6 +89,7 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 		return "MinExclusivePropertyShape{" +
 				"minExclusive=" + minExclusive +
 				", path=" + getPath() +
+				", id=" + id +
 				'}';
 	}
 }

@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
@@ -37,8 +39,6 @@ import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
 import com.github.jsonldjava.core.JsonLdProcessor;
 import com.github.jsonldjava.utils.JsonUtils;
-import java.util.Collection;
-import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * An RDFWriter that links to {@link JSONLDInternalRDFParser}.
@@ -65,13 +65,15 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
+	 * Create a JSONLDWriter using a {@link java.io.OutputStream}
 	 *
 	 * @param outputStream The OutputStream to write to.
 	 * @param baseURI      base URI
 	 */
 	public JSONLDWriter(OutputStream outputStream, String baseURI) {
-		this(new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)), baseURI);
+		super(outputStream);
+		this.baseURI = baseURI;
+		this.writer = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
 	}
 
 	/**
@@ -96,17 +98,20 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+		checkWritingStarted();
 		model.setNamespace(prefix, uri);
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		statementCollector.clear();
 		model.clear();
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		final JSONLDInternalRDFParser serialiser = new JSONLDInternalRDFParser();
 		try {
 			Object output = JsonLdProcessor.fromRDF(model, serialiser);
@@ -158,12 +163,13 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		statementCollector.handleStatement(st);
 	}
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 	}
 
 	@Override

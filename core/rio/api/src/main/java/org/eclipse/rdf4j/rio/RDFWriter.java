@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.rio;
 import java.io.OutputStream;
 import java.io.Writer;
 import java.util.Collection;
+import java.util.Optional;
 
 /**
  * An interface for RDF document writers. To allow RDF document writers to be created through reflection, all
@@ -22,6 +23,13 @@ public interface RDFWriter extends RDFHandler {
 	 * Gets the RDF format that this RDFWriter uses.
 	 */
 	public RDFFormat getRDFFormat();
+
+	/**
+	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
+	 * 
+	 * @return an optional OutputStream
+	 */
+	public Optional<OutputStream> getOutputStream();
 
 	/**
 	 * Sets all supplied writer configuration options.

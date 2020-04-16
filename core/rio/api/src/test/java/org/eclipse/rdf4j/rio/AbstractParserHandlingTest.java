@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -34,6 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
+import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.After;
 import org.junit.Before;
@@ -98,6 +101,11 @@ public abstract class AbstractParserHandlingTest {
 	 */
 	private static final String KNOWN_LANGUAGE_TAG = "en-AU";
 
+	/**
+	 * Test URI used for testing support for handling RDF langString with no Language tag.
+	 */
+	private static final IRI EMPTY_DATATYPE_URI = null;
+
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private RDFParser testParser;
@@ -147,6 +155,18 @@ public abstract class AbstractParserHandlingTest {
 	 * @return An InputStream based on the given parameters.
 	 */
 	protected InputStream getKnownLanguageStream(Model model) throws Exception {
+		return serialize(model);
+	}
+
+	/**
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
+	 * RDFParser returned by {@link #getParser()}.
+	 * 
+	 * @param RDFLangStringWithNoLanguageStatements A {@link Model} containing statements which all contain statements
+	 *                                              that have RDF langString with no language tag.
+	 * @return An InputStream based on the given parameters.
+	 */
+	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		return serialize(model);
 	}
 
@@ -868,6 +888,19 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	@Test
+	public final void testNoLanguageWithRDFLangStringNoFailCase1() throws Exception {
+		Model expectedModel = getTestModel(KNOWN_LANGUAGE_VALUE, EMPTY_DATATYPE_URI);
+		InputStream input = getRDFLangStringWithNoLanguageStream(expectedModel);
+
+		testParser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
+
+		testParser.parse(input, BASE_URI);
+
+		assertErrorListener(0, 0, 0);
+		assertModel(expectedModel);
+	}
+
+	@Test
 	public final void testSkolemization() throws Exception {
 		Model expectedModel = new LinkedHashModel();
 		BNode subj = vf.createBNode();
@@ -885,6 +918,47 @@ public abstract class AbstractParserHandlingTest {
 		assertModel(expectedModel); // isomorphic
 		assertNotEquals(new HashSet<>(expectedModel), new HashSet<>(testStatements)); // blank nodes not preserved
 		assertTrue(Models.subjectBNodes(testStatements).isEmpty()); // skolemized
+	}
+
+	@Test
+	public final void testRDFStarCompatibility() throws Exception {
+		Model expectedModel = new LinkedHashModel();
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
+		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
+		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
+		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
+		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
+				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+				vf.createIRI("urn:f"));
+		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
+
+		// Default: formats with RDF* support handle it natively and non-RDF* use a compatibility encoding
+		InputStream input1 = serialize(expectedModel);
+		testParser.parse(input1, BASE_URI);
+		assertErrorListener(0, 0, 0);
+		assertModel(expectedModel);
+
+		testListener.reset();
+		testStatements.clear();
+
+		// Turn off compatibility on parsing: formats with RDF* support will produce RDF* triples,
+		// non-RDF* formats will produce IRIs of the kind urn:rdf4j:triple:xxx
+		InputStream input2 = serialize(expectedModel);
+		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		testParser.parse(input2, BASE_URI);
+		assertErrorListener(0, 0, 0);
+		if (testParser.getRDFFormat().supportsRDFStar()) {
+			assertModel(expectedModel);
+		} else {
+			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
+					vf.createIRI("http://example.com/4")));
+			assertTrue(testStatements.contains(vf.createIRI("http://example.com/5"), DC.RELATION,
+					RDFStarUtil.toRDFEncodedValue(t2)));
+			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
+					RDFStarUtil.toRDFEncodedValue(t3)));
+			assertEquals(3, testStatements.size());
+		}
 	}
 
 	private void assertModel(Model expectedModel) {

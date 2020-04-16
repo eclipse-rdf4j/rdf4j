@@ -34,7 +34,7 @@ import java.util.function.Function;
 public class DistinctModelReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
 
 	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator, Model model,
-			Function<Model, Model> filterable) {
+			Function<Model, Iterator<Statement>> filterable) {
 		this.iterator = iterator;
 		this.model = model;
 		this.filterable = filterable;
@@ -42,7 +42,7 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 
 	private final CloseableIteration<? extends Statement, SailException> iterator;
 	private final Model model;
-	private final Function<Model, Model> filterable;
+	private final Function<Model, Iterator<Statement>> filterable;
 
 	private Iterator<Statement> filteredStatementsIterator;
 
@@ -59,7 +59,10 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 
 			if (filteredStatementsIterator == null) {
 				synchronized (model) {
-					filteredStatementsIterator = new ArrayList<>(filterable.apply(model)).iterator();
+					Iterator<Statement> iterator = filterable.apply(model);
+					ArrayList<Statement> list = new ArrayList<>();
+					iterator.forEachRemaining(list::add);
+					filteredStatementsIterator = list.iterator();
 				}
 			}
 

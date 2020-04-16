@@ -88,6 +88,8 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 		return "DatatypePropertyShape{" +
 				"datatype=" + datatype +
 				", path=" + getPath() +
+				", id=" + id +
+
 				'}';
 	}
 }

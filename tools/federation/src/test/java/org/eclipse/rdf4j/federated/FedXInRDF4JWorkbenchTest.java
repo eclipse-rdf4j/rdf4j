@@ -8,17 +8,23 @@
 package org.eclipse.rdf4j.federated;
 
 import java.io.File;
+import java.util.List;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import com.google.common.collect.Sets;
 
 public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
@@ -97,6 +103,62 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			// simple check: make sure that expected data is present
 			Assertions.assertEquals(30, conn.size());
+		}
+
+		repo.shutDown();
+
+		// temporary workaround: shutdown the federation repository explicitly here to
+		// avoid a long running test. This is because the federation keeps an open
+		// connection to other endpoints hosted in the same server, and the shutdown
+		// sequence is arbitrary.
+		Repository fedx = rdf4jServer.getRepositoryResolver().getRepository(repositoryId);
+		fedx.shutDown();
+	}
+
+	@Test
+	public void testFederationFilter() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		// load some data into endpoint1 and endpoint2
+		loadDataSet(server.getRepository(1), "/tests/data/data1.ttl");
+		loadDataSet(server.getRepository(2), "/tests/data/data2.ttl");
+
+		final String repositoryId = "my-federation";
+		final SPARQLEmbeddedServer rdf4jServer = (SPARQLEmbeddedServer) server;
+		final File dataDir = rdf4jServer.getDataDir();
+		String repoPath = "server/repositories";
+		if (PlatformFactory.getPlatform().dataDirPreserveCase()) {
+			repoPath = "Server/repositories";
+		}
+		final File repositoriesDir = new File(dataDir, repoPath);
+
+		// preparation: add configuration files to the repository
+		File fedXDataDir = new File(repositoriesDir, repositoryId);
+		fedXDataDir.mkdirs();
+
+		FileUtils.copyFile(toFile("/tests/rdf4jserver/config.ttl"), new File(fedXDataDir, "config.ttl"));
+
+		String fedXSparqlUrl = rdf4jServer.getRepositoryUrl(repositoryId);
+		SPARQLRepository repo = new SPARQLRepository(fedXSparqlUrl);
+		repo.init();
+
+		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX ns1: <http://namespace1.org/> "
+				+ "SELECT * WHERE { "
+				+ "?person a foaf:Person ."
+				+ "?person foaf:name ?name .\n"
+				+ "FILTER (?name IN ('Person1', 'Person2')) "
+				+ "}";
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			try (TupleQueryResult tqr = conn.prepareTupleQuery(query).evaluate()) {
+
+				List<BindingSet> res = Iterations.asList(tqr);
+				assertContainsAll(res, "person",
+						Sets.newHashSet(iri("http://namespace1.org/", "Person_1"),
+								iri("http://namespace1.org/", "Person_2")));
+			}
 		}
 
 		repo.shutDown();
