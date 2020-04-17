@@ -600,7 +600,7 @@ public class Models {
 	@Experimental
 	public static Model convertRDFStarToReification(ValueFactory vf, Model model) {
 		Model reificationModel = new LinkedHashModel();
-		convertRDFStarToReification(vf, model, reificationModel::add);
+		convertRDFStarToReification(vf, model, (Consumer<Statement>) reificationModel::add);
 		return reificationModel;
 	}
 
@@ -617,7 +617,7 @@ public class Models {
 	@Experimental
 	public static Model convertRDFStarToReification(ValueFactory vf, Model model, ModelFactory modelFactory) {
 		Model reificationModel = modelFactory.createEmptyModel();
-		convertRDFStarToReification(vf, model, reificationModel::add);
+		convertRDFStarToReification(vf, model, (Consumer<Statement>) reificationModel::add);
 		return reificationModel;
 	}
 
@@ -720,7 +720,7 @@ public class Models {
 	@Experimental
 	public static Model convertReificationToRDFStar(ValueFactory vf, Model model, ModelFactory modelFactory) {
 		Model rdfStarModel = modelFactory.createEmptyModel();
-		convertReificationToRDFStar(vf, model, rdfStarModel::add);
+		convertReificationToRDFStar(vf, model, (Consumer<Statement>) rdfStarModel::add);
 		return rdfStarModel;
 	}
 
