@@ -85,17 +85,27 @@ public class EndpointFactory {
 	public static Endpoint loadSPARQLEndpoint(String endpoint) throws FedXException {
 		try {
 			String id = new URL(endpoint).getHost();
-			if (id.equals("localhost"))
+			if (id.equals("localhost")) {
 				id = id + "_" + new URL(endpoint).getPort();
+			}
 			return loadSPARQLEndpoint("http://" + id, endpoint);
 		} catch (MalformedURLException e) {
 			throw new FedXException("Malformed URL: " + endpoint);
 		}
 	}
 
+
 	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName) throws FedXException {
+		return loadRemoteRepository(repositoryServer, repositoryName, false);
+	}
+
+	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName, boolean writable)
+			throws FedXException {
 		RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();
-		return repProvider.loadEndpoint(new RemoteRepositoryRepositoryInformation(repositoryServer, repositoryName));
+		RemoteRepositoryRepositoryInformation info = new RemoteRepositoryRepositoryInformation(repositoryServer,
+				repositoryName);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
 
 	}
 
@@ -123,7 +133,7 @@ public class EndpointFactory {
 	}
 
 	/**
-	 * Load an {@link EndpointBase} for a given (configured) Repository.
+	 * Load an {@link Endpoint} for a given (configured) Repository.
 	 * <p>
 	 * Note that {@link EndpointType} is set to {@link EndpointType#Other}
 	 * </p>
@@ -212,8 +222,9 @@ public class EndpointFactory {
 	 */
 	public static List<Endpoint> loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
 
-		if (!dataConfig.exists())
+		if (!dataConfig.exists()) {
 			throw new FedXRuntimeException("File does not exist: " + dataConfig.getAbsolutePath());
+		}
 
 		Model graph = new TreeModel();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
