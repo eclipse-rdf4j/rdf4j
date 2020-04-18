@@ -74,7 +74,7 @@ public interface Query extends Operation {
 	 */
 	enum QueryExplainLevel {
 		Unoptimized,
-		Optimizaed,
+		Optimized,
 		Executed
 	}
 

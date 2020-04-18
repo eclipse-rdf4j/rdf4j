@@ -266,7 +266,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 
 			return tupleExpr;
-		case Optimizaed:
+		case Optimized:
 			SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 			SailDataset rdfDataset = branch.dataset(getIsolationLevel());
 
