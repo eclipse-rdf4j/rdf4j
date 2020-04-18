@@ -135,4 +135,9 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		GraphQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
+	}
 }

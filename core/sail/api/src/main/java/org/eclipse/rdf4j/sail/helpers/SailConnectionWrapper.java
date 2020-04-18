@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 /**
  * An implementation of the SailConnection interface that wraps another SailConnection object and forwards any method
  * calls to the wrapped connection.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SailConnectionWrapper implements SailConnection, FederatedServiceResolverClient {
@@ -63,7 +63,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	/**
 	 * Gets the connection that is wrapped by this object.
-	 * 
+	 *
 	 * @return The SailConnection object that was supplied to the constructor of this class.
 	 */
 	public SailConnection getWrappedConnection() {
@@ -197,6 +197,12 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	@Override
 	public boolean pendingRemovals() {
 		return false;
+	}
+
+	@Override
+	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+			BindingSet bindings, boolean includeInferred) {
+		return wrappedCon.explain(queryExplainLevel, tupleExpr, activeDataset, bindings, includeInferred);
 	}
 
 	@Override

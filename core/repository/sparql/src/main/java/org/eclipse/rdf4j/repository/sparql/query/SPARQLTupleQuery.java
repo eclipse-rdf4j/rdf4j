@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Parses tuple results in the background.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
@@ -61,5 +61,10 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	private String getQueryString() {
 		return QueryStringUtil.getTupleQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
 	}
 }

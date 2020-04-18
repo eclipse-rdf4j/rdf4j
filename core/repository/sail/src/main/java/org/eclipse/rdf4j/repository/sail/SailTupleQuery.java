@@ -7,10 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
-import java.util.ArrayList;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Query.QueryExplainLevel;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -22,6 +21,8 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+
+import java.util.ArrayList;
 
 /**
  * @author Arjohn Kampman
@@ -83,5 +84,24 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			throws QueryEvaluationException, TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
+	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+
+		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+
+		SailConnection sailCon = getConnection().getSailConnection();
+
+		TupleExpr explainedTupleExpr = sailCon.explain(queryExplainLevel, tupleExpr, getActiveDataset(), getBindings(),
+				getIncludeInferred());
+
+		return new QueryExplainWrapper() {
+			@Override
+			public String asHumanReadbleString() {
+				return explainedTupleExpr.toString();
+			}
+		};
+
 	}
 }

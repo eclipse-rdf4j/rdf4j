@@ -628,22 +628,22 @@ public abstract class RDFStoreTest {
 		MapBindingSet bindings = new MapBindingSet(2);
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		int resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 2, resultCount);
 
 		bindings.addBinding("Y", painter);
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 1, resultCount);
 
 		bindings.addBinding("Z", painting);
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 1, resultCount);
 
 		bindings.removeBinding("Y");
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 2, resultCount);
 
@@ -653,12 +653,12 @@ public abstract class RDFStoreTest {
 		tupleExpr = tupleQuery.getTupleExpr();
 		bindings.clear();
 
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 0, resultCount);
 
 		bindings.addBinding("Z", painter);
-		iter = con.evaluate(tupleExpr, null, bindings, false);
+		iter = con.evaluate(tupleExpr.clone(), null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 1, resultCount);
 	}

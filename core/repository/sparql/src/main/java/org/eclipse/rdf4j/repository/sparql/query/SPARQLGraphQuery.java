@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
  * Parses RDF results in the background.
- * 
+ *
  * @author James Leigh
  * @author Andreas Schwarte
  */
@@ -59,5 +59,10 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 
 	private String getQueryString() {
 		return QueryStringUtil.getGraphQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
 	}
 }

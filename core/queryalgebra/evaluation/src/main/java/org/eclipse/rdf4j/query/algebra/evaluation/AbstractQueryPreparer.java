@@ -126,6 +126,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				}
 			}
 		}
+
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
+		}
 	}
 
 	class TupleQueryImpl extends AbstractParserQuery implements TupleQuery {
@@ -179,6 +184,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				throws QueryEvaluationException, TupleQueryResultHandlerException {
 			TupleQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
+		}
+
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
 		}
 	}
 
@@ -283,6 +293,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 			GraphQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
+		}
+
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
 		}
 	}
 

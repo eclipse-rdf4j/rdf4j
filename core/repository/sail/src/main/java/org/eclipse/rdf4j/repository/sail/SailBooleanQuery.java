@@ -67,4 +67,9 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 			}
 		}
 	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
+	}
 }

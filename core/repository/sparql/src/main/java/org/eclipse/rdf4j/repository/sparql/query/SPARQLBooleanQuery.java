@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Parses boolean query response from remote stores.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuery {
@@ -43,5 +43,10 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 
 	private String getQueryString() {
 		return QueryStringUtil.getBooleanQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
 	}
 }

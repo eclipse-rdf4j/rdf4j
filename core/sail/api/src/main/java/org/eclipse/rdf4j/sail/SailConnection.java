@@ -54,7 +54,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Allows the SailConnection to bypass the standard query parser and provide its own internal {@link TupleExpr}
 	 * implementation. By default this method returns an empty result, signaling that it will rely on the RDF4J query
 	 * parser.
-	 * 
+	 *
 	 * @param ql      the query language.
 	 * @param type    indicates if the supplied query is a graph, tuple, or boolean query
 	 * @param query   the unparsed query string
@@ -441,4 +441,7 @@ public interface SailConnection extends AutoCloseable {
 	@Deprecated
 	boolean pendingRemovals();
 
+	// TODO - make this a default no-op for backwards compatibility
+	TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+			BindingSet bindings, boolean includeInferred);
 }

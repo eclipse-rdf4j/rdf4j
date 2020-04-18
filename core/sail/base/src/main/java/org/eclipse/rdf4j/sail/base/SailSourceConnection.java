@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -196,9 +197,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
-		// Clone the tuple expression to allow for more aggresive optimizations
-		tupleExpr = tupleExpr.clone();
-
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
 			// optimizers to modify the actual root node
@@ -253,6 +251,35 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				}
 			}
 		}
+	}
+
+	@Override
+	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+			BindingSet bindings, boolean includeInferred) {
+		switch (queryExplainLevel) {
+		case Executed:
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+					activeDataset, bindings, includeInferred)) {
+				while (evaluate.hasNext()) {
+					evaluate.next();
+				}
+			}
+
+			return tupleExpr;
+		case Optimizaed:
+			SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+			SailDataset rdfDataset = branch.dataset(getIsolationLevel());
+
+			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			EvaluationStrategy strategy = getEvaluationStrategy(activeDataset, tripleSource);
+
+			return strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+
+		case Unoptimized:
+			return tupleExpr;
+		}
+
+		throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + queryExplainLevel);
 	}
 
 	@Override
