@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -55,13 +56,13 @@ import org.slf4j.LoggerFactory;
  * Prior to evaluation various optimizations are performed, see
  * {@link org.eclipse.rdf4j.federated.optimizer.FedXOptimizer} for further details.
  * <p>
- * 
+ *
  * Since 4.0 FedX supports write operations using the supplied {@link WriteStrategy}, e.g. by writing to a designated
  * federation member. Note: the {@link WriteStrategy} is initialized lazily upon first access to a write operation, see
  * {@link #getWriteStrategyInternal()}.
- * 
+ *
  * Implementation notes: - not all methods are implemented as of now
- * 
+ *
  * @author Andreas Schwarte
  * @see FederationEvalStrategy
  * @see WriteStrategy
@@ -346,7 +347,7 @@ public class FedXConnection extends AbstractSailConnection {
 	 * Return the initialized {@link #writeStrategy}. If this has not been done yet, {@link WriteStrategy#initialize()}
 	 * is returned. This method guarantees lazy initialization upon the first write operation on this
 	 * {@link FedXConnection} instance.
-	 * 
+	 *
 	 * @return the {@link WriteStrategy}
 	 */
 	protected synchronized WriteStrategy getWriteStrategyInternal() throws SailException {
@@ -383,7 +384,7 @@ public class FedXConnection extends AbstractSailConnection {
 	/**
 	 * Return the original explicit {@link Operation#getMaxExecutionTime()} in seconds, 0 if
 	 * {@link FedXConfig#getEnforceMaxQueryTime()} should be applied.
-	 * 
+	 *
 	 * @param b
 	 * @return
 	 */
@@ -401,7 +402,7 @@ public class FedXConnection extends AbstractSailConnection {
 	/**
 	 * A default implementation for {@link AbstractSail}. This implementation has no further use, however it is needed
 	 * for the constructor call.
-	 * 
+	 *
 	 * @author as
 	 *
 	 */
@@ -435,6 +436,12 @@ public class FedXConnection extends AbstractSailConnection {
 	@Override
 	public boolean pendingRemovals() {
 		return false;
+	}
+
+	@Override
+	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+			BindingSet bindings, boolean includeInferred) {
+		return null;
 	}
 
 }

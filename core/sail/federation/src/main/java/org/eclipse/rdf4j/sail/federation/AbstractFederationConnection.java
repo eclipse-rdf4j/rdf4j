@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -72,7 +73,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Unions the results from multiple {@link RepositoryConnection} into one {@link SailConnection}.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -485,5 +486,11 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 				LOGGER.error("Failed to close cursor", e);
 			}
 		}
+	}
+
+	@Override
+	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+			BindingSet bindings, boolean includeInferred) {
+		return null;
 	}
 }

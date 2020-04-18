@@ -50,6 +50,11 @@ public class ContextAwareConnectionTest {
 		@Override
 		public void evaluate(RDFHandler arg0) {
 		}
+
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
+		}
 	}
 
 	static class InvocationHandlerStub implements InvocationHandler {
@@ -61,6 +66,10 @@ public class ContextAwareConnectionTest {
 	}
 
 	static class QueryStub extends AbstractQuery {
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
+		}
 	}
 
 	static class RepositoryStub extends RepositoryWrapper {
@@ -84,6 +93,11 @@ public class ContextAwareConnectionTest {
 
 		@Override
 		public void evaluate(TupleQueryResultHandler arg0) {
+		}
+
+		@Override
+		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+			return null;
 		}
 	}
 

@@ -93,4 +93,9 @@ abstract class DatasetQuery implements Query {
 	public String toString() {
 		return sailQuery.toString();
 	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
+	}
 }

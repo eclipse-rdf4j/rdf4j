@@ -25,4 +25,9 @@ public abstract class SailConnectionQuery extends AbstractParserQuery {
 	protected SailConnection getSailConnection() {
 		return con;
 	}
+
+	@Override
+	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		return null;
+	}
 }
