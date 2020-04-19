@@ -146,8 +146,6 @@ public class DataFile implements Closeable {
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
 
-		assert dataLength == nioFile.readInt(offset);
-
 		// We have either managed to read enough data and can return the required subset of the data, or we have read
 		// too little so we need to execute another read to get the correct data.
 		if (dataLength <= data.length - 4) {
