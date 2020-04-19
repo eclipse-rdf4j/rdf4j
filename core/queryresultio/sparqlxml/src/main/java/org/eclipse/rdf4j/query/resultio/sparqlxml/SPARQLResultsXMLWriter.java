@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 import java.io.OutputStream;
+import java.io.Writer;
 
 import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -25,6 +26,10 @@ public class SPARQLResultsXMLWriter extends AbstractSPARQLXMLWriter implements T
 
 	public SPARQLResultsXMLWriter(OutputStream out) {
 		super(out);
+	}
+
+	public SPARQLResultsXMLWriter(Writer writer) {
+		super(writer);
 	}
 
 	public SPARQLResultsXMLWriter(XMLWriter xmlWriter) {

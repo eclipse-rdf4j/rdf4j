@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.OutputStream;
+import java.io.Writer;
 
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
@@ -24,6 +25,10 @@ public class SPARQLResultsJSONWriter extends AbstractSPARQLJSONWriter implements
 
 	public SPARQLResultsJSONWriter(OutputStream out) {
 		super(out);
+	}
+
+	public SPARQLResultsJSONWriter(Writer writer) {
+		super(writer);
 	}
 
 	/*---------*

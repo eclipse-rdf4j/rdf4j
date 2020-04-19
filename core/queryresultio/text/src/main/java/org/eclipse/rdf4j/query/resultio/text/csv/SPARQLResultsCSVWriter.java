@@ -45,8 +45,11 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsCSVWriter(OutputStream out) {
-		Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8);
-		writer = new BufferedWriter(w, 1024);
+		this(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024));
+	}
+
+	public SPARQLResultsCSVWriter(Writer writer) {
+		this.writer = writer;
 	}
 
 	@Override

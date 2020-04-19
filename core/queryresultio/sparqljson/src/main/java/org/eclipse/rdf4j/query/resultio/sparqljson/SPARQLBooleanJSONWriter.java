@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Writer;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
@@ -26,6 +27,10 @@ public class SPARQLBooleanJSONWriter extends AbstractSPARQLJSONWriter implements
 
 	public SPARQLBooleanJSONWriter(OutputStream out) {
 		super(out);
+	}
+
+	public SPARQLBooleanJSONWriter(Writer writer) {
+		super(writer);
 	}
 
 	/*---------*
