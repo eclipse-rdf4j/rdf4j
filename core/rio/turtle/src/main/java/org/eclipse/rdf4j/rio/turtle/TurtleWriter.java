@@ -60,8 +60,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Variables *
 	 *-----------*/
 
-	protected ParsedIRI baseIRI;
-	protected IndentingWriter writer;
+	protected final ParsedIRI baseIRI;
+	protected final IndentingWriter writer;
 	protected boolean writingStarted;
 
 	/**

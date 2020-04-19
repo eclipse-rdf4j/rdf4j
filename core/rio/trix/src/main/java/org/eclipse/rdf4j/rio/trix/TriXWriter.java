@@ -20,7 +20,9 @@ import static org.eclipse.rdf4j.rio.trix.TriXConstants.URI_TAG;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.model.BNode;
@@ -48,7 +50,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Variables *
 	 *-----------*/
 
-	private XMLWriter xmlWriter;
+	private final XMLWriter xmlWriter;
 
 	private boolean writingStarted;
 
@@ -66,7 +68,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public TriXWriter(OutputStream out) {
-		this(new XMLWriter(out));
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 	}
 
 	/**

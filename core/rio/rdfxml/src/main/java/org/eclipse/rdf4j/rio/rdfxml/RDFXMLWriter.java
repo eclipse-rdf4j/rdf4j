@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  */
 public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
-	protected ParsedIRI baseIRI;
-	protected Writer writer;
+	protected final ParsedIRI baseIRI;
+	protected final Writer writer;
 	protected String defaultNamespace;
 	protected boolean writingStarted;
 	protected boolean headerWritten;

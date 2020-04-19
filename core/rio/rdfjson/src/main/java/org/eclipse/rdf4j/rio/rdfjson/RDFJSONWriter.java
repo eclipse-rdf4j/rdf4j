@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.rio.rdfjson;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -45,17 +47,14 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  */
 public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
-	private Writer writer;
-
-	private OutputStream outputStream;
+	private final Writer writer;
 
 	private Model graph;
 
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
-		this.outputStream = out;
-		this.actualFormat = actualFormat;
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), actualFormat);
 	}
 
 	public RDFJSONWriter(final Writer writer, final RDFFormat actualFormat) {
@@ -66,20 +65,10 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public void endRDF() throws RDFHandlerException {
 		try {
-			if (this.writer != null) {
-				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
-					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				} finally {
-					this.writer.flush();
-				}
-			} else if (this.outputStream != null) {
-				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.outputStream);) {
-					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				} finally {
-					this.outputStream.flush();
-				}
-			} else {
-				throw new IllegalStateException("The output stream and the writer were both null.");
+			try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
+				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+			} finally {
+				this.writer.flush();
 			}
 		} catch (final IOException e) {
 			throw new RDFHandlerException(e);
