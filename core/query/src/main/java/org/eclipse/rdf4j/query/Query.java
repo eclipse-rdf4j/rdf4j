@@ -80,7 +80,7 @@ public interface Query extends Operation {
 
 	interface QueryExplainWrapper {
 
-		String asHumanReadbleString();
+		String toString();
 		// TupleExpr asTupleExpr(); location in maven hierarchy prevents us from using TupleExpr here
 	}
 

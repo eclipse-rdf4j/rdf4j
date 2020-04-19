@@ -98,7 +98,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 		return new QueryExplainWrapper() {
 			@Override
-			public String asHumanReadbleString() {
+			public String toString() {
 				return explainedTupleExpr.toString();
 			}
 		};

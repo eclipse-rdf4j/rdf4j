@@ -26,7 +26,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Unoptimized).asHumanReadbleString();
+			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Unoptimized).toString();
 
 			System.out.println(queryPlan1);
 
@@ -45,7 +45,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Optimized).asHumanReadbleString();
+			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Optimized).toString();
 
 			System.out.println(queryPlan1);
 
@@ -63,7 +63,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Executed).asHumanReadbleString();
+			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Executed).toString();
 
 			System.out.println(queryPlan1);
 
