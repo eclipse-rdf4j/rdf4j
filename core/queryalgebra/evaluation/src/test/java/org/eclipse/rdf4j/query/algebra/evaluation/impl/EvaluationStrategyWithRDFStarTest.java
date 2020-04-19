@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -329,8 +330,9 @@ public class EvaluationStrategyWithRDFStarTest {
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
-			assertTrue("all expected must be received", received.containsAll(expected));
-			assertTrue("all received must be expected", expected.containsAll(received));
+
+			assertThat(received).containsAll(expected);
+			assertThat(expected).containsAll(received);
 		}
 	}
 
