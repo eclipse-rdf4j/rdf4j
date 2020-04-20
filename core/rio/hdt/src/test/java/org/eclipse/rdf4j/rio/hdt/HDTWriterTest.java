@@ -53,6 +53,8 @@ public class HDTWriterTest {
 			nt.setRDFHandler(writer);
 			nt.parse(is, "");
 		} catch (Exception e) {
+			System.err.println(e.getMessage());
+			e.printStackTrace();
 			fail(e.getMessage());
 		}
 

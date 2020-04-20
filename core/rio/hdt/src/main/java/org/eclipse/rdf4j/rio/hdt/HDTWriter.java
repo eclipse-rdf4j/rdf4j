@@ -13,30 +13,25 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 
 import org.apache.commons.io.output.CountingOutputStream;
 
 import org.eclipse.rdf4j.model.Statement;
-
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
-
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.HDTWriterSettings;
+
 import org.mapdb.BTreeKeySerializer;
 import org.mapdb.BTreeMap;
 import org.mapdb.DB;
@@ -85,6 +80,8 @@ public class HDTWriter extends AbstractRDFWriter {
 	private long cnt;
 
 	private final DB db;
+	private final DB dbRefs;
+
 	private final Map<String, Integer> dictShared;
 	private final Map<String, Integer> dictS;
 	private final Map<String, Integer> dictP;
@@ -99,12 +96,14 @@ public class HDTWriter extends AbstractRDFWriter {
 	public HDTWriter(OutputStream out) {
 		this.out = out;
 
-		db = DBMaker.newTempFileDB().mmapFileEnableIfSupported().make();
+		dbRefs = DBMaker.newTempFileDB().make();
+		tripleRefs = new QueueWrapper(dbRefs.createQueue("refs", Serializer.INT_ARRAY, false));
+
+		db = DBMaker.newTempFileDB().make();
 		dictShared = db.createHashMap("SO").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
 		dictS = db.createHashMap("S").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
 		dictP = db.createHashMap("P").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
 		dictO = db.createHashMap("O").keySerializer(Serializer.STRING).valueSerializer(Serializer.INTEGER).make();
-		tripleRefs = db.createQueue("refs", Serializer.INT_ARRAY, false);
 	}
 
 	@Override
@@ -162,8 +161,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			int[] refO = writeDictSection(dictO, bos, "O");
 
 			Queue<int[]> newRefs = renumberTriples(refSO, refS, refP, refO, tripleRefs);
-			tripleRefs.clear();
-
+			System.err.println("ize:" + newRefs.size());
 			HDTTriples triples = new HDTTriples();
 			triples.write(bos);
 
@@ -179,6 +177,7 @@ public class HDTWriter extends AbstractRDFWriter {
 			throw new RDFHandlerException("At byte: " + bos.getByteCount(), ioe);
 		} finally {
 			db.close();
+			dbRefs.close();
 			try {
 				bos.close();
 			} catch (IOException ex) {
@@ -379,7 +378,7 @@ public class HDTWriter extends AbstractRDFWriter {
 	 * @return new references
 	 */
 	private Queue<int[]> lookupRefs(Queue<int[]> refs, int[] lookup) {
-		BlockingQueue<int[]> newrefs = db.createQueue("newrefs", Serializer.INT_ARRAY, false);
+		Queue<int[]> newrefs = new QueueWrapper(dbRefs.createQueue("newrefs", Serializer.INT_ARRAY, false));
 		refs.stream()
 				.map(ref -> new int[] { lookup[ref[0]], lookup[ref[1]], lookup[ref[2]] })
 				.sorted((int[] a, int[] b) -> {
