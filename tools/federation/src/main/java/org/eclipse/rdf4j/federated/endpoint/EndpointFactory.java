@@ -94,7 +94,6 @@ public class EndpointFactory {
 		}
 	}
 
-
 	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName) throws FedXException {
 		return loadRemoteRepository(repositoryServer, repositoryName, false);
 	}
