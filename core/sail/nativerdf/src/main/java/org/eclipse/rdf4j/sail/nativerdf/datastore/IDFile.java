@@ -239,13 +239,11 @@ public class IDFile implements Closeable {
 	}
 
 	private Long[] getCacheLine(int cacheLookupIndex) {
-		Long[] cacheLine;
 		if (cacheLookupIndex == gcReducingCacheIndex) {
-			cacheLine = gcReducingCache;
+			return gcReducingCache;
 		} else {
-			cacheLine = cache.get(cacheLookupIndex);
+			return cache.get(cacheLookupIndex);
 		}
-		return cacheLine;
 	}
 
 	private Long[] convertBytesToLongs(byte[] bytes) {
