@@ -620,8 +620,7 @@
 				<plugin>
 					<groupId>au.com.acegi</groupId>
 					<artifactId>xml-format-maven-plugin</artifactId>
-					<!-- we use the snapshot version to allow tab indents -->
-					<version>3.1.2-SNAPSHOT</version>
+					<version>3.1.2</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
 					</configuration>
@@ -888,6 +887,23 @@
 					<execution>
 						<goals>
 							<goal>validate</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>net.revelc.code</groupId>
+				<artifactId>impsort-maven-plugin</artifactId>
+				<version>1.3.2</version>
+				<configuration>
+					<groups>java.,javax.,org.,com.</groups>
+					<staticGroups>java,*</staticGroups>
+				</configuration>
+				<executions>
+					<execution>
+						<id>sort-imports</id>
+						<goals>
+							<goal>check</goal><!-- runs at process-sources phase by default -->
 						</goals>
 					</execution>
 				</executions>
