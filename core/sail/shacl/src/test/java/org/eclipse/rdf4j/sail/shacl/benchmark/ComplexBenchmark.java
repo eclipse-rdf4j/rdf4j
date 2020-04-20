@@ -8,7 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -38,10 +42,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad

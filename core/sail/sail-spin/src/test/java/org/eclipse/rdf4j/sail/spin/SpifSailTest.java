@@ -9,7 +9,17 @@
  */
 package org.eclipse.rdf4j.sail.spin;
 
-import com.google.common.collect.Lists;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.List;
+import java.util.Locale;
+
 import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
@@ -33,16 +43,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.List;
-import java.util.Locale;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import com.google.common.collect.Lists;
 
 /**
  * Runs the spif test cases.

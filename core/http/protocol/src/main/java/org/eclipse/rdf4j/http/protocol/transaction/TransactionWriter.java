@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.protocol.transaction;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+
 import javax.xml.bind.DatatypeConverter;
 
 import org.eclipse.rdf4j.common.xml.XMLUtil;

@@ -10,12 +10,11 @@ package org.eclipse.rdf4j.console.command;
 import java.io.IOException;
 import java.util.Map;
 
-import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

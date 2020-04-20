@@ -9,13 +9,11 @@ package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.OutputStream;
-
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -27,7 +25,6 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 import org.eclipse.rdf4j.console.Util;
-
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
@@ -35,9 +32,7 @@ import org.eclipse.rdf4j.console.setting.ShowPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
 import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
-
 import org.eclipse.rdf4j.model.Namespace;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -53,7 +48,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;

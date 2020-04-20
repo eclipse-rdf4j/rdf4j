@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static junit.framework.TestCase.assertEquals;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -17,12 +23,6 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.stream.Collectors;
-
-import static junit.framework.TestCase.assertEquals;
 
 /**
  * @author Håvard Ottestad

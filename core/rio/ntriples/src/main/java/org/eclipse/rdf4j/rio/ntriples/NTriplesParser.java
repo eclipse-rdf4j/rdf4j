@@ -18,7 +18,6 @@ import java.util.Collection;
 import java.util.HashSet;
 
 import org.apache.commons.io.input.BOMInputStream;
-
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;

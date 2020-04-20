@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -42,12 +48,6 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.

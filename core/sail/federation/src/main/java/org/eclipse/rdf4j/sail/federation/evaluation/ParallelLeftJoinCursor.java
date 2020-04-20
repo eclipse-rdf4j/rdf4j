@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -17,8 +19,6 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.QueueCursor;
-
-import java.util.Set;
 
 /**
  * Transform the condition into a filter and the right side into an {@link AlternativeCursor}, then evaluate as a

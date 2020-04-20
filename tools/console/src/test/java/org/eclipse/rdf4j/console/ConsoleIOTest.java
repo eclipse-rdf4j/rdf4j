@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.console;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,7 +19,6 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import static org.mockito.Mockito.when;
 
 public class ConsoleIOTest {
 	@Rule

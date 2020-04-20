@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.query;
 
+import java.util.regex.Matcher;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -14,8 +16,6 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
-
-import java.util.regex.Matcher;
 
 /**
  * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and

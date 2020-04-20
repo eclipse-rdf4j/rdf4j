@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
+import static org.junit.Assert.assertEquals;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -15,8 +17,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-
-import static org.junit.Assert.assertEquals;
 import org.junit.Before;
 import org.junit.Test;
 

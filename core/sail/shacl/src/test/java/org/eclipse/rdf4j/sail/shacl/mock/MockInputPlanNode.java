@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.mock;
 
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -17,12 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
-
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad

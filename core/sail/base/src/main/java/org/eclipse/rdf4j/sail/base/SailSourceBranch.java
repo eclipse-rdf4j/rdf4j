@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -21,14 +29,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.

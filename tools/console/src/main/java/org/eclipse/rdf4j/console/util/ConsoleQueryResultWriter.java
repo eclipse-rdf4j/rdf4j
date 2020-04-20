@@ -12,12 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
-
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.Util;
-
 import org.eclipse.rdf4j.model.Value;
-
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;

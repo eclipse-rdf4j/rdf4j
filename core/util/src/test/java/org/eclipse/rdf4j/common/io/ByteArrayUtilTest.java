@@ -1,7 +1,9 @@
 package org.eclipse.rdf4j.common.io;
 
-import java.util.BitSet;
 import static org.junit.Assert.*;
+
+import java.util.BitSet;
+
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;

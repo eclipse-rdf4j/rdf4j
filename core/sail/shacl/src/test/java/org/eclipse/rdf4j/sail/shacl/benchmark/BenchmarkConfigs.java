@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-
 import java.util.ArrayList;
 import java.util.List;
+
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 public class BenchmarkConfigs {
 	{

@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
-import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
+import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;

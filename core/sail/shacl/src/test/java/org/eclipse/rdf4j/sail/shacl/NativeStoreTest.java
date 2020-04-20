@@ -7,6 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.StringReader;
+
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -15,11 +20,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Test;
-
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.StringReader;
 
 public class NativeStoreTest {
 

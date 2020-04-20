@@ -7,6 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -21,10 +25,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
 
 /**
  * <p>

@@ -21,14 +21,13 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
-import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import com.github.jsonldjava.core.DocumentLoader;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;

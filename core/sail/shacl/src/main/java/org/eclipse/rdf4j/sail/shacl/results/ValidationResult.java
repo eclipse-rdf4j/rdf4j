@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.results;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -19,9 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.AST.PathPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.AST.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class ValidationResult implements ModelInterface {
 

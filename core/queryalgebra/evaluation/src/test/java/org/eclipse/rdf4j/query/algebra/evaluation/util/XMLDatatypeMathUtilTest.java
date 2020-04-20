@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import static org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+import static org.junit.Assert.assertEquals;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
 /**
  * @author Thomas Pellissier Tanon

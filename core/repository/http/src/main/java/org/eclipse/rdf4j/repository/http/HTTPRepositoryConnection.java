@@ -25,8 +25,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;

@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Håvard Ottestad

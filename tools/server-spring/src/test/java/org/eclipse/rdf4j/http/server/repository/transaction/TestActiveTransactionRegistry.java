@@ -11,9 +11,7 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.junit.Before;
-
 import org.mockito.Mockito;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

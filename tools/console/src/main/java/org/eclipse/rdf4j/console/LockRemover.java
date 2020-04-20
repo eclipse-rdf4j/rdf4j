@@ -12,7 +12,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryLockedException;
-
 import org.eclipse.rdf4j.sail.LockManager;
 import org.eclipse.rdf4j.sail.SailLockedException;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;

@@ -8,12 +8,16 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -27,11 +31,8 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 /**
  * @author Håvard Ottestad

@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-
-import java.util.Objects;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no

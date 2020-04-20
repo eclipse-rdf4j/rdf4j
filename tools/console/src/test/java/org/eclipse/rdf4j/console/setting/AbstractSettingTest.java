@@ -13,9 +13,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.command.SetParameters;
-
 import org.junit.Before;
-
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 

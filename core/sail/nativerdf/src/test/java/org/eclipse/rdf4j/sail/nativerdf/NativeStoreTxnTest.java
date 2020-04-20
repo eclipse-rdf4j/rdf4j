@@ -7,6 +7,16 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static java.nio.charset.StandardCharsets.US_ASCII;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+
+import java.io.File;
+import java.nio.file.Files;
+
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -25,15 +35,6 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-
-import java.io.File;
-import java.nio.file.Files;
-
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 
 public class NativeStoreTxnTest {
 

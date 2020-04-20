@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;

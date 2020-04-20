@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import javax.xml.datatype.*;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -14,8 +16,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-
-import javax.xml.datatype.*;
 
 /**
  * A utility class for evaluation of extended "mathematical" expressions on RDF literals. They do not work only on
