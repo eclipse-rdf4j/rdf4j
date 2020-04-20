@@ -20,6 +20,6 @@ jobs:
       with:
         java-version: ${{ matrix.jdk }}
     - name: Build
-      run: mvn -B clean install -DskipTests
+      run: mvn -B clean install -Pquick
     - name: Compliance tests
       run: mvn -B verify -Pcompliance --file pom.xml
