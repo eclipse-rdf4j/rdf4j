@@ -128,8 +128,33 @@ public class EndpointFactory {
 	 * @see ResolvableRepositoryInformation
 	 */
 	public static Endpoint loadResolvableRepository(String repositoryId) {
+		return loadResolvableRepository(repositoryId, false);
+	}
+
+	/**
+	 * Load a {@link ResolvableEndpoint}
+	 * 
+	 * <p>
+	 * The federation must be initialized with a {@link RepositoryResolver} ( see
+	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
+	 * the id provided by {@link Endpoint#getId()}
+	 * </p>
+	 * 
+	 * <p>
+	 * Note that the name is set to "http://" + repositoryId
+	 * </p>
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param writable     whether to configure the endpoint as writable.
+	 * @return the configured {@link Endpoint}
+	 * @see ResolvableRepositoryProvider
+	 * @see ResolvableRepositoryInformation
+	 */
+	public static Endpoint loadResolvableRepository(String repositoryId, boolean writable) {
 		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();
-		return repProvider.loadEndpoint(new ResolvableRepositoryInformation(repositoryId));
+		ResolvableRepositoryInformation info = new ResolvableRepositoryInformation(repositoryId);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
 	}
 
 	/**

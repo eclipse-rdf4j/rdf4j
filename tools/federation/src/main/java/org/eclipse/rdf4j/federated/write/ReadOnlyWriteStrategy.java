@@ -54,16 +54,13 @@ public class ReadOnlyWriteStrategy implements WriteStrategy {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
+	public void clear(Resource... contexts) throws RepositoryException {
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
+
 
 	@Override
 	public void close() throws RepositoryException {
-	}
-
-	@Override
-	public boolean isInitialized() {
-		return true;
 	}
 
 }
