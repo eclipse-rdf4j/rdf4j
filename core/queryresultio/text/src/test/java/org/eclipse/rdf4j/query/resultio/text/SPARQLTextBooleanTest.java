@@ -1,7 +1,4 @@
-package org.eclipse.rdf4j.query.resultio.text;
-
-/**
- * ****************************************************************************
+/*****************************************************************************
  *  Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  *  All rights reserved. This program and the accompanying materials
  *  are made available under the terms of the Eclipse Distribution License v1.0
@@ -9,6 +6,8 @@ package org.eclipse.rdf4j.query.resultio.text;
  *  http://www.eclipse.org/org/documents/edl-v10.php.
  * *****************************************************************************
  */
+package org.eclipse.rdf4j.query.resultio.text;
+
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
