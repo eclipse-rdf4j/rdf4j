@@ -106,7 +106,7 @@ You can apply import organization by hitting Ctrl+Shift+O, or you can configure 
 
 If you do not use Eclipse IDE, we still welcome your contributions of course. There are several ways in which you can configure your IDE to format according to our conventions. Some tools will have the Eclipse code conventions built in, or will have options to import Eclipse formatter and import sorting settings. 
 
-In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/) and [import sorting maven plugin](https://code.revelc.net/impsort-maven-plugin/index.html) for validation of all code changes against the coding conventions. 
+In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/) and [import sorting maven plugin](https://code.revelc.net/impsort-maven-plugin/index.html) for validation of all code changes against the coding conventions, and compiling the project will automatically fix formatting/import issues.
 
 To validate your changes manually, run the following command:
 
