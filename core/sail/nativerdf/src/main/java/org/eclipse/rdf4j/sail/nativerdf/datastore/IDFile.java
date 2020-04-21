@@ -7,12 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import com.google.common.math.LongMath;
 import org.apache.commons.collections4.map.ReferenceMap;
 import org.eclipse.rdf4j.common.io.NioFile;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -20,6 +22,8 @@ import java.util.Map;
  * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long integers). There
  * is a direct correlation between IDs and the position at which the file pointers are stored; the file pointer for ID X
  * is stored at position 8*X.
+ *
+ * This class supports parallel reads but not parallel writes.
  *
  * @author Arjohn Kampman
  */
@@ -57,12 +61,14 @@ public class IDFile implements Closeable {
 	private final boolean forceSync;
 
 	// ReferenceMap keeps a soft reference to the cache line (Long[]) which means that it will be GCed if we run low on
-	// memory
+	// memory. This is not synchronized and we choose to synchronize in the code instead of synchronizing the whole map
+	// because this allows us to synchronize multiple operations together.
 	private final Map<Integer, Long[]> cache = new ReferenceMap<>();
 
 	// We choose a cacheLineSize of 4KB since this is a typical file system block size.
-	private final int cacheLineShift = 12;
-	private final int cacheLineSize = 1 << cacheLineShift;
+	private final int blockSize = 4 * 1024; // 4KB
+	private final int cacheLineSize = (int) (blockSize / ITEM_SIZE);
+	private final int cacheLineShift = LongMath.log2(cacheLineSize, RoundingMode.UNNECESSARY);
 
 	// keeping a reference of the last created cache line here should stop GC from removing it
 	private int gcReducingCacheIndex;
@@ -153,6 +159,15 @@ public class IDFile implements Closeable {
 	public void setOffset(int id, long offset) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 
+		nioFile.writeLong(offset, ITEM_SIZE * id);
+
+		// We need to update the cache after writing to file (not before) so that if anyone refreshes the cache it will
+		// include the write above.
+		// The scenario is as follows:
+		// 1. there is nothing in the cache, everything is fine
+		// 2. the relevant cache line is from before the writeLong operation above, in which case we update it
+		// 3. the relevant cache line is from right after the write in which case updating it doesnt matter
+
 		int cacheLookupIndex = id >> cacheLineShift;
 		int cacheLineLookupIndex = id % cacheLineSize;
 
@@ -162,7 +177,6 @@ public class IDFile implements Closeable {
 			cacheLine[cacheLineLookupIndex] = offset;
 		}
 
-		nioFile.writeLong(offset, ITEM_SIZE * id);
 	}
 
 	/**
@@ -197,12 +211,18 @@ public class IDFile implements Closeable {
 
 			cacheLine = convertBytesToLongs(bytes);
 
-			cache.put(cacheLookupIndex, cacheLine);
+			synchronized (this) {
+				// we try not to overwrite an existing cache line
+				if (!cache.containsKey(cacheLineLookupIndex)) {
+					cache.put(cacheLookupIndex, cacheLine);
+				}
+			}
 
 			gcReducingCache = cacheLine;
 			gcReducingCacheIndex = cacheLookupIndex;
 
 			return cacheLine[cacheLineLookupIndex];
+
 		}
 
 		// we did not find a cached value and we did not create a new cache line
@@ -238,7 +258,7 @@ public class IDFile implements Closeable {
 		nioFile.close();
 	}
 
-	private Long[] getCacheLine(int cacheLookupIndex) {
+	synchronized private Long[] getCacheLine(int cacheLookupIndex) {
 		if (cacheLookupIndex == gcReducingCacheIndex) {
 			return gcReducingCache;
 		} else {
